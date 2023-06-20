@@ -7,12 +7,11 @@ import org.sensorhub.api.comm.CommProviderConfig;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.sensor.SensorConfig;
 
-public class D3sConfig extends SensorConfig{
+public class RS350Config extends SensorConfig{
 
     @DisplayInfo.Required
     public String serialNumber;
 
-
-    @DisplayInfo(desc="Communication settings to connect to Kromek D3s data stream")
+    @DisplayInfo(desc="Communication settings to connect to RS-350 data stream")
     public CommProviderConfig<?> commSettings;
 }
