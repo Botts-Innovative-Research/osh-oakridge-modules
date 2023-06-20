@@ -1,0 +1,32 @@
+description = 'RS-350'
+ext.details = ''
+version = '0.1'
+
+dependencies{
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+}
+
+osgi {
+    manifest{
+        attributes( 'Bundle-Vendor': 'Botts Innovative Research, Inc.')
+        attributes('Bundle-Activator': 'com.botts.impl.sensor.rs350.Activator')
+    }
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'drewbotts'
+            name 'Drew Botts'
+            organization 'Botts Innovative Research'
+            organizationUrl 'http://www.botts-inc.com'
+        }
+        developer {
+            id 'michael.elmore'
+            name 'Michael Elmore'
+            organization 'Botts Innovative Research'
+            organizationUrl 'http://www.botts-inc.com'
+        }
+    }
+}
