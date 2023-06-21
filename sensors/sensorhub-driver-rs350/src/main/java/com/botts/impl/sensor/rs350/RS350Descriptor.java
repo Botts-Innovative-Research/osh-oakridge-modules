@@ -11,8 +11,12 @@ import org.sensorhub.impl.module.JarModuleProvider;
 public class RS350Descriptor extends JarModuleProvider implements IModuleProvider {
 
     @Override
-    public Class<? extends IModule<?>> getModuleClass(){return RS350Sensor.class;}
+    public Class<? extends IModule<?>> getModuleClass() {
+        return RS350Sensor.class;
+    }
 
     @Override
-    public Class<? extends ModuleConfig> getModuleConfigClass() {return RS350Config.class;}
+    public Class<? extends ModuleConfig> getModuleConfigClass() {
+        return RS350Config.class;
+    }
 }
