@@ -14,4 +14,8 @@ public class RS350Config extends SensorConfig {
 
     @DisplayInfo(desc = "Communication settings to connect to RS-350 data stream")
     public CommProviderConfig<?> commSettings;
+
+    @DisplayInfo.Required
+    @DisplayInfo(label = "Outputs", desc = "Configuration options for source data outputs from driver")
+    public RS350Outputs outputs = new RS350Outputs();
 }
