@@ -1,0 +1,109 @@
+// Plugin to do JAXB .xsd -> .java code generation
+plugins {
+    id 'org.unbroken-dome.xjc' version '2.0.0'
+}
+
+
+description = 'RAD Utilities'
+ext.details = "Utilities for creation drivers for Radiological Sensors and Systems"
+version = '1.0.0'
+
+import org.apache.tools.ant.taskdefs.condition.Os
+
+
+
+def thisProjectDir = projectDir
+rootProject.allprojects {
+    repositories {
+        mavenCentral()
+        maven { url "file:///$thisProjectDir/libs"}
+    }
+}
+
+configurations {
+    jaxb
+}
+
+dependencies {
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+
+    implementation 'org.apache.commons:commons-lang3:3.12.0'
+    implementation 'jakarta.xml.bind:jakarta.xml.bind-api:3.0.1'
+    implementation 'com.fasterxml.woodstox:woodstox-core:6.2.6'
+    implementation 'org.glassfish.jaxb:jaxb-runtime:3.0.2'
+
+    testImplementation('junit:junit:4.13')
+    testImplementation('org.mockito:mockito-core:3.12.4')
+
+    // Explicitly set the classpath for the xjc tool so we're using the new stuff.
+    xjcTool 'com.sun.xml.bind:jaxb-xjc:3.0.2'
+    xjcTool 'org.glassfish.jaxb:jaxb-runtime:3.0.2'
+    xjcTool 'jakarta.xml.bind:jakarta.xml.bind-api:3.0.1'
+}
+
+xjc {
+    // We're not using gradle's "normal" place for schemas, so set it here:
+//    srcDirName = './src/main/N42/xsd/'
+    // Fix a quirk in the behavior of xjc so that "Boolean" properties don't use "is"
+    enableIntrospection = true
+    // Change the package where the classes are generated. (This is not the "right" way, supposedly.)
+    extraArgs.add '-p'
+    extraArgs.add 'com.botts.impl.utils.n42'
+}
+
+
+
+//task jaxb {
+//    System.setProperty('javax.xml.accessExternalSchema', 'all')
+//    def jaxbTargetDir = file("./src/main/java")
+//    doLast {
+//        jaxbTargetDir.mkdirs()
+//        ant.taskdef(
+//                name: 'xjc',
+//                classname: 'com.sun.tools.xjc.XJCTask',
+//                classpath: configurations.jaxb.asPath
+//        )
+//        ant.jaxbTargetDir = jaxbTargetDir
+//
+//        FileTree subprojects = fileTree("src/main/N42/xsd").include('*.xsd')
+//        subprojects.files.each { File f ->
+//            ant.xjc(
+//                    destdir: '${jaxbTargetDir}',
+//                    package: 'com.n42.jaxb',
+//                    schema: f.absolutePath
+//            )
+//        }
+//
+//    }
+//}
+//
+//compileJava.dependsOn jaxb
+
+clean.doFirst {
+    delete "./src/main/java/com/tak/jaxb"
+}
+
+// exclude tests requiring connection to the sensor
+// these have to be run manually
+//      If tests are to be excluded list them here as follows
+//          exclude '**/TestNameClass.class'
+test {
+    useJUnit()
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'drewbotts'
+            name 'Drew Botts'
+            organization 'Botts Innovative Research, Inc.'
+            organizationUrl 'http://www.botts-inc.com'
+        }
+    }
+}
+
+
+
+
+

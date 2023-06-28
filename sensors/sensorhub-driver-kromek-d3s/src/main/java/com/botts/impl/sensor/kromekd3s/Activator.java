@@ -2,7 +2,7 @@
 
  Copyright (C) 2023 Botts Innovative Research, Inc. All Rights Reserved.
  ******************************* END LICENSE BLOCK ***************************/
-package com.botts.impl.sensor.kromek-d3s;
+package com.botts.impl.sensor.kromekd3s;
 
 import org.sensorhub.utils.OshBundleActivator;
 
