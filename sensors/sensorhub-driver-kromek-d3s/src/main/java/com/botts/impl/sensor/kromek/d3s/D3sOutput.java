@@ -21,10 +21,13 @@ import org.slf4j.LoggerFactory;
 import org.vast.swe.SWEConstants;
 import org.vast.swe.SWEHelper;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
+import java.io.*;
 import java.lang.Boolean;
-import java.util.Random;
+import java.nio.charset.StandardCharsets;
+import java.text.Collator;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Output specification and provider for ...
@@ -34,7 +37,7 @@ import java.util.Random;
  */
 public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnable {
 
-    private static final String SENSOR_OUTPUT_NAME = "[NAME]";
+    private static final String SENSOR_OUTPUT_NAME = "RADIATION";
     private static final String SENSOR_OUTPUT_LABEL = "[LABEL]";
     private static final String SENSOR_OUTPUT_DESCRIPTION = "[DESCRIPTION]";
 
@@ -50,6 +53,7 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
     private int setCount = 0;
     private final long[] timingHistogram = new long[MAX_NUM_TIMING_SAMPLES];
     private final Object histogramLock = new Object();
+    private final Object samplingLock = new Object();
 
     Thread worker;
 
@@ -80,26 +84,47 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
         // TODO: Create data record description
         dataStruct = sweFactory.createRecord()
                 .name(getName())
-                .definition("urn:osh:data:weather")
-                .description("Weather measurements")
-                .addField("time", sweFactory.createTime().asSamplingTimeIsoUTC())
-                .addField("temperature", sweFactory.createQuantity()
-                        .definition(SWEHelper.getCfUri("air_temperature"))
-                        .label("Air Temperature")
+                .definition("urn:osh:data:radiation")
+                .description("Radiation measurements")
+//                .addField("time", sweFactory.createTime().asSamplingTimeIsoUTC())
+//                .addField("temperature", sweFactory.createQuantity()
+//                        .definition(SWEHelper.getCfUri("air_temperature"))
+//                        .label("Air Temperature")
+//                        .uomCode("Cel"))
+//                .addField("pressure", sweFactory.createQuantity()
+//                    .definition(SWEHelper.getCfUri("air_pressure"))
+//                    .label("Atmospheric Pressure")
+//                    .uomCode("hPa"))
+//                .addField("windSpeed", sweFactory.createQuantity()
+//                        .definition(SWEHelper.getCfUri("wind_speed"))
+//                        .label("Wind Speed")
+//                        .uomCode("m/s"))
+//                .addField("windDirection", sweFactory.createQuantity()
+//                        .definition(SWEHelper.getCfUri("wind_from_direction"))
+//                        .label("Wind Direction")
+//                        .uomCode("deg")
+//                        .refFrame(SWEConstants.REF_FRAME_NED, "z"))
+                .addField("latestFile", sweFactory.createText()
+                        .label("Latest File"))
+                .addField("measurementTime", sweFactory.createText())
+                .addField("measurementDate", sweFactory.createText())
+                .addField("detectionID", sweFactory.createText())
+                .addField("confidence", sweFactory.createQuantity())
+                .addField("latitude", sweFactory.createQuantity()
+                        .uomCode("deg"))
+                .addField("longitude", sweFactory.createQuantity()
+                        .uomCode("deg"))
+                .addField("processingTime", sweFactory.createQuantity()
+                        .uomCode("ms"))
+                .addField("sensorTemp", sweFactory.createQuantity()
                         .uomCode("Cel"))
-                .addField("pressure", sweFactory.createQuantity()
-                    .definition(SWEHelper.getCfUri("air_pressure"))
-                    .label("Atmospheric Pressure")
-                    .uomCode("hPa"))
-                .addField("windSpeed", sweFactory.createQuantity()
-                        .definition(SWEHelper.getCfUri("wind_speed"))
-                        .label("Wind Speed")
-                        .uomCode("m/s"))
-                .addField("windDirection", sweFactory.createQuantity()
-                        .definition(SWEHelper.getCfUri("wind_from_direction"))
-                        .label("Wind Direction")
-                        .uomCode("deg")
-                        .refFrame(SWEConstants.REF_FRAME_NED, "z"))
+                .addField("battery", sweFactory.createQuantity()
+                        .uomCode("%"))
+                .addField("liveTime", sweFactory.createQuantity()
+                        .uomCode("ms"))
+                .addField("neutronCount", sweFactory.createCount())
+                .addField("dose", sweFactory.createQuantity()
+                        .uomCode("µSv/h"))
                 .build();
 
         dataEncoding = sweFactory.newTextEncoding(",", "\n");
@@ -170,15 +195,38 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
     }
 
     //reference values
-    double tempRef = 20.0;
-    double pressRef = 1013.0;
-    double windSpeedRef = 5.0;
-    double directionRef = 0.0;
+//    double tempRef = 20.0;
+//    double pressRef = 1013.0;
+//    double windSpeedRef = 5.0;
+//    double directionRef = 0.0;
 
-    double temp = tempRef;
-    double press = pressRef;
-    double windSpeed = windSpeedRef;
-    double windDir = directionRef;
+//    double temp = tempRef;
+//    double press = pressRef;
+//    double windSpeed = windSpeedRef;
+//    double windDir = directionRef;
+
+    String latestSpectraFilename = new String("");
+    String deviceSerialNum = new String("");
+    String measurementTime;
+    String measurementDate;
+    String measurementDetectionID;
+    double measurementConfidence;
+    double measurementLatitude;
+    double measurementLongitude;
+    double measurementProcessingTimeMsecs;
+    double measurementSensorTempDegC;
+    double measurementBatteryPercent;
+    double measurementLiveTimeMsecs;
+    double measurementNeutronCount;
+    double measurementDose;
+    String measurementDoseUnit;
+
+
+
+
+    String DEVICE_SERIAL_NUMBER_PREFIX = "SGM";
+    Pattern SPECTRA_FILENAME_REGEX = Pattern.compile("(\\d+)\\.(\\d+)\\.(\\d+)_(\\d+)\\.(\\d+)\\.(\\d+)_"+DEVICE_SERIAL_NUMBER_PREFIX+"(\\d+)_Spectra\\.csv");
+
 
     private Random rand = new Random();
 
@@ -188,6 +236,8 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
 
     @Override
     public void run() {
+
+        D3sConfig config = parentSensor.getConfiguration();
 
         boolean processSets = true;
 
@@ -218,31 +268,115 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
                     lastSetTimeMillis = timingHistogram[setIndex];
                 }
 
+                // read the all files in the data directory and determine the latest spectra .csv file
+                synchronized (samplingLock) {
+
+                    File[] listOfFiles = null;
+                    Calendar maxCalendar = null;    //calendar date of the latest file
+
+                    File folder = new File(config.dataPath);
+                    if (folder.exists()) {
+                        listOfFiles = folder.listFiles();
+
+                        for (int i = 0; i < listOfFiles.length; i++) {
+                            if (listOfFiles[i].isFile()) {
+                                String filename = listOfFiles[i].getName();
+                                Matcher matcher = SPECTRA_FILENAME_REGEX.matcher(filename);
+                                boolean matchFound = matcher.find();
+                                if(matchFound) {
+                                    Calendar cal = Calendar.getInstance();
+                                    cal.set(Calendar.MONTH, Integer.parseInt(matcher.group(1)));
+                                    cal.set(Calendar.DAY_OF_MONTH, Integer.parseInt(matcher.group(2)));
+                                    cal.set(Calendar.YEAR, Integer.parseInt(matcher.group(3)));
+                                    cal.set(Calendar.HOUR_OF_DAY, Integer.parseInt(matcher.group(4)));
+                                    cal.set(Calendar.MINUTE, Integer.parseInt(matcher.group(5)));
+                                    cal.set(Calendar.SECOND, Integer.parseInt(matcher.group(6)));
+
+                                    /* if newer than current spectra .csv filename date*/
+                                    if (maxCalendar == null || !cal.before(maxCalendar)) {
+
+                                        //count lines of data in the file
+                                        Integer lineCount = 0;
+                                        String fullDataPath = config.dataPath+File.separator+filename;
+                                        try (BufferedReader br = new BufferedReader(new FileReader(fullDataPath, StandardCharsets.UTF_8))) {
+                                            while ((br.readLine()) != null) {
+                                                lineCount++;
+                                            }
+                                        } catch (Exception e){
+                                            parentSensor.getLogger().trace(e.toString());
+                                        }
+
+                                        /* if this is a valid data file with at least 4 lines... */
+                                        if (lineCount >= 4) {
+                                            /* set as the new latest file */
+                                            maxCalendar = cal;
+                                            latestSpectraFilename = filename;
+                                            deviceSerialNum = DEVICE_SERIAL_NUMBER_PREFIX + matcher.group(6);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        parentSensor.getLogger().trace("dataPath '"+config.dataPath+"' does not exist");
+                    }
+                }
+
+                /* read and output last (latest) row of radiation values from latest spectra file */
+                if (latestSpectraFilename != null && !latestSpectraFilename.isEmpty()) {
+                    String COMMA_DELIMITER = ",";
+                    String fullDataPath = config.dataPath+File.separator+latestSpectraFilename;
+                    try (BufferedReader br = new BufferedReader(new FileReader(fullDataPath, StandardCharsets.UTF_8))) {
+                        String binRow = br.readLine();
+                        String energyRow = br.readLine();
+                        String initialDataRow = br.readLine();
+                        String headerRow = br.readLine();
+                        String line;
+                        String lastLine = null;
+                        while ((line = br.readLine()) != null) {
+                            lastLine = line;
+                        }
+                        if ((lastLine != null) && lastLine.length()>0) {
+                            String[] columns = lastLine.split(COMMA_DELIMITER);
+                            int i = 0;  // datablock index
+                            dataBlock.setStringValue(i++, latestSpectraFilename);
+
+                            int c = 0;  // column index
+                            dataBlock.setStringValue(i++, columns[c++]);  //time
+                            dataBlock.setStringValue(i++, columns[c++]);  //date
+                            dataBlock.setStringValue(i++, columns[c++]);  //detectionID
+                            dataBlock.setDoubleValue(i++, Double.parseDouble(columns[c++]));  //confidence
+                            c++; //UNUSED
+                            c++; //UNUSED
+                            dataBlock.setDoubleValue(i++, Double.parseDouble(columns[c++]));  //latitude
+                            dataBlock.setDoubleValue(i++, Double.parseDouble(columns[c++]));  //longitude
+                            dataBlock.setDoubleValue(i++, Double.parseDouble(columns[c++]));  //processingTime
+                            dataBlock.setDoubleValue(i++, Double.parseDouble(columns[c++]));  //sensorTemp
+                            dataBlock.setDoubleValue(i++, Double.parseDouble(columns[c++]));  //battery
+                            dataBlock.setDoubleValue(i++, Double.parseDouble(columns[c++]));  //liveTime
+                            dataBlock.setIntValue(i++, Integer.parseInt(columns[c++]));  //neutronCount
+
+                            //dose
+                            Double dose = Double.parseDouble(columns[c++]);
+                            String doseUnit = columns[c++];
+                            if (doseUnit.endsWith("Sv/h")) {
+                                dataBlock.setDoubleValue(i++, dose);  //dose
+                            } else {
+                                dataBlock.setDoubleValue(i++, -999);
+                                parentSensor.getLogger().trace("ERROR: unknown dose unit (please set to µSv/h)");
+                            }
+
+                        }
+                    } catch (Exception e){
+                        parentSensor.getLogger().trace(e.toString());
+                    }
+                }
+
                 ++setCount;
 
-                // TODO: Populate data block
-                double time = System.currentTimeMillis() / 1000.0;
-
-                temp += variation(temp, tempRef, 0.001, 0.1);
-                press += variation(press, pressRef, 0.001, 0.1);
-
-                windSpeed += variation(windSpeed, windSpeedRef, 0.001, 0.1);
-                windSpeed = windSpeed < 0.0 ? 0.0 : windSpeed;
-
-                windDir += 1.0 * (2.0 * Math.random() - 1.0);
-                windDir = windDir < 0.0 ? windDir + 360.0 : windDir;
-                windDir = windDir > 360.0 ? windDir-360.0 : windDir;
-
-                parentSensor.getLogger().trace(String.format("temp=%5.2f, press=%4.2f, wind speed=%5.2f", temp, press, windSpeed, windDir));
-
-                dataBlock.setDoubleValue(0, time);
-                dataBlock.setDoubleValue(1, temp);
-                dataBlock.setDoubleValue(2, press);
-                dataBlock.setDoubleValue(3, windSpeed);
-                dataBlock.setDoubleValue(4, windDir);
+                parentSensor.getLogger().trace(String.format("latestSpectraFilename=%s", latestSpectraFilename));
 
                 latestRecord = dataBlock;
-
                 latestRecordTime = System.currentTimeMillis();
 
                 eventHandler.publish(new DataEvent(latestRecordTime, D3sOutput.this, dataBlock));
