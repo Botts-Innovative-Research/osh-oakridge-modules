@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema targetNamespace="http://www.handheldsrus.com/downloads/N42SchemaAddin" 
+            xmlns:n42="http://physics.nist.gov/N42/2011/N42" 
+            xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+            elementFormDefault="qualified">
+
+  <xsd:import namespace="http://physics.nist.gov/N42/2011/N42" 
+              schemaLocation="http://physics.nist.gov/N42/2011/n42.xsd"/>
+
+  <xsd:element name="HumidityValue" 
+               substitutionGroup="n42:RadMeasurementExtension" 
+               type="n42:NonNegativeDoubleSimpleType">
+    <xsd:annotation>
+      <xsd:documentation>The relative humidity at the time and location of the radiation measurement.</xsd:documentation>
+    </xsd:annotation>
+  </xsd:element>
+  <xsd:element name="TemperatureValue" 
+               substitutionGroup="n42:RadMeasurementExtension" 
+               type="xsd:double">
+    <xsd:annotation>
+      <xsd:documentation>The ambient temperature at the time and location of the radiation measurement in degrees centigrade (C).</xsd:documentation>
+    </xsd:annotation>
+  </xsd:element>
+</xsd:schema>
