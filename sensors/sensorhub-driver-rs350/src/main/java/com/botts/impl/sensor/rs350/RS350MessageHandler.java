@@ -41,7 +41,7 @@ public class RS350MessageHandler implements Runnable {
 
     public void handleOutput(String dataString) {
         if (config.outputs.enableRadInstrumentInformation) {
-            radInstrumentInformation.parseData();
+//            radInstrumentInformation.parseData();
         }
     }
 }

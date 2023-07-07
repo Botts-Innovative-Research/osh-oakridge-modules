@@ -25,9 +25,12 @@ import java.io.*;
 import java.lang.Boolean;
 import java.nio.charset.StandardCharsets;
 import java.text.Collator;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.sensorhub.impl.utils.rad.RADHelper;
 
 /**
  * Output specification and provider for ...
@@ -77,57 +80,45 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
 
         logger.debug("Initializing Output");
 
-        // Get an instance of SWE Factory suitable to build components
-//        GeoPosHelper sweFactory = new GeoPosHelper();
-        SWEHelper sweFactory = new SWEHelper();
+        RADHelper rad = new RADHelper();
 
         // TODO: Create data record description
-        dataStruct = sweFactory.createRecord()
+        dataStruct = rad.createRecord()
                 .name(getName())
-                .definition("urn:osh:data:radiation")
+                .definition(RADHelper.getRadUri("kromek-d3s"))
                 .description("Radiation measurements")
-//                .addField("time", sweFactory.createTime().asSamplingTimeIsoUTC())
-//                .addField("temperature", sweFactory.createQuantity()
-//                        .definition(SWEHelper.getCfUri("air_temperature"))
-//                        .label("Air Temperature")
-//                        .uomCode("Cel"))
-//                .addField("pressure", sweFactory.createQuantity()
-//                    .definition(SWEHelper.getCfUri("air_pressure"))
-//                    .label("Atmospheric Pressure")
-//                    .uomCode("hPa"))
-//                .addField("windSpeed", sweFactory.createQuantity()
-//                        .definition(SWEHelper.getCfUri("wind_speed"))
-//                        .label("Wind Speed")
-//                        .uomCode("m/s"))
-//                .addField("windDirection", sweFactory.createQuantity()
-//                        .definition(SWEHelper.getCfUri("wind_from_direction"))
-//                        .label("Wind Direction")
-//                        .uomCode("deg")
-//                        .refFrame(SWEConstants.REF_FRAME_NED, "z"))
-                .addField("latestFile", sweFactory.createText()
+                .addField("latestFile", rad.createText()
                         .label("Latest File"))
-                .addField("measurementTime", sweFactory.createText())
-                .addField("measurementDate", sweFactory.createText())
-                .addField("detectionID", sweFactory.createText())
-                .addField("confidence", sweFactory.createQuantity())
-                .addField("latitude", sweFactory.createQuantity()
-                        .uomCode("deg"))
-                .addField("longitude", sweFactory.createQuantity()
-                        .uomCode("deg"))
-                .addField("processingTime", sweFactory.createQuantity()
-                        .uomCode("ms"))
-                .addField("sensorTemp", sweFactory.createQuantity()
-                        .uomCode("Cel"))
-                .addField("battery", sweFactory.createQuantity()
-                        .uomCode("%"))
-                .addField("liveTime", sweFactory.createQuantity()
-                        .uomCode("ms"))
-                .addField("neutronCount", sweFactory.createCount())
-                .addField("dose", sweFactory.createQuantity()
-                        .uomCode("µSv/h"))
+                .addField("measurementTime", rad.createTime().asSamplingTimeIsoUTC())
+                .addField("detectionID",
+                        rad.createText()
+                                .label("Detection ID")
+                                .definition(RADHelper.getRadUri("detection-id")))
+                .addField("confidence",
+                        rad.createQuantity()
+                                .label("Confidence")
+                                .definition(RADHelper.getRadUri("confidence")))
+                .addField("location", rad.createLocationVectorLatLon())
+                .addField("processingTime",
+                        rad.createQuantity()
+                                .definition(RADHelper.getRadUri("processing-time"))
+                                .uomCode("ms"))
+                .addField("sensorTemp",
+                        rad.createQuantity()
+                                .label("Sensor Temp")
+                                .definition(RADHelper.getRadUri("sensor-temp"))
+                                .uomCode("Cel"))
+                .addField("batteryCharge", rad.createBatteryCharge())
+                .addField("liveTime",
+                        rad.createQuantity()
+                                .label("Live Time")
+                                .definition(RADHelper.getRadUri("live-time"))
+                                .uomCode("ms"))
+                .addField("neutronCount", rad.createNeutronCount())
+                .addField("dose", rad.createDoseUSVh())
                 .build();
 
-        dataEncoding = sweFactory.newTextEncoding(",", "\n");
+        dataEncoding = rad.newTextEncoding(",", "\n");
 
         worker = new Thread(this, this.name);
 
@@ -342,8 +333,14 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
                             dataBlock.setStringValue(i++, latestSpectraFilename);
 
                             int c = 0;  // column index
-                            dataBlock.setStringValue(i++, columns[c++]);  //time
-                            dataBlock.setStringValue(i++, columns[c++]);  //date
+                            String timeString = columns[c++];
+                            String dateString = columns[c++];
+                            String dateTimeString = dateString + " " + timeString;
+                            SimpleDateFormat df = new SimpleDateFormat("MM/dd/yyyy HH:mm:ss:SSS");
+                            Date date = df.parse(dateTimeString);
+                            long epoch = date.getTime();
+
+                            dataBlock.setLongValue(i++, epoch);  //time
                             dataBlock.setStringValue(i++, columns[c++]);  //detectionID
                             dataBlock.setDoubleValue(i++, Double.parseDouble(columns[c++]));  //confidence
                             c++; //UNUSED

@@ -21,7 +21,7 @@ public class OutputRadInstrumentInformation extends OutputBase {
         logger.debug("Output created");
     }
 
-    @Override
+
     protected void init() {
         logger.debug("Initializing Output");
 
@@ -72,7 +72,6 @@ public class OutputRadInstrumentInformation extends OutputBase {
 //        logger.debug("Initializing Output Complete");
 //    }
 
-    @Override
     public void parseData() {
         DataBlock dataBlock;
         if (latestRecord == null) {

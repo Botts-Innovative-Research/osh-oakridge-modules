@@ -64,6 +64,23 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public Count createNeutronCount(){
+        return createCount()
+                .name("NeutronCount")
+                .label("Neutron Count")
+                .definition(getRadUri("neutron-count"))
+                .build();
+    }
+
+    public Quantity createDoseUSVh(){
+        return createQuantity()
+                .name("Dose")
+                .label("Dose")
+                .definition(getRadUri("dose"))
+                .uomCode("uSv/h")
+                .build();
+    }
+
 
         //////////////////////////////// vvvv OLD vvvvvv ///////////////////////////////
 
