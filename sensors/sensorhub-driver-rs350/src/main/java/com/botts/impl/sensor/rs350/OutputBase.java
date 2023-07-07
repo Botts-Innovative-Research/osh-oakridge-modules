@@ -3,6 +3,7 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.rs350;
 
+import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
@@ -13,6 +14,7 @@ import org.vast.swe.helper.GeoPosHelper;
 public class OutputBase extends AbstractSensorOutput<RS350Sensor> {
      DataRecord dataStruct;
      DataEncoding dataEncoding;
+     DataBlock dataBlock;
 
     public OutputBase(String outputName, RS350Sensor parentSensor) {
         super(outputName, parentSensor);
@@ -39,9 +41,6 @@ public class OutputBase extends AbstractSensorOutput<RS350Sensor> {
         dataEncoding = sweFactory.newTextEncoding(",", "\n");
     }
 
-    public void parseData() {
-
-    }
 
     public void start(){
     }
