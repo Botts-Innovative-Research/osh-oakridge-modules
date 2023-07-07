@@ -336,9 +336,11 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
                             String timeString = columns[c++];
                             String dateString = columns[c++];
                             String dateTimeString = dateString + " " + timeString;
-                            SimpleDateFormat df = new SimpleDateFormat("MM/dd/yyyy HH:mm:ss:SSS");
+                            SimpleDateFormat df = new SimpleDateFormat("MM/dd/yyyy HH:mm:ss.SSS");
                             Date date = df.parse(dateTimeString);
-                            long epoch = date.getTime();
+                            long epoch = date.getTime()/1000;
+                            log.debug("date: " + date);
+                            log.debug("epoch: " + epoch);
 
                             dataBlock.setLongValue(i++, epoch);  //time
                             dataBlock.setStringValue(i++, columns[c++]);  //detectionID
