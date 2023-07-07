@@ -21,7 +21,7 @@ public class OutputRadInstrumentInformation extends OutputBase {
         logger.debug("Output created");
     }
 
-    @Override
+
     protected void init() {
         logger.debug("Initializing Output");
 
