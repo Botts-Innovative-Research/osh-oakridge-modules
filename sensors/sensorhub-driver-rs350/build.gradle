@@ -4,6 +4,12 @@ version = '0.1'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation project(':sensorhub-utils-rad')
+
+    implementation 'org.apache.commons:commons-lang3:3.12.0'
+    implementation 'jakarta.xml.bind:jakarta.xml.bind-api:3.0.1'
+    implementation 'com.fasterxml.woodstox:woodstox-core:6.2.6'
+    implementation 'org.glassfish.jaxb:jaxb-runtime:3.0.2'
 }
 
 osgi {
