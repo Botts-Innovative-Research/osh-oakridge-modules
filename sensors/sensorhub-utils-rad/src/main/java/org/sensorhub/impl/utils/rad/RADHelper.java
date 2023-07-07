@@ -2,7 +2,11 @@ package org.sensorhub.impl.utils.rad;
 
 import com.botts.impl.utils.n42.RadDetectorCategoryCodeSimpleType;
 import com.botts.impl.utils.n42.RadDetectorKindCodeSimpleType;
+import com.botts.impl.utils.n42.RadInstrumentDataType;
 import com.botts.impl.utils.n42.ValueDataClassCodeSimpleType;
+import jakarta.xml.bind.JAXBContext;
+import jakarta.xml.bind.JAXBException;
+import jakarta.xml.bind.Unmarshaller;
 import net.opengis.swe.v20.*;
 import org.vast.swe.SWEBuilders;
 import org.vast.swe.helper.GeoPosHelper;
@@ -10,6 +14,7 @@ import org.vast.swe.helper.RasterHelper;
 import org.vast.swe.SWEConstants;
 import org.vast.swe.SWEHelper;
 
+import java.io.StringReader;
 import java.lang.reflect.Array;
 
 
@@ -29,6 +34,38 @@ public class RADHelper extends GeoPosHelper {
     public static String getRadItemURI(String propName) {
         return RADConstants.RAD_URI + "rad-item-" + propName;
     }
+
+    ///////// UNMARSHALLER ///////////////
+    public RadInstrumentDataType getRadInstrumentData (String xmlString) {
+        RadInstrumentDataType radInstrumentData = new RadInstrumentDataType();
+        try {
+            JAXBContext jaxbContext = JAXBContext.newInstance(RadInstrumentDataType.class);
+            Unmarshaller jaxbUnmarshaller = jaxbContext.createUnmarshaller();
+            radInstrumentData = (RadInstrumentDataType) jaxbUnmarshaller.unmarshal(new StringReader(xmlString));
+        } catch (JAXBException e) {
+            e.printStackTrace();
+        }
+        return radInstrumentData;
+    }
+    public Time createPrecisionTimeStamp() {
+        return createTime()
+                .asSamplingTimeIsoUTC()
+                .name("time")
+                .description("time stamp: when the message was received")
+                .build();
+    }
+
+    public Quantity createBatteryCharge(){
+        return createQuantity()
+                .name("BatteryCharge")
+                .label("Battery Charge")
+                .definition(getRadInstrumentUri("battery-charge"))
+                .uomCode("%")
+                .build();
+    }
+
+
+        //////////////////////////////// vvvv OLD vvvvvv ///////////////////////////////
 
     // RadInstrumentInformation
     public Text createRIManufacturerName() {
