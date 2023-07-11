@@ -18,13 +18,10 @@ import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vast.swe.SWEConstants;
-import org.vast.swe.SWEHelper;
 
 import java.io.*;
 import java.lang.Boolean;
 import java.nio.charset.StandardCharsets;
-import java.text.Collator;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -185,20 +182,8 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    //reference values
-//    double tempRef = 20.0;
-//    double pressRef = 1013.0;
-//    double windSpeedRef = 5.0;
-//    double directionRef = 0.0;
-
-//    double temp = tempRef;
-//    double press = pressRef;
-//    double windSpeed = windSpeedRef;
-//    double windDir = directionRef;
-
     String latestSpectraFilename = new String("");
     String deviceSerialNum = new String("");
-
     String DEVICE_SERIAL_NUMBER_PREFIX = "SGM";
     Pattern SPECTRA_FILENAME_REGEX = Pattern.compile("(\\d+)\\.(\\d+)\\.(\\d+)_(\\d+)\\.(\\d+)\\.(\\d+)_"+DEVICE_SERIAL_NUMBER_PREFIX+"(\\d+)_Spectra\\.csv");
 
