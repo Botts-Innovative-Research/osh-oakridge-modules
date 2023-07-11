@@ -198,32 +198,10 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
 
     String latestSpectraFilename = new String("");
     String deviceSerialNum = new String("");
-    String measurementTime;
-    String measurementDate;
-    String measurementDetectionID;
-    double measurementConfidence;
-    double measurementLatitude;
-    double measurementLongitude;
-    double measurementProcessingTimeMsecs;
-    double measurementSensorTempDegC;
-    double measurementBatteryPercent;
-    double measurementLiveTimeMsecs;
-    double measurementNeutronCount;
-    double measurementDose;
-    String measurementDoseUnit;
-
-
-
 
     String DEVICE_SERIAL_NUMBER_PREFIX = "SGM";
     Pattern SPECTRA_FILENAME_REGEX = Pattern.compile("(\\d+)\\.(\\d+)\\.(\\d+)_(\\d+)\\.(\\d+)\\.(\\d+)_"+DEVICE_SERIAL_NUMBER_PREFIX+"(\\d+)_Spectra\\.csv");
 
-
-    private Random rand = new Random();
-
-    private double variation(double val, double ref, double dampingCoef, double noiseSigma) {
-        return -dampingCoef*(val-ref) + noiseSigma * rand.nextGaussian();
-    }
 
     @Override
     public void run() {
@@ -380,7 +358,7 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
 
                 eventHandler.publish(new DataEvent(latestRecordTime, D3sOutput.this, dataBlock));
 
-                Thread.sleep(5000);
+                Thread.sleep(1000);
 
                 synchronized (processingLock) {
 
