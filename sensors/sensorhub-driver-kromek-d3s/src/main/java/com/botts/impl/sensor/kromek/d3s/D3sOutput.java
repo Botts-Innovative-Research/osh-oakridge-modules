@@ -118,8 +118,6 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
 
         dataEncoding = rad.newTextEncoding(",", "\n");
 
-        worker = new Thread(this, this.name);
-
         logger.debug("Initializing Output Complete");
     }
 
@@ -127,9 +125,9 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
      * Begins processing data for output
      */
     public void doStart() {
-
+        stopProcessing = false;
+        worker = new Thread(this, this.name);
         logger.info("Starting worker thread: {}", worker.getName());
-
         worker.start();
     }
 
@@ -137,12 +135,9 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
      * Terminates processing data for output
      */
     public void doStop() {
-
         synchronized (processingLock) {
-
             stopProcessing = true;
         }
-
     }
 
     /**
