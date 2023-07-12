@@ -86,7 +86,8 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
                 .description("Radiation measurements")
                 .addField("latestFile", rad.createText()
                         .label("Latest File"))
-                .addField("measurementTime", rad.createTime().asSamplingTimeIsoUTC())
+                .addField("samplingTime", rad.createTime().asSamplingTimeIsoUTC())
+                .addField("phenomenonTime", rad.createTime().asPhenomenonTimeIsoUTC())
                 .addField("detectionID",
                         rad.createText()
                                 .label("Detection ID")
@@ -182,7 +183,7 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    String latestSpectraFilename = new String("");
+    String latestSpectraFilename = null;
     String deviceSerialNum = new String("");
     String DEVICE_SERIAL_NUMBER_PREFIX = "SGM";
     Pattern SPECTRA_FILENAME_REGEX = Pattern.compile("(\\d+)\\.(\\d+)\\.(\\d+)_(\\d+)\\.(\\d+)\\.(\\d+)_"+DEVICE_SERIAL_NUMBER_PREFIX+"(\\d+)_Spectra\\.csv");
@@ -199,9 +200,12 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
 
         try {
 
+            DataBlock dataBlock;
+            int epochIndex = -1;
+            long lastMeasurementEpoch = -1;
+
             while (processSets) {
 
-                DataBlock dataBlock;
                 if (latestRecord == null) {
 
                     dataBlock = dataStruct.createDataBlock();
@@ -223,8 +227,10 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
                 }
 
                 // read the all files in the data directory and determine the latest spectra .csv file
+
                 synchronized (samplingLock) {
 
+                    latestSpectraFilename = null;
                     File[] listOfFiles = null;
                     Calendar maxCalendar = null;    //calendar date of the latest file
 
@@ -277,7 +283,7 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
                 }
 
                 /* read and output last (latest) row of radiation values from latest spectra file */
-                if (latestSpectraFilename != null && !latestSpectraFilename.isEmpty()) {
+                if (latestSpectraFilename != null) {
                     String COMMA_DELIMITER = ",";
                     String fullDataPath = config.dataPath+File.separator+latestSpectraFilename;
                     try (BufferedReader br = new BufferedReader(new FileReader(fullDataPath, StandardCharsets.UTF_8))) {
@@ -295,6 +301,9 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
                             int i = 0;  // datablock index
                             dataBlock.setStringValue(i++, latestSpectraFilename);
 
+                            latestRecordTime = System.currentTimeMillis();
+                            dataBlock.setLongValue(i++, latestRecordTime/1000); //samplingTime
+
                             int c = 0;  // column index
                             String timeString = columns[c++];
                             String dateString = columns[c++];
@@ -302,10 +311,10 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
                             SimpleDateFormat df = new SimpleDateFormat("MM/dd/yyyy HH:mm:ss.SSS");
                             Date date = df.parse(dateTimeString);
                             long epoch = date.getTime()/1000;
-                            log.debug("date: " + date);
-                            log.debug("epoch: " + epoch);
 
-                            dataBlock.setLongValue(i++, epoch);  //time
+                            epochIndex = i;
+                            dataBlock.setLongValue(i++, epoch);  //phenomenonTime
+
                             dataBlock.setStringValue(i++, columns[c++]);  //detectionID
                             dataBlock.setDoubleValue(i++, Double.parseDouble(columns[c++]));  //confidence
                             c++; //UNUSED
@@ -332,21 +341,21 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
                     } catch (Exception e){
                         parentSensor.getLogger().trace(e.toString());
                     }
+
+                    ++setCount;
+                    latestRecord = dataBlock;
+                    if ((epochIndex >= 0) && (dataBlock != null)) {
+                        long measurementEpoch = dataBlock.getLongValue(epochIndex);
+                        if (measurementEpoch != lastMeasurementEpoch) {
+                            lastMeasurementEpoch = measurementEpoch;
+                            eventHandler.publish(new DataEvent(latestRecordTime, D3sOutput.this, dataBlock));
+                        }
+                    }
                 }
-
-                ++setCount;
-
-                parentSensor.getLogger().trace(String.format("latestSpectraFilename=%s", latestSpectraFilename));
-
-                latestRecord = dataBlock;
-                latestRecordTime = System.currentTimeMillis();
-
-                eventHandler.publish(new DataEvent(latestRecordTime, D3sOutput.this, dataBlock));
 
                 Thread.sleep(1000);
 
                 synchronized (processingLock) {
-
                     processSets = !stopProcessing;
                 }
             }
