@@ -17,6 +17,7 @@ rootProject.allprojects {
     repositories {
         mavenCentral()
         maven { url "file:///$thisProjectDir/libs"}
+        google()
     }
 }
 
