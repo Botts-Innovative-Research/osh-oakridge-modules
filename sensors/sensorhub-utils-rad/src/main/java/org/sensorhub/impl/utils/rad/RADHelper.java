@@ -64,6 +64,84 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public DataArray createLinCalibration(){
+        return createArray()
+                .name("LinCalibration")
+                .label("Lin Calibration")
+                .definition(getRadUri("lin-cal"))
+                .withFixedSize(3)
+                .build();
+    }
+
+    public DataArray createCmpCalibration(){
+        return createArray()
+                .name("CmpCalibration")
+                .label("Cmp Calibration")
+                .definition(getRadUri("cmp-cal"))
+                .withFixedSize(3)
+                .build();
+    }
+
+    public Count createArraySize(String name, String fieldID){
+        return createCount()
+                .name(name)
+                .label(name)
+                .description("length of array")
+                .id(fieldID)
+                .build();
+    }
+
+    public DataArray createLinSpectrum(String fieldID){
+        return createArray()
+                .name("LinSpectrum")
+                .label("Lin Spectrum")
+                .definition(getRadUri("lin-spectrum"))
+                .withVariableSize(fieldID)
+                .build();
+    }
+
+    public DataArray createCmpSpectrum(String fieldID){
+        return createArray()
+                .name("LinSpectrum")
+                .label("Lin Spectrum")
+                .definition(getRadUri("lin-spectrum"))
+                .withVariableSize(fieldID)
+                .build();
+    }
+
+    public Count createGammaGrossCount(){
+        return createCount()
+                .name("GammaGrossCount")
+                .label("Gamma Gross Count")
+                .definition(getRadUri("gamma-gross-count"))
+                .build();
+    }
+
+    public Count createNeutronGrossCount(){
+        return createCount()
+                .name("NeutronGrossCount")
+                .label("Neutron Gross Count")
+                .definition(getRadUri("neutron-gross-count"))
+                .build();
+    }
+
+    public Count createNeutronCount(){
+        return createCount()
+                .name("NeutronCount")
+                .label("Neutron Count")
+                .definition(getRadUri("neutron-count"))
+                .build();
+    }
+
+    public Quantity createDoseUSVh(){
+        return createQuantity()
+                .name("Dose")
+                .label("Dose")
+                .definition(getRadUri("dose"))
+                .uomCode("uSv/h")
+                .build();
+    }
+
 
         //////////////////////////////// vvvv OLD vvvvvv ///////////////////////////////
 
