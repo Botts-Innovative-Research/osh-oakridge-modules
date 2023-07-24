@@ -22,4 +22,5 @@ public class DerivedDataOutput extends OutputBase{
         dataStruct = radHelper.createRecord()
                 .build();
     }
+
 }

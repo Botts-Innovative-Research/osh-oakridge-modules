@@ -21,19 +21,20 @@ public class RS350MessageHandler implements Runnable {
     BackgroundOutput backgroundOutput;
     ForegroundOutput foregroundOutput;
     DerivedDataOutput derivedDataOutput;
+    AlarmOutput alarmOutput;
 
     RADHelper radHelper = new RADHelper();
 
     static final Logger log = LoggerFactory.getLogger(OutputBase.class);
 
-    public RS350MessageHandler(RS350Sensor sensor, InputStream msgIn, LocationOutput locationOutput, StatusOutput statusOutput, BackgroundOutput backgroundOutput, ForegroundOutput foregroundOutput, DerivedDataOutput derivedDataOutput) {
+    public RS350MessageHandler(RS350Sensor sensor, InputStream msgIn, LocationOutput locationOutput, StatusOutput statusOutput, BackgroundOutput backgroundOutput, ForegroundOutput foregroundOutput, AlarmOutput alarmOutput) {
         this.sensor = sensor;
         this.msgIn = msgIn;
         this.locationOutput = locationOutput;
         this.statusOutput = statusOutput;
         this.backgroundOutput = backgroundOutput;
         this.foregroundOutput = foregroundOutput;
-        this.derivedDataOutput = derivedDataOutput;
+        this.alarmOutput = alarmOutput;
 
         config = sensor.getConfiguration();
         worker = new Thread(this, "RS350 Message Handler");
@@ -92,9 +93,9 @@ public class RS350MessageHandler implements Runnable {
             foregroundOutput.parseData(rs350Message);
         }
 
-//        if (config.outputs.enableDerivedData && rs350Message.getRs350DerivedData() != null){
-//            derivedDataOutput.parseData(rs350Message);
-//        }
+        if (config.outputs.enableAlarmOutput && rs350Message.getRs350DerivedData() != null){
+            alarmOutput.parseData(rs350Message);
+        }
 
 
     }

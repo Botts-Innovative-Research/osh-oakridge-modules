@@ -22,6 +22,7 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
     BackgroundOutput backgroundOutput;
     ForegroundOutput foregroundOutput;
     DerivedDataOutput derivedDataOutput;
+    AlarmOutput alarmOutput;
 
     RS350MessageHandler messageHandler;
     Boolean processLock;
@@ -68,6 +69,12 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
             addOutput(derivedDataOutput, false);
             derivedDataOutput.init();
         }
+
+        if (config.outputs.enableAlarmOutput){
+            alarmOutput = new AlarmOutput(this);
+            addOutput(alarmOutput, false);
+            alarmOutput.init();
+        }
     }
 
     @Override
@@ -96,7 +103,7 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
         }
 
 
-        messageHandler = new RS350MessageHandler(this, msgIn, locationOutput, statusOutput, backgroundOutput, foregroundOutput, derivedDataOutput);
+        messageHandler = new RS350MessageHandler(this, msgIn, locationOutput, statusOutput, backgroundOutput, foregroundOutput, alarmOutput);
 
         processLock = false;
 

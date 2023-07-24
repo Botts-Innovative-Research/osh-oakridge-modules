@@ -6,6 +6,7 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.DataBlockMixed;
+import org.vast.data.TextEncodingImpl;
 
 public class BackgroundOutput  extends OutputBase{
 
@@ -44,6 +45,7 @@ public class BackgroundOutput  extends OutputBase{
                 .addField("Neutron Gross Count", radHelper.createNeutronGrossCount())
                 .build();
 
+        dataEncoding = new TextEncodingImpl(",", "\n");
 
     }
 

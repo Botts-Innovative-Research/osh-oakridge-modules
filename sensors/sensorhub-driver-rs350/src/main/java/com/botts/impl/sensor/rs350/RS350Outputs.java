@@ -19,6 +19,9 @@ public class RS350Outputs {
     public boolean enableForegroundOutput = true;
 
     @DisplayInfo(label = "Derived Data", desc = "Contains analytically derived data. Includes some Alarm data")
-    public boolean enableDerivedData = true;
+    public boolean enableDerivedData = false;
+
+    @DisplayInfo(label = "Alarm", desc = "Includes Derived Data and Alarm Data")
+    public boolean enableAlarmOutput = true;
 }
 

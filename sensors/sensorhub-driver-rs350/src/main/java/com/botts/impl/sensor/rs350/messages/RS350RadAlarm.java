@@ -8,4 +8,12 @@ public class RS350RadAlarm {
 
     String categoryCode;
     String description;
+
+    public String getCategoryCode() {
+        return categoryCode;
+    }
+
+    public String getDescription() {
+        return description;
+    }
 }

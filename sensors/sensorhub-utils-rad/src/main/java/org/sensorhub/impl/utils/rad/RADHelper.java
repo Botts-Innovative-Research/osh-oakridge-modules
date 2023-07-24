@@ -1,9 +1,6 @@
 package org.sensorhub.impl.utils.rad;
 
-import com.botts.impl.utils.n42.RadDetectorCategoryCodeSimpleType;
-import com.botts.impl.utils.n42.RadDetectorKindCodeSimpleType;
-import com.botts.impl.utils.n42.RadInstrumentDataType;
-import com.botts.impl.utils.n42.ValueDataClassCodeSimpleType;
+import com.botts.impl.utils.n42.*;
 import jakarta.xml.bind.JAXBContext;
 import jakarta.xml.bind.JAXBException;
 import jakarta.xml.bind.Unmarshaller;
@@ -125,13 +122,6 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-    public Count createNeutronCount(){
-        return createCount()
-                .name("NeutronCount")
-                .label("Neutron Count")
-                .definition(getRadUri("neutron-count"))
-                .build();
-    }
 
     public Quantity createDoseUSVh(){
         return createQuantity()
@@ -139,6 +129,24 @@ public class RADHelper extends GeoPosHelper {
                 .label("Dose")
                 .definition(getRadUri("dose"))
                 .uomCode("uSv/h")
+                .build();
+    }
+
+    public Category createMeasurementClassCode(){
+        return createCategory()
+                .name("MeasurementClassCode")
+                .label("Measurement Class Code")
+                .definition(getRadUri("measurement-class-code"))
+                .addAllowedValues(MeasurementClassCodeSimpleType.FOREGROUND.value(), MeasurementClassCodeSimpleType.INTRINSIC_ACTIVITY.value(), MeasurementClassCodeSimpleType.BACKGROUND.value(), MeasurementClassCodeSimpleType.NOT_SPECIFIED.value(), MeasurementClassCodeSimpleType.CALIBRATION.value())
+                .build();
+    }
+
+    public Category createAlarmCatCode(){
+        return createCategory()
+                .name("AlarmCategoryCode")
+                .label("Alarm Category Code")
+                .definition(getRadUri("alarm-category-code"))
+                .addAllowedValues(RadAlarmCategoryCodeSimpleType.ALPHA.value(),RadAlarmCategoryCodeSimpleType.NEUTRON.value(),RadAlarmCategoryCodeSimpleType.BETA.value(),RadAlarmCategoryCodeSimpleType.GAMMA.value(),RadAlarmCategoryCodeSimpleType.OTHER.value(),RadAlarmCategoryCodeSimpleType.ISOTOPE.value())
                 .build();
     }
 

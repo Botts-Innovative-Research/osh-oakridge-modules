@@ -6,6 +6,7 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.DataBlockMixed;
+import org.vast.data.TextEncodingImpl;
 
 public class ForegroundOutput  extends OutputBase{
 
@@ -43,6 +44,9 @@ public class ForegroundOutput  extends OutputBase{
                 .addField("NeutronGrossCount", radHelper.createNeutronGrossCount())
                 .addField("DoseRate", radHelper.createDoseUSVh())
                 .build();
+
+        dataEncoding = new TextEncodingImpl(",", "\n");
+
     }
 
     public void parseData(RS350Message msg){

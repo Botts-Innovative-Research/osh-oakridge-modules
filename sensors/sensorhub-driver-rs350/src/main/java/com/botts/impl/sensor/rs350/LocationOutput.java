@@ -1,6 +1,7 @@
 package com.botts.impl.sensor.rs350;
 
 import com.botts.impl.sensor.rs350.messages.RS350Message;
+import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,5 +47,8 @@ public class LocationOutput extends OutputBase{
         dataBlock.setDoubleValue(1, msg.getRs350ForegroundMeasurement().getLat());
         dataBlock.setDoubleValue(2, msg.getRs350ForegroundMeasurement().getLon());
         dataBlock.setDoubleValue(3, msg.getRs350ForegroundMeasurement().getAlt());
+
+        eventHandler.publish(new DataEvent(latestRecordTime, LocationOutput.this, dataBlock));
+
     }
 }
