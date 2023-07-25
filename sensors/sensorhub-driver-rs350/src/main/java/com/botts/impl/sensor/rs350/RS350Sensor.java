@@ -17,7 +17,13 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
     private static final Logger logger = LoggerFactory.getLogger(RS350Sensor.class);
 
     ICommProvider<?> commProvider;
-    OutputRadInstrumentInformation outputRadInstrumentInformation;
+    LocationOutput locationOutput;
+    StatusOutput statusOutput;
+    BackgroundOutput backgroundOutput;
+    ForegroundOutput foregroundOutput;
+    DerivedDataOutput derivedDataOutput;
+    AlarmOutput alarmOutput;
+
     RS350MessageHandler messageHandler;
     Boolean processLock;
     InputStream msgIn;
@@ -34,11 +40,40 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
         generateUniqueID("urn:rsi:rs350:", config.serialNumber);
         generateXmlID("rsi_rs350_", config.serialNumber);
 
-        // Create and initialize outputs
-        if (config.outputs.enableRadInstrumentInformation) {
-            outputRadInstrumentInformation = new OutputRadInstrumentInformation(this);
-            addOutput(outputRadInstrumentInformation, false);
-            outputRadInstrumentInformation.init();
+        if (config.outputs.enableLocationOutput){
+            locationOutput = new LocationOutput(this);
+            addOutput(locationOutput, false);
+            locationOutput.init();
+        }
+
+        if (config.outputs.enableStatusOutput){
+            statusOutput = new StatusOutput(this);
+            addOutput(statusOutput, false);
+            statusOutput.init();
+        }
+
+        if (config.outputs.enableBackgroundOutput){
+            backgroundOutput = new BackgroundOutput(this);
+            addOutput(backgroundOutput, false);
+            backgroundOutput.init();
+        }
+
+        if (config.outputs.enableForegroundOutput){
+            foregroundOutput = new ForegroundOutput(this);
+            addOutput(foregroundOutput, false);
+            foregroundOutput.init();
+        }
+
+        if (config.outputs.enableDerivedData){
+            derivedDataOutput = new DerivedDataOutput(this);
+            addOutput(derivedDataOutput, false);
+            derivedDataOutput.init();
+        }
+
+        if (config.outputs.enableAlarmOutput){
+            alarmOutput = new AlarmOutput(this);
+            addOutput(alarmOutput, false);
+            alarmOutput.init();
         }
     }
 
@@ -68,7 +103,7 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
         }
 
 
-        messageHandler = new RS350MessageHandler(this, msgIn, outputRadInstrumentInformation);
+        messageHandler = new RS350MessageHandler(this, msgIn, locationOutput, statusOutput, backgroundOutput, foregroundOutput, alarmOutput);
 
         processLock = false;
 

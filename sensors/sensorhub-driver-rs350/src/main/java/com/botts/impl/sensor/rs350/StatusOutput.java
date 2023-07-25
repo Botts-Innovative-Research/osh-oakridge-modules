@@ -1,9 +1,12 @@
 package com.botts.impl.sensor.rs350;
 
+import com.botts.impl.sensor.rs350.messages.RS350Message;
 import com.botts.impl.utils.n42.*;
+import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.vast.data.DataBlockMixed;
 import org.vast.data.TextEncodingImpl;
 
 import java.util.List;
@@ -28,9 +31,9 @@ public class StatusOutput  extends OutputBase{
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
-                .label("status")
+                .label("Status")
                 .definition(radHelper.getRadUri("device-status"))
-                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
+                .addField("Latest Record Time", radHelper.createPrecisionTimeStamp())
                 .addField("Battery Charge", radHelper.createBatteryCharge())
                 .addField("Scan Mode",
                         radHelper.createText()
@@ -45,14 +48,13 @@ public class StatusOutput  extends OutputBase{
                                 .definition(radHelper.getRadUri("scan-timeout"))
                                 .build())
                 .addField("Analysis Enabled",
-                        radHelper.createQuantity()
+                        radHelper.createText()
                                 .name("AnalysisEnabled")
                                 .label("Analysis Enabled")
                                 .definition(radHelper.getRadUri("analysis-enabled"))
                                 .build())
-                // TODO: ADD LIN ENERGY CALIBRATION
-                // TODO: ADD CMP ENERYG CALIBRATION
-                .addField("Location", radHelper.createLocationVectorLLA())
+                .addField("LinCalibration", radHelper.createLinCalibration())
+                .addField("CmpCalibration", radHelper.createCmpCalibration())
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
@@ -69,7 +71,7 @@ public class StatusOutput  extends OutputBase{
         // Location (location vector)
     }
 
-    public void parseData(RadInstrumentDataType radData){
+    public void parseData(RS350Message msg){
         if (latestRecord == null)
             dataBlock = dataStruct.createDataBlock();
         else
@@ -77,10 +79,15 @@ public class StatusOutput  extends OutputBase{
 
         latestRecordTime = System.currentTimeMillis();
 
+        dataBlock.setLongValue(0, latestRecordTime);
+        dataBlock.setDoubleValue(1, msg.getRs350InstrumentCharacteristics().getBatteryCharge());
+        dataBlock.setStringValue(2, msg.getRs350Item().getRsiScanMode());
+        dataBlock.setDoubleValue(3, msg.getRs350Item().getRsiScanTimeoutNumber());
+        dataBlock.setStringValue(4, msg.getRs350Item().getRsiAnalysisEnabled());
+        ((DataBlockMixed) dataBlock).getUnderlyingObject()[5].setUnderlyingObject(msg.getRs350LinEnergyCalibration());
+        ((DataBlockMixed) dataBlock).getUnderlyingObject()[6].setUnderlyingObject(msg.getRs350CmpEnergyCalibration());
 
-
-
-
+        eventHandler.publish(new DataEvent(latestRecordTime, StatusOutput.this, dataBlock));
     }
 
 

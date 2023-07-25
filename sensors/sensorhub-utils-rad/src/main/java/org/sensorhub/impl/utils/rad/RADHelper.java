@@ -1,9 +1,6 @@
 package org.sensorhub.impl.utils.rad;
 
-import com.botts.impl.utils.n42.RadDetectorCategoryCodeSimpleType;
-import com.botts.impl.utils.n42.RadDetectorKindCodeSimpleType;
-import com.botts.impl.utils.n42.RadInstrumentDataType;
-import com.botts.impl.utils.n42.ValueDataClassCodeSimpleType;
+import com.botts.impl.utils.n42.*;
 import jakarta.xml.bind.JAXBContext;
 import jakarta.xml.bind.JAXBException;
 import jakarta.xml.bind.Unmarshaller;
@@ -61,6 +58,95 @@ public class RADHelper extends GeoPosHelper {
                 .label("Battery Charge")
                 .definition(getRadInstrumentUri("battery-charge"))
                 .uomCode("%")
+                .build();
+    }
+
+    public DataArray createLinCalibration(){
+        return createArray()
+                .name("LinCalibration")
+                .label("Lin Calibration")
+                .definition(getRadUri("lin-cal"))
+                .withFixedSize(3)
+                .build();
+    }
+
+    public DataArray createCmpCalibration(){
+        return createArray()
+                .name("CmpCalibration")
+                .label("Cmp Calibration")
+                .definition(getRadUri("cmp-cal"))
+                .withFixedSize(3)
+                .build();
+    }
+
+    public Count createArraySize(String name, String fieldID){
+        return createCount()
+                .name(name)
+                .label(name)
+                .description("length of array")
+                .id(fieldID)
+                .build();
+    }
+
+    public DataArray createLinSpectrum(String fieldID){
+        return createArray()
+                .name("LinSpectrum")
+                .label("Lin Spectrum")
+                .definition(getRadUri("lin-spectrum"))
+                .withVariableSize(fieldID)
+                .build();
+    }
+
+    public DataArray createCmpSpectrum(String fieldID){
+        return createArray()
+                .name("LinSpectrum")
+                .label("Lin Spectrum")
+                .definition(getRadUri("lin-spectrum"))
+                .withVariableSize(fieldID)
+                .build();
+    }
+
+    public Count createGammaGrossCount(){
+        return createCount()
+                .name("GammaGrossCount")
+                .label("Gamma Gross Count")
+                .definition(getRadUri("gamma-gross-count"))
+                .build();
+    }
+
+    public Count createNeutronGrossCount(){
+        return createCount()
+                .name("NeutronGrossCount")
+                .label("Neutron Gross Count")
+                .definition(getRadUri("neutron-gross-count"))
+                .build();
+    }
+
+
+    public Quantity createDoseUSVh(){
+        return createQuantity()
+                .name("Dose")
+                .label("Dose")
+                .definition(getRadUri("dose"))
+                .uomCode("uSv/h")
+                .build();
+    }
+
+    public Category createMeasurementClassCode(){
+        return createCategory()
+                .name("MeasurementClassCode")
+                .label("Measurement Class Code")
+                .definition(getRadUri("measurement-class-code"))
+                .addAllowedValues(MeasurementClassCodeSimpleType.FOREGROUND.value(), MeasurementClassCodeSimpleType.INTRINSIC_ACTIVITY.value(), MeasurementClassCodeSimpleType.BACKGROUND.value(), MeasurementClassCodeSimpleType.NOT_SPECIFIED.value(), MeasurementClassCodeSimpleType.CALIBRATION.value())
+                .build();
+    }
+
+    public Category createAlarmCatCode(){
+        return createCategory()
+                .name("AlarmCategoryCode")
+                .label("Alarm Category Code")
+                .definition(getRadUri("alarm-category-code"))
+                .addAllowedValues(RadAlarmCategoryCodeSimpleType.ALPHA.value(),RadAlarmCategoryCodeSimpleType.NEUTRON.value(),RadAlarmCategoryCodeSimpleType.BETA.value(),RadAlarmCategoryCodeSimpleType.GAMMA.value(),RadAlarmCategoryCodeSimpleType.OTHER.value(),RadAlarmCategoryCodeSimpleType.ISOTOPE.value())
                 .build();
     }
 
