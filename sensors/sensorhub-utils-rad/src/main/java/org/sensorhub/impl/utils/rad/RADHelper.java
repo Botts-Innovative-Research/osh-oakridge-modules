@@ -107,15 +107,27 @@ public class RADHelper extends GeoPosHelper {
                 .label("Lin Spectrum")
                 .definition(getRadUri("lin-spectrum"))
                 .withVariableSize(fieldID)
+                .withElement("LinSpectrumValues", createQuantity()
+                        .label("Lin Spectrum Values")
+                        .definition(getRadUri("lin-spectrum-vals"))
+                        .description("Spectrum Values")
+                        .dataType(DataType.DOUBLE)
+                        .build())
                 .build();
     }
 
     public DataArray createCmpSpectrum(String fieldID){
         return createArray()
-                .name("LinSpectrum")
-                .label("Lin Spectrum")
-                .definition(getRadUri("lin-spectrum"))
+                .name("CmpSpectrum")
+                .label("Cmp Spectrum")
+                .definition(getRadUri("cmp-spectrum"))
                 .withVariableSize(fieldID)
+                .withElement("CmpSpectrumValues", createQuantity()
+                        .label("Cmp Spectrum Values")
+                        .definition(getRadUri("cmp-spectrum-vals"))
+                        .description("Spectrum Values")
+                        .dataType(DataType.DOUBLE)
+                        .build())
                 .build();
     }
 
