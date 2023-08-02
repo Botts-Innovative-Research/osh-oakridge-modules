@@ -1,15 +1,12 @@
 package com.botts.impl.sensor.rs350;
 
 import com.botts.impl.sensor.rs350.messages.RS350Message;
-import com.botts.impl.utils.n42.*;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.DataBlockMixed;
 import org.vast.data.TextEncodingImpl;
-
-import java.util.List;
 
 public class StatusOutput  extends OutputBase{
 
@@ -24,11 +21,10 @@ public class StatusOutput  extends OutputBase{
 
     @Override
     protected void init(){
+
         RADHelper radHelper = new RADHelper();
 
-
         // OUTPUT
-
         dataStruct = radHelper.createRecord()
                 .name(getName())
                 .label("Status")
@@ -89,7 +85,4 @@ public class StatusOutput  extends OutputBase{
 
         eventHandler.publish(new DataEvent(latestRecordTime, StatusOutput.this, dataBlock));
     }
-
-
-
 }

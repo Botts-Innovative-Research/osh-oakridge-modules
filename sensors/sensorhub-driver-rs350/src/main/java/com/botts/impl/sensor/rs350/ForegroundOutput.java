@@ -12,7 +12,7 @@ public class ForegroundOutput  extends OutputBase{
 
     private static final String SENSOR_OUTPUT_NAME = "RS350 Foreground Report";
 
-    private static final Logger logger = LoggerFactory.getLogger(StatusOutput.class);
+    private static final Logger logger = LoggerFactory.getLogger(ForegroundOutput.class);
 
     public ForegroundOutput(RS350Sensor parentSensor){
         super(SENSOR_OUTPUT_NAME, parentSensor);

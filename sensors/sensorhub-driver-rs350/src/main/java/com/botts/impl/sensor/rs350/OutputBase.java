@@ -8,13 +8,11 @@ import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
-import org.vast.swe.SWEHelper;
-import org.vast.swe.helper.GeoPosHelper;
 
-public class OutputBase extends AbstractSensorOutput<RS350Sensor> {
-     DataRecord dataStruct;
-     DataEncoding dataEncoding;
-     DataBlock dataBlock;
+public abstract class OutputBase extends AbstractSensorOutput<RS350Sensor> {
+    protected DataRecord dataStruct;
+    protected DataEncoding dataEncoding;
+    protected DataBlock dataBlock;
 
     public OutputBase(String outputName, RS350Sensor parentSensor) {
         super(outputName, parentSensor);
@@ -24,29 +22,7 @@ public class OutputBase extends AbstractSensorOutput<RS350Sensor> {
      * Initializes the data structure for the output, defining the fields, their ordering,
      * and data types.
      */
-    protected  void init() {
-        // Get an instance of SWE Factory suitable to build components
-        GeoPosHelper sweFactory = new GeoPosHelper();
-
-        // SWE Common data structure
-        dataStruct = sweFactory.createRecord()
-                .name(getName())
-                .addSamplingTimeIsoUTC("time")
-                .addField("test", sweFactory.createText()
-                        .definition(SWEHelper.getPropertyUri("test"))
-                        .label("test")
-                        .description("test"))
-                .build();
-
-        dataEncoding = sweFactory.newTextEncoding(",", "\n");
-    }
-
-
-    public void start(){
-    }
-
-    public void stop() {
-    }
+    protected abstract void init();
 
     @Override
     public DataComponent getRecordDescription() {
@@ -60,6 +36,6 @@ public class OutputBase extends AbstractSensorOutput<RS350Sensor> {
 
     @Override
     public double getAverageSamplingPeriod() {
-        return 0;
+        return 1.0;
     }
 }

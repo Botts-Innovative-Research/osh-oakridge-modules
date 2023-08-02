@@ -5,13 +5,14 @@ package com.botts.impl.sensor.rs350;
 
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.sensorhub.api.sensor.SensorException;
-import java.io.InputStream;
+
 import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 
 public class RS350Sensor extends AbstractSensorModule<RS350Config> {
     private static final Logger logger = LoggerFactory.getLogger(RS350Sensor.class);

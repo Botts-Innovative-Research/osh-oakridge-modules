@@ -67,15 +67,28 @@ public class RADHelper extends GeoPosHelper {
                 .label("Lin Calibration")
                 .definition(getRadUri("lin-cal"))
                 .withFixedSize(3)
+                .withElement("LinCalibrationValues", createQuantity()
+                        .label("Lin Calibration Values")
+                        .definition(getRadUri("lin-cal-vals"))
+                        .description("Linear Calibration Values")
+                        .dataType(DataType.DOUBLE)
+                        .build())
                 .build();
     }
 
     public DataArray createCmpCalibration(){
+
         return createArray()
                 .name("CmpCalibration")
                 .label("Cmp Calibration")
                 .definition(getRadUri("cmp-cal"))
                 .withFixedSize(3)
+                .withElement("CmpCalibrationValues", createQuantity()
+                        .label("Cmp Calibration Values")
+                        .definition(getRadUri("cmp-cal-vals"))
+                        .description("Calibration Values")
+                        .dataType(DataType.DOUBLE)
+                        .build())
                 .build();
     }
 

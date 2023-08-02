@@ -5,22 +5,21 @@ import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vast.data.DataBlockMixed;
 import org.vast.data.TextEncodingImpl;
 
-public class AlarmOutput  extends OutputBase{
+public class AlarmOutput extends OutputBase {
 
     private static final String SENSOR_OUTPUT_NAME = "RS350 Alarm";
 
-    private static final Logger logger = LoggerFactory.getLogger(StatusOutput.class);
+    private static final Logger logger = LoggerFactory.getLogger(AlarmOutput.class);
 
-    public AlarmOutput(RS350Sensor parentSensor){
+    public AlarmOutput(RS350Sensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
         logger.debug(SENSOR_OUTPUT_NAME + " output created");
     }
 
     @Override
-    protected void init(){
+    protected void init() {
         //TODO: Import N42Helper
         RADHelper radHelper = new RADHelper();
 
@@ -51,10 +50,9 @@ public class AlarmOutput  extends OutputBase{
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
-
     }
 
-    public void parseData(RS350Message msg){
+    public void parseData(RS350Message msg) {
         if (latestRecord == null)
             dataBlock = dataStruct.createDataBlock();
         else
