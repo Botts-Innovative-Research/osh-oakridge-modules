@@ -57,6 +57,8 @@ public class StatusOutput  extends OutputBase{
                 .addField("CmpCalibration", radHelper.createCmpCalibration())
                 .build();
 
+        logger.info("status output dataStruct created");
+
         dataEncoding = new TextEncodingImpl(",", "\n");
 
         // Time

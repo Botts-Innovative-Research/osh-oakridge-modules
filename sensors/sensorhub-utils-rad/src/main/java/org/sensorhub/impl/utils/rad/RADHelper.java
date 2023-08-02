@@ -61,6 +61,15 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public DataArray createCalibration(String arrayCount){
+        return createArray()
+                .name("EnergyCalibration")
+                .label("Energy Calibration")
+                .definition(getRadUri("energy-calibration"))
+                .withVariableSize(arrayCount)
+                .build();
+    }
+
     public DataArray createLinCalibration(){
         return createArray()
                 .name("LinCalibration")
@@ -93,6 +102,15 @@ public class RADHelper extends GeoPosHelper {
                 .name("LinSpectrum")
                 .label("Lin Spectrum")
                 .definition(getRadUri("lin-spectrum"))
+                .withVariableSize(fieldID)
+                .build();
+    }
+
+    public DataArray createSpectrum(String fieldID){
+        return createArray()
+                .name("Spectrum")
+                .label("Spectrum")
+                .definition(getRadUri("spectrum"))
                 .withVariableSize(fieldID)
                 .build();
     }
@@ -147,6 +165,15 @@ public class RADHelper extends GeoPosHelper {
                 .label("Alarm Category Code")
                 .definition(getRadUri("alarm-category-code"))
                 .addAllowedValues(RadAlarmCategoryCodeSimpleType.ALPHA.value(),RadAlarmCategoryCodeSimpleType.NEUTRON.value(),RadAlarmCategoryCodeSimpleType.BETA.value(),RadAlarmCategoryCodeSimpleType.GAMMA.value(),RadAlarmCategoryCodeSimpleType.OTHER.value(),RadAlarmCategoryCodeSimpleType.ISOTOPE.value())
+                .build();
+    }
+
+    public Category createAnalysisResultStatus(){
+        return createCategory()
+                .name("ResultStatus")
+                .label("Result Status")
+                .definition(getRadUri("result-status"))
+                .addAllowedValues(AnalysisResultStatusCodeSimpleType.SUCCESS.value(), AnalysisResultStatusCodeSimpleType.FAILURE.value())
                 .build();
     }
 

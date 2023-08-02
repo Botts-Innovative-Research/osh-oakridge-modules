@@ -1,0 +1,32 @@
+description = 'Kromek D5'
+ext.details = 'mobile radiation sensor'
+version = '0.1'
+
+dependencies {
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation project(':sensorhub-utils-rad')
+
+    implementation 'org.apache.commons:commons-lang3:3.12.0'
+    implementation 'jakarta.xml.bind:jakarta.xml.bind-api:3.0.1'
+    implementation 'com.fasterxml.woodstox:woodstox-core:6.2.6'
+    implementation 'org.glassfish.jaxb:jaxb-runtime:3.0.2'
+}
+
+osgi {
+    manifest {
+        attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
+        attributes('Bundle-Activator': 'com.botts.impl.sensor.rs350.RS350Activator')
+    }
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'drewbotts'
+            name 'Drew Botts'
+            organization 'Botts Innovative Research'
+            organizationUrl 'http://www.botts-inc.com'
+        }
+    }
+}

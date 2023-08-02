@@ -1,7 +1,7 @@
 /***************************** BEGIN LICENSE BLOCK ***************************
  Copyright (C) 2023 Botts Innovative Research, Inc. All Rights Reserved.
  ******************************* END LICENSE BLOCK ***************************/
-package com.botts.impl.sensor.rs350;
+package com.botts.impl.sensor.kromekd5;
 
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
@@ -13,22 +13,20 @@ import java.io.InputStream;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 
-public class RS350Sensor extends AbstractSensorModule<RS350Config> {
-    private static final Logger logger = LoggerFactory.getLogger(RS350Sensor.class);
+public class D5Sensor extends AbstractSensorModule<D5Config> {
+    private static final Logger logger = LoggerFactory.getLogger(D5Sensor.class);
 
     ICommProvider<?> commProvider;
     LocationOutput locationOutput;
-    StatusOutput statusOutput;
     BackgroundOutput backgroundOutput;
     ForegroundOutput foregroundOutput;
-    DerivedDataOutput derivedDataOutput;
-    AlarmOutput alarmOutput;
+    AnalysisOutput analysisOutput;
 
-    RS350MessageHandler messageHandler;
+    D5MessageHandler messageHandler;
     Boolean processLock;
     InputStream msgIn;
 
-    public RS350Sensor() {
+    public D5Sensor() {
 
     }
 
@@ -36,29 +34,16 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
     protected void doInit() throws SensorHubException {
         super.doInit();
 
-        logger.info("starting driver init");
         // generate identifiers: use serial number from config or first characters of local ID
-        generateUniqueID("urn:rsi:rs350:", config.serialNumber);
-        generateXmlID("rsi_rs350_", config.serialNumber);
+        generateUniqueID("urn:kromek:d5:", config.serialNumber);
+        generateXmlID("kromek_d5_", config.serialNumber);
 
         if (config.outputs.enableLocationOutput){
             locationOutput = new LocationOutput(this);
-            locationOutput.init();
             addOutput(locationOutput, false);
-
-
+            locationOutput.init();
         }
 
-        if (config.outputs.enableStatusOutput){
-            logger.info("statusOutput enabled");
-            statusOutput = new StatusOutput(this);
-            logger.info("statusOutput created");
-            addOutput(statusOutput, false);
-            logger.info("statusOutput added");
-            statusOutput.init();
-            logger.info("statusOutput init");
-
-        }
 
         if (config.outputs.enableBackgroundOutput){
             backgroundOutput = new BackgroundOutput(this);
@@ -69,21 +54,14 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
         if (config.outputs.enableForegroundOutput){
             foregroundOutput = new ForegroundOutput(this);
             addOutput(foregroundOutput, false);
-            logger.info("added output");
             foregroundOutput.init();
-            logger.info("output init");
         }
 
-        if (config.outputs.enableDerivedData){
-            derivedDataOutput = new DerivedDataOutput(this);
-            addOutput(derivedDataOutput, false);
-            derivedDataOutput.init();
-        }
 
-        if (config.outputs.enableAlarmOutput){
-            alarmOutput = new AlarmOutput(this);
-            addOutput(alarmOutput, false);
-            alarmOutput.init();
+        if (config.outputs.enableAnalysisData){
+            analysisOutput = new AnalysisOutput(this);
+            addOutput(analysisOutput, false);
+            analysisOutput.init();
         }
     }
 
@@ -113,7 +91,7 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
         }
 
 
-        messageHandler = new RS350MessageHandler(this, msgIn, locationOutput, statusOutput, backgroundOutput, foregroundOutput, alarmOutput);
+        messageHandler = new D5MessageHandler(this, msgIn, locationOutput, foregroundOutput, backgroundOutput, analysisOutput);
 
         processLock = false;
 
