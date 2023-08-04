@@ -2,6 +2,7 @@ package org.sensorhub.impl.utils.rad;
 
 import com.botts.impl.utils.n42.*;
 import jakarta.xml.bind.JAXBContext;
+import jakarta.xml.bind.JAXBElement;
 import jakarta.xml.bind.JAXBException;
 import jakarta.xml.bind.Unmarshaller;
 import net.opengis.swe.v20.*;
@@ -38,7 +39,9 @@ public class RADHelper extends GeoPosHelper {
         try {
             JAXBContext jaxbContext = JAXBContext.newInstance(RadInstrumentDataType.class);
             Unmarshaller jaxbUnmarshaller = jaxbContext.createUnmarshaller();
-            radInstrumentData = (RadInstrumentDataType) jaxbUnmarshaller.unmarshal(new StringReader(xmlString));
+            JAXBElement<RadInstrumentDataType> root = (JAXBElement<RadInstrumentDataType>) jaxbUnmarshaller.unmarshal(new StringReader(xmlString));
+            radInstrumentData = root.getValue();
+//            radInstrumentData = (RadInstrumentDataType) jaxbUnmarshaller.unmarshal(new StringReader(xmlString));
         } catch (JAXBException e) {
             e.printStackTrace();
         }

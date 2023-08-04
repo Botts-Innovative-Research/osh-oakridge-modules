@@ -60,6 +60,7 @@ public class RS350MessageHandler implements Runnable {
                     {
                         String[] n42Messages = dataBufferString.split("</RadInstrumentData>");
                         for (String n42Message : n42Messages) {
+                            n42Message=n42Message.replaceAll("\\<\\?xml(.+?)\\?\\>", "").trim();
                             log.debug("xmlEvent: " + n42Message + "</RadInstrumentData>");
                             createRS350Message(n42Message + "</RadInstrumentData>");
                         }
