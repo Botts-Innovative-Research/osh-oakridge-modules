@@ -60,7 +60,7 @@ public class AlarmOutput extends OutputBase {
 
         latestRecordTime = System.currentTimeMillis();
 
-        dataBlock.setLongValue(0, msg.getRs350DerivedData().getStartDateTime());
+        dataBlock.setLongValue(0, msg.getRs350DerivedData().getStartDateTime()/1000);
         dataBlock.setDoubleValue(1, msg.getRs350DerivedData().getDuration());
         dataBlock.setStringValue(2, msg.getRs350DerivedData().getRemark());
         dataBlock.setStringValue(3, msg.getRs350DerivedData().getClassCode());

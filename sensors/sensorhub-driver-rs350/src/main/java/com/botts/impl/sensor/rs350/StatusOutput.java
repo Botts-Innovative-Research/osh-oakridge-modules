@@ -80,8 +80,8 @@ public class StatusOutput  extends OutputBase{
         dataBlock.setStringValue(2, msg.getRs350Item().getRsiScanMode());
         dataBlock.setDoubleValue(3, msg.getRs350Item().getRsiScanTimeoutNumber());
         dataBlock.setStringValue(4, msg.getRs350Item().getRsiAnalysisEnabled());
-        ((DataBlockMixed) dataBlock).getUnderlyingObject()[5].setUnderlyingObject(msg.getRs350LinEnergyCalibration());
-        ((DataBlockMixed) dataBlock).getUnderlyingObject()[6].setUnderlyingObject(msg.getRs350CmpEnergyCalibration());
+        ((DataBlockMixed) dataBlock).getUnderlyingObject()[5].setUnderlyingObject(msg.getRs350LinEnergyCalibration().getLinEnCal());
+        ((DataBlockMixed) dataBlock).getUnderlyingObject()[6].setUnderlyingObject(msg.getRs350CmpEnergyCalibration().getCmpEnCal());
 
         eventHandler.publish(new DataEvent(latestRecordTime, StatusOutput.this, dataBlock));
     }

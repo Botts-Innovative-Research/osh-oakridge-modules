@@ -57,11 +57,11 @@ public class BackgroundOutput  extends OutputBase{
 
         latestRecordTime = System.currentTimeMillis();
 
-        dataBlock.setLongValue(0, msg.getRs350BackgroundMeasurement().getStartDateTime());
+        dataBlock.setLongValue(0, msg.getRs350BackgroundMeasurement().getStartDateTime()/1000);
         dataBlock.setDoubleValue(1, msg.getRs350BackgroundMeasurement().getRealTimeDuration());
-        dataBlock.setIntValue(2, msg.getRs350BackgroundMeasurement().getLinEnCalSpectrum().size());
+        dataBlock.setIntValue(2, msg.getRs350BackgroundMeasurement().getLinEnCalSpectrum().length);
         ((DataBlockMixed) dataBlock).getUnderlyingObject()[3].setUnderlyingObject(msg.getRs350BackgroundMeasurement().getLinEnCalSpectrum());
-        dataBlock.setIntValue(4, msg.getRs350BackgroundMeasurement().getLinEnCalSpectrum().size());
+        dataBlock.setIntValue(4, msg.getRs350BackgroundMeasurement().getLinEnCalSpectrum().length);
         ((DataBlockMixed) dataBlock).getUnderlyingObject()[5].setUnderlyingObject(msg.getRs350BackgroundMeasurement().getLinEnCalSpectrum());
         dataBlock.setDoubleValue(6, msg.getRs350BackgroundMeasurement().getGammaGrossCount());
         dataBlock.setDoubleValue(7, msg.getRs350BackgroundMeasurement().getNeutronGrossCount());

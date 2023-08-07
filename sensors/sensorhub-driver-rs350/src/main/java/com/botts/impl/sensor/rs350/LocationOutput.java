@@ -43,7 +43,7 @@ public class LocationOutput extends OutputBase{
 
         latestRecordTime = System.currentTimeMillis();
 
-        dataBlock.setLongValue(0, msg.getRs350ForegroundMeasurement().getStartDateTime());
+        dataBlock.setLongValue(0, msg.getRs350ForegroundMeasurement().getStartDateTime()/1000);
         dataBlock.setDoubleValue(1, msg.getRs350ForegroundMeasurement().getLat());
         dataBlock.setDoubleValue(2, msg.getRs350ForegroundMeasurement().getLon());
         dataBlock.setDoubleValue(3, msg.getRs350ForegroundMeasurement().getAlt());
