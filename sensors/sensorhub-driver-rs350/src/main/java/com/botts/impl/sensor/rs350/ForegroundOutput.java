@@ -55,7 +55,7 @@ public class ForegroundOutput  extends OutputBase{
         else
             dataBlock = latestRecord.renew();
 
-        latestRecordTime = System.currentTimeMillis();
+        latestRecordTime = System.currentTimeMillis()/1000;
 
         dataBlock.setLongValue(0, msg.getRs350ForegroundMeasurement().getStartDateTime()/1000);
         dataBlock.setDoubleValue(1, msg.getRs350ForegroundMeasurement().getRealTimeDuration());

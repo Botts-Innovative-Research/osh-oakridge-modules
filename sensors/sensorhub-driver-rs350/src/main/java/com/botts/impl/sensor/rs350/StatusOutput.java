@@ -73,7 +73,7 @@ public class StatusOutput  extends OutputBase{
         else
             dataBlock = latestRecord.renew();
 
-        latestRecordTime = System.currentTimeMillis();
+        latestRecordTime = System.currentTimeMillis()/1000;
 
         dataBlock.setLongValue(0, latestRecordTime);
         dataBlock.setDoubleValue(1, msg.getRs350InstrumentCharacteristics().getBatteryCharge());

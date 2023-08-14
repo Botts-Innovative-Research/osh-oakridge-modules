@@ -79,7 +79,7 @@ public class RS350MessageHandler implements Runnable {
 
         RS350Message rs350Message = new RS350Message(radInstrumentDataType);
 
-        if (config.outputs.enableLocationOutput && rs350Message.getRs350ForegroundMeasurement() != null){
+        if (config.outputs.enableLocationOutput && rs350Message.getRs350ForegroundMeasurement().getLat() != null){
             locationOutput.parseData(rs350Message);
         }
 
@@ -95,7 +95,7 @@ public class RS350MessageHandler implements Runnable {
             foregroundOutput.parseData(rs350Message);
         }
 
-        if (config.outputs.enableAlarmOutput && rs350Message.getRs350DerivedData() != null){
+        if (config.outputs.enableAlarmOutput && rs350Message.getRs350RadAlarm() != null){
             alarmOutput.parseData(rs350Message);
         }
 
