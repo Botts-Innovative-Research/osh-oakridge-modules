@@ -45,6 +45,9 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
     protected void doInit() throws SensorHubException {
         super.doInit();
 
+        messageHandler = new MessageHandler(msgIn, "</RadInstrumentData>");
+
+
         // generate identifiers: use serial number from config or first characters of local ID
         generateUniqueID("urn:rsi:rs350:", config.serialNumber);
         generateXmlID("rsi_rs350_", config.serialNumber);
@@ -131,7 +134,6 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
 //        messageHandler = new RS350MessageHandler(this, msgIn, locationOutput, statusOutput, backgroundOutput, foregroundOutput, alarmOutput);
 //        messageHandler.parse();
 
-        messageHandler = new MessageHandler(msgIn, "</RadInstrumentData>");
     }
 
     @Override

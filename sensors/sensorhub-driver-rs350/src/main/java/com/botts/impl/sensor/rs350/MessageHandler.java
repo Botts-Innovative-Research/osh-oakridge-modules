@@ -92,8 +92,9 @@ public class MessageHandler {
 
                         messageQueue.wait();
 
-                        currentMessage = messageQueue.removeFirst();
                     }
+
+                    currentMessage = messageQueue.removeFirst();
 
                 } catch (InterruptedException e) {
 
@@ -101,7 +102,7 @@ public class MessageHandler {
                 }
             }
 
-            if (currentMessage != null && currentMessage.isEmpty()) {
+            if (currentMessage != null && !currentMessage.isEmpty()) {
 
                 RadInstrumentDataType radInstrumentDataType = radHelper.getRadInstrumentData(currentMessage);
 
@@ -118,6 +119,9 @@ public class MessageHandler {
     public MessageHandler(InputStream msgIn, String messageDelimiter) {
         this.msgIn = msgIn;
         this.messageDelimiter = messageDelimiter;
+
+        this.messageReader.start();
+        this.messageNotifier.start();
     }
 
     public void addMessageListener(MessageListener listener) {
