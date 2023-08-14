@@ -7,19 +7,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
-public class LocationOutput extends OutputBase{
+public class LocationOutput extends OutputBase {
 
     private static final String SENSOR_OUTPUT_NAME = "RS350 Location";
 
     private static final Logger logger = LoggerFactory.getLogger(LocationOutput.class);
 
-    public LocationOutput(RS350Sensor parentSensor){
+    public LocationOutput(RS350Sensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
         logger.debug(SENSOR_OUTPUT_NAME + " output created");
     }
 
     @Override
-    protected void init(){
+    protected void init() {
         RADHelper radHelper = new RADHelper();
 
         dataStruct = radHelper.createRecord()
@@ -34,21 +34,39 @@ public class LocationOutput extends OutputBase{
 
     }
 
-    protected void parseData(RS350Message msg){
+//    protected void parseData(RS350Message msg) {
+//
+//        if (latestRecord == null)
+//            dataBlock = dataStruct.createDataBlock();
+//        else
+//            dataBlock = latestRecord.renew();
+//
+//        latestRecordTime = System.currentTimeMillis() / 1000;
+//
+//        dataBlock.setLongValue(0, msg.getRs350ForegroundMeasurement().getStartDateTime() / 1000);
+//        dataBlock.setDoubleValue(1, msg.getRs350ForegroundMeasurement().getLat());
+//        dataBlock.setDoubleValue(2, msg.getRs350ForegroundMeasurement().getLon());
+//        dataBlock.setDoubleValue(3, msg.getRs350ForegroundMeasurement().getAlt());
+//
+//        eventHandler.publish(new DataEvent(latestRecordTime, LocationOutput.this, dataBlock));
+//
+//    }
 
-        if (latestRecord == null)
-            dataBlock = dataStruct.createDataBlock();
-        else
-            dataBlock = latestRecord.renew();
+    @Override
+    public void onNewMessage(RS350Message message) {
 
-        latestRecordTime = System.currentTimeMillis()/1000;
+        if (message.getRs350ForegroundMeasurement().getLat() != null) {
 
-        dataBlock.setLongValue(0, msg.getRs350ForegroundMeasurement().getStartDateTime()/1000);
-        dataBlock.setDoubleValue(1, msg.getRs350ForegroundMeasurement().getLat());
-        dataBlock.setDoubleValue(2, msg.getRs350ForegroundMeasurement().getLon());
-        dataBlock.setDoubleValue(3, msg.getRs350ForegroundMeasurement().getAlt());
+            createOrRenewDataBlock();
 
-        eventHandler.publish(new DataEvent(latestRecordTime, LocationOutput.this, dataBlock));
+            latestRecordTime = System.currentTimeMillis() / 1000;
 
+            dataBlock.setLongValue(0, message.getRs350ForegroundMeasurement().getStartDateTime() / 1000);
+            dataBlock.setDoubleValue(1, message.getRs350ForegroundMeasurement().getLat());
+            dataBlock.setDoubleValue(2, message.getRs350ForegroundMeasurement().getLon());
+            dataBlock.setDoubleValue(3, message.getRs350ForegroundMeasurement().getAlt());
+
+            eventHandler.publish(new DataEvent(latestRecordTime, LocationOutput.this, dataBlock));
+        }
     }
 }

@@ -8,19 +8,19 @@ import org.slf4j.LoggerFactory;
 import org.vast.data.DataBlockMixed;
 import org.vast.data.TextEncodingImpl;
 
-public class StatusOutput  extends OutputBase{
+public class StatusOutput extends OutputBase {
 
     private static final String SENSOR_OUTPUT_NAME = "RS350 Status";
 
     private static final Logger logger = LoggerFactory.getLogger(StatusOutput.class);
 
-    public StatusOutput(RS350Sensor parentSensor){
+    public StatusOutput(RS350Sensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
         logger.debug(SENSOR_OUTPUT_NAME + " output created");
     }
 
     @Override
-    protected void init(){
+    protected void init() {
 
         RADHelper radHelper = new RADHelper();
 
@@ -67,13 +67,13 @@ public class StatusOutput  extends OutputBase{
         // Location (location vector)
     }
 
-    public void parseData(RS350Message msg){
+    public void parseData(RS350Message msg) {
         if (latestRecord == null)
             dataBlock = dataStruct.createDataBlock();
         else
             dataBlock = latestRecord.renew();
 
-        latestRecordTime = System.currentTimeMillis()/1000;
+        latestRecordTime = System.currentTimeMillis() / 1000;
 
         dataBlock.setLongValue(0, latestRecordTime);
         dataBlock.setDoubleValue(1, msg.getRs350InstrumentCharacteristics().getBatteryCharge());
@@ -84,5 +84,26 @@ public class StatusOutput  extends OutputBase{
         ((DataBlockMixed) dataBlock).getUnderlyingObject()[6].setUnderlyingObject(msg.getRs350CmpEnergyCalibration().getCmpEnCal());
 
         eventHandler.publish(new DataEvent(latestRecordTime, StatusOutput.this, dataBlock));
+    }
+
+    @Override
+    public void onNewMessage(RS350Message message) {
+
+        if (message.getRs350InstrumentCharacteristics() != null) {
+
+            createOrRenewDataBlock();
+
+            latestRecordTime = System.currentTimeMillis() / 1000;
+
+            dataBlock.setLongValue(0, latestRecordTime);
+            dataBlock.setDoubleValue(1, message.getRs350InstrumentCharacteristics().getBatteryCharge());
+            dataBlock.setStringValue(2, message.getRs350Item().getRsiScanMode());
+            dataBlock.setDoubleValue(3, message.getRs350Item().getRsiScanTimeoutNumber());
+            dataBlock.setStringValue(4, message.getRs350Item().getRsiAnalysisEnabled());
+            ((DataBlockMixed) dataBlock).getUnderlyingObject()[5].setUnderlyingObject(message.getRs350LinEnergyCalibration().getLinEnCal());
+            ((DataBlockMixed) dataBlock).getUnderlyingObject()[6].setUnderlyingObject(message.getRs350CmpEnergyCalibration().getCmpEnCal());
+
+            eventHandler.publish(new DataEvent(latestRecordTime, StatusOutput.this, dataBlock));
+        }
     }
 }

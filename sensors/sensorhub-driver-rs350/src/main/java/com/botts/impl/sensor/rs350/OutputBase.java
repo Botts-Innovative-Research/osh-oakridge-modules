@@ -9,7 +9,7 @@ import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 
-public abstract class OutputBase extends AbstractSensorOutput<RS350Sensor> {
+public abstract class OutputBase extends AbstractSensorOutput<RS350Sensor> implements MessageHandler.MessageListener {
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
@@ -37,5 +37,17 @@ public abstract class OutputBase extends AbstractSensorOutput<RS350Sensor> {
     @Override
     public double getAverageSamplingPeriod() {
         return 1.0;
+    }
+
+    void createOrRenewDataBlock() {
+
+        if (latestRecord == null) {
+
+            dataBlock = dataStruct.createDataBlock();
+
+        } else {
+
+            dataBlock = latestRecord.renew();
+        }
     }
 }
