@@ -2,6 +2,7 @@ package org.sensorhub.impl.utils.rad;
 
 import com.botts.impl.utils.n42.*;
 import jakarta.xml.bind.JAXBContext;
+import jakarta.xml.bind.JAXBElement;
 import jakarta.xml.bind.JAXBException;
 import jakarta.xml.bind.Unmarshaller;
 import net.opengis.swe.v20.*;
@@ -38,7 +39,9 @@ public class RADHelper extends GeoPosHelper {
         try {
             JAXBContext jaxbContext = JAXBContext.newInstance(RadInstrumentDataType.class);
             Unmarshaller jaxbUnmarshaller = jaxbContext.createUnmarshaller();
-            radInstrumentData = (RadInstrumentDataType) jaxbUnmarshaller.unmarshal(new StringReader(xmlString));
+            JAXBElement<RadInstrumentDataType> root = (JAXBElement<RadInstrumentDataType>) jaxbUnmarshaller.unmarshal(new StringReader(xmlString));
+            radInstrumentData = root.getValue();
+//            radInstrumentData = (RadInstrumentDataType) jaxbUnmarshaller.unmarshal(new StringReader(xmlString));
         } catch (JAXBException e) {
             e.printStackTrace();
         }
@@ -67,15 +70,28 @@ public class RADHelper extends GeoPosHelper {
                 .label("Lin Calibration")
                 .definition(getRadUri("lin-cal"))
                 .withFixedSize(3)
+                .withElement("LinCalibrationValues", createQuantity()
+                        .label("Lin Calibration Values")
+                        .definition(getRadUri("lin-cal-vals"))
+                        .description("Linear Calibration Values")
+                        .dataType(DataType.DOUBLE)
+                        .build())
                 .build();
     }
 
     public DataArray createCmpCalibration(){
+
         return createArray()
                 .name("CmpCalibration")
                 .label("Cmp Calibration")
                 .definition(getRadUri("cmp-cal"))
                 .withFixedSize(3)
+                .withElement("CmpCalibrationValues", createQuantity()
+                        .label("Cmp Calibration Values")
+                        .definition(getRadUri("cmp-cal-vals"))
+                        .description("Calibration Values")
+                        .dataType(DataType.DOUBLE)
+                        .build())
                 .build();
     }
 
@@ -94,15 +110,27 @@ public class RADHelper extends GeoPosHelper {
                 .label("Lin Spectrum")
                 .definition(getRadUri("lin-spectrum"))
                 .withVariableSize(fieldID)
+                .withElement("LinSpectrumValues", createQuantity()
+                        .label("Lin Spectrum Values")
+                        .definition(getRadUri("lin-spectrum-vals"))
+                        .description("Spectrum Values")
+                        .dataType(DataType.DOUBLE)
+                        .build())
                 .build();
     }
 
     public DataArray createCmpSpectrum(String fieldID){
         return createArray()
-                .name("LinSpectrum")
-                .label("Lin Spectrum")
-                .definition(getRadUri("lin-spectrum"))
+                .name("CmpSpectrum")
+                .label("Cmp Spectrum")
+                .definition(getRadUri("cmp-spectrum"))
                 .withVariableSize(fieldID)
+                .withElement("CmpSpectrumValues", createQuantity()
+                        .label("Cmp Spectrum Values")
+                        .definition(getRadUri("cmp-spectrum-vals"))
+                        .description("Spectrum Values")
+                        .dataType(DataType.DOUBLE)
+                        .build())
                 .build();
     }
 

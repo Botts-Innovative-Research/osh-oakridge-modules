@@ -76,7 +76,16 @@ public class RS350Message {
                     }
                     break;
                     case "Foreground": {
-                        rs350ForegroundMeasurement = new RS350ForegroundMeasurement(radMeasurementType.getMeasurementClassCode().name(), radMeasurementType.getStartDateTime().toGregorianCalendar().getTimeInMillis(), new Double(radMeasurementType.getRealTimeDuration().getSeconds() % 60), radMeasurementType.getSpectrum().get(0).getChannelData().getValue(), radMeasurementType.getSpectrum().get(1).getChannelData().getValue(), radMeasurementType.getGrossCounts().get(0).getCountData().get(0), radMeasurementType.getGrossCounts().get(1).getCountData().get(0), radMeasurementType.getDoseRate().get(0).getDoseRateValue().getValue(), radMeasurementType.getRadItemState().get(0).getStateVector().getGeographicPoint().getLatitudeValue().getValue().doubleValue(), radMeasurementType.getRadItemState().get(0).getStateVector().getGeographicPoint().getLongitudeValue().getValue().doubleValue(), radMeasurementType.getRadItemState().get(0).getStateVector().getGeographicPoint().getElevationValue().doubleValue());
+
+                        Double lat = 0.0;
+                        Double lon = 0.0;
+                        Double elv = 0.0;
+                        if (radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLongitudeValue() != null) {
+                        lat = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLatitudeValue().getValue().doubleValue();
+                        lon = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLongitudeValue().getValue().doubleValue();
+                        elv = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getElevationValue().doubleValue();
+                        }
+                        rs350ForegroundMeasurement = new RS350ForegroundMeasurement(radMeasurementType.getMeasurementClassCode().name(), radMeasurementType.getStartDateTime().toGregorianCalendar().getTimeInMillis(), new Double(radMeasurementType.getRealTimeDuration().getSeconds() % 60), radMeasurementType.getSpectrum().get(0).getChannelData().getValue(), radMeasurementType.getSpectrum().get(1).getChannelData().getValue(), radMeasurementType.getGrossCounts().get(0).getCountData().get(0), radMeasurementType.getGrossCounts().get(1).getCountData().get(0), radMeasurementType.getDoseRate().get(0).getDoseRateValue().getValue(), lat, lon, elv);
                     }
                     break;
                     default:
@@ -90,9 +99,13 @@ public class RS350Message {
                     rs350DerivedData = new RS350DerivedData(derivedDataType.getRemark().get(0), derivedDataType.getMeasurementClassCode().name(), derivedDataType.getStartDateTime().toGregorianCalendar().getTimeInMillis(), new Double(derivedDataType.getRealTimeDuration().getSeconds()%60));
 
             }
-                else if (jaxbType == RadAlarmType.class){
-                    RadAlarmType radAlarmType = (RadAlarmType) jaxbElement.getValue();
+                else if (jaxbType == AnalysisResultsType.class){
+                    AnalysisResultsType analysisResultsType = (AnalysisResultsType) jaxbElement.getValue();
+//                    RadAlarmType radAlarmType = (RadAlarmType) jaxbElement.getValue();
+                analysisResultsType.getRadAlarm().forEach(radAlarmType -> {
                     rs350RadAlarm = new RS350RadAlarm(radAlarmType.getRadAlarmCategoryCode().value(), radAlarmType.getRadAlarmDescription());
+                });
+                
 
             }
 
