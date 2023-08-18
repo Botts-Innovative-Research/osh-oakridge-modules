@@ -112,7 +112,7 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
                                 .label("Live Time")
                                 .definition(RADHelper.getRadUri("live-time"))
                                 .uomCode("ms"))
-                .addField("neutronCount", rad.createNeutronCount())
+                .addField("neutronCount", rad.createNeutronGrossCount())
                 .addField("dose", rad.createDoseUSVh())
                 .build();
 
