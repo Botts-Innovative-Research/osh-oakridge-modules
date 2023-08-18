@@ -45,7 +45,6 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
     protected void doInit() throws SensorHubException {
         super.doInit();
 
-        messageHandler = new MessageHandler(msgIn, "</RadInstrumentData>");
 
 
         // generate identifiers: use serial number from config or first characters of local ID
@@ -56,42 +55,36 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
             locationOutput = new LocationOutput(this);
             addOutput(locationOutput, false);
             locationOutput.init();
-            messageHandler.addMessageListener(locationOutput);
         }
 
         if (config.outputs.enableStatusOutput) {
             statusOutput = new StatusOutput(this);
             addOutput(statusOutput, false);
             statusOutput.init();
-            messageHandler.addMessageListener(statusOutput);
         }
 
         if (config.outputs.enableBackgroundOutput) {
             backgroundOutput = new BackgroundOutput(this);
             addOutput(backgroundOutput, false);
             backgroundOutput.init();
-            messageHandler.addMessageListener(backgroundOutput);
         }
 
         if (config.outputs.enableForegroundOutput) {
             foregroundOutput = new ForegroundOutput(this);
             addOutput(foregroundOutput, false);
             foregroundOutput.init();
-            messageHandler.addMessageListener(foregroundOutput);
         }
 
         if (config.outputs.enableDerivedData) {
             derivedDataOutput = new DerivedDataOutput(this);
             addOutput(derivedDataOutput, false);
             derivedDataOutput.init();
-            messageHandler.addMessageListener(derivedDataOutput);
         }
 
         if (config.outputs.enableAlarmOutput) {
             alarmOutput = new AlarmOutput(this);
             addOutput(alarmOutput, false);
             alarmOutput.init();
-            messageHandler.addMessageListener(alarmOutput);
         }
     }
 
@@ -130,6 +123,34 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
 
             throw new SensorException("Error while initializing communications ", e);
         }
+
+        messageHandler = new MessageHandler(msgIn, "</RadInstrumentData>");
+
+        if (config.outputs.enableLocationOutput) {
+            messageHandler.addMessageListener(locationOutput);
+        }
+
+        if (config.outputs.enableStatusOutput) {
+            messageHandler.addMessageListener(statusOutput);
+        }
+
+        if (config.outputs.enableBackgroundOutput) {
+            messageHandler.addMessageListener(backgroundOutput);
+        }
+
+        if (config.outputs.enableForegroundOutput) {
+            messageHandler.addMessageListener(foregroundOutput);
+        }
+
+        if (config.outputs.enableDerivedData) {
+            messageHandler.addMessageListener(derivedDataOutput);
+        }
+
+        if (config.outputs.enableAlarmOutput) {
+            messageHandler.addMessageListener(alarmOutput);
+        }
+
+
 
 //        messageHandler = new RS350MessageHandler(this, msgIn, locationOutput, statusOutput, backgroundOutput, foregroundOutput, alarmOutput);
 //        messageHandler.parse();

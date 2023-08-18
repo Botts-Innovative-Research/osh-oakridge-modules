@@ -4,9 +4,15 @@ import com.botts.impl.sensor.rs350.messages.RS350Message;
 import com.botts.impl.utils.n42.RadInstrumentDataType;
 import org.sensorhub.impl.utils.rad.RADHelper;
 
+import javax.xml.stream.XMLEventReader;
+import javax.xml.stream.XMLStreamReader;
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -35,33 +41,41 @@ public class MessageHandler {
 
             boolean continueProcessing = true;
 
-            int character;
-
-            StringBuilder xmlDataBuffer = new StringBuilder();
-
             try {
 
-                while (continueProcessing && ((character = msgIn.read()) != -1)) {
+                ArrayList<Character> buffer = new ArrayList<>();
 
-                    xmlDataBuffer.append((char) character);
+                while (continueProcessing) {
 
-                    String dataBufferString = xmlDataBuffer.toString();
+                    int character = msgIn.read();
 
-                    if (dataBufferString.endsWith((messageDelimiter))) {
-
-                        String[] n42Messages = dataBufferString.split(messageDelimiter);
-
-                        for (String n42Message : n42Messages) {
-
-                            n42Message = n42Message.replaceAll("\\<\\?xml(.+?)\\?\\>", "").trim();
-
-                            synchronized (messageQueue) {
-
-                                messageQueue.add(n42Message + messageDelimiter);
-
-                                messageQueue.notifyAll();
+                    // Detected STX
+                    if (character == 0x02) {
+                        character = msgIn.read();
+                        // Detect ETX
+                        while (character != 0x03 && character != -1) {
+                            buffer.add((char)character);
+                            character = msgIn.read();
+                            if (character == -1){
+                                System.out.println("did not read complete message");
                             }
                         }
+                        StringBuilder sb = new StringBuilder(buffer.size());
+
+                        for (char c : buffer) {
+
+                            sb.append(c);
+                        }
+
+                        String n42Message = sb.toString().replaceAll("\\<\\?xml(.+?)\\?\\>", "").trim();
+
+                        synchronized (messageQueue) {
+
+                            messageQueue.add(n42Message);
+
+                            messageQueue.notifyAll();
+                        }
+                        buffer.clear();
                     }
 
                     synchronized (isProcessing) {
@@ -69,7 +83,6 @@ public class MessageHandler {
                         continueProcessing = isProcessing.get();
                     }
                 }
-
             } catch (IOException exception) {
 
             }
@@ -104,9 +117,16 @@ public class MessageHandler {
 
             if (currentMessage != null && !currentMessage.isEmpty()) {
 
-                RadInstrumentDataType radInstrumentDataType = radHelper.getRadInstrumentData(currentMessage);
 
-                listeners.forEach(messageListener -> messageListener.onNewMessage(new RS350Message(radInstrumentDataType)));
+
+                try {
+                    RadInstrumentDataType radInstrumentDataType = radHelper.getRadInstrumentData(currentMessage);
+                    listeners.forEach(messageListener -> messageListener.onNewMessage(new RS350Message(radInstrumentDataType)));
+                }
+                catch (Exception e){
+                    System.out.println("Current Message: ");
+                    System.out.println(currentMessage);
+                }
             }
 
             synchronized (isProcessing) {

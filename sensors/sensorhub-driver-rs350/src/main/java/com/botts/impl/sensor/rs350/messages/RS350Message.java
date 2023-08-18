@@ -99,9 +99,13 @@ public class RS350Message {
                     rs350DerivedData = new RS350DerivedData(derivedDataType.getRemark().get(0), derivedDataType.getMeasurementClassCode().name(), derivedDataType.getStartDateTime().toGregorianCalendar().getTimeInMillis(), new Double(derivedDataType.getRealTimeDuration().getSeconds()%60));
 
             }
-                else if (jaxbType == RadAlarmType.class){
-                    RadAlarmType radAlarmType = (RadAlarmType) jaxbElement.getValue();
+                else if (jaxbType == AnalysisResultsType.class){
+                    AnalysisResultsType analysisResultsType = (AnalysisResultsType) jaxbElement.getValue();
+//                    RadAlarmType radAlarmType = (RadAlarmType) jaxbElement.getValue();
+                analysisResultsType.getRadAlarm().forEach(radAlarmType -> {
                     rs350RadAlarm = new RS350RadAlarm(radAlarmType.getRadAlarmCategoryCode().value(), radAlarmType.getRadAlarmDescription());
+                });
+                
 
             }
 
