@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<Licence xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+		<Signature>MCACDiuelifS80cZ7sb6E0mvAg4x4DU8rs8uLrnSQgDy9Q==</Signature>
+		<Data>
+			<ProductKey></ProductKey>
+			<AppName>D3SID</AppName>
+			<Platform>1</Platform>
+			<Features>1</Features>
+			<ExpiryDate>2050-12-09T00:00:00</ExpiryDate>
+		</Data>
+</Licence>

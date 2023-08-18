@@ -39,4 +39,9 @@ public class D3sConfig extends SensorConfig {
     @DisplayInfo.Required
     @DisplayInfo(desc="Serial number or unique identifier")
     public String serialNumber = "sensor001";
+    @DisplayInfo.Required
+    @DisplayInfo(desc="Absolute path to data folder")
+    //public String dataPath = "/Android/data/com.kromek.android.D3S_ID/files";
+    public String dataPath = "../../../include/osh-oakridge-modules/sensors/sensorhub-driver-kromek-d3s/data";
+
 }
