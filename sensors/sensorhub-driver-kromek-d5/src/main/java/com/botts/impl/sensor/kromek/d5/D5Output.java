@@ -11,13 +11,16 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.kromek.d5;
 
-import net.opengis.swe.v20.*;
+import com.botts.impl.sensor.kromek.d5.reports.SerialMessage;
+import net.opengis.swe.v20.DataBlock;
+import net.opengis.swe.v20.DataComponent;
+import net.opengis.swe.v20.DataEncoding;
+import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.swe.SWEHelper;
-import org.vast.swe.helper.GeoPosHelper;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -29,11 +32,7 @@ import java.io.StringWriter;
  * @since Oct. 2023
  */
 public class D5Output extends AbstractSensorOutput<D5Sensor> {
-    private static final String SENSOR_OUTPUT_NAME = "[NAME]";
-    private static final String SENSOR_OUTPUT_LABEL = "[LABEL]";
-    private static final String SENSOR_OUTPUT_DESCRIPTION = "[DESCRIPTION]";
-
-    private static final Logger logger = LoggerFactory.getLogger(D5Output.class);
+    public static final Logger logger = LoggerFactory.getLogger(D5Output.class);
 
     private DataRecord dataRecord;
     private DataEncoding dataEncoding;
@@ -50,8 +49,8 @@ public class D5Output extends AbstractSensorOutput<D5Sensor> {
      *
      * @param parentSensor Sensor driver providing this output
      */
-    D5Output(D5Sensor parentSensor) {
-        super(SENSOR_OUTPUT_NAME, parentSensor);
+    D5Output(String outputName ,D5Sensor parentSensor) {
+        super(outputName, parentSensor);
 
         logger.debug("Output created");
     }
@@ -60,40 +59,17 @@ public class D5Output extends AbstractSensorOutput<D5Sensor> {
      * Initializes the data structure for the output, defining the fields, their ordering,
      * and data types.
      */
-    void doInit() {
+    void doInit(SerialMessage data) {
         logger.debug("Initializing output");
 
-        dataRecord = createDataRecord();
+        dataRecord = data.createDataRecord();
 
         dataEncoding = new SWEHelper().newTextEncoding(",", "\n");
 
         logger.debug("Initializing output Complete");
     }
 
-    public DataRecord createDataRecord() {
-        GeoPosHelper sweFactory = new GeoPosHelper();
-        return sweFactory.createRecord()
-                .name(SENSOR_OUTPUT_NAME)
-                .label(SENSOR_OUTPUT_LABEL)
-                .description(SENSOR_OUTPUT_DESCRIPTION)
-                .addField("timestamp", sweFactory.createTime()
-                        .asSamplingTimeIsoUTC()
-                        .label("Precision Time Stamp"))
-                .addField("message", sweFactory.createText()
-                        .label("Message")
-                        .description("Message"))
-                .build();
-    }
-
-    public void doStart() {
-
-    }
-
-    /**
-     * Terminates processing data for output
-     */
-    public void doStop() {
-
+    void doStop() {
     }
 
     @Override
@@ -119,37 +95,36 @@ public class D5Output extends AbstractSensorOutput<D5Sensor> {
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    public void setData(String data) {
+    public void setData(SerialMessage data) {
         try {
-                DataBlock dataBlock;
-                if (latestRecord == null) {
-                    dataBlock = dataRecord.createDataBlock();
-                } else {
-                    dataBlock = latestRecord.renew();
-                }
+            DataBlock dataBlock;
+            if (latestRecord == null) {
+                dataBlock = dataRecord.createDataBlock();
+            } else {
+                dataBlock = latestRecord.renew();
+            }
 
-                synchronized (histogramLock) {
-                    int setIndex = setCount % MAX_NUM_TIMING_SAMPLES;
+            synchronized (histogramLock) {
+                int setIndex = setCount % MAX_NUM_TIMING_SAMPLES;
 
-                    // Get a sampling time for latest set based on previous set sampling time
-                    timingHistogram[setIndex] = System.currentTimeMillis() - lastSetTimeMillis;
+                // Get a sampling time for latest set based on previous set sampling time
+                timingHistogram[setIndex] = System.currentTimeMillis() - lastSetTimeMillis;
 
-                    // Set latest sampling time to now
-                    lastSetTimeMillis = timingHistogram[setIndex];
-                }
+                // Set latest sampling time to now
+                lastSetTimeMillis = timingHistogram[setIndex];
+            }
 
-                ++setCount;
+            ++setCount;
 
-                double timestamp = System.currentTimeMillis() / 1000d;
+            double timestamp = System.currentTimeMillis() / 1000d;
 
-                dataBlock.setDoubleValue(0, timestamp);
-                dataBlock.setStringValue(1, data);
+            data.setDataBlock(dataBlock, timestamp);
 
-                latestRecord = dataBlock;
+            latestRecord = dataBlock;
 
-                latestRecordTime = System.currentTimeMillis();
+            latestRecordTime = System.currentTimeMillis();
 
-                eventHandler.publish(new DataEvent(latestRecordTime, D5Output.this, dataBlock));
+            eventHandler.publish(new DataEvent(latestRecordTime, D5Output.this, dataBlock));
         } catch (Exception e) {
             StringWriter stringWriter = new StringWriter();
             e.printStackTrace(new PrintWriter(stringWriter));

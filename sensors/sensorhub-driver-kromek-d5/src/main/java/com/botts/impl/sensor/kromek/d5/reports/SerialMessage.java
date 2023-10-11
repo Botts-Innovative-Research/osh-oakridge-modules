@@ -1,4 +1,8 @@
-package com.botts.impl.sensor.kromek.d5.message;
+package com.botts.impl.sensor.kromek.d5.reports;
+
+import net.opengis.swe.v20.DataBlock;
+import net.opengis.swe.v20.DataRecord;
+import org.vast.swe.SWEHelper;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -11,8 +15,11 @@ public abstract class SerialMessage {
     private final byte componentId;
     private final byte reportId;
 
-    //Only the D5 uses SLIP framing
-    private final boolean useSLIP = KROMEK_SERIAL_REPORTS_BUILD_FOR_PRODUCT_D5;
+    private static String reportName = "Report";
+    private static String reportLabel = "Report";
+    private static String reportDescription = "Report";
+    private static String reportDefinition = SWEHelper.getPropertyUri(reportName);
+
 
     /**
      * Create a new message with the given componentId and reportId.
@@ -20,11 +27,13 @@ public abstract class SerialMessage {
     public SerialMessage(byte componentId, byte reportId) {
         this.componentId = componentId;
         this.reportId = reportId;
+        setReportInfo();
     }
 
     public byte getComponentId() {
         return componentId;
     }
+
     public byte getReportId() {
         return reportId;
     }
@@ -55,14 +64,13 @@ public abstract class SerialMessage {
         outputStream.write(KROMEK_SERIAL_MESSAGE_MODE);
         outputStream.write(componentId);
         outputStream.write(reportId);
-        //outputStream.write(encodePayload());
 
         // CRC is always 0 for requests
         int crc = 0;
         outputStream.write(intToBytes(crc));
 
         byte[] message = outputStream.toByteArray();
-        if (useSLIP)
+        if (KROMEK_SERIAL_REPORTS_BUILD_FOR_PRODUCT_D5)
             message = encodeSLIP(message);
 
         return message;
@@ -126,8 +134,10 @@ public abstract class SerialMessage {
 
     /**
      * Calculate Cyclic Redundancy Checksum 16 (CRC-16) for the given byte array.
+     * Copied from Kromek documentation. I don't think it's used since the CRC is always 0 for requests, and
+     * requests are the only thing we send.
      */
-    private static int crc16(final byte[] buffer) {
+    public static int crc16(final byte[] buffer) {
         int crc = KROMEK_SERIAL_MESSAGE_CRC_INITIAL_VALUE;
         for (byte b : buffer) {
             crc = ((crc >>> 8) | (crc << 8)) & 0xffff;
@@ -146,7 +156,7 @@ public abstract class SerialMessage {
      * @param value The int to convert.
      * @return The two bytes.
      */
-    protected static byte[] intToBytes(int value) {
+    public byte[] intToBytes(int value) {
         byte[] bytes = new byte[2];
         // The & 0xFF masks all but the lowest eight bits.
         bytes[0] = (byte) (value & 0xFF);
@@ -155,10 +165,88 @@ public abstract class SerialMessage {
         return bytes;
     }
 
-    public abstract byte[] encodePayload();
+    /**
+     * Converts bytes representing an unsigned int into an int.
+     *
+     * @param bytes The bytes to convert.
+     * @return The int.
+     */
+    public static int bytesToUInt(byte... bytes) {
+        int result = 0;
+        for (int i = 0; i < bytes.length; i++) {
+            result += (bytes[i] & 0xFF) << (8 * i);
+        }
+        return result;
+    }
+
+    /**
+     * Converts bytes representing a signed int into an int.
+     *
+     * @param bytes The bytes to convert.
+     * @return The int.
+     */
+    public static int bytesToInt(byte... bytes) {
+        int result = 0;
+        for (int i = 0; i < bytes.length; i++) {
+            result += bytes[i] << (8 * i);
+        }
+        return result;
+    }
+
+    /**
+     * Converts a byte representing a boolean into a boolean.
+     *
+     * @param value The byte to convert.
+     * @return The boolean.
+     */
+    public static boolean byteToBoolean(byte value) {
+        return value != 0;
+    }
+
+
+    public static String getReportName() {
+        return reportName;
+    }
+
+    void setReportName(String reportName) {
+        SerialMessage.reportName = reportName;
+    }
+
+    public static String getReportLabel() {
+        return reportLabel;
+    }
+
+    void setReportLabel(String reportLabel) {
+        SerialMessage.reportLabel = reportLabel;
+    }
+
+    public static String getReportDescription() {
+        return reportDescription;
+    }
+
+    void setReportDescription(String reportDescription) {
+        SerialMessage.reportDescription = reportDescription;
+    }
+
+    public static String getReportDefinition() {
+        return reportDefinition;
+    }
+
+    void setReportDefinition(String reportDefinition) {
+        SerialMessage.reportDefinition = reportDefinition;
+    }
 
     public abstract void decodePayload(byte[] payload);
 
     public abstract String toString();
 
+    public abstract DataRecord createDataRecord();
+
+    public abstract void setDataBlock(DataBlock dataBlock, double timestamp);
+
+    /**
+     * Called by the constructor to set the report info.
+     * Implementations should set the report name, label, description, and definition.
+     */
+    abstract void setReportInfo();
 }

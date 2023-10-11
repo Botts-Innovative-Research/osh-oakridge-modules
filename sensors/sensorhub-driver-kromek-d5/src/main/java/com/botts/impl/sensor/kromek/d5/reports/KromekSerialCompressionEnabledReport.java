@@ -1,22 +1,20 @@
 package com.botts.impl.sensor.kromek.d5.reports;
 
-import com.botts.impl.sensor.kromek.d5.message.SerialMessage;
+import net.opengis.swe.v20.DataBlock;
+import net.opengis.swe.v20.DataRecord;
+import net.opengis.swe.v20.DataType;
+import org.vast.swe.SWEHelper;
 
-import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
 
-import static com.botts.impl.sensor.kromek.d5.message.Constants.*;
+import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
+import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_REPORTS_IN_COMPRESSION_ENABLED_ID;
 
 public class KromekSerialCompressionEnabledReport extends SerialMessage {
-//    uint8_t                               enabled;                                // Disabled:0x00, Enabled:0x01
-//    uint8_t                               windowSize;                             // Default: 0x09
-//    uint8_t                               lookaheadSize;                          // Default: 0x08
-//    uint8_t                               compressionDirection;                   // Always: 0x00
-//    uint8_t                               reserved[2];                            // Reserved for future use
-    public byte enabled;
-    public byte windowSize;
-    public byte lookaheadSize;
-    public byte compressionDirection;
+    public boolean enabled;
+    public int windowSize;
+    public int lookaheadSize;
+    public int compressionDirection;
     public byte[] reserved = new byte[2];
 
     public KromekSerialCompressionEnabledReport(byte componentId, byte reportId, byte[] data) {
@@ -29,23 +27,11 @@ public class KromekSerialCompressionEnabledReport extends SerialMessage {
     }
 
     @Override
-    public byte[] encodePayload() {
-        ByteArrayOutputStream stream = new ByteArrayOutputStream();
-        stream.write(enabled);
-        stream.write(windowSize);
-        stream.write(lookaheadSize);
-        stream.write(compressionDirection);
-        stream.write(reserved[0]);
-        stream.write(reserved[1]);
-        return stream.toByteArray();
-    }
-
-    @Override
     public void decodePayload(byte[] payload) {
-        enabled = payload[0];
-        windowSize = payload[1];
-        lookaheadSize = payload[2];
-        compressionDirection = payload[3];
+        enabled = byteToBoolean(payload[0]);
+        windowSize = bytesToUInt(payload[1]);
+        lookaheadSize = bytesToUInt(payload[2]);
+        compressionDirection = bytesToUInt(payload[3]);
         reserved[0] = payload[4];
         reserved[1] = payload[5];
     }
@@ -59,5 +45,56 @@ public class KromekSerialCompressionEnabledReport extends SerialMessage {
                 ", compressionDirection=" + compressionDirection +
                 ", reserved=" + Arrays.toString(reserved) +
                 '}';
+    }
+
+    @Override
+    public DataRecord createDataRecord() {
+        SWEHelper sweFactory = new SWEHelper();
+        return sweFactory.createRecord()
+                .name(getReportName())
+                .label(getReportLabel())
+                .description(getReportDescription())
+                .definition(getReportDefinition())
+                .addField("timestamp", sweFactory.createTime()
+                        .asSamplingTimeIsoUTC()
+                        .label("Precision Time Stamp"))
+                .addField("enabled", sweFactory.createBoolean()
+                        .label("Enabled")
+                        .description("Enabled")
+                        .definition(SWEHelper.getPropertyUri("enabled")))
+                .addField("windowSize", sweFactory.createQuantity()
+                        .label("Window Size")
+                        .description("Window Size")
+                        .definition(SWEHelper.getPropertyUri("windowSize"))
+                        .dataType(DataType.INT))
+                .addField("lookaheadSize", sweFactory.createQuantity()
+                        .label("Lookahead Size")
+                        .description("Lookahead Size")
+                        .definition(SWEHelper.getPropertyUri("lookaheadSize"))
+                        .dataType(DataType.INT))
+                .addField("compressionDirection", sweFactory.createQuantity()
+                        .label("Compression Direction")
+                        .description("Compression Direction")
+                        .definition(SWEHelper.getPropertyUri("compressionDirection"))
+                        .dataType(DataType.INT))
+                .build();
+    }
+
+    @Override
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
+        int index = 0;
+        dataBlock.setDoubleValue(index, timestamp);
+        dataBlock.setBooleanValue(++index, enabled);
+        dataBlock.setIntValue(++index, windowSize);
+        dataBlock.setIntValue(++index, lookaheadSize);
+        dataBlock.setIntValue(++index, compressionDirection);
+    }
+
+    @Override
+    void setReportInfo() {
+        setReportName(KromekSerialCompressionEnabledReport.class.getSimpleName());
+        setReportLabel("Compression Enabled");
+        setReportDescription("Reports if compression is enabled and the compression parameters");
+        setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
     }
 }

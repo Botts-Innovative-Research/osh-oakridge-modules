@@ -1,9 +1,7 @@
 package com.botts.impl.sensor.kromek.d5;
 
-import com.botts.impl.sensor.kromek.d5.message.SerialMessage;
-import com.botts.impl.sensor.kromek.d5.reports.KromekSerialCompressionEnabledReport;
-import com.botts.impl.sensor.kromek.d5.reports.KromekSerialEthernetConfigReport;
-import com.botts.impl.sensor.kromek.d5.reports.KromekSerialUnitIDReport;
+import com.botts.impl.sensor.kromek.d5.reports.SerialMessage;
+import com.botts.impl.sensor.kromek.d5.reports.*;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -15,14 +13,9 @@ import java.util.Arrays;
 import java.util.List;
 
 import static com.botts.impl.sensor.kromek.d5.message.Constants.*;
-import static com.botts.impl.sensor.kromek.d5.message.SerialMessage.decodeSLIP;
+import static com.botts.impl.sensor.kromek.d5.reports.SerialMessage.*;
 
 public class TCPTest {
-    @Test
-    public void asdf(){
-
-    }
-
     @Test
     public void testTCP() {
         // Define the IP address and port number of the server
@@ -38,7 +31,7 @@ public class TCPTest {
             OutputStream outToServer = clientSocket.getOutputStream();
 
             // Create a message to send
-            SerialMessage report = new KromekSerialCompressionEnabledReport();
+            SerialMessage report = new KromekSerialStatusReport();
             byte[] message = report.encodeRequest();
             System.out.println("Message: " + Arrays.toString(message));
             System.out.print("Hex data: ");
@@ -73,7 +66,7 @@ public class TCPTest {
             System.out.println();
 
             //First two bytes is the size
-            int size = decodedData[0] + (decodedData[1] << 8);
+            int size = bytesToUInt(decodedData[0], decodedData[1]);
             System.out.println("Size: " + size);
 
             //Next byte is the mode
@@ -83,7 +76,7 @@ public class TCPTest {
             //Next byte is the componentId then reportId
             byte componentId = decodedData[3];
             byte reportId = decodedData[4];
-            System.out.printf("ComponentId: " + componentId + " (%02X) ReportId: " + reportId + " (%02X)", componentId, reportId);
+            System.out.printf("ComponentId: " + SerialMessage.bytesToUInt(componentId) + " (0x%02X) ReportId: " + SerialMessage.bytesToUInt(reportId) + " (0x%02X)", componentId, reportId);
             System.out.println();
 
             if (reportId == KROMEK_SERIAL_REPORTS_IN_ACK_ID) {
@@ -96,7 +89,7 @@ public class TCPTest {
             }
 
             //Last two bytes are the CRC
-            int crc = decodedData[decodedData.length - 2] + (decodedData[decodedData.length - 1] << 8);
+            int crc = bytesToUInt(decodedData[decodedData.length - 2], decodedData[decodedData.length - 1]);
             System.out.println("CRC: " + crc);
 
             //The payload is everything in between
@@ -110,14 +103,60 @@ public class TCPTest {
     }
 
     private SerialMessage createReport(byte componentId, byte reportId, byte[] payload) {
-        if (reportId == KROMEK_SERIAL_REPORTS_IN_UNIT_ID_ID || reportId == KROMEK_SERIAL_REPORTS_OUT_UNIT_ID_ID) {
-            return new KromekSerialUnitIDReport(componentId, reportId, payload);
-        } else if (reportId == KROMEK_SERIAL_REPORTS_IN_ETHERNET_CONFIG_ID || reportId == KROMEK_SERIAL_REPORTS_OUT_ETHERNET_CONFIG_ID) {
-            return new KromekSerialEthernetConfigReport(componentId, reportId, payload);
-        } else if (reportId == KROMEK_SERIAL_REPORTS_IN_COMPRESSION_ENABLED_ID || reportId == KROMEK_SERIAL_REPORTS_OUT_COMPRESSION_ENABLED_ID) {
-            return new KromekSerialCompressionEnabledReport(componentId, reportId, payload);
-        } else {
-            throw new RuntimeException("Unknown reportId: " + reportId);
+        switch (reportId) {
+            case KROMEK_SERIAL_REPORTS_IN_RADIOMETRICS_V1_ID:
+                //return new KromekDetectorRadiometricsV1Report(componentId, reportId, payload);
+                throw new RuntimeException("Not implemented");
+            case KROMEK_SERIAL_REPORTS_IN_STATUS_ID:
+                return new KromekSerialStatusReport(componentId, reportId, payload);
+            case KROMEK_SERIAL_REPORTS_IN_OTG_MODE_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_OTG_MODE_ID:
+            case KROMEK_SERIAL_REPORTS_IN_ABOUT_ID:
+            case KROMEK_SERIAL_REPORTS_IN_DEVICE_INFO_ID:
+                throw new RuntimeException("Not implemented");
+            case KROMEK_SERIAL_REPORTS_IN_ETHERNET_CONFIG_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_ETHERNET_CONFIG_ID:
+                return new KromekSerialEthernetConfigReport(componentId, reportId, payload);
+            case KROMEK_SERIAL_REPORTS_IN_COMPRESSION_ENABLED_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_COMPRESSION_ENABLED_ID:
+                return new KromekSerialCompressionEnabledReport(componentId, reportId, payload);
+            case KROMEK_SERIAL_REPORTS_IN_RADIATION_THRESHOLD_INDEXED_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_RADIATION_THRESHOLD_INDEXED_ID:
+            case KROMEK_SERIAL_REPORTS_IN_RESET_ACCUMULATED_DOSE_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_RESET_ACCUMULATED_DOSE_ID:
+            case KROMEK_SERIAL_REPORTS_IN_DOSE_INFO_ID:
+            case KROMEK_SERIAL_REPORTS_IN_UI_SCREEN_CONFIG_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_UI_SCREEN_CONFIG_ID:
+            case KROMEK_SERIAL_REPORTS_IN_ENERGY_SPECTRUM_ID:
+            case KROMEK_SERIAL_REPORTS_IN_MAINTAINER_DEVICE_CONFIG_INDEXED_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_MAINTAINER_DEVICE_CONFIG_INDEXED_ID:
+            case KROMEK_SERIAL_REPORTS_IN_UTC_TIME_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_UTC_TIME_ID:
+            case KROMEK_SERIAL_REPORTS_IN_REMOTE_ISOTOPE_CONFIRMATION_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_REMOTE_ISOTOPE_CONFIRMATION_ID:
+            case KROMEK_SERIAL_REPORTS_IN_REMOTE_ISOTOPE_CONFIRMATION_STATUS_ID:
+            case KROMEK_SERIAL_REPORTS_IN_REMOTE_BACKGROUND_COLLECTION_STATUS_ID:
+            case KROMEK_SERIAL_REPORTS_IN_WIFI_AP_CONFIG_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_WIFI_AP_CONFIG_ID:
+            case KROMEK_SERIAL_REPORTS_IN_UI_BT_ENABLE_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_UI_BT_ENABLE_ID:
+            case KROMEK_SERIAL_REPORTS_IN_UI_ALERT_CONFIG_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_UI_ALERT_CONFIG_ID:
+            case KROMEK_SERIAL_REPORTS_IN_UI_CONFIRMATION_MODE_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_UI_CONFIRMATION_MODE_ID:
+            case KROMEK_SERIAL_REPORTS_IN_UI_SEARCH_ID_ENABLE_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_UI_SEARCH_ID_ENABLE_ID:
+            case KROMEK_SERIAL_REPORTS_IN_UI_ISOTOPE_ENABLE_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_UI_ISOTOPE_ENABLE_ID:
+            case KROMEK_SERIAL_REPORTS_IN_UI_PIN_CODE_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_UI_PIN_CODE_ID:
+            case KROMEK_SERIAL_REPORTS_IN_REMOTE_EXT_ISOTOPE_CONFIRMATION_STATUS_ID:
+                throw new RuntimeException("Not implemented");
+            case KROMEK_SERIAL_REPORTS_IN_UNIT_ID_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_UNIT_ID_ID:
+                return new KromekSerialUnitIDReport(componentId, reportId, payload);
+            default:
+                throw new RuntimeException("Unknown reportId: " + reportId);
         }
     }
 
@@ -126,24 +165,18 @@ public class TCPTest {
      * Reads until a framing byte is received.
      */
     private static byte[] receiveData(InputStream in) throws IOException {
-        System.out.println("Receiving data");
         List<Byte> output = new ArrayList<>();
         int b;
 
-        b = in.read();
-        System.out.println("First byte: " + (byte) b);
-        if ((byte) b != KROMEK_SERIAL_FRAMING_FRAME_BYTE) {
-            throw new RuntimeException("First byte is not framing byte");
-        }
+        // Read until we get something other than the framing byte
+        do {
+            b = in.read();
+        } while ((byte) b == KROMEK_SERIAL_FRAMING_FRAME_BYTE);
 
         // First two bytes after framing byte are the message length
-        byte length1 = (byte) in.read();
-        if (length1 == KROMEK_SERIAL_FRAMING_FRAME_BYTE) {
-            length1 = (byte) in.read();
-        }
+        byte length1 = (byte) b;
         byte length2 = (byte) in.read();
-        System.out.println("Length1: " + length1 + " Length2: " + length2);
-        int length = length1 + (length2 << 8);
+        int length = bytesToUInt(length1, length2);
 
         output.add(length1);
         output.add(length2);
@@ -158,7 +191,6 @@ public class TCPTest {
         for (int i = 0; i < output.size(); i++) {
             result[i] = output.get(i);
         }
-        System.out.println("Finished receiving data");
         return result;
     }
 }

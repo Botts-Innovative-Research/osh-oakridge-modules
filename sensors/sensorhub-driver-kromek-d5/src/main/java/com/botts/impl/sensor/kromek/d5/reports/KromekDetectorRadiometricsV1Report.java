@@ -5,17 +5,18 @@ import net.opengis.swe.v20.DataRecord;
 import org.vast.swe.SWEHelper;
 
 import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
+import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_REPORTS_IN_RADIOMETRICS_V1_ID;
 
-public class Template extends SerialMessage {
+public class KromekDetectorRadiometricsV1Report extends SerialMessage {
     public byte value;
 
-    public Template(byte componentId, byte reportId, byte[] data) {
+    public KromekDetectorRadiometricsV1Report(byte componentId, byte reportId, byte[] data) {
         super(componentId, reportId);
         decodePayload(data);
     }
 
-    public Template() {
-        super(KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD, (byte) 0);
+    public KromekDetectorRadiometricsV1Report() {
+        super(KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD, KROMEK_SERIAL_REPORTS_IN_RADIOMETRICS_V1_ID);
     }
 
     @Override
@@ -25,7 +26,7 @@ public class Template extends SerialMessage {
 
     @Override
     public String toString() {
-        return Template.class.getSimpleName() + " {" +
+        return KromekDetectorRadiometricsV1Report.class.getSimpleName() + " {" +
                 "value=" + value +
                 '}';
     }
@@ -42,9 +43,9 @@ public class Template extends SerialMessage {
 
     @Override
     void setReportInfo() {
-        setReportName(Template.class.getSimpleName());
-        setReportLabel("Template");
-        setReportDescription("Template");
+        setReportName("KromekDetectorRadiometricsV1Report");
+        setReportLabel("Radiometrics V1 Report");
+        setReportDescription("Radiometrics V1 Report");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
     }
 }

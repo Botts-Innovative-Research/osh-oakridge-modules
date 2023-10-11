@@ -1,8 +1,8 @@
 package com.botts.impl.sensor.kromek.d5.reports;
 
-import com.botts.impl.sensor.kromek.d5.message.SerialMessage;
+import net.opengis.swe.v20.DataBlock;
+import net.opengis.swe.v20.DataRecord;
 
-import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
 
 import static com.botts.impl.sensor.kromek.d5.message.Constants.*;
@@ -20,14 +20,6 @@ public class KromekSerialUnitIDReport extends SerialMessage {
     }
 
     @Override
-    public byte[] encodePayload() {
-        ByteArrayOutputStream stream = new ByteArrayOutputStream();
-        for (int i = 0; i < KROMEK_SERIAL_MAX_UNIT_ID_LENGTH; i++)
-            stream.write(unitID[i]);
-        return stream.toByteArray();
-    }
-
-    @Override
     public void decodePayload(byte[] payload) {
         System.arraycopy(payload, 0, unitID, 0, KROMEK_SERIAL_MAX_UNIT_ID_LENGTH);
     }
@@ -37,5 +29,20 @@ public class KromekSerialUnitIDReport extends SerialMessage {
         return KromekSerialUnitIDReport.class.getSimpleName() + " {" +
                 "unitID=" + Arrays.toString(unitID) +
                 '}';
+    }
+
+    @Override
+    public DataRecord createDataRecord() {
+        return null;
+    }
+
+    @Override
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
+
+    }
+
+    @Override
+    void setReportInfo() {
+
     }
 }

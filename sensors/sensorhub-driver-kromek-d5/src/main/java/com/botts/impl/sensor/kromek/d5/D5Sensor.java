@@ -11,11 +11,17 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.kromek.d5;
 
+import com.botts.impl.sensor.kromek.d5.reports.KromekSerialCompressionEnabledReport;
+import com.botts.impl.sensor.kromek.d5.reports.KromekSerialEthernetConfigReport;
+import com.botts.impl.sensor.kromek.d5.reports.KromekSerialStatusReport;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.HashMap;
 
 /**
  * Sensor driver for the Kromek D5 providing sensor description, output registration,
@@ -25,25 +31,25 @@ import org.slf4j.LoggerFactory;
  * @since Oct. 2023
  */
 public class D5Sensor extends AbstractSensorModule<D5Config> {
-
     private static final Logger logger = LoggerFactory.getLogger(D5Sensor.class);
 
-    D5Output output;
+    // Map of report classes to their associated output instances
+    HashMap<Class<?>, D5Output> outputs;
     ICommProvider<?> commProvider;
+    Boolean processLock;
+    D5MessageRouter messageRouter;
 
     @Override
     public void doInit() throws SensorHubException {
-
         super.doInit();
+        outputs = new HashMap<>();
 
         // Generate identifiers
         generateUniqueID("[URN]", config.serialNumber);
         generateXmlID("[XML-PREFIX]", config.serialNumber);
 
-        // Create and initialize output
-        output = new D5Output(this);
-        addOutput(output, false);
-        output.doInit();
+        // Create and initialize output(s)
+        createOutputs();
     }
 
     @Override
@@ -59,13 +65,26 @@ public class D5Sensor extends AbstractSensorModule<D5Config> {
                 commProvider.start();
             } catch (Exception e) {
                 commProvider = null;
+                throw new SensorException("Error while initializing communications ", e);
             }
         }
+
+        // connect to data stream
+        try {
+            messageRouter = new D5MessageRouter(this, commProvider.getInputStream(), commProvider.getOutputStream());
+            messageRouter.start();
+        } catch (Exception e) {
+            throw new SensorException("Error while initializing communications ", e);
+        }
+
+        processLock = false;
     }
 
     @Override
     public void doStop() throws SensorHubException {
-        if (output != null) {
+        processLock = true;
+
+        for (D5Output output : outputs.values()) {
             output.doStop();
         }
 
@@ -79,5 +98,27 @@ public class D5Sensor extends AbstractSensorModule<D5Config> {
     public boolean isConnected() {
         // Determine if sensor is connected
         return commProvider.isInitialized();
+    }
+
+    void createOutputs() {
+        // Create and initialize outputs
+        if (config.outputs.enableKromekSerialCompressionEnabledReport) {
+            D5Output output = new D5Output(KromekSerialCompressionEnabledReport.getReportName(), this);
+            addOutput(output, false);
+            output.doInit(new KromekSerialCompressionEnabledReport());
+            outputs.put(KromekSerialCompressionEnabledReport.class, output);
+        }
+        if (config.outputs.enableKromekSerialEthernetConfigReport) {
+            D5Output output = new D5Output(KromekSerialEthernetConfigReport.getReportName(), this);
+            addOutput(output, false);
+            output.doInit(new KromekSerialEthernetConfigReport());
+            outputs.put(KromekSerialEthernetConfigReport.class, output);
+        }
+        if (config.outputs.enableKromekSerialStatusReport) {
+            D5Output output = new D5Output(KromekSerialStatusReport.getReportName(), this);
+            addOutput(output, false);
+            output.doInit(new KromekSerialStatusReport());
+            outputs.put(KromekSerialStatusReport.class, output);
+        }
     }
 }
