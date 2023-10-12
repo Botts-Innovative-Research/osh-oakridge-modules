@@ -1,0 +1,31 @@
+description = 'Rapiscan Radiation Portal Monitor (RPM)'
+ext.details = 'Rapiscan Portal Driver'
+version = '0.1'
+
+dependencies {
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation project(':sensorhub-utils-rad')
+
+    implementation 'org.apache.commons:commons-lang3:3.12.0'
+    implementation group: 'com.opencsv', name: 'opencsv', version: '4.1'
+
+}
+
+osgi {
+    manifest {
+        attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
+        attributes('Bundle-Activator': 'org.sensorhub.impl.sensor.rapiscan.Activator')
+    }
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'drewbotts'
+            name 'Drew Botts'
+            organization 'Botts Innovative Research'
+            organizationUrl 'http://www.botts-inc.com'
+        }
+    }
+}
