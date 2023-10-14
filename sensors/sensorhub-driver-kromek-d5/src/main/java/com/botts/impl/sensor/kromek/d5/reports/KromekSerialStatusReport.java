@@ -11,18 +11,18 @@ import java.util.Arrays;
 import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
 import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_REPORTS_IN_STATUS_ID;
 
-public class KromekSerialStatusReport extends SerialMessage {
-    public int appStatus;
-    public KromekSerialPowerSource power;
-    public int temperature;
-    public int detectorStatus0;
-    public int detectorStatus1;
-    public int batteryLevel;
-    public int batteryChargeRate;
-    public int batteryTemperature;
-    public byte usbStatus;
-    public byte btStatus;
-    public int detectorStatus2;
+public class KromekSerialStatusReport extends SerialReport {
+    private int appStatus;
+    private KromekSerialPowerSource power;
+    private int temperature;
+    private int detectorStatus0;
+    private int detectorStatus1;
+    private int batteryLevel;
+    private int batteryChargeRate;
+    private int batteryTemperature;
+    private byte usbStatus;
+    private byte btStatus;
+    private int detectorStatus2;
 
     public KromekSerialStatusReport(byte componentId, byte reportId, byte[] data) {
         super(componentId, reportId);
@@ -36,13 +36,13 @@ public class KromekSerialStatusReport extends SerialMessage {
     @Override
     public void decodePayload(byte[] payload) {
         appStatus = bytesToUInt(payload[0]);
-        power = KromekSerialPowerSource.fromByte(payload[1]);
-        temperature = bytesToUInt(payload[2]);
+        power = KromekSerialPowerSource.values()[bytesToUInt(payload[1])];
+        temperature = bytesToInt(payload[2]);
         detectorStatus0 = bytesToUInt(payload[3]);
         detectorStatus1 = bytesToUInt(payload[4]);
         batteryLevel = bytesToUInt(payload[5]);
-        batteryChargeRate = bytesToUInt(payload[6]);
-        batteryTemperature = bytesToUInt(payload[7]);
+        batteryChargeRate = bytesToInt(payload[6]);
+        batteryTemperature = bytesToInt(payload[7]);
         usbStatus = payload[8];
         btStatus = payload[9];
         detectorStatus2 = bytesToUInt(payload[10]);
@@ -135,7 +135,7 @@ public class KromekSerialStatusReport extends SerialMessage {
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setIntValue(++index, appStatus);

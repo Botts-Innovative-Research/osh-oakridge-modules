@@ -10,12 +10,12 @@ import java.util.Arrays;
 import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
 import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_REPORTS_IN_COMPRESSION_ENABLED_ID;
 
-public class KromekSerialCompressionEnabledReport extends SerialMessage {
-    public boolean enabled;
-    public int windowSize;
-    public int lookaheadSize;
-    public int compressionDirection;
-    public byte[] reserved = new byte[2];
+public class KromekSerialCompressionEnabledReport extends SerialReport {
+    private boolean enabled;
+    private int windowSize;
+    private int lookaheadSize;
+    private int compressionDirection;
+    private byte[] reserved = new byte[2];
 
     public KromekSerialCompressionEnabledReport(byte componentId, byte reportId, byte[] data) {
         super(componentId, reportId);
@@ -81,7 +81,7 @@ public class KromekSerialCompressionEnabledReport extends SerialMessage {
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setBooleanValue(++index, enabled);

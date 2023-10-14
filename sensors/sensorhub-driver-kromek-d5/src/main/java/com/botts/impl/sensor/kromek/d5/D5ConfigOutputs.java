@@ -14,12 +14,30 @@ package com.botts.impl.sensor.kromek.d5;
 import org.sensorhub.api.config.DisplayInfo;
 
 public class D5ConfigOutputs {
+    @DisplayInfo(label = "KromekDetectorRadiometricsV1Report", desc = "Detector Radiometrics V1 Report")
+    public boolean enableKromekDetectorRadiometricsV1Report = true;
+
     @DisplayInfo(label = "KromekSerialCompressionEnabledReport", desc = "Compression Enabled Report")
-    public boolean enableKromekSerialCompressionEnabledReport = true;
+    public boolean enableKromekSerialCompressionEnabledReport = false;
 
     @DisplayInfo(label = "KromekSerialEthernetConfigReport", desc = "Ethernet Config Report")
-    public boolean enableKromekSerialEthernetConfigReport = true;
+    public boolean enableKromekSerialEthernetConfigReport = false;
 
     @DisplayInfo(label = "KromekSerialStatusReport", desc = "Status Report")
-    public boolean enableKromekSerialStatusReport = true;
+    public boolean enableKromekSerialStatusReport = false;
+
+    @DisplayInfo(label = "KromekSerialUnitIDReport", desc = "Unit ID Report")
+    public boolean enableKromekSerialUnitIDReport = false;
+
+    @DisplayInfo(label = "KromekSerialDoseInfoReport", desc = "Dose Info Report")
+    public boolean enableKromekSerialDoseInfoReport = false;
+
+    @DisplayInfo(label = "KromekSerialRemoteIsotopeConfirmationReport", desc = "Remote Isotope Confirmation Report")
+    public boolean enableKromekSerialRemoteIsotopeConfirmationReport = false;
+
+    @DisplayInfo(label = "KromekSerialRemoteIsotopeConfirmationStatusReport", desc = "Remote Isotope Confirmation Status Report")
+    public boolean enableKromekSerialRemoteIsotopeConfirmationStatusReport = false;
+
+    @DisplayInfo(label = "KromekSerialUTCReport", desc = "UTC Report")
+    public boolean enableKromekSerialUTCReport = false;
 }

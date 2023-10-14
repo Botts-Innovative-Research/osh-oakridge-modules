@@ -2,13 +2,15 @@ package com.botts.impl.sensor.kromek.d5.reports;
 
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataRecord;
+import net.opengis.swe.v20.DataType;
+import org.vast.swe.SWEHelper;
 
 import java.util.Arrays;
 
 import static com.botts.impl.sensor.kromek.d5.message.Constants.*;
 
-public class KromekSerialUnitIDReport extends SerialMessage {
-    public byte[] unitID = new byte[KROMEK_SERIAL_MAX_UNIT_ID_LENGTH];
+public class KromekSerialUnitIDReport extends SerialReport {
+    private int[] unitID = new int[KROMEK_SERIAL_MAX_UNIT_ID_LENGTH];
 
     public KromekSerialUnitIDReport(byte componentId, byte reportId, byte[] data) {
         super(componentId, reportId);
@@ -21,7 +23,8 @@ public class KromekSerialUnitIDReport extends SerialMessage {
 
     @Override
     public void decodePayload(byte[] payload) {
-        System.arraycopy(payload, 0, unitID, 0, KROMEK_SERIAL_MAX_UNIT_ID_LENGTH);
+        for (int i = 0; i < KROMEK_SERIAL_MAX_UNIT_ID_LENGTH; i++)
+            unitID[i] = bytesToUInt(payload[i]);
     }
 
     @Override
@@ -33,16 +36,42 @@ public class KromekSerialUnitIDReport extends SerialMessage {
 
     @Override
     public DataRecord createDataRecord() {
-        return null;
+        SWEHelper sweFactory = new SWEHelper();
+        return sweFactory.createRecord()
+                .name(getReportName())
+                .label(getReportLabel())
+                .description(getReportDescription())
+                .definition(getReportDefinition())
+                .addField("timestamp", sweFactory.createTime()
+                        .asSamplingTimeIsoUTC()
+                        .label("Precision Time Stamp"))
+                .addField("unitID", sweFactory.createArray()
+                        .label("Unit ID")
+                        .description("Unit ID")
+                        .definition(SWEHelper.getPropertyUri("unitID"))
+                        .withFixedSize(KROMEK_SERIAL_MAX_UNIT_ID_LENGTH)
+                        .withElement("unitID", sweFactory.createQuantity()
+                                .label("Unit ID")
+                                .description("Unit ID")
+                                .definition(SWEHelper.getPropertyUri("unitID"))
+                                .dataType(DataType.INT)))
+                .build();
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, double timestamp) {
-
+    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
+        int index = 0;
+        dataBlock.setDoubleValue(index, timestamp);
+        for (int i = 0; i < KROMEK_SERIAL_MAX_UNIT_ID_LENGTH; i++)
+            dataBlock.setIntValue(++index, unitID[i]);
     }
 
     @Override
     void setReportInfo() {
+        setReportName(KromekSerialUnitIDReport.class.getSimpleName());
+        setReportLabel("Unit ID");
+        setReportDescription("Unit ID");
+        setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
 
     }
 }

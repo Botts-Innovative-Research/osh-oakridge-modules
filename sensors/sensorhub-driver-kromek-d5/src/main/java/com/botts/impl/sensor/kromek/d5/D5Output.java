@@ -11,7 +11,7 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.kromek.d5;
 
-import com.botts.impl.sensor.kromek.d5.reports.SerialMessage;
+import com.botts.impl.sensor.kromek.d5.reports.SerialReport;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -49,7 +49,7 @@ public class D5Output extends AbstractSensorOutput<D5Sensor> {
      *
      * @param parentSensor Sensor driver providing this output
      */
-    D5Output(String outputName ,D5Sensor parentSensor) {
+    D5Output(String outputName, D5Sensor parentSensor) {
         super(outputName, parentSensor);
 
         logger.debug("Output created");
@@ -59,7 +59,7 @@ public class D5Output extends AbstractSensorOutput<D5Sensor> {
      * Initializes the data structure for the output, defining the fields, their ordering,
      * and data types.
      */
-    void doInit(SerialMessage data) {
+    void doInit(SerialReport data) {
         logger.debug("Initializing output");
 
         dataRecord = data.createDataRecord();
@@ -95,7 +95,7 @@ public class D5Output extends AbstractSensorOutput<D5Sensor> {
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    public void setData(SerialMessage data) {
+    public void setData(SerialReport data) {
         try {
             DataBlock dataBlock;
             if (latestRecord == null) {
@@ -118,7 +118,7 @@ public class D5Output extends AbstractSensorOutput<D5Sensor> {
 
             double timestamp = System.currentTimeMillis() / 1000d;
 
-            data.setDataBlock(dataBlock, timestamp);
+            data.setDataBlock(dataBlock, dataRecord, timestamp);
 
             latestRecord = dataBlock;
 

@@ -6,8 +6,8 @@ import org.vast.swe.SWEHelper;
 
 import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
 
-public class Template extends SerialMessage {
-    public byte value;
+public class Template extends SerialReport {
+    private byte value;
 
     public Template(byte componentId, byte reportId, byte[] data) {
         super(componentId, reportId);
@@ -36,7 +36,7 @@ public class Template extends SerialMessage {
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
 
     }
 

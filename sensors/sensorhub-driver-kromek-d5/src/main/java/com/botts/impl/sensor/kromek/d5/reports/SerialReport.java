@@ -6,12 +6,14 @@ import org.vast.swe.SWEHelper;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 
 import static com.botts.impl.sensor.kromek.d5.message.Constants.*;
 
-public abstract class SerialMessage {
+public abstract class SerialReport {
     private final byte componentId;
     private final byte reportId;
 
@@ -24,7 +26,7 @@ public abstract class SerialMessage {
     /**
      * Create a new message with the given componentId and reportId.
      */
-    public SerialMessage(byte componentId, byte reportId) {
+    public SerialReport(byte componentId, byte reportId) {
         this.componentId = componentId;
         this.reportId = reportId;
         setReportInfo();
@@ -60,14 +62,16 @@ public abstract class SerialMessage {
         int length = KROMEK_SERIAL_MESSAGE_OVERHEAD + KROMEK_SERIAL_REPORTS_HEADER_OVERHEAD;
 
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        outputStream.write(intToBytes(length));
+        // Write the length as uint16_t
+        outputStream.write((byte) (length & 0xFF));
+        outputStream.write((byte) (0));
         outputStream.write(KROMEK_SERIAL_MESSAGE_MODE);
         outputStream.write(componentId);
         outputStream.write(reportId);
 
-        // CRC is always 0 for requests
-        int crc = 0;
-        outputStream.write(intToBytes(crc));
+        // CRC is always 0 for requests. Write two 0 bytes.
+        outputStream.write((byte) 0);
+        outputStream.write((byte) 0);
 
         byte[] message = outputStream.toByteArray();
         if (KROMEK_SERIAL_REPORTS_BUILD_FOR_PRODUCT_D5)
@@ -85,6 +89,7 @@ public abstract class SerialMessage {
     public static byte[] encodeSLIP(byte[] data) {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 
+        outputStream.write(KROMEK_SERIAL_FRAMING_FRAME_BYTE);
         for (byte b : data) {
             if (b == KROMEK_SERIAL_FRAMING_FRAME_BYTE) {
                 outputStream.write(KROMEK_SERIAL_FRAMING_ESC_BYTE);
@@ -103,25 +108,25 @@ public abstract class SerialMessage {
 
     /**
      * Decode the given message using SLIP framing.
-     * Parses the received bytes until it detects a framing byte.
-     * It parses all bytes since the last framing byte.
      * If it finds any ESC bytes it replaces the escaped byte sequences with the original bytes.
      */
     public static byte[] decodeSLIP(byte[] input) {
         List<Byte> output = new ArrayList<>();
-        boolean escaped = false;
-        for (byte b : input) {
-            if (escaped) {
-                if (b == KROMEK_SERIAL_FRAMING_ESC_FRAME_BYTE) {
+        for (int i = 0; i < input.length; ) {
+            byte b = input[i];
+            if (b == KROMEK_SERIAL_FRAMING_ESC_BYTE && i < input.length - 1) {
+                byte nextByte = input[i + 1];
+                if (nextByte == KROMEK_SERIAL_FRAMING_ESC_FRAME_BYTE) {
                     output.add(KROMEK_SERIAL_FRAMING_FRAME_BYTE);
-                } else if (b == KROMEK_SERIAL_FRAMING_ESC_ESC_BYTE) {
+                } else if (nextByte == KROMEK_SERIAL_FRAMING_ESC_ESC_BYTE) {
                     output.add(KROMEK_SERIAL_FRAMING_ESC_BYTE);
+                } else {
+                    throw new RuntimeException("Invalid SLIP escape sequence: " + nextByte);
                 }
-                escaped = false;
-            } else if (b == KROMEK_SERIAL_FRAMING_ESC_BYTE) {
-                escaped = true;
+                i += 2;
             } else {
                 output.add(b);
+                i++;
             }
         }
 
@@ -151,46 +156,67 @@ public abstract class SerialMessage {
     }
 
     /**
-     * Converts an int into two bytes.
+     * Converts bytes representing a float into a float.
      *
-     * @param value The int to convert.
-     * @return The two bytes.
+     * @param bytes The bytes to convert.
+     * @return The float.
      */
-    public byte[] intToBytes(int value) {
-        byte[] bytes = new byte[2];
-        // The & 0xFF masks all but the lowest eight bits.
-        bytes[0] = (byte) (value & 0xFF);
-        // The >> 8 discards the lowest eight bits.
-        bytes[1] = (byte) ((value >> 8) & 0xFF);
-        return bytes;
+    public static float bytesToFloat(byte... bytes) {
+        return ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).getFloat();
     }
 
     /**
-     * Converts bytes representing an unsigned int into an int.
+     * Converts a byte representing uint8_t into a short.
      *
-     * @param bytes The bytes to convert.
-     * @return The int.
+     * @return The short.
      */
-    public static int bytesToUInt(byte... bytes) {
-        int result = 0;
-        for (int i = 0; i < bytes.length; i++) {
-            result += (bytes[i] & 0xFF) << (8 * i);
-        }
-        return result;
+    public static short bytesToUInt(byte byte1) {
+        return (short) (byte1 & 0xFF);
     }
 
     /**
-     * Converts bytes representing a signed int into an int.
+     * Converts bytes representing uint16_t into an int
      *
-     * @param bytes The bytes to convert.
      * @return The int.
      */
-    public static int bytesToInt(byte... bytes) {
-        int result = 0;
-        for (int i = 0; i < bytes.length; i++) {
-            result += bytes[i] << (8 * i);
-        }
-        return result;
+    public static int bytesToUInt(byte byte1, byte byte2) {
+        return ByteBuffer.wrap(new byte[]{byte1, byte2}).order(ByteOrder.LITTLE_ENDIAN).getShort() & 0xFFFF;
+    }
+
+    /**
+     * Converts bytes representing uint32_t into a long.
+     *
+     * @return The long.
+     */
+    public static long bytesToUInt(byte byte1, byte byte2, byte byte3, byte byte4) {
+        return ByteBuffer.wrap(new byte[]{byte1, byte2, byte3, byte4}).order(ByteOrder.LITTLE_ENDIAN).getInt() & 0xFFFFFFFFL;
+    }
+
+    /**
+     * Converts a byte representing int8_t into a byte.
+     *
+     * @return The short.
+     */
+    public static short bytesToInt(byte byte1) {
+        return byte1;
+    }
+
+    /**
+     * Converts bytes representing int16_t into an int
+     *
+     * @return The int.
+     */
+    public static int bytesToInt(byte byte1, byte byte2) {
+        return ByteBuffer.wrap(new byte[]{byte1, byte2}).order(ByteOrder.LITTLE_ENDIAN).getShort();
+    }
+
+    /**
+     * Converts bytes representing int32_t into an int.
+     *
+     * @return The int.
+     */
+    public static int bytesToInt(byte byte1, byte byte2, byte byte3, byte byte4) {
+        return ByteBuffer.wrap(new byte[]{byte1, byte2, byte3, byte4}).order(ByteOrder.LITTLE_ENDIAN).getInt();
     }
 
     /**
@@ -203,13 +229,12 @@ public abstract class SerialMessage {
         return value != 0;
     }
 
-
     public static String getReportName() {
         return reportName;
     }
 
     void setReportName(String reportName) {
-        SerialMessage.reportName = reportName;
+        SerialReport.reportName = reportName;
     }
 
     public static String getReportLabel() {
@@ -217,7 +242,7 @@ public abstract class SerialMessage {
     }
 
     void setReportLabel(String reportLabel) {
-        SerialMessage.reportLabel = reportLabel;
+        SerialReport.reportLabel = reportLabel;
     }
 
     public static String getReportDescription() {
@@ -225,7 +250,7 @@ public abstract class SerialMessage {
     }
 
     void setReportDescription(String reportDescription) {
-        SerialMessage.reportDescription = reportDescription;
+        SerialReport.reportDescription = reportDescription;
     }
 
     public static String getReportDefinition() {
@@ -233,7 +258,7 @@ public abstract class SerialMessage {
     }
 
     void setReportDefinition(String reportDefinition) {
-        SerialMessage.reportDefinition = reportDefinition;
+        SerialReport.reportDefinition = reportDefinition;
     }
 
     public abstract void decodePayload(byte[] payload);
@@ -242,7 +267,7 @@ public abstract class SerialMessage {
 
     public abstract DataRecord createDataRecord();
 
-    public abstract void setDataBlock(DataBlock dataBlock, double timestamp);
+    public abstract void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp);
 
     /**
      * Called by the constructor to set the report info.

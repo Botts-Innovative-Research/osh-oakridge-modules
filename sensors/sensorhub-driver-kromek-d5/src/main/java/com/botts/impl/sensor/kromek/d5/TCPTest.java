@@ -1,6 +1,5 @@
 package com.botts.impl.sensor.kromek.d5;
 
-import com.botts.impl.sensor.kromek.d5.reports.SerialMessage;
 import com.botts.impl.sensor.kromek.d5.reports.*;
 import org.junit.Test;
 
@@ -13,7 +12,8 @@ import java.util.Arrays;
 import java.util.List;
 
 import static com.botts.impl.sensor.kromek.d5.message.Constants.*;
-import static com.botts.impl.sensor.kromek.d5.reports.SerialMessage.*;
+import static com.botts.impl.sensor.kromek.d5.reports.SerialReport.bytesToUInt;
+import static com.botts.impl.sensor.kromek.d5.reports.SerialReport.decodeSLIP;
 
 public class TCPTest {
     @Test
@@ -24,6 +24,8 @@ public class TCPTest {
 
         // Create a TCP socket and connect to the server
         try (Socket clientSocket = new Socket(ipAddress, portNumber)) {
+            SerialReport report = new KromekDetectorRadiometricsV1Report();
+
             System.out.println("Connected to server");
 
             // Create input and output streams for the socket
@@ -31,7 +33,6 @@ public class TCPTest {
             OutputStream outToServer = clientSocket.getOutputStream();
 
             // Create a message to send
-            SerialMessage report = new KromekSerialStatusReport();
             byte[] message = report.encodeRequest();
             System.out.println("Message: " + Arrays.toString(message));
             System.out.print("Hex data: ");
@@ -41,9 +42,6 @@ public class TCPTest {
 
             // Send the framed message to the server
             outToServer.write(message);
-
-            // Flush the output stream to ensure the message is sent
-            outToServer.flush();
 
             System.out.printf("Message sent. Requested report: 0x%02X", report.getReportId());
             System.out.println();
@@ -57,6 +55,7 @@ public class TCPTest {
 
             // Print the received data
             System.out.println(" Decoded data: " + Arrays.toString(decodedData));
+            System.out.println("receivedData: " + receivedData.length + " decodedData: " + decodedData.length);
 
             // Print as hex
             System.out.print("     Hex data: ");
@@ -76,7 +75,7 @@ public class TCPTest {
             //Next byte is the componentId then reportId
             byte componentId = decodedData[3];
             byte reportId = decodedData[4];
-            System.out.printf("ComponentId: " + SerialMessage.bytesToUInt(componentId) + " (0x%02X) ReportId: " + SerialMessage.bytesToUInt(reportId) + " (0x%02X)", componentId, reportId);
+            System.out.printf("ComponentId: " + SerialReport.bytesToUInt(componentId) + " (0x%02X) ReportId: " + SerialReport.bytesToUInt(reportId) + " (0x%02X)", componentId, reportId);
             System.out.println();
 
             if (reportId == KROMEK_SERIAL_REPORTS_IN_ACK_ID) {
@@ -102,39 +101,17 @@ public class TCPTest {
         }
     }
 
-    private SerialMessage createReport(byte componentId, byte reportId, byte[] payload) {
+    private SerialReport createReport(byte componentId, byte reportId, byte[] payload) {
         switch (reportId) {
-            case KROMEK_SERIAL_REPORTS_IN_RADIOMETRICS_V1_ID:
-                //return new KromekDetectorRadiometricsV1Report(componentId, reportId, payload);
-                throw new RuntimeException("Not implemented");
-            case KROMEK_SERIAL_REPORTS_IN_STATUS_ID:
-                return new KromekSerialStatusReport(componentId, reportId, payload);
             case KROMEK_SERIAL_REPORTS_IN_OTG_MODE_ID:
             case KROMEK_SERIAL_REPORTS_OUT_OTG_MODE_ID:
             case KROMEK_SERIAL_REPORTS_IN_ABOUT_ID:
             case KROMEK_SERIAL_REPORTS_IN_DEVICE_INFO_ID:
-                throw new RuntimeException("Not implemented");
-            case KROMEK_SERIAL_REPORTS_IN_ETHERNET_CONFIG_ID:
-            case KROMEK_SERIAL_REPORTS_OUT_ETHERNET_CONFIG_ID:
-                return new KromekSerialEthernetConfigReport(componentId, reportId, payload);
-            case KROMEK_SERIAL_REPORTS_IN_COMPRESSION_ENABLED_ID:
-            case KROMEK_SERIAL_REPORTS_OUT_COMPRESSION_ENABLED_ID:
-                return new KromekSerialCompressionEnabledReport(componentId, reportId, payload);
-            case KROMEK_SERIAL_REPORTS_IN_RADIATION_THRESHOLD_INDEXED_ID:
-            case KROMEK_SERIAL_REPORTS_OUT_RADIATION_THRESHOLD_INDEXED_ID:
-            case KROMEK_SERIAL_REPORTS_IN_RESET_ACCUMULATED_DOSE_ID:
-            case KROMEK_SERIAL_REPORTS_OUT_RESET_ACCUMULATED_DOSE_ID:
-            case KROMEK_SERIAL_REPORTS_IN_DOSE_INFO_ID:
             case KROMEK_SERIAL_REPORTS_IN_UI_SCREEN_CONFIG_ID:
             case KROMEK_SERIAL_REPORTS_OUT_UI_SCREEN_CONFIG_ID:
             case KROMEK_SERIAL_REPORTS_IN_ENERGY_SPECTRUM_ID:
             case KROMEK_SERIAL_REPORTS_IN_MAINTAINER_DEVICE_CONFIG_INDEXED_ID:
             case KROMEK_SERIAL_REPORTS_OUT_MAINTAINER_DEVICE_CONFIG_INDEXED_ID:
-            case KROMEK_SERIAL_REPORTS_IN_UTC_TIME_ID:
-            case KROMEK_SERIAL_REPORTS_OUT_UTC_TIME_ID:
-            case KROMEK_SERIAL_REPORTS_IN_REMOTE_ISOTOPE_CONFIRMATION_ID:
-            case KROMEK_SERIAL_REPORTS_OUT_REMOTE_ISOTOPE_CONFIRMATION_ID:
-            case KROMEK_SERIAL_REPORTS_IN_REMOTE_ISOTOPE_CONFIRMATION_STATUS_ID:
             case KROMEK_SERIAL_REPORTS_IN_REMOTE_BACKGROUND_COLLECTION_STATUS_ID:
             case KROMEK_SERIAL_REPORTS_IN_WIFI_AP_CONFIG_ID:
             case KROMEK_SERIAL_REPORTS_OUT_WIFI_AP_CONFIG_ID:
@@ -151,7 +128,31 @@ public class TCPTest {
             case KROMEK_SERIAL_REPORTS_IN_UI_PIN_CODE_ID:
             case KROMEK_SERIAL_REPORTS_OUT_UI_PIN_CODE_ID:
             case KROMEK_SERIAL_REPORTS_IN_REMOTE_EXT_ISOTOPE_CONFIRMATION_STATUS_ID:
+            case KROMEK_SERIAL_REPORTS_IN_RADIATION_THRESHOLD_INDEXED_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_RADIATION_THRESHOLD_INDEXED_ID:
+            case KROMEK_SERIAL_REPORTS_IN_RESET_ACCUMULATED_DOSE_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_RESET_ACCUMULATED_DOSE_ID:
                 throw new RuntimeException("Not implemented");
+            case KROMEK_SERIAL_REPORTS_IN_RADIOMETRICS_V1_ID:
+                return new KromekDetectorRadiometricsV1Report(componentId, reportId, payload);
+            case KROMEK_SERIAL_REPORTS_IN_UTC_TIME_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_UTC_TIME_ID:
+                return new KromekSerialUTCReport(componentId, reportId, payload);
+            case KROMEK_SERIAL_REPORTS_IN_REMOTE_ISOTOPE_CONFIRMATION_STATUS_ID:
+                return new KromekSerialRemoteIsotopeConfirmationStatusReport(componentId, reportId, payload);
+            case KROMEK_SERIAL_REPORTS_IN_STATUS_ID:
+                return new KromekSerialStatusReport(componentId, reportId, payload);
+            case KROMEK_SERIAL_REPORTS_IN_ETHERNET_CONFIG_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_ETHERNET_CONFIG_ID:
+                return new KromekSerialEthernetConfigReport(componentId, reportId, payload);
+            case KROMEK_SERIAL_REPORTS_IN_COMPRESSION_ENABLED_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_COMPRESSION_ENABLED_ID:
+                return new KromekSerialCompressionEnabledReport(componentId, reportId, payload);
+            case KROMEK_SERIAL_REPORTS_IN_DOSE_INFO_ID:
+                return new KromekSerialDoseInfoReport(componentId, reportId, payload);
+            case KROMEK_SERIAL_REPORTS_IN_REMOTE_ISOTOPE_CONFIRMATION_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_REMOTE_ISOTOPE_CONFIRMATION_ID:
+                return new KromekSerialRemoteIsotopeConfirmationReport(componentId, reportId, payload);
             case KROMEK_SERIAL_REPORTS_IN_UNIT_ID_ID:
             case KROMEK_SERIAL_REPORTS_OUT_UNIT_ID_ID:
                 return new KromekSerialUnitIDReport(componentId, reportId, payload);
@@ -186,6 +187,7 @@ public class TCPTest {
             b = in.read();
             output.add((byte) b);
         }
+        System.out.println("output: " + output.size() + " length: " + length);
 
         byte[] result = new byte[output.size()];
         for (int i = 0; i < output.size(); i++) {

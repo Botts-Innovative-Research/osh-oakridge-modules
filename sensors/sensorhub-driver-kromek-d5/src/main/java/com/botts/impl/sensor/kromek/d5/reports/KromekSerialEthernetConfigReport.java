@@ -8,12 +8,12 @@ import org.vast.swe.SWEHelper;
 import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
 import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_REPORTS_IN_ETHERNET_CONFIG_ID;
 
-public class KromekSerialEthernetConfigReport extends SerialMessage {
-    public boolean dhcp;
-    public int[] address;
-    public int[] netmask;
-    public int[] gateway;
-    public int port;
+public class KromekSerialEthernetConfigReport extends SerialReport {
+    private boolean dhcp;
+    private int[] address;
+    private int[] netmask;
+    private int[] gateway;
+    private int port;
 
     public KromekSerialEthernetConfigReport(byte componentId, byte reportId, byte[] data) {
         super(componentId, reportId);
@@ -92,7 +92,7 @@ public class KromekSerialEthernetConfigReport extends SerialMessage {
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setBooleanValue(++index, dhcp);

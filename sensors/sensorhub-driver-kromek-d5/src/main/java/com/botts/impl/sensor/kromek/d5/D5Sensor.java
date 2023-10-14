@@ -11,9 +11,7 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.kromek.d5;
 
-import com.botts.impl.sensor.kromek.d5.reports.KromekSerialCompressionEnabledReport;
-import com.botts.impl.sensor.kromek.d5.reports.KromekSerialEthernetConfigReport;
-import com.botts.impl.sensor.kromek.d5.reports.KromekSerialStatusReport;
+import com.botts.impl.sensor.kromek.d5.reports.*;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.sensor.SensorException;
@@ -119,6 +117,42 @@ public class D5Sensor extends AbstractSensorModule<D5Config> {
             addOutput(output, false);
             output.doInit(new KromekSerialStatusReport());
             outputs.put(KromekSerialStatusReport.class, output);
+        }
+        if (config.outputs.enableKromekSerialUnitIDReport) {
+            D5Output output = new D5Output(KromekSerialUnitIDReport.getReportName(), this);
+            addOutput(output, false);
+            output.doInit(new KromekSerialUnitIDReport());
+            outputs.put(KromekSerialUnitIDReport.class, output);
+        }
+        if (config.outputs.enableKromekSerialDoseInfoReport) {
+            D5Output output = new D5Output(KromekSerialDoseInfoReport.getReportName(), this);
+            addOutput(output, false);
+            output.doInit(new KromekSerialDoseInfoReport());
+            outputs.put(KromekSerialDoseInfoReport.class, output);
+        }
+        if (config.outputs.enableKromekSerialRemoteIsotopeConfirmationReport) {
+            D5Output output = new D5Output(KromekSerialRemoteIsotopeConfirmationReport.getReportName(), this);
+            addOutput(output, false);
+            output.doInit(new KromekSerialRemoteIsotopeConfirmationReport());
+            outputs.put(KromekSerialRemoteIsotopeConfirmationReport.class, output);
+        }
+        if (config.outputs.enableKromekSerialRemoteIsotopeConfirmationStatusReport) {
+            D5Output output = new D5Output(KromekSerialRemoteIsotopeConfirmationStatusReport.getReportName(), this);
+            addOutput(output, false);
+            output.doInit(new KromekSerialRemoteIsotopeConfirmationStatusReport());
+            outputs.put(KromekSerialRemoteIsotopeConfirmationStatusReport.class, output);
+        }
+        if (config.outputs.enableKromekSerialUTCReport) {
+            D5Output output = new D5Output(KromekSerialUTCReport.getReportName(), this);
+            addOutput(output, false);
+            output.doInit(new KromekSerialUTCReport());
+            outputs.put(KromekSerialUTCReport.class, output);
+        }
+        if (config.outputs.enableKromekDetectorRadiometricsV1Report) {
+            D5Output output = new D5Output(KromekDetectorRadiometricsV1Report.getReportName(), this);
+            addOutput(output, false);
+            output.doInit(new KromekDetectorRadiometricsV1Report());
+            outputs.put(KromekDetectorRadiometricsV1Report.class, output);
         }
     }
 }

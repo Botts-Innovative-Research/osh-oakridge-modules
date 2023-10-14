@@ -1,13 +1,12 @@
 package com.botts.impl.sensor.kromek.d5;
 
-import com.botts.impl.sensor.kromek.d5.reports.SerialMessage;
+import com.botts.impl.sensor.kromek.d5.reports.SerialReport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -17,7 +16,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import static com.botts.impl.sensor.kromek.d5.message.Constants.*;
-import static com.botts.impl.sensor.kromek.d5.reports.SerialMessage.*;
+import static com.botts.impl.sensor.kromek.d5.reports.SerialReport.bytesToUInt;
+import static com.botts.impl.sensor.kromek.d5.reports.SerialReport.decodeSLIP;
 
 public class D5MessageRouter implements Runnable {
     Thread worker;
@@ -51,7 +51,7 @@ public class D5MessageRouter implements Runnable {
 
                 try {
                     // Create a message to send
-                    var report = (SerialMessage) reportClass.getDeclaredConstructor().newInstance();
+                    var report = (SerialReport) reportClass.getDeclaredConstructor().newInstance();
 
                     logger.info("Sending " + report.getClass().getSimpleName());
                     byte[] message = report.encodeRequest();
@@ -88,7 +88,7 @@ public class D5MessageRouter implements Runnable {
                     byte[] payload = Arrays.copyOfRange(decodedData, 5, decodedData.length - 2);
 
                     //Create a new report with the payload
-                    report = (SerialMessage) reportClass
+                    report = (SerialReport) reportClass
                             .getDeclaredConstructor(byte.class, byte.class, byte[].class)
                             .newInstance(componentId, reportId, payload);
 
