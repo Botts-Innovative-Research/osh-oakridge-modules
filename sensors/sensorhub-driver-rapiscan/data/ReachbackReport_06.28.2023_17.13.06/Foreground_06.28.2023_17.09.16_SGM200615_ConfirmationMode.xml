@@ -1,0 +1,102 @@
+<?xml version="1.0"?>
+<?xml-model href="http://physics.nist.gov/N42/2011/schematron/n42.sch"
+			 type="application/xml"
+			 schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<RadInstrumentData xmlns="http://physics.nist.gov/N42/2011/N42"
+			 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+			 xsi:schemaLocation="http://physics.nist.gov/N42/2011/N42 http://physics.nist.gov/N42/2011/n42.xsd">
+	<RadInstrumentDataCreatorName>D3S ID</RadInstrumentDataCreatorName>
+	<RadInstrumentInformation id="RadInstrumentInformation-1">
+		<RadInstrumentManufacturerName>Kromek</RadInstrumentManufacturerName>
+		<RadInstrumentIdentifier>SGM200615</RadInstrumentIdentifier>
+		<RadInstrumentModelName>D3S ID</RadInstrumentModelName>
+		<RadInstrumentClassCode>Radionuclide Identifier</RadInstrumentClassCode>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>Hardware</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>D3S</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>Firmware</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>3.81</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>Software</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>2.6.1</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+	</RadInstrumentInformation>
+	<RadDetectorInformation id="RadDetectorInformation-1">
+		<RadDetectorCategoryCode>Gamma</RadDetectorCategoryCode>
+		<RadDetectorKindCode>CsI</RadDetectorKindCode>
+		<RadDetectorDescription>Internal D3S Gamma Detector</RadDetectorDescription>
+	</RadDetectorInformation>
+	<RadDetectorInformation id="RadDetectorInformation-2">
+		<RadDetectorCategoryCode>Neutron</RadDetectorCategoryCode>
+		<RadDetectorKindCode>Other</RadDetectorKindCode>
+		<RadDetectorDescription>Internal D3S Neutron Detector</RadDetectorDescription>
+	</RadDetectorInformation>
+	<EnergyCalibration id="EnergyCalibration-1">
+		<CoefficientValues>2.92968750 5.85937500 0.00000000</CoefficientValues>
+	</EnergyCalibration>
+	<RadMeasurement id="RadMeasurement-1">
+		<MeasurementClassCode>Foreground</MeasurementClassCode>
+		<StartDateTime>2023-06-28T17:09:16-0400</StartDateTime>
+		<RealTimeDuration>PT210S</RealTimeDuration>
+		<Spectrum id="RadMeasurement-1-Spectrum-1"
+				radDetectorInformationReference="RadDetectorInformation-1"
+				energyCalibrationReference="EnergyCalibration-1">
+			<LiveTimeDuration>PT210.37S</LiveTimeDuration>
+			<ChannelData compressionCode="CountedZeroes">
+				0 6 64 119 146 220 217 229 195 185 194 219 179 196 205 162 159 145 127 134 
+				116 105 95 121 97 117 91 98 87 96 87 88 96 82 111 121 101 119 72 54 
+				52 46 49 42 40 47 50 43 36 41 39 43 49 62 35 27 29 24 16 24 
+				13 12 21 12 15 22 17 13 14 14 26 8 10 13 14 12 12 15 17 9 
+				17 12 10 24 20 20 8 11 15 7 10 11 18 27 27 18 14 16 16 10 
+				6 11 8 6 6 10 6 9 9 8 8 6 7 3 4 4 9 9 4 6 
+				7 10 7 5 4 4 7 9 5 5 5 2 5 6 2 4 3 6 7 9 
+				7 6 5 8 5 8 4 7 11 7 9 5 11 9 5 3 7 6 5 12 
+				6 6 7 4 5 4 6 1 0 1 1 2 4 2 1 2 0 1 3 3 
+				2 4 1 2 3 2 2 2 1 2 0 1 3 0 2 3 2 0 1 1 
+				2 3 0 2 1 1 1 3 0 1 1 2 1 0 1 1 1 3 1 3 
+				2 3 1 1 0 2 2 0 2 1 2 0 2 1 0 1 1 0 1 1 
+				2 2 2 2 1 1 3 2 2 2 2 2 1 3 2 0 1 1 0 1 
+				2 1 0 2 2 0 2 2 2 1 3 3 1 1 1 1 2 2 1 1 
+				1 1 3 2 1 1 5 0 3 3 1 1 0 3 2 1 1 0 1 3 
+				1 1 1 0 2 2 1 0 1 1 1 0 1 1 0 1 2 2 1 0 
+				1 1 2 0 1 1 1 1 0 2 1 1 1 1 1 1 3 1 0 2 
+				1 0 1 1 0 4 1 0 2 1 0 1 1 0 1 3 0 1 1 0 
+				1 2 0 1 2 0 1 3 0 2 1 0 1 2 1 2 0 1 1 1 
+				0 1 1 1 3 2 1 1 1 1 0 4 1 2 0 1 1 0 1 2 
+				0 2 1 0 1 1 2 0 7 2 0 3 1 0 3 1 0 2 4 1 
+				0 2 1 1 0 15 1 0 1 1 0 4 1 0 3 1 3 0 1 2 
+				1 1 2 1 2 0 1 2 1 0 1 1 0 12 1 0 11 1 0 25 
+				1 0 3 1 0 1 1 0 3 
+			</ChannelData>
+		</Spectrum>
+		<DoseRate id="RadMeasurement-1-DoseRate-1"
+				 radDetectorInformationReference="RadDetectorInformation-1">
+			 <DoseRateValue>0.1</DoseRateValue>
+		</DoseRate>
+		<GrossCounts id="RadMeasurement-1-NeutronCount-1"
+				radDetectorInformationReference="RadDetectorInformation-2">
+			<LiveTimeDuration>PT210.37S</LiveTimeDuration>
+			<CountData>0</CountData>
+		</GrossCounts>
+		<RadInstrumentState radInstrumentInformationReference="RadInstrumentInformation-1">
+			<StateVector>
+				<GeographicPoint>
+					<LatitudeValue>34.705016</LatitudeValue>
+					<LongitudeValue>-86.804547</LongitudeValue>
+				</GeographicPoint>
+			</StateVector>
+		</RadInstrumentState>
+	</RadMeasurement>
+	<AnalysisResults id="AnalysisResults-1">
+		<AnalysisAlgorithmName>PCS</AnalysisAlgorithmName>
+		<AnalysisAlgorithmCreatorName>Physical Sciences Inc.</AnalysisAlgorithmCreatorName>
+		<NuclideAnalysisResults>
+			<Nuclide>
+				<NuclideIdentifiedIndicator>false</NuclideIdentifiedIndicator>
+			</Nuclide>
+		</NuclideAnalysisResults>
+	</AnalysisResults>
+</RadInstrumentData>

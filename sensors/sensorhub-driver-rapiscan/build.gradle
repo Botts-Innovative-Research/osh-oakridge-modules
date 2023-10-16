@@ -1,20 +1,28 @@
-description = 'Rapiscan Radiation Portal Monitor (RPM)'
-ext.details = 'Rapiscan Portal Driver'
-version = '0.1'
+description = 'Rapiscan Sensor Driver'
+ext.details = "Radiation Portal Monitor Sensor Driver"
+version = '1.0.0'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     implementation project(':sensorhub-utils-rad')
-
-    implementation 'org.apache.commons:commons-lang3:3.12.0'
+    testImplementation('junit:junit:4.13')
     implementation group: 'com.opencsv', name: 'opencsv', version: '4.1'
 
 }
 
+// exclude tests requiring connection to the sensor
+// these have to be run manually
+//      If tests are to be excluded list them here as follows
+//          exclude '**/TestNameClass.class'
+test {
+    useJUnit()
+}
+
+// add info to OSGi manifest
 osgi {
     manifest {
-        attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
-        attributes('Bundle-Activator': 'org.sensorhub.impl.sensor.rapiscan.Activator')
+        attributes ('Bundle-Vendor': 'Botts Inc')
+        attributes ('Bundle-Activator': 'com.botts.impl.sensor.rapiscan.RapiscanActivator')
     }
 }
 
@@ -26,6 +34,7 @@ ext.pom >>= {
             name 'Drew Botts'
             organization 'Botts Innovative Research'
             organizationUrl 'http://www.botts-inc.com'
+
         }
     }
 }
