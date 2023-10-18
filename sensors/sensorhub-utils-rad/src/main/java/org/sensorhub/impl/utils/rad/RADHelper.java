@@ -54,6 +54,25 @@ public class RADHelper extends GeoPosHelper {
                 .description("time stamp: when the message was received")
                 .build();
     }
+    public Time createOccupancyStartTime(){
+        return createTime()
+                .asPhenomenonTimeIsoUTC()
+                .name("start-time")
+                .label("Start Time")
+                .definition(getRadUri("occupancy-start-time"))
+                .description("The start time of occupancy data")
+                .build();
+    }
+
+    public Time createOccupancyEndTime(){
+        return createTime()
+                .asPhenomenonTimeIsoUTC()
+                .name("end-time")
+                .label("End Time")
+                .definition(getRadUri("occupancy-end-time"))
+                .description("The end time of occupancy data")
+                .build();
+    }
 
     public Quantity createBatteryCharge(){
         return createQuantity()

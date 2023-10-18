@@ -34,15 +34,19 @@ import java.io.InputStream;
  */
 public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
-    RapiscanOutput output;
+    MessageHandler messageHandler;
 
     private static final Logger logger = LoggerFactory.getLogger(RapiscanSensor.class);
 
     ICommProvider<?> commProvider;
 
-    InputStream msgIn;
+    GammaOutput gammaOutput;
 
-    CsvMsgPrinter csvMsgPrinter = new CsvMsgPrinter();
+    NeutronOutput neutronOutput;
+
+    OccupancyOutput occupancyOutput;
+
+    InputStream msgIn;
 
     @Override
     public void doInit() throws SensorHubException {
@@ -52,6 +56,18 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         // Generate identifiers
         generateUniqueID("urn:osh:sensor:rapiscan", config.serialNumber);
         generateXmlID("Rapiscan", config.serialNumber);
+
+        gammaOutput = new GammaOutput(this);
+        addOutput(gammaOutput, false);
+        gammaOutput.init();
+
+        neutronOutput = new NeutronOutput(this);
+        addOutput(neutronOutput, false);
+        neutronOutput.init();
+
+        occupancyOutput = new OccupancyOutput(this);
+        addOutput(occupancyOutput, false);
+        occupancyOutput.init();
 
     }
 
@@ -86,7 +102,9 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
             msgIn = new BufferedInputStream(commProvider.getInputStream());
 
-            csvMsgPrinter.printMessages(msgIn);
+            messageHandler = new MessageHandler(msgIn, gammaOutput, neutronOutput, occupancyOutput);
+
+//            csvMsgRead.readMessages(msgIn, gammaOutput, neutronOutput, occupancyOutput);
 
         } catch (IOException e) {
 
@@ -97,18 +115,34 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     @Override
     public void doStop() throws SensorHubException {
 
-        if (null != output) {
+        if (commProvider != null) {
 
-            output.doStop();
+            try {
+
+                commProvider.stop();
+
+            } catch (Exception e) {
+
+                logger.error("Uncaught exception attempting to stop comms module", e);
+
+            } finally {
+
+                commProvider = null;
+            }
         }
 
-        // TODO: Perform other shutdown procedures
+        messageHandler.stopProcessing();
     }
 
     @Override
     public boolean isConnected() {
+        if (commProvider == null) {
 
-        // Determine if sensor is connected
-        return output.isAlive();
+            return false;
+
+        } else {
+
+            return commProvider.isStarted();
+        }
     }
 }
