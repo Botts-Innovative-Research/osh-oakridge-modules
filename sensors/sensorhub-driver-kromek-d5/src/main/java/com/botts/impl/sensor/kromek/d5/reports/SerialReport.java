@@ -11,7 +11,7 @@ import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.botts.impl.sensor.kromek.d5.message.Constants.*;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.*;
 
 public abstract class SerialReport {
     private final byte componentId;
@@ -227,6 +227,14 @@ public abstract class SerialReport {
      */
     public static boolean byteToBoolean(byte value) {
         return value != 0;
+    }
+
+    public static double bytesToBCD(byte byte1, byte byte2) {
+        int decimal1 = Byte.toUnsignedInt(byte1);
+        int decimal2 = Byte.toUnsignedInt(byte2);
+        int bcd1 = ((decimal1 / 10) << 4) | (decimal1 % 10);
+        int bcd2 = ((decimal2 / 10) << 4) | (decimal2 % 10);
+        return Double.parseDouble(bcd1 + "." + bcd2);
     }
 
     public static String getReportName() {

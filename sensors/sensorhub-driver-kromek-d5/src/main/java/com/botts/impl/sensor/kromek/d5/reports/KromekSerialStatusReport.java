@@ -8,8 +8,8 @@ import org.vast.swe.SWEHelper;
 
 import java.util.Arrays;
 
-import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
-import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_REPORTS_IN_STATUS_ID;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_REPORTS_IN_STATUS_ID;
 
 public class KromekSerialStatusReport extends SerialReport {
     private int appStatus;

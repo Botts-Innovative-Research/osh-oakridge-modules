@@ -1,4 +1,4 @@
-package com.botts.impl.sensor.kromek.d5.message;
+package com.botts.impl.sensor.kromek.d5.reports;
 
 public class Constants {
     public static final int KROMEK_SERIAL_REPORTS_USE_COMPONENT = 1;

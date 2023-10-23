@@ -9,7 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 
-import static com.botts.impl.sensor.kromek.d5.message.Constants.*;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.*;
 
 public class KromekDetectorRadiometricsV1Report extends SerialReport {
     private long status;
@@ -28,8 +28,7 @@ public class KromekDetectorRadiometricsV1Report extends SerialReport {
     private float gammaReserved;
     private int spectrumBitsSize;
     private byte spectrumReserved;
-    private int[] spectrumBins = new int[KROMEK_SERIAL_REPORTS_IN_SPECTRUM_MAX_BINS];
-
+    private final int[] spectrumBins = new int[KROMEK_SERIAL_REPORTS_IN_SPECTRUM_MAX_BINS];
 
     public KromekDetectorRadiometricsV1Report(byte componentId, byte reportId, byte[] data) {
         super(componentId, reportId);

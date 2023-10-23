@@ -5,13 +5,13 @@ import net.opengis.swe.v20.DataRecord;
 import net.opengis.swe.v20.DataType;
 import org.vast.swe.SWEHelper;
 
-import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
-import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_REPORTS_IN_UTC_TIME_ID;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_REPORTS_IN_UTC_TIME_ID;
 
 public class KromekSerialUTCReport extends SerialReport {
-    long deviceTimestamp;
-    float timezoneOffset;
-    boolean dstEnabled;
+    private long deviceTimestamp;
+    private float timezoneOffset;
+    private boolean dstEnabled;
 
     public KromekSerialUTCReport(byte componentId, byte reportId, byte[] data) {
         super(componentId, reportId);

@@ -11,31 +11,31 @@ import org.vast.swe.SWEHelper;
 
 import java.util.Arrays;
 
-import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
-import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_REPORTS_IN_REMOTE_ISOTOPE_CONFIRMATION_STATUS_ID;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_REPORTS_IN_REMOTE_ISOTOPE_CONFIRMATION_STATUS_ID;
 
 public class KromekSerialRemoteIsotopeConfirmationStatusReport extends SerialReport {
     private KromekSerialRemoteControlMode mode;
     private KromekSerialRemoteModeState state;
     private int numNuclideResults;
-    KromekSerialNuclideIdType nuclideID_1;
-    KromekSerialNuclideIdCategory categoryID_1;
-    float confidence_1;
-    KromekSerialNuclideIdType nuclideID_2;
-    KromekSerialNuclideIdCategory categoryID_2;
-    float confidence_2;
-    long totalGammaCounts;
-    long totalNeutronCounts;
-    float totalDose;
-    float averageDoseRate;
-    float averageGammaCps;
-    float averageNeutronCps;
-    float maxDoseRate;
-    long maxGammaCps;
-    long maxNeutronCps;
-    float latitude;
-    float longitude;
-    long deviceTimestamp;
+    private KromekSerialNuclideIdType nuclideID_1;
+    private KromekSerialNuclideIdCategory categoryID_1;
+    private float confidence_1;
+    private KromekSerialNuclideIdType nuclideID_2;
+    private KromekSerialNuclideIdCategory categoryID_2;
+    private float confidence_2;
+    private long totalGammaCounts;
+    private long totalNeutronCounts;
+    private float totalDose;
+    private float averageDoseRate;
+    private float averageGammaCps;
+    private float averageNeutronCps;
+    private float maxDoseRate;
+    private long maxGammaCps;
+    private long maxNeutronCps;
+    private float latitude;
+    private float longitude;
+    private long deviceTimestamp;
 
     public KromekSerialRemoteIsotopeConfirmationStatusReport(byte componentId, byte reportId, byte[] data) {
         super(componentId, reportId);

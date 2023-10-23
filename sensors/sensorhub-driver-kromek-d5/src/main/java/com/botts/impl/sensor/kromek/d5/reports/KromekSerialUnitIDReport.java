@@ -7,10 +7,10 @@ import org.vast.swe.SWEHelper;
 
 import java.util.Arrays;
 
-import static com.botts.impl.sensor.kromek.d5.message.Constants.*;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.*;
 
 public class KromekSerialUnitIDReport extends SerialReport {
-    private int[] unitID = new int[KROMEK_SERIAL_MAX_UNIT_ID_LENGTH];
+    private final int[] unitID = new int[KROMEK_SERIAL_MAX_UNIT_ID_LENGTH];
 
     public KromekSerialUnitIDReport(byte componentId, byte reportId, byte[] data) {
         super(componentId, reportId);

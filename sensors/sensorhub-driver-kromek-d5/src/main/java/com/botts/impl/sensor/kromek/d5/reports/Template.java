@@ -4,7 +4,7 @@ import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataRecord;
 import org.vast.swe.SWEHelper;
 
-import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
 
 public class Template extends SerialReport {
     private byte value;

@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import static com.botts.impl.sensor.kromek.d5.message.Constants.*;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.*;
 import static com.botts.impl.sensor.kromek.d5.reports.SerialReport.bytesToUInt;
 import static com.botts.impl.sensor.kromek.d5.reports.SerialReport.decodeSLIP;
 
@@ -24,7 +24,7 @@ public class TCPTest {
 
         // Create a TCP socket and connect to the server
         try (Socket clientSocket = new Socket(ipAddress, portNumber)) {
-            SerialReport report = new KromekDetectorRadiometricsV1Report();
+            SerialReport report = new KromekSerialAboutReport();
 
             System.out.println("Connected to server");
 
@@ -105,14 +105,12 @@ public class TCPTest {
         switch (reportId) {
             case KROMEK_SERIAL_REPORTS_IN_OTG_MODE_ID:
             case KROMEK_SERIAL_REPORTS_OUT_OTG_MODE_ID:
-            case KROMEK_SERIAL_REPORTS_IN_ABOUT_ID:
             case KROMEK_SERIAL_REPORTS_IN_DEVICE_INFO_ID:
             case KROMEK_SERIAL_REPORTS_IN_UI_SCREEN_CONFIG_ID:
             case KROMEK_SERIAL_REPORTS_OUT_UI_SCREEN_CONFIG_ID:
             case KROMEK_SERIAL_REPORTS_IN_ENERGY_SPECTRUM_ID:
             case KROMEK_SERIAL_REPORTS_IN_MAINTAINER_DEVICE_CONFIG_INDEXED_ID:
             case KROMEK_SERIAL_REPORTS_OUT_MAINTAINER_DEVICE_CONFIG_INDEXED_ID:
-            case KROMEK_SERIAL_REPORTS_IN_REMOTE_BACKGROUND_COLLECTION_STATUS_ID:
             case KROMEK_SERIAL_REPORTS_IN_WIFI_AP_CONFIG_ID:
             case KROMEK_SERIAL_REPORTS_OUT_WIFI_AP_CONFIG_ID:
             case KROMEK_SERIAL_REPORTS_IN_UI_BT_ENABLE_ID:
@@ -127,12 +125,18 @@ public class TCPTest {
             case KROMEK_SERIAL_REPORTS_OUT_UI_ISOTOPE_ENABLE_ID:
             case KROMEK_SERIAL_REPORTS_IN_UI_PIN_CODE_ID:
             case KROMEK_SERIAL_REPORTS_OUT_UI_PIN_CODE_ID:
-            case KROMEK_SERIAL_REPORTS_IN_REMOTE_EXT_ISOTOPE_CONFIRMATION_STATUS_ID:
-            case KROMEK_SERIAL_REPORTS_IN_RADIATION_THRESHOLD_INDEXED_ID:
-            case KROMEK_SERIAL_REPORTS_OUT_RADIATION_THRESHOLD_INDEXED_ID:
             case KROMEK_SERIAL_REPORTS_IN_RESET_ACCUMULATED_DOSE_ID:
             case KROMEK_SERIAL_REPORTS_OUT_RESET_ACCUMULATED_DOSE_ID:
                 throw new RuntimeException("Not implemented");
+            case KROMEK_SERIAL_REPORTS_IN_ABOUT_ID:
+                return new KromekSerialAboutReport(componentId, reportId, payload);
+            case KROMEK_SERIAL_REPORTS_IN_RADIATION_THRESHOLD_INDEXED_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_RADIATION_THRESHOLD_INDEXED_ID:
+                return new KromekSerialUIRadiationThresholdsReport(componentId, reportId, payload);
+            case KROMEK_SERIAL_REPORTS_IN_REMOTE_EXT_ISOTOPE_CONFIRMATION_STATUS_ID:
+                return new KromekSerialRemoteExtendedIsotopeConfirmationStatusReport(componentId, reportId, payload);
+            case KROMEK_SERIAL_REPORTS_IN_REMOTE_BACKGROUND_COLLECTION_STATUS_ID:
+                return new KromekSerialRemoteBackgroundStatusReport(componentId, reportId, payload);
             case KROMEK_SERIAL_REPORTS_IN_RADIOMETRICS_V1_ID:
                 return new KromekDetectorRadiometricsV1Report(componentId, reportId, payload);
             case KROMEK_SERIAL_REPORTS_IN_UTC_TIME_ID:

@@ -15,7 +15,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import static com.botts.impl.sensor.kromek.d5.message.Constants.*;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.*;
 import static com.botts.impl.sensor.kromek.d5.reports.SerialReport.bytesToUInt;
 import static com.botts.impl.sensor.kromek.d5.reports.SerialReport.decodeSLIP;
 

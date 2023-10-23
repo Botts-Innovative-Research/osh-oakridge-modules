@@ -7,15 +7,15 @@ import org.vast.swe.SWEHelper;
 
 import java.util.Arrays;
 
-import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
-import static com.botts.impl.sensor.kromek.d5.message.Constants.KROMEK_SERIAL_REPORTS_IN_COMPRESSION_ENABLED_ID;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_COMPONENT_INTERFACE_BOARD;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_REPORTS_IN_COMPRESSION_ENABLED_ID;
 
 public class KromekSerialCompressionEnabledReport extends SerialReport {
     private boolean enabled;
     private int windowSize;
     private int lookaheadSize;
     private int compressionDirection;
-    private byte[] reserved = new byte[2];
+    private final byte[] reserved = new byte[2];
 
     public KromekSerialCompressionEnabledReport(byte componentId, byte reportId, byte[] data) {
         super(componentId, reportId);
