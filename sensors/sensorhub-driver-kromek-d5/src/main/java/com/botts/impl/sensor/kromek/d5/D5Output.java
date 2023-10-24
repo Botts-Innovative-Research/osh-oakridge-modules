@@ -107,10 +107,10 @@ public class D5Output extends AbstractSensorOutput<D5Sensor> {
             synchronized (histogramLock) {
                 int setIndex = setCount % MAX_NUM_TIMING_SAMPLES;
 
-                // Get a sampling time for latest set based on previous set sampling time
+                // Get a sampling time for the latest set based on the previously set sampling time
                 timingHistogram[setIndex] = System.currentTimeMillis() - lastSetTimeMillis;
 
-                // Set latest sampling time to now
+                // Set the latest sampling time to now
                 lastSetTimeMillis = timingHistogram[setIndex];
             }
 
@@ -128,7 +128,7 @@ public class D5Output extends AbstractSensorOutput<D5Sensor> {
         } catch (Exception e) {
             StringWriter stringWriter = new StringWriter();
             e.printStackTrace(new PrintWriter(stringWriter));
-            logger.error("Error in worker thread: {} due to exception: {}", Thread.currentThread().getName(), stringWriter.toString());
+            logger.error("Error in worker thread: {} due to exception: {}", Thread.currentThread().getName(), stringWriter);
         }
     }
 }

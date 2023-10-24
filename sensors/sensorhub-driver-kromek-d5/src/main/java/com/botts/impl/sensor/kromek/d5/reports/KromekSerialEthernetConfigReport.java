@@ -108,5 +108,6 @@ public class KromekSerialEthernetConfigReport extends SerialReport {
         setReportLabel("Ethernet Config");
         setReportDescription("Configuration for the ethernet interface.");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
+        setPollingRate(30);
     }
 }

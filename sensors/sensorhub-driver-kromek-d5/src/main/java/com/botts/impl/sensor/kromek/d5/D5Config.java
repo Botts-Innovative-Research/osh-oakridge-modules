@@ -45,6 +45,9 @@ public class D5Config extends SensorConfig {
     @DisplayInfo(desc = "Communication settings to connect to data stream")
     public CommProviderConfig<?> commSettings;
 
+    /**
+     * The output settings for the configured sensor.
+     */
     @DisplayInfo.Required
     @DisplayInfo(label = "Outputs", desc = "Configuration options for source data outputs from driver")
     public D5ConfigOutputs outputs = new D5ConfigOutputs();

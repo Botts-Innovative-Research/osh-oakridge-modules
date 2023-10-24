@@ -16,7 +16,7 @@ public class KromekSerialRemoteBackgroundStatusReport extends SerialReport {
     private long totalNeutronCounts;
     private float latitude;
     private float longitude;
-    private long timestamp;
+    private long deviceTimestamp;
 
     public KromekSerialRemoteBackgroundStatusReport(byte componentId, byte reportId, byte[] data) {
         super(componentId, reportId);
@@ -34,7 +34,7 @@ public class KromekSerialRemoteBackgroundStatusReport extends SerialReport {
         totalNeutronCounts = bytesToUInt(payload[5], payload[6], payload[7], payload[8]);
         latitude = bytesToFloat(payload[9], payload[10], payload[11], payload[12]);
         longitude = bytesToFloat(payload[13], payload[14], payload[15], payload[16]);
-        timestamp = bytesToUInt(payload[17], payload[18], payload[19], payload[20]);
+        deviceTimestamp = bytesToUInt(payload[17], payload[18], payload[19], payload[20]);
     }
 
     @Override
@@ -45,7 +45,7 @@ public class KromekSerialRemoteBackgroundStatusReport extends SerialReport {
                 ", totalNeutronCounts=" + totalNeutronCounts +
                 ", latitude=" + latitude +
                 ", longitude=" + longitude +
-                ", timestamp=" + timestamp +
+                ", deviceTimestamp=" + deviceTimestamp +
                 '}';
     }
 
@@ -100,7 +100,7 @@ public class KromekSerialRemoteBackgroundStatusReport extends SerialReport {
         dataBlock.setLongValue(++index, totalNeutronCounts);
         dataBlock.setDoubleValue(++index, latitude);
         dataBlock.setDoubleValue(++index, longitude);
-        dataBlock.setLongValue(++index, this.timestamp);
+        dataBlock.setLongValue(++index, deviceTimestamp);
     }
 
     @Override

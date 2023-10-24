@@ -16,7 +16,7 @@ public class KromekSerialRadiometricStatusReport extends SerialReport {
     private boolean neutronCpsAlarmActive;
     private float latitude;
     private float longitude;
-    private long timestamp;
+    private long deviceTimestamp;
     private int numNuclideResults;
     private byte[] nuclideData;
 
@@ -36,9 +36,9 @@ public class KromekSerialRadiometricStatusReport extends SerialReport {
         neutronCpsAlarmActive = byteToBoolean(payload[2]);
         latitude = bytesToFloat(payload[3], payload[4], payload[5], payload[6]);
         longitude = bytesToFloat(payload[7], payload[8], payload[9], payload[10]);
-        timestamp = bytesToUInt(payload[11], payload[12], payload[13], payload[14]);
+        deviceTimestamp = bytesToUInt(payload[11], payload[12], payload[13], payload[14]);
         numNuclideResults = bytesToUInt(payload[15], payload[16]);
-        //For now, just store the raw bytes
+        // For now, store the raw bytes
         nuclideData = new byte[payload.length - 17];
     }
 
@@ -50,7 +50,7 @@ public class KromekSerialRadiometricStatusReport extends SerialReport {
                 ", neutronCpsAlarmActive=" + neutronCpsAlarmActive +
                 ", latitude=" + latitude +
                 ", longitude=" + longitude +
-                ", timestamp=" + timestamp +
+                ", deviceTimestamp=" + deviceTimestamp +
                 ", numNuclideResults=" + numNuclideResults +
                 ", nuclideData=" + Arrays.toString(nuclideData) +
                 '}';
@@ -91,10 +91,10 @@ public class KromekSerialRadiometricStatusReport extends SerialReport {
                         .definition(SWEHelper.getPropertyUri("longitude"))
                         .uom("deg")
                         .dataType(DataType.FLOAT))
-                .addField("timestamp", sweFactory.createQuantity()
-                        .label("Timestamp")
-                        .description("Timestamp")
-                        .definition(SWEHelper.getPropertyUri("timestamp"))
+                .addField("deviceTimestamp", sweFactory.createQuantity()
+                        .label("Device Timestamp")
+                        .description("Device Timestamp")
+                        .definition(SWEHelper.getPropertyUri("deviceTimestamp"))
                         .uom("s")
                         .dataType(DataType.LONG))
                 .addField("numNuclideResults", sweFactory.createQuantity()
@@ -118,7 +118,7 @@ public class KromekSerialRadiometricStatusReport extends SerialReport {
         dataBlock.setBooleanValue(++index, neutronCpsAlarmActive);
         dataBlock.setFloatValue(++index, latitude);
         dataBlock.setFloatValue(++index, longitude);
-        dataBlock.setLongValue(++index, this.timestamp);
+        dataBlock.setLongValue(++index, deviceTimestamp);
         dataBlock.setIntValue(++index, numNuclideResults);
         dataBlock.setStringValue(++index, Arrays.toString(nuclideData));
     }

@@ -13,23 +13,6 @@ import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_CO
 import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_REPORTS_IN_REMOTE_EXT_ISOTOPE_CONFIRMATION_STATUS_ID;
 
 public class KromekSerialRemoteExtendedIsotopeConfirmationStatusReport extends SerialReport {
-    //    uint32_t                            mode;                                   // Cast to enum (KromekSerialRemoteControlMode)
-//    uint8_t                             state;                                  // Cast to enum (KromekSerialRemoteModeState)
-//    uint32_t                            totalGammaCounts;                       // 0 Ö 0xFFFFFFFE, 0xFFFFFFFF: Max counts exceeded
-//    uint32_t                            totalNeutronCounts;                     // 0 Ö 0xFFFFFFFE, 0xFFFFFFFF: Max counts exceeded
-//    float                               totalDose;                              // uSv
-//    float                               averageDoseRate;                        // uSv per hour (typically averaged over 10 secs)
-//    float                               averageGammaCps;                        // 0 Ö 0xFFFFFFFE, 0xFFFFFFFF: Max counts exceeded
-//    float                               averageNeutronCps;                      // 0 Ö 0xFFFFFFFE, 0xFFFFFFFF: Max counts exceeded
-//    float                               maxDoseRate;                            // uSv per hour
-//    uint32_t                            maxGammaCps;                            // 0 Ö 0xFFFFFFFE, 0xFFFFFFFF: Max counts exceeded
-//    uint32_t                            maxNeutronCps;                          // 0 Ö 0xFFFFFFFE, 0xFFFFFFFF: Max counts exceeded
-//    float                               latitude;                               // Decimal degrees
-//    float                               longitude;                              // Decimal degrees
-//    uint32_t                            timestamp;                              // Seconds since 1st January 1970 UTC
-//    uint16_t                            numNuclideResults;                      // Indicates how many (if any) of the following are present
-//    uint8_t	                            nuclideData[];                          //an array of nuclide data, format: uint8_t NuclideId, uint8_t CategoryId, float Confidence, these values repeat numNuclideResults times Cast to enum (KromekSerialNuclideIdType), Cast to enum (KromekSerialNuclideIdCategory), Confidence indication
-//Java version:
     private KromekSerialRemoteControlMode mode;
     private KromekSerialRemoteModeState state;
     private long totalGammaCounts;
@@ -43,7 +26,7 @@ public class KromekSerialRemoteExtendedIsotopeConfirmationStatusReport extends S
     private long maxNeutronCps;
     private float latitude;
     private float longitude;
-    private long timestamp;
+    private long deviceTimestamp;
     private int numNuclideResults;
     private byte[] nuclideData;
 
@@ -72,9 +55,9 @@ public class KromekSerialRemoteExtendedIsotopeConfirmationStatusReport extends S
         maxNeutronCps = bytesToUInt(payload[37], payload[38], payload[39], payload[40]);
         latitude = bytesToFloat(payload[41], payload[42], payload[43], payload[44]);
         longitude = bytesToFloat(payload[45], payload[46], payload[47], payload[48]);
-        timestamp = bytesToUInt(payload[49], payload[50], payload[51], payload[52]);
+        deviceTimestamp = bytesToUInt(payload[49], payload[50], payload[51], payload[52]);
         numNuclideResults = bytesToUInt(payload[53], payload[54]);
-        //Just add the rest of the payload to the nuclideData array for now
+        // Add the rest of the payload to the nuclideData array for now
         nuclideData = new byte[payload.length - 55];
     }
 
@@ -94,7 +77,7 @@ public class KromekSerialRemoteExtendedIsotopeConfirmationStatusReport extends S
                 ", maxNeutronCps=" + maxNeutronCps +
                 ", latitude=" + latitude +
                 ", longitude=" + longitude +
-                ", timestamp=" + timestamp +
+                ", deviceTimestamp=" + deviceTimestamp +
                 ", numNuclideResults=" + numNuclideResults +
                 ", nuclideData=" + Arrays.toString(nuclideData) +
                 '}';
@@ -213,7 +196,7 @@ public class KromekSerialRemoteExtendedIsotopeConfirmationStatusReport extends S
         dataBlock.setLongValue(++index, maxNeutronCps);
         dataBlock.setFloatValue(++index, latitude);
         dataBlock.setFloatValue(++index, longitude);
-        dataBlock.setLongValue(++index, this.timestamp);
+        dataBlock.setLongValue(++index, deviceTimestamp);
         dataBlock.setIntValue(++index, numNuclideResults);
         dataBlock.setStringValue(++index, Arrays.toString(nuclideData));
     }

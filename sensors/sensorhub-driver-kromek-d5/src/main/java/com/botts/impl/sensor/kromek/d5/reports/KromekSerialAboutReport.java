@@ -26,20 +26,20 @@ public class KromekSerialAboutReport extends SerialReport {
     @Override
     public void decodePayload(byte[] payload) {
         String firmware1 = String.format("%02X", payload[1]);
-        //Trim off the leading 0 if it has one
+        // Trim off the leading 0 if it has one
         if (firmware1.startsWith("0")) firmware1 = firmware1.substring(1);
         String firmware2 = String.format("%02X", payload[0]);
         firmware = firmware1 + '.' + firmware2;
 
         String modelrev1 = String.format("%02X", payload[3]);
-        //Trim off the leading 0 if it has one
+        // Trim off the leading 0 if it has one
         if (modelrev1.startsWith("0")) modelrev1 = modelrev1.substring(1);
         String modelrev2 = String.format("%02X", payload[2]);
         modelrev = modelrev1 + '.' + modelrev2;
 
-        //Read in all KROMEK_SERIAL_REPORTS_PRODUCTNAME_SIZE bytes
+        // Read in all KROMEK_SERIAL_REPORTS_PRODUCTNAME_SIZE bytes
         byte[] productNameBytes = Arrays.copyOfRange(payload, 4, 4 + KROMEK_SERIAL_REPORTS_PRODUCTNAME_SIZE);
-        //Convert to a string. The string is null terminated, so we need to find the null terminator
+        // Convert to a string. The string is null terminated, so we need to find the null terminator
         int nullTerminatorIndex = 0;
         for (int i = 0; i < productNameBytes.length; i++) {
             if (productNameBytes[i] == 0) {
@@ -49,9 +49,9 @@ public class KromekSerialAboutReport extends SerialReport {
         }
         productname = new String(Arrays.copyOfRange(productNameBytes, 0, nullTerminatorIndex));
 
-        //read in all KROMEK_SERIAL_REPORTS_SERIALNUMBER_SIZE bytes
+        // Read in all KROMEK_SERIAL_REPORTS_SERIALNUMBER_SIZE bytes
         byte[] serialNumberBytes = Arrays.copyOfRange(payload, 4 + KROMEK_SERIAL_REPORTS_PRODUCTNAME_SIZE, 4 + KROMEK_SERIAL_REPORTS_PRODUCTNAME_SIZE + KROMEK_SERIAL_REPORTS_SERIALNUMBER_SIZE);
-        //Convert to a string. The string is null terminated, so we need to find the null terminator
+        // Convert to a string. The string is null terminated, so we need to find the null terminator
         nullTerminatorIndex = 0;
         for (int i = 0; i < serialNumberBytes.length; i++) {
             if (serialNumberBytes[i] == 0) {
@@ -118,5 +118,6 @@ public class KromekSerialAboutReport extends SerialReport {
         setReportLabel("About");
         setReportDescription("About");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
+        setPollingRate(0);
     }
 }

@@ -96,5 +96,6 @@ public class KromekSerialCompressionEnabledReport extends SerialReport {
         setReportLabel("Compression Enabled");
         setReportDescription("Reports if compression is enabled and the compression parameters");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
+        setPollingRate(10);
     }
 }

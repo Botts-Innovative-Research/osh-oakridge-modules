@@ -157,5 +157,6 @@ public class KromekSerialStatusReport extends SerialReport {
         setReportLabel("Status");
         setReportDescription("Reports the status of the device");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
+        setPollingRate(10);
     }
 }

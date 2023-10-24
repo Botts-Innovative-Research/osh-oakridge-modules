@@ -21,10 +21,11 @@ public class TCPTest {
         // Define the IP address and port number of the server
         String ipAddress = "192.168.1.138";
         int portNumber = 12345;
+        System.out.println("Connecting to " + ipAddress + " on port " + portNumber);
 
         // Create a TCP socket and connect to the server
         try (Socket clientSocket = new Socket(ipAddress, portNumber)) {
-            SerialReport report = new KromekSerialAboutReport();
+            SerialReport report = new KromekSerialRadiometricStatusReport();
 
             System.out.println("Connected to server");
 
@@ -64,15 +65,15 @@ public class TCPTest {
             }
             System.out.println();
 
-            //First two bytes is the size
+            // The first two bytes is the size
             int size = bytesToUInt(decodedData[0], decodedData[1]);
             System.out.println("Size: " + size);
 
-            //Next byte is the mode
+            // The next byte is the mode
             int mode = decodedData[2];
             System.out.println("Mode: " + mode);
 
-            //Next byte is the componentId then reportId
+            // The next byte is the componentId then reportId
             byte componentId = decodedData[3];
             byte reportId = decodedData[4];
             System.out.printf("ComponentId: " + SerialReport.bytesToUInt(componentId) + " (0x%02X) ReportId: " + SerialReport.bytesToUInt(reportId) + " (0x%02X)", componentId, reportId);
@@ -87,11 +88,11 @@ public class TCPTest {
                 return;
             }
 
-            //Last two bytes are the CRC
+            // The last two bytes are the CRC
             int crc = bytesToUInt(decodedData[decodedData.length - 2], decodedData[decodedData.length - 1]);
             System.out.println("CRC: " + crc);
 
-            //The payload is everything in between
+            // The payload is everything in between
             byte[] payload = Arrays.copyOfRange(decodedData, 5, decodedData.length - 2);
 
             report = createReport(componentId, reportId, payload);
@@ -103,8 +104,6 @@ public class TCPTest {
 
     private SerialReport createReport(byte componentId, byte reportId, byte[] payload) {
         switch (reportId) {
-            case KROMEK_SERIAL_REPORTS_IN_OTG_MODE_ID:
-            case KROMEK_SERIAL_REPORTS_OUT_OTG_MODE_ID:
             case KROMEK_SERIAL_REPORTS_IN_DEVICE_INFO_ID:
             case KROMEK_SERIAL_REPORTS_IN_UI_SCREEN_CONFIG_ID:
             case KROMEK_SERIAL_REPORTS_OUT_UI_SCREEN_CONFIG_ID:
@@ -128,6 +127,11 @@ public class TCPTest {
             case KROMEK_SERIAL_REPORTS_IN_RESET_ACCUMULATED_DOSE_ID:
             case KROMEK_SERIAL_REPORTS_OUT_RESET_ACCUMULATED_DOSE_ID:
                 throw new RuntimeException("Not implemented");
+            case KROMEK_SERIAL_REPORTS_IN_RADIOMETRIC_STATUS_REPORT:
+                return new KromekSerialRadiometricStatusReport(componentId, reportId, payload);
+            case KROMEK_SERIAL_REPORTS_IN_OTG_MODE_ID:
+            case KROMEK_SERIAL_REPORTS_OUT_OTG_MODE_ID:
+                return new KromekSerialOTGReport(componentId, reportId, payload);
             case KROMEK_SERIAL_REPORTS_IN_ABOUT_ID:
                 return new KromekSerialAboutReport(componentId, reportId, payload);
             case KROMEK_SERIAL_REPORTS_IN_RADIATION_THRESHOLD_INDEXED_ID:
@@ -178,7 +182,7 @@ public class TCPTest {
             b = in.read();
         } while ((byte) b == KROMEK_SERIAL_FRAMING_FRAME_BYTE);
 
-        // First two bytes after framing byte are the message length
+        // The first two bytes after framing byte are the message length
         byte length1 = (byte) b;
         byte length2 = (byte) in.read();
         int length = bytesToUInt(length1, length2);

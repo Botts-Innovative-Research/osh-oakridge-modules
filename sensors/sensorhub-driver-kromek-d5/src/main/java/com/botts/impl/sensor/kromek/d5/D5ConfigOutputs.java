@@ -17,6 +17,9 @@ public class D5ConfigOutputs {
     @DisplayInfo(label = "KromekDetectorRadiometricsV1Report", desc = "Detector Radiometrics V1 Report")
     public boolean enableKromekDetectorRadiometricsV1Report = true;
 
+    @DisplayInfo(label = "KromekSerialRadiometricStatusReport", desc = "Radiometric Status Report")
+    public boolean enableKromekSerialRadiometricStatusReport = true;
+
     @DisplayInfo(label = "KromekSerialCompressionEnabledReport", desc = "Compression Enabled Report")
     public boolean enableKromekSerialCompressionEnabledReport = false;
 
@@ -40,4 +43,19 @@ public class D5ConfigOutputs {
 
     @DisplayInfo(label = "KromekSerialUTCReport", desc = "UTC Report")
     public boolean enableKromekSerialUTCReport = false;
+
+    @DisplayInfo(label = "KromekSerialRemoteBackgroundStatusReport", desc = "Remote Background Status Report")
+    public boolean enableKromekSerialRemoteBackgroundStatusReport = false;
+
+    @DisplayInfo(label = "KromekSerialRemoteExtendedIsotopeConfirmationStatusReport", desc = "Remote Extended Isotope Confirmation Status Report")
+    public boolean enableKromekSerialRemoteExtendedIsotopeConfirmationStatusReport = false;
+
+    @DisplayInfo(label = "KromekSerialUIRadiationThresholdsReport", desc = "UI Radiation Thresholds Report")
+    public boolean enableKromekSerialUIRadiationThresholdsReport = false;
+
+    @DisplayInfo(label = "KromekSerialAboutReport", desc = "About Report")
+    public boolean enableKromekSerialAboutReport = false;
+
+    @DisplayInfo(label = "KromekSerialOTGReport", desc = "OTG Report")
+    public boolean enableKromekSerialOTGReport = false;
 }

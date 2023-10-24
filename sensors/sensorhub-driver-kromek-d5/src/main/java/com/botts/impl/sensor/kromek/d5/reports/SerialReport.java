@@ -5,7 +5,6 @@ import net.opengis.swe.v20.DataRecord;
 import org.vast.swe.SWEHelper;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -21,7 +20,7 @@ public abstract class SerialReport {
     private static String reportLabel = "Report";
     private static String reportDescription = "Report";
     private static String reportDefinition = SWEHelper.getPropertyUri(reportName);
-
+    private int pollingRate = 1;
 
     /**
      * Create a new message with the given componentId and reportId.
@@ -32,10 +31,16 @@ public abstract class SerialReport {
         setReportInfo();
     }
 
+    /**
+     * Get the component ID for the message.
+     */
     public byte getComponentId() {
         return componentId;
     }
 
+    /**
+     * Get the report ID for the message.
+     */
     public byte getReportId() {
         return reportId;
     }
@@ -57,7 +62,7 @@ public abstract class SerialReport {
      *
      * @return The encoded message.
      */
-    public byte[] encodeRequest() throws IOException {
+    public byte[] encodeRequest() {
         // Requests have no payload. The length is just the overhead.
         int length = KROMEK_SERIAL_MESSAGE_OVERHEAD + KROMEK_SERIAL_REPORTS_HEADER_OVERHEAD;
 
@@ -108,7 +113,7 @@ public abstract class SerialReport {
 
     /**
      * Decode the given message using SLIP framing.
-     * If it finds any ESC bytes it replaces the escaped byte sequences with the original bytes.
+     * If it finds any ESC bytes, it replaces the escaped byte sequences with the original bytes.
      */
     public static byte[] decodeSLIP(byte[] input) {
         List<Byte> output = new ArrayList<>();
@@ -139,14 +144,14 @@ public abstract class SerialReport {
 
     /**
      * Calculate Cyclic Redundancy Checksum 16 (CRC-16) for the given byte array.
-     * Copied from Kromek documentation. I don't think it's used since the CRC is always 0 for requests, and
-     * requests are the only thing we send.
+     * Copied from Kromek documentation.
+     * I don't think it's used since the CRC is always 0 for requests, and requests are the only thing we send.
      */
     public static int crc16(final byte[] buffer) {
         int crc = KROMEK_SERIAL_MESSAGE_CRC_INITIAL_VALUE;
         for (byte b : buffer) {
             crc = ((crc >>> 8) | (crc << 8)) & 0xffff;
-            crc ^= (b & 0xff); //byte to int, truncate sign
+            crc ^= (b & 0xff); // byte to int, truncate sign
             crc ^= ((crc & 0xff) >> 4);
             crc ^= (crc << 12) & 0xffff;
             crc ^= ((crc & 0xFF) << 5) & 0xffff;
@@ -229,57 +234,151 @@ public abstract class SerialReport {
         return value != 0;
     }
 
-    public static double bytesToBCD(byte byte1, byte byte2) {
-        int decimal1 = Byte.toUnsignedInt(byte1);
-        int decimal2 = Byte.toUnsignedInt(byte2);
-        int bcd1 = ((decimal1 / 10) << 4) | (decimal1 % 10);
-        int bcd2 = ((decimal2 / 10) << 4) | (decimal2 % 10);
-        return Double.parseDouble(bcd1 + "." + bcd2);
-    }
-
+    /**
+     * Get the name for the report.
+     * This is the internal name of the report.
+     *
+     * @return The name of the report.
+     */
     public static String getReportName() {
         return reportName;
     }
 
+    /**
+     * Set the name for the report.
+     * This is the internal name of the report.
+     *
+     * @param reportName The name of the report.
+     */
     void setReportName(String reportName) {
         SerialReport.reportName = reportName;
     }
 
+    /**
+     * Get the label for the report.
+     * This is the human-readable name of the report.
+     *
+     * @return The label for the report.
+     */
     public static String getReportLabel() {
         return reportLabel;
     }
 
+    /**
+     * Set the label for the report.
+     * This is the human-readable name of the report.
+     *
+     * @param reportLabel The label for the report.
+     */
     void setReportLabel(String reportLabel) {
         SerialReport.reportLabel = reportLabel;
     }
 
+    /**
+     * Get the description for the report.
+     * This is the human-readable description of the report.
+     *
+     * @return The description for the report.
+     */
     public static String getReportDescription() {
         return reportDescription;
     }
 
+    /**
+     * Set the description for the report.
+     * This is the human-readable description of the report.
+     *
+     * @param reportDescription The description for the report.
+     */
     void setReportDescription(String reportDescription) {
         SerialReport.reportDescription = reportDescription;
     }
 
+    /**
+     * Get the definition for the report.
+     * This is the URI for the SWE definition of the report.
+     *
+     * @return The definition for the report.
+     */
     public static String getReportDefinition() {
         return reportDefinition;
     }
 
+    /**
+     * Set the definition for the report.
+     * This is the URI for the SWE definition of the report.
+     *
+     * @param reportDefinition The definition for the report.
+     */
     void setReportDefinition(String reportDefinition) {
         SerialReport.reportDefinition = reportDefinition;
     }
 
+    /**
+     * Get the polling rate for the report.
+     * This is the number of seconds between requests for reports.
+     * The default is 1 second.
+     * Zero means a single request will be sent at startup.
+     *
+     * @return The polling rate for the report.
+     */
+    public int getPollingRate() {
+        return pollingRate;
+    }
+
+    /**
+     * Set the polling rate for the report.
+     * This is the number of seconds between requests for reports.
+     * The default is 1 second, and negative values are clamped to 1.
+     * Zero means a single request will be sent at startup.
+     *
+     * @param pollingRate The polling rate for the report.
+     */
+    public void setPollingRate(int pollingRate) {
+        if (pollingRate < 0) pollingRate = 1;
+        this.pollingRate = pollingRate;
+    }
+
+    /**
+     * Decode the payload of the message.
+     * This is typically called by the constructor.
+     *
+     * @param payload The payload of the message.
+     */
     public abstract void decodePayload(byte[] payload);
 
+    /**
+     * Get a string representation of the message.
+     *
+     * @return A string representation of the message.
+     */
     public abstract String toString();
 
+    /**
+     * Create a data record for the message.
+     * This is used to create the DataRecord for use in outputs.
+     *
+     * @return The data record for the message.
+     */
     public abstract DataRecord createDataRecord();
 
+    /**
+     * Set the data block for the message.
+     * This is used to set the values in the DataBlock for use in outputs.
+     *
+     * @param dataBlock The data block to set.
+     */
     public abstract void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp);
 
     /**
      * Called by the constructor to set the report info.
-     * Implementations should set the report name, label, description, and definition.
+     * Implementations should set the report name, label, description, definition, and (optionally) polling rate.
+     *
+     * @see #setReportName(String)
+     * @see #setReportLabel(String)
+     * @see #setReportDescription(String)
+     * @see #setReportDefinition(String)
+     * @see #setPollingRate(int)
      */
     abstract void setReportInfo();
 }
