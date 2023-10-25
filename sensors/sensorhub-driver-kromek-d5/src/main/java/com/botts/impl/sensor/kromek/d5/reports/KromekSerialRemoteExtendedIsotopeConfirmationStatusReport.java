@@ -1,3 +1,15 @@
+/*
+ * The contents of this file are subject to the Mozilla Public License, v. 2.0.
+ * If a copy of the MPL was not distributed with this file, You can obtain one
+ * at http://mozilla.org/MPL/2.0/.
+ *
+ * Software distributed under the License is distributed on an "AS IS" basis,
+ * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
+ * for the specific language governing rights and limitations under the License.
+ *
+ * Copyright (c) 2023 Botts Innovative Research, Inc. All Rights Reserved.
+ */
+
 package com.botts.impl.sensor.kromek.d5.reports;
 
 import com.botts.impl.sensor.kromek.d5.enums.KromekSerialRemoteControlMode;
@@ -59,6 +71,7 @@ public class KromekSerialRemoteExtendedIsotopeConfirmationStatusReport extends S
         numNuclideResults = bytesToUInt(payload[53], payload[54]);
         // Add the rest of the payload to the nuclideData array for now
         nuclideData = new byte[payload.length - 55];
+        System.arraycopy(payload, 55, nuclideData, 0, nuclideData.length);
     }
 
     @Override

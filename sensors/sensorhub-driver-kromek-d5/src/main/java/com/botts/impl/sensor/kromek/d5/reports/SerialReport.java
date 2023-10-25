@@ -1,3 +1,15 @@
+/*
+ * The contents of this file are subject to the Mozilla Public License, v. 2.0.
+ * If a copy of the MPL was not distributed with this file, You can obtain one
+ * at http://mozilla.org/MPL/2.0/.
+ *
+ * Software distributed under the License is distributed on an "AS IS" basis,
+ * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
+ * for the specific language governing rights and limitations under the License.
+ *
+ * Copyright (c) 2023 Botts Innovative Research, Inc. All Rights Reserved.
+ */
+
 package com.botts.impl.sensor.kromek.d5.reports;
 
 import net.opengis.swe.v20.DataBlock;
@@ -143,24 +155,6 @@ public abstract class SerialReport {
     }
 
     /**
-     * Calculate Cyclic Redundancy Checksum 16 (CRC-16) for the given byte array.
-     * Copied from Kromek documentation.
-     * I don't think it's used since the CRC is always 0 for requests, and requests are the only thing we send.
-     */
-    public static int crc16(final byte[] buffer) {
-        int crc = KROMEK_SERIAL_MESSAGE_CRC_INITIAL_VALUE;
-        for (byte b : buffer) {
-            crc = ((crc >>> 8) | (crc << 8)) & 0xffff;
-            crc ^= (b & 0xff); // byte to int, truncate sign
-            crc ^= ((crc & 0xff) >> 4);
-            crc ^= (crc << 12) & 0xffff;
-            crc ^= ((crc & 0xFF) << 5) & 0xffff;
-        }
-        crc &= 0xffff;
-        return crc;
-    }
-
-    /**
      * Converts bytes representing a float into a float.
      *
      * @param bytes The bytes to convert.
@@ -207,21 +201,20 @@ public abstract class SerialReport {
     }
 
     /**
-     * Converts bytes representing int16_t into an int
+     * Converts bytes representing int16_t or int32_t into an int
      *
+     * @param bytes The bytes to convert. Must be two or four bytes.
      * @return The int.
      */
-    public static int bytesToInt(byte byte1, byte byte2) {
-        return ByteBuffer.wrap(new byte[]{byte1, byte2}).order(ByteOrder.LITTLE_ENDIAN).getShort();
-    }
-
-    /**
-     * Converts bytes representing int32_t into an int.
-     *
-     * @return The int.
-     */
-    public static int bytesToInt(byte byte1, byte byte2, byte byte3, byte byte4) {
-        return ByteBuffer.wrap(new byte[]{byte1, byte2, byte3, byte4}).order(ByteOrder.LITTLE_ENDIAN).getInt();
+    public static int bytesToInt(byte... bytes) {
+        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
+        if (bytes.length == 2) {
+            return buffer.getShort();
+        } else if (bytes.length == 4) {
+            return buffer.getInt();
+        } else {
+            throw new IllegalArgumentException("Invalid number of bytes for int: " + bytes.length + ". Expected 2 or 4.");
+        }
     }
 
     /**
