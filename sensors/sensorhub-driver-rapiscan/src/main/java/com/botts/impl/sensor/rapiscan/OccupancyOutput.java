@@ -33,9 +33,9 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
                 .label("Occupancy")
                 .definition(RADHelper.getRadUri("occupancy"))
                 .addField("Timestamp", radHelper.createPrecisionTimeStamp())
-                .addField("Start Time", radHelper.createOccupancyStartTime())
-                .addField("End Time", radHelper.createOccupancyEndTime())
-                .addField("Gamma Alarm",
+                .addField("StartTime", radHelper.createOccupancyStartTime())
+                .addField("EndTime", radHelper.createOccupancyEndTime())
+                .addField("GammaAlarm",
                         radHelper.createBoolean()
                                 .name("gamma-alarm")
                                 .label("Gamma Alarm")
@@ -60,6 +60,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
             dataBlock = latestRecord.renew();
         }
+        String string = "";
 
         dataBlock.setLongValue(0, System.currentTimeMillis()/1000);
         dataBlock.setLongValue(1, startTime/1000);

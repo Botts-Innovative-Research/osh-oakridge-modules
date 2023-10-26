@@ -33,12 +33,12 @@ public class NeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
                 .name(getName())
                 .label("Neutron Scan")
                 .definition(RADHelper.getRadUri("neutron-scan"))
-                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-                .addField("Neutron 1", radHelper.createNeutronGrossCount())
-                .addField("Neutron 2", radHelper.createNeutronGrossCount())
-                .addField("Neutron 3", radHelper.createNeutronGrossCount())
-                .addField("Neutron 4", radHelper.createNeutronGrossCount())
-                .addField("Alarm State",
+                .addField("SamplingTime", radHelper.createPrecisionTimeStamp())
+                .addField("Neutron1", radHelper.createNeutronGrossCount())
+                .addField("Neutron2", radHelper.createNeutronGrossCount())
+                .addField("Neutron3", radHelper.createNeutronGrossCount())
+                .addField("Neutron4", radHelper.createNeutronGrossCount())
+                .addField("AlarmState",
                         radHelper.createCategory()
                                 .name("Alarm")
                                 .label("Alarm")
