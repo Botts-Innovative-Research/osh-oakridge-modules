@@ -45,6 +45,7 @@ public class D5MessageRouter implements Runnable {
     D5Config config;
     InputStream inputStream;
     OutputStream outputStream;
+
     private static final Logger logger = LoggerFactory.getLogger(D5Sensor.class);
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     private int count = 0;
@@ -88,7 +89,6 @@ public class D5MessageRouter implements Runnable {
                     continue;
                 }
 
-                logger.info("Sending " + report.getClass().getSimpleName());
                 byte[] message = report.encodeRequest();
 
                 // Send the framed message to the server
@@ -96,7 +96,6 @@ public class D5MessageRouter implements Runnable {
 
                 // Receive data from the server
                 byte[] receivedData = receiveData(inputStream);
-                logger.info("Received data: " + Arrays.toString(receivedData));
 
                 // Decode the received data using SLIP framing
                 byte[] decodedData = decodeSLIP(receivedData);
@@ -105,12 +104,13 @@ public class D5MessageRouter implements Runnable {
                 byte componentId = decodedData[3];
                 byte reportId = decodedData[4];
 
+                // These shouldn't happen, but just in case they do, ignore them.
+                // Acknowledgements are typically a response to a command, and we only send requests.
                 if (reportId == KROMEK_SERIAL_REPORTS_IN_ACK_ID) {
-                    logger.info("ACK");
+                    logger.info("ACK received from " + reportClass.getSimpleName());
                     continue;
-                }
-                if (reportId == KROMEK_SERIAL_REPORTS_ACK_REPORT_ID_ERROR) {
-                    logger.info("ACK Error");
+                } else if (reportId == KROMEK_SERIAL_REPORTS_ACK_REPORT_ID_ERROR) {
+                    logger.info("ACK Error received from " + reportClass.getSimpleName());
                     continue;
                 }
 
@@ -121,8 +121,6 @@ public class D5MessageRouter implements Runnable {
                 report = (SerialReport) reportClass
                         .getDeclaredConstructor(byte.class, byte.class, byte[].class)
                         .newInstance(componentId, reportId, payload);
-
-                logger.info("Received " + report.getClass().getSimpleName() + ": " + report);
 
                 output.setData(report);
             } catch (Exception e) {
@@ -137,7 +135,6 @@ public class D5MessageRouter implements Runnable {
      * Reads until a framing byte is received.
      */
     private static byte[] receiveData(InputStream in) throws IOException {
-        logger.info("Receiving data...");
         List<Byte> output = new ArrayList<>();
         int b;
 
@@ -154,9 +151,7 @@ public class D5MessageRouter implements Runnable {
         // The first two bytes after framing byte are the message length
         byte length1 = (byte) b;
         byte length2 = (byte) in.read();
-        logger.info(String.format("Length: 0x%02X 0x%02X", length1, length2));
         int length = bytesToUInt(length1, length2);
-        logger.info("Length: " + length);
 
         output.add(length1);
         output.add(length2);
