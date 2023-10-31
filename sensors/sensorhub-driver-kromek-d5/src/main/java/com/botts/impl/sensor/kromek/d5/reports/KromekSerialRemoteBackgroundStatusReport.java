@@ -95,11 +95,11 @@ public class KromekSerialRemoteBackgroundStatusReport extends SerialReport {
                         .description("Longitude")
                         .definition(SWEHelper.getPropertyUri("longitude"))
                         .uom("deg"))
-                .addField("deviceTimestamp", sweFactory.createQuantity()
+                .addField("deviceTimestamp", sweFactory.createTime()
+                        .asSamplingTimeIsoUTC()
                         .label("Device Timestamp")
                         .description("Device Timestamp")
-                        .definition(SWEHelper.getPropertyUri("deviceTimestamp"))
-                        .uom("s"))
+                        .definition(SWEHelper.getPropertyUri("deviceTimestamp")))
                 .build();
     }
 

@@ -214,11 +214,11 @@ public class KromekSerialRemoteIsotopeConfirmationStatusReport extends SerialRep
                         .description("Longitude")
                         .definition(SWEHelper.getPropertyUri("longitude"))
                         .uom("deg"))
-                .addField("deviceTimestamp", sweFactory.createQuantity()
+                .addField("deviceTimestamp", sweFactory.createTime()
+                        .asSamplingTimeIsoUTC()
                         .label("Device Timestamp")
                         .description("Timestamp from the device associated with the report")
-                        .definition(SWEHelper.getPropertyUri("deviceTimestamp"))
-                        .uom("s"))
+                        .definition(SWEHelper.getPropertyUri("deviceTimestamp")))
                 .build();
     }
 
