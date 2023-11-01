@@ -1,0 +1,90 @@
+<?xml version="1.0"?>
+<?xml-model href="http://physics.nist.gov/N42/2011/schematron/n42.sch"
+			 type="application/xml"
+			 schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<RadInstrumentData xmlns="http://physics.nist.gov/N42/2011/N42"
+			 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+			 xsi:schemaLocation="http://physics.nist.gov/N42/2011/N42 http://physics.nist.gov/N42/2011/n42.xsd">
+	<RadInstrumentDataCreatorName>D3S ID</RadInstrumentDataCreatorName>
+	<RadInstrumentInformation id="RadInstrumentInformation-1">
+		<RadInstrumentManufacturerName>Kromek</RadInstrumentManufacturerName>
+		<RadInstrumentIdentifier>SGM200615</RadInstrumentIdentifier>
+		<RadInstrumentModelName>D3S ID</RadInstrumentModelName>
+		<RadInstrumentClassCode>Radionuclide Identifier</RadInstrumentClassCode>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>Hardware</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>D3S</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>Firmware</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>3.81</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>Software</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>2.6.1</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+	</RadInstrumentInformation>
+	<RadDetectorInformation id="RadDetectorInformation-1">
+		<RadDetectorCategoryCode>Gamma</RadDetectorCategoryCode>
+		<RadDetectorKindCode>CsI</RadDetectorKindCode>
+		<RadDetectorDescription>Internal D3S Gamma Detector</RadDetectorDescription>
+	</RadDetectorInformation>
+	<RadDetectorInformation id="RadDetectorInformation-2">
+		<RadDetectorCategoryCode>Neutron</RadDetectorCategoryCode>
+		<RadDetectorKindCode>Other</RadDetectorKindCode>
+		<RadDetectorDescription>Internal D3S Neutron Detector</RadDetectorDescription>
+	</RadDetectorInformation>
+	<EnergyCalibration id="EnergyCalibration-1">
+		<CoefficientValues>2.92968750 5.85937500 0.00000000</CoefficientValues>
+	</EnergyCalibration>
+	<RadMeasurement id="RadMeasurement-1">
+		<MeasurementClassCode>Foreground</MeasurementClassCode>
+		<StartDateTime>2023-07-10T12:24:18-0500</StartDateTime>
+		<RealTimeDuration>PT18S</RealTimeDuration>
+		<Spectrum id="RadMeasurement-1-Spectrum-1"
+				radDetectorInformationReference="RadDetectorInformation-1"
+				energyCalibrationReference="EnergyCalibration-1">
+			<LiveTimeDuration>PT21.02S</LiveTimeDuration>
+			<ChannelData compressionCode="CountedZeroes">
+				0 6 166 72 51 42 50 41 45 50 62 46 48 53 55 50 50 53 43 63 
+				37 46 46 52 55 52 59 70 68 63 73 70 55 58 42 40 38 29 34 33 
+				43 26 34 22 26 23 15 22 22 19 30 19 22 39 23 15 18 20 17 21 
+				14 20 13 18 14 23 24 28 17 16 24 17 22 18 14 17 14 12 5 2 
+				12 6 5 4 7 7 4 3 5 12 3 3 2 6 5 6 5 5 6 15 
+				15 18 32 50 65 58 108 100 98 86 74 46 32 27 12 10 9 4 1 2 
+				1 0 3 2 0 2 1 0 6 1 0 7 1 0 4 2 0 7 1 0 
+				6 1 0 7 1 0 3 1 0 31 1 0 1 1 0 18 1 1 0 2 
+				1 0 2 1 1 0 10 2 0 45 1 0 4 1 0 32 1 0 20 1 
+				0 156 
+			</ChannelData>
+		</Spectrum>
+		<DoseRate id="RadMeasurement-1-DoseRate-1"
+				 radDetectorInformationReference="RadDetectorInformation-1">
+			 <DoseRateValue>0.1</DoseRateValue>
+		</DoseRate>
+		<GrossCounts id="RadMeasurement-1-NeutronCount-1"
+				radDetectorInformationReference="RadDetectorInformation-2">
+			<LiveTimeDuration>PT21.02S</LiveTimeDuration>
+			<CountData>0</CountData>
+		</GrossCounts>
+		<RadInstrumentState radInstrumentInformationReference="RadInstrumentInformation-1">
+			<StateVector>
+				<GeographicPoint>
+					<LatitudeValue>34.666010</LatitudeValue>
+					<LongitudeValue>-86.780194</LongitudeValue>
+				</GeographicPoint>
+			</StateVector>
+		</RadInstrumentState>
+	</RadMeasurement>
+	<AnalysisResults id="AnalysisResults-1">
+		<AnalysisAlgorithmName>PCS</AnalysisAlgorithmName>
+		<AnalysisAlgorithmCreatorName>Physical Sciences Inc.</AnalysisAlgorithmCreatorName>
+		<NuclideAnalysisResults>
+			<Nuclide>
+				<NuclideIdentifiedIndicator>true</NuclideIdentifiedIndicator>
+				<NuclideName>Cs-137</NuclideName>
+				<NuclideIDConfidenceValue>100.0</NuclideIDConfidenceValue>
+			</Nuclide>
+		</NuclideAnalysisResults>
+	</AnalysisResults>
+</RadInstrumentData>
