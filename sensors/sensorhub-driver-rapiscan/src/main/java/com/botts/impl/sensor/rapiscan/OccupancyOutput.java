@@ -40,7 +40,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
                                 .name("gamma-alarm")
                                 .label("Gamma Alarm")
                                 .definition(RADHelper.getRadUri("gamma-alarm")))
-                .addField("Neutron Alarm",
+                .addField("NeutronAlarm",
                         radHelper.createBoolean()
                                 .name("neutron-alarm")
                                 .label("Neutron Alarm")
