@@ -15,6 +15,7 @@ package com.botts.impl.sensor.kromek.d5;
 import com.botts.impl.sensor.kromek.d5.reports.*;
 import com.fazecast.jSerialComm.SerialPort;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -24,9 +25,8 @@ import java.util.List;
 
 import static com.botts.impl.sensor.kromek.d5.reports.Constants.*;
 import static com.botts.impl.sensor.kromek.d5.reports.SerialReport.bytesToUInt;
-import static com.botts.impl.sensor.kromek.d5.reports.SerialReport.decodeSLIP;
 
-class Shared {
+public class Shared {
     static SerialReport createReport(byte componentId, byte reportId, byte[] payload) {
         switch (reportId) {
             case KROMEK_SERIAL_REPORTS_IN_DEVICE_INFO_ID:
@@ -96,13 +96,21 @@ class Shared {
 
     /**
      * Receive data from the given input stream.
-     * Reads until a framing byte is received.
+     * Reads until a framing byte is received, then reads the length, then reads the rest of the message.
+     *
+     * @param in The input stream to read from.
+     * @return The received data, excluding overhead.
      */
     static byte[] receiveData(InputStream in) throws IOException {
         List<Byte> output = new ArrayList<>();
         int b;
 
-        // Read until we get something other than the framing byte
+        // Read until we get a framing byte
+        do {
+            b = in.read();
+        } while ((byte) b != KROMEK_SERIAL_FRAMING_FRAME_BYTE);
+
+        // Read until we get a non-framing byte. Extra framing bytes are harmless and can be ignored.
         do {
             b = in.read();
         } while ((byte) b == KROMEK_SERIAL_FRAMING_FRAME_BYTE);
@@ -120,7 +128,6 @@ class Shared {
             b = in.read();
             output.add((byte) b);
         }
-        System.out.println("output: " + output.size() + " length: " + length);
 
         byte[] result = new byte[output.size()];
         for (int i = 0; i < output.size(); i++) {
@@ -203,6 +210,62 @@ class Shared {
 
         report = createReport(componentId, reportId, payload);
         System.out.println("Report: " + report);
+    }
 
+    /**
+     * Encode the given message using SLIP framing.
+     * If the FRAME byte occurs in the message, then it is replaced with the byte sequence ESC, ESC_FRAME.
+     * If the ESC byte occurs in the message, then the byte sequence ESC, ESC_ESC is sent instead.
+     * The message is then framed with the FRAME byte at the end.
+     */
+    public static byte[] encodeSLIP(byte[] data) {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+
+        outputStream.write(KROMEK_SERIAL_FRAMING_FRAME_BYTE);
+        for (byte b : data) {
+            if (b == KROMEK_SERIAL_FRAMING_FRAME_BYTE) {
+                outputStream.write(KROMEK_SERIAL_FRAMING_ESC_BYTE);
+                outputStream.write(KROMEK_SERIAL_FRAMING_ESC_FRAME_BYTE);
+            } else if (b == KROMEK_SERIAL_FRAMING_ESC_BYTE) {
+                outputStream.write(KROMEK_SERIAL_FRAMING_ESC_BYTE);
+                outputStream.write(KROMEK_SERIAL_FRAMING_ESC_ESC_BYTE);
+            } else {
+                outputStream.write(b);
+            }
+        }
+        outputStream.write(KROMEK_SERIAL_FRAMING_FRAME_BYTE);
+
+        return outputStream.toByteArray();
+    }
+
+    /**
+     * Decode the given message using SLIP framing.
+     * If it finds any ESC bytes, it replaces the escaped byte sequences with the original bytes.
+     */
+    public static byte[] decodeSLIP(byte[] input) {
+        List<Byte> output = new ArrayList<>();
+        for (int i = 0; i < input.length; ) {
+            byte b = input[i];
+            if (b == KROMEK_SERIAL_FRAMING_ESC_BYTE && i < input.length - 1) {
+                byte nextByte = input[i + 1];
+                if (nextByte == KROMEK_SERIAL_FRAMING_ESC_FRAME_BYTE) {
+                    output.add(KROMEK_SERIAL_FRAMING_FRAME_BYTE);
+                } else if (nextByte == KROMEK_SERIAL_FRAMING_ESC_ESC_BYTE) {
+                    output.add(KROMEK_SERIAL_FRAMING_ESC_BYTE);
+                } else {
+                    throw new RuntimeException("Invalid SLIP escape sequence: " + nextByte);
+                }
+                i += 2;
+            } else {
+                output.add(b);
+                i++;
+            }
+        }
+
+        byte[] result = new byte[output.size()];
+        for (int i = 0; i < output.size(); i++) {
+            result[i] = output.get(i);
+        }
+        return result;
     }
 }

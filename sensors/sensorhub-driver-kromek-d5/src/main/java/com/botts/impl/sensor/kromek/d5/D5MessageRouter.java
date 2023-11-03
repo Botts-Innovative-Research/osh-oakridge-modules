@@ -16,20 +16,18 @@ import com.botts.impl.sensor.kromek.d5.reports.SerialReport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import static com.botts.impl.sensor.kromek.d5.reports.Constants.*;
-import static com.botts.impl.sensor.kromek.d5.reports.SerialReport.bytesToUInt;
-import static com.botts.impl.sensor.kromek.d5.reports.SerialReport.decodeSLIP;
+import static com.botts.impl.sensor.kromek.d5.Shared.decodeSLIP;
+import static com.botts.impl.sensor.kromek.d5.Shared.receiveData;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_REPORTS_ACK_REPORT_ID_ERROR;
+import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_REPORTS_IN_ACK_ID;
 
 /**
  * This class is responsible for sending and receiving messages to and from the sensor.
@@ -128,44 +126,5 @@ public class D5MessageRouter implements Runnable {
             }
         }
         count++;
-    }
-
-    /**
-     * Receive data from the given input stream.
-     * Reads until a framing byte is received.
-     */
-    private static byte[] receiveData(InputStream in) throws IOException {
-        List<Byte> output = new ArrayList<>();
-        int b;
-
-        // Read until we get a framing byte
-        do {
-            b = in.read();
-        } while ((byte) b != KROMEK_SERIAL_FRAMING_FRAME_BYTE);
-
-        // Read until we get a non-framing byte. Extra framing bytes are harmless and can be ignored.
-        do {
-            b = in.read();
-        } while ((byte) b == KROMEK_SERIAL_FRAMING_FRAME_BYTE);
-
-        // The first two bytes after framing byte are the message length
-        byte length1 = (byte) b;
-        byte length2 = (byte) in.read();
-        int length = bytesToUInt(length1, length2);
-
-        output.add(length1);
-        output.add(length2);
-
-        // Read the rest of the message, excluding the two bytes we already read
-        for (int i = 0; i < length - 2; i++) {
-            b = in.read();
-            output.add((byte) b);
-        }
-
-        byte[] result = new byte[output.size()];
-        for (int i = 0; i < output.size(); i++) {
-            result[i] = output.get(i);
-        }
-        return result;
     }
 }

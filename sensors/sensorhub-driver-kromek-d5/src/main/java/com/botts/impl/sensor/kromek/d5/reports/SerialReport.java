@@ -19,9 +19,8 @@ import org.vast.swe.SWEHelper;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.ArrayList;
-import java.util.List;
 
+import static com.botts.impl.sensor.kromek.d5.Shared.encodeSLIP;
 import static com.botts.impl.sensor.kromek.d5.reports.Constants.*;
 
 public abstract class SerialReport {
@@ -32,6 +31,7 @@ public abstract class SerialReport {
     private static String reportLabel = "Report";
     private static String reportDescription = "Report";
     private static String reportDefinition = SWEHelper.getPropertyUri(reportName);
+    private static final int overheadLength = KROMEK_SERIAL_MESSAGE_OVERHEAD + KROMEK_SERIAL_REPORTS_HEADER_OVERHEAD;
     private int pollingRate = 1;
 
     /**
@@ -75,12 +75,9 @@ public abstract class SerialReport {
      * @return The encoded message.
      */
     public byte[] encodeRequest() {
-        // Requests have no payload. The length is just the overhead.
-        int length = KROMEK_SERIAL_MESSAGE_OVERHEAD + KROMEK_SERIAL_REPORTS_HEADER_OVERHEAD;
-
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         // Write the length as uint16_t
-        outputStream.write((byte) (length & 0xFF));
+        outputStream.write((byte) (overheadLength & 0xFF));
         outputStream.write((byte) (0));
         outputStream.write(KROMEK_SERIAL_MESSAGE_MODE);
         outputStream.write(componentId);
@@ -95,63 +92,6 @@ public abstract class SerialReport {
             message = encodeSLIP(message);
 
         return message;
-    }
-
-    /**
-     * Encode the given message using SLIP framing.
-     * If the FRAME byte occurs in the message, then it is replaced with the byte sequence ESC, ESC_FRAME.
-     * If the ESC byte occurs in the message, then the byte sequence ESC, ESC_ESC is sent instead.
-     * The message is then framed with the FRAME byte at the end.
-     */
-    public static byte[] encodeSLIP(byte[] data) {
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-
-        outputStream.write(KROMEK_SERIAL_FRAMING_FRAME_BYTE);
-        for (byte b : data) {
-            if (b == KROMEK_SERIAL_FRAMING_FRAME_BYTE) {
-                outputStream.write(KROMEK_SERIAL_FRAMING_ESC_BYTE);
-                outputStream.write(KROMEK_SERIAL_FRAMING_ESC_FRAME_BYTE);
-            } else if (b == KROMEK_SERIAL_FRAMING_ESC_BYTE) {
-                outputStream.write(KROMEK_SERIAL_FRAMING_ESC_BYTE);
-                outputStream.write(KROMEK_SERIAL_FRAMING_ESC_ESC_BYTE);
-            } else {
-                outputStream.write(b);
-            }
-        }
-        outputStream.write(KROMEK_SERIAL_FRAMING_FRAME_BYTE);
-
-        return outputStream.toByteArray();
-    }
-
-    /**
-     * Decode the given message using SLIP framing.
-     * If it finds any ESC bytes, it replaces the escaped byte sequences with the original bytes.
-     */
-    public static byte[] decodeSLIP(byte[] input) {
-        List<Byte> output = new ArrayList<>();
-        for (int i = 0; i < input.length; ) {
-            byte b = input[i];
-            if (b == KROMEK_SERIAL_FRAMING_ESC_BYTE && i < input.length - 1) {
-                byte nextByte = input[i + 1];
-                if (nextByte == KROMEK_SERIAL_FRAMING_ESC_FRAME_BYTE) {
-                    output.add(KROMEK_SERIAL_FRAMING_FRAME_BYTE);
-                } else if (nextByte == KROMEK_SERIAL_FRAMING_ESC_ESC_BYTE) {
-                    output.add(KROMEK_SERIAL_FRAMING_ESC_BYTE);
-                } else {
-                    throw new RuntimeException("Invalid SLIP escape sequence: " + nextByte);
-                }
-                i += 2;
-            } else {
-                output.add(b);
-                i++;
-            }
-        }
-
-        byte[] result = new byte[output.size()];
-        for (int i = 0; i < output.size(); i++) {
-            result[i] = output.get(i);
-        }
-        return result;
     }
 
     /**
