@@ -18,16 +18,12 @@ import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import static com.botts.impl.sensor.kromek.d5.Shared.decodeSLIP;
-import static com.botts.impl.sensor.kromek.d5.Shared.receiveData;
-import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_REPORTS_ACK_REPORT_ID_ERROR;
-import static com.botts.impl.sensor.kromek.d5.reports.Constants.KROMEK_SERIAL_REPORTS_IN_ACK_ID;
+import static com.botts.impl.sensor.kromek.d5.Shared.sendRequest;
 
 /**
  * This class is responsible for sending and receiving messages to and from the sensor.
@@ -87,38 +83,7 @@ public class D5MessageRouter implements Runnable {
                     continue;
                 }
 
-                byte[] message = report.encodeRequest();
-
-                // Send the framed message to the server
-                outputStream.write(message);
-
-                // Receive data from the server
-                byte[] receivedData = receiveData(inputStream);
-
-                // Decode the received data using SLIP framing
-                byte[] decodedData = decodeSLIP(receivedData);
-
-                // The first five bytes are the header
-                byte componentId = decodedData[3];
-                byte reportId = decodedData[4];
-
-                // These shouldn't happen, but just in case they do, ignore them.
-                // Acknowledgements are typically a response to a command, and we only send requests.
-                if (reportId == KROMEK_SERIAL_REPORTS_IN_ACK_ID) {
-                    logger.info("ACK received from " + reportClass.getSimpleName());
-                    continue;
-                } else if (reportId == KROMEK_SERIAL_REPORTS_ACK_REPORT_ID_ERROR) {
-                    logger.info("ACK Error received from " + reportClass.getSimpleName());
-                    continue;
-                }
-
-                // The payload is everything in between
-                byte[] payload = Arrays.copyOfRange(decodedData, 5, decodedData.length - 2);
-
-                // Create a new report with the payload
-                report = (SerialReport) reportClass
-                        .getDeclaredConstructor(byte.class, byte.class, byte[].class)
-                        .newInstance(componentId, reportId, payload);
+                report = sendRequest(report, inputStream, outputStream);
 
                 output.setData(report);
             } catch (Exception e) {

@@ -21,12 +21,12 @@ import org.junit.Test;
 import java.net.Socket;
 
 import static com.botts.impl.sensor.kromek.d5.Shared.printCommPorts;
-import static com.botts.impl.sensor.kromek.d5.Shared.sendAndReceiveReport;
+import static com.botts.impl.sensor.kromek.d5.Shared.sendRequest;
 
 public class ConnectionTest {
     @Test
     public void testTCP() {
-        // Define the IP address and port number of the server
+        // Define the IP address and port number of the server, as configured in the D5 Settings application
         String ipAddress = "192.168.1.138";
         int portNumber = 12345;
         System.out.println("Connecting to " + ipAddress + " on port " + portNumber);
@@ -39,7 +39,8 @@ public class ConnectionTest {
             var inputStream = clientSocket.getInputStream();
             var outputStream = clientSocket.getOutputStream();
 
-            sendAndReceiveReport(report, inputStream, outputStream);
+            var receivedReport = sendRequest(report, inputStream, outputStream);
+            System.out.println(receivedReport);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -67,7 +68,8 @@ public class ConnectionTest {
             var inputStream = commPort.getInputStream();
             var outputStream = commPort.getOutputStream();
 
-            sendAndReceiveReport(report, inputStream, outputStream);
+            var receivedReport = sendRequest(report, inputStream, outputStream);
+            System.out.println(receivedReport);
             commPort.closePort();
         } catch (Exception e) {
             throw new RuntimeException(e);
