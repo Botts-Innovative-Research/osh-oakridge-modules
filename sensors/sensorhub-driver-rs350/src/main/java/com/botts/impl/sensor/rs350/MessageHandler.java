@@ -124,8 +124,9 @@ public class MessageHandler {
                     listeners.forEach(messageListener -> messageListener.onNewMessage(new RS350Message(radInstrumentDataType)));
                 }
                 catch (Exception e){
-                    System.out.println("Current Message: ");
-                    System.out.println(currentMessage);
+//                    System.out.println("Current Message: ");
+//                    System.out.println(currentMessage);
+                    System.out.println("Error: " + e);
                 }
             }
 
