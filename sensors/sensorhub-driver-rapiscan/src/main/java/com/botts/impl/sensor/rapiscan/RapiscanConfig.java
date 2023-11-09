@@ -14,7 +14,10 @@
 package com.botts.impl.sensor.rapiscan;
 
 import org.sensorhub.api.comm.CommProviderConfig;
+import org.sensorhub.api.sensor.PositionConfig.LLALocation;
+import org.sensorhub.api.sensor.PositionConfig.EulerOrientation;
 import org.sensorhub.api.config.DisplayInfo;
+import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.api.sensor.SensorConfig;
 
 /**
@@ -43,6 +46,15 @@ public class RapiscanConfig extends SensorConfig {
 
     @DisplayInfo(desc = "Communication settings to connect to RS-350 data stream")
     public CommProviderConfig<?> commSettings;
+
+    @DisplayInfo(desc="RPM Location")
+    public PositionConfig positionConfig = new PositionConfig();
+
+    @Override
+    public LLALocation getLocation(){return positionConfig.location;}
+
+    @Override
+    public EulerOrientation getOrientation(){ return positionConfig.orientation;}
 
 
 }

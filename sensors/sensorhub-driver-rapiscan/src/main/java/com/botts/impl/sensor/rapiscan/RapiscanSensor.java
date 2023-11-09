@@ -16,6 +16,7 @@ package com.botts.impl.sensor.rapiscan;
 
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.sensor.PositionConfig.LLALocation;
 import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
@@ -46,6 +47,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     OccupancyOutput occupancyOutput;
 
+    LocationOutput locationOutput;
+
     InputStream msgIn;
 
     @Override
@@ -69,10 +72,18 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         addOutput(occupancyOutput, false);
         occupancyOutput.init();
 
+        locationOutput = new LocationOutput(this);
+        addOutput(locationOutput, false);
+        locationOutput.init();
+
+
+
     }
 
     @Override
     protected void doStart() throws SensorHubException {
+
+        locationOutput.setLocationOuput(config.getLocation());
 
         // init comm provider
         if (commProvider == null) {
