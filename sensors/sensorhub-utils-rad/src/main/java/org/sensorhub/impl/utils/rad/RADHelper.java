@@ -74,12 +74,29 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public Count createOccupancyCount(){
+        return createCount()
+                .name("occupancy-count")
+                .label("Occupancy Count")
+                .definition(getRadUri("occupancy-count"))
+                .description("Occupancy count number reset daily")
+                .build();
+    }
+
     public Quantity createBatteryCharge(){
         return createQuantity()
                 .name("BatteryCharge")
                 .label("Battery Charge")
                 .definition(getRadInstrumentUri("battery-charge"))
                 .uomCode("%")
+                .build();
+    }
+
+    public Quantity createOccupancyNeutronBackground(){
+        return createQuantity()
+                .name("occupancy-neutron-background")
+                .label("Occupancy Neutron Background")
+                .definition(getRadUri("occupancy-neutron-background"))
                 .build();
     }
 
