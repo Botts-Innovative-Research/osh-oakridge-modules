@@ -1,0 +1,42 @@
+description = 'Kromek D5'
+ext.details = 'Driver for the Kromek D5 radiation sensor.'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation 'com.fazecast:jSerialComm:2.6.2'
+    implementation 'junit:junit:4.13.1'
+    testImplementation('junit:junit:4.13.1')
+}
+
+// exclude tests requiring connection to the sensor
+// these have to be run manually
+//      If tests are to be excluded list them here as follows
+//          exclude '**/TestNameClass.class'
+test {
+    useJUnit()
+}
+
+// add info to OSGi manifest
+osgi {
+    manifest {
+        attributes ('Bundle-Vendor': 'Botts Inc')
+        attributes ('Bundle-Activator': 'com.sample.impl.sensor.kromek.d5.D5Activator')
+    }
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'MichaelElmore1'
+            name 'Michael Elmore'
+            organization 'Botts Innovative Research, Inc.'
+            organizationUrl 'https://botts-inc.com/'
+        }
+    }
+}
