@@ -11,9 +11,10 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
 ******************************* END LICENSE BLOCK ***************************/
-package com.sample.impl.sensor.wadwaz1;
+package com.botts.impl.sensor.wadwaz1;
 
 import org.sensorhub.api.config.DisplayInfo;
+import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.api.sensor.SensorConfig;
 import org.sensorhub.api.comm.CommProviderConfig;
 
@@ -44,4 +45,9 @@ public class WADWAZ1Config extends SensorConfig {
 
     @DisplayInfo(desc = "Communication settings to connect to data stream")
     public CommProviderConfig<?> commSettings;
+
+    @DisplayInfo(desc="WADWAZ1 Location")
+    public PositionConfig positionConfig = new PositionConfig();
+    @Override
+    public PositionConfig.LLALocation getLocation(){return positionConfig.location;}
 }

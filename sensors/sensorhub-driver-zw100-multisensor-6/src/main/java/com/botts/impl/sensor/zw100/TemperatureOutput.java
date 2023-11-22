@@ -11,7 +11,7 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package com.sample.impl.sensor.zw100;
+package com.botts.impl.sensor.zw100;
 
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -73,16 +73,16 @@ public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> impleme
 
         tempData = tempHelper.createRecord()
                 .name(getName())
-                .label("Temperature")
+                .label(SENSOR_OUTPUT_NAME)
                 .definition("http://sensorml.com/ont/swe/property/Temperature")
                 .addField("Sampling Time", tempHelper.createTimeRange().asSamplingTimeIsoGPS())
-                .addField("Temperature",
+                .addField(SENSOR_OUTPUT_NAME,
                         tempHelper.createQuantity()
                                 .name("temperature")
-                                .label("Temperature")
+                                .label(SENSOR_OUTPUT_NAME)
                                 .definition("http://sensorml.com/ont/swe/property/Temperature")
-                                .description("Measure of Temperature in Degrees Fahrenheit"))
-                .addField("LatLon", tempHelper.createLocationVectorLLA())
+                                .description("Measure of Temperature in Degrees Fahrenheit")
+                                .uom("°F"))
                 .build();
 
         dataEncoding = tempHelper.newTextEncoding(",", "\n");
@@ -189,15 +189,14 @@ public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> impleme
                 ++setCount;
 
                 double time = System.currentTimeMillis() / 1000.;
+
                 double temperature = Double.NaN;
-                double lat = Double.NaN;
-                double lon = Double.NaN;
+
 
                 dataBlock.setStringValue(0, tempData.getName());
                 dataBlock.setDoubleValue(1, time);
                 dataBlock.setDoubleValue(2, temperature);
-                dataBlock.setDoubleValue(3, lat);
-                dataBlock.setDoubleValue(4, lon);
+
                 latestRecord = dataBlock;
 
                 latestRecordTime = System.currentTimeMillis();

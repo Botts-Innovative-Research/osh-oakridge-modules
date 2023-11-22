@@ -11,7 +11,7 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package com.sample.impl.sensor.zw100;
+package com.botts.impl.sensor.zw100;
 
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -72,16 +72,15 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> implements R
 
         motionData = motionHelper.createRecord()
                 .name(getName())
-                .label("Motion")
+                .label(SENSOR_OUTPUT_NAME)
                 .definition("http://sensorml.com/ont/swe/property/Motion")
                 .addField("Sampling Time", motionHelper.createTimeRange().asSamplingTimeIsoGPS())
-                .addField("Motion",
+                .addField(SENSOR_OUTPUT_NAME,
                         motionHelper.createQuantity()
-                                .name("motion")
-                                .label("Motion")
+                                .name("motion-sensor")
+                                .label(SENSOR_OUTPUT_NAME)
                                 .definition("http://sensorml.com/ont/swe/property/Motion")
                                 .description("Detection of Movement"))
-                .addField("LatLon", motionHelper.createLocationVectorLLA())
                 .build();
 
         dataEncoding = motionHelper.newTextEncoding(",", "\n");
@@ -189,15 +188,14 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> implements R
                 ++setCount;
 
                 double time = System.currentTimeMillis() / 1000.;
+
                 String motion = "";
-                double lat = Double.NaN;
-                double lon = Double.NaN;
+
 
                 dataBlock.setStringValue(0, motionData.getName());
                 dataBlock.setDoubleValue(1, time);
                 dataBlock.setStringValue(2, motion);
-                dataBlock.setDoubleValue(3, lat);
-                dataBlock.setDoubleValue(4, lon);
+
                 latestRecord = dataBlock;
 
                 latestRecordTime = System.currentTimeMillis();

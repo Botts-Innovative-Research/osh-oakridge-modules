@@ -11,7 +11,7 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package com.sample.impl.sensor.zw100;
+package com.botts.impl.sensor.zw100;
 
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -34,7 +34,7 @@ public class UltravioletOutput extends AbstractSensorOutput<ZW100Sensor> impleme
     private static final String SENSOR_OUTPUT_NAME = "Ultraviolet";
     private static final Logger logger = LoggerFactory.getLogger(UltravioletOutput.class);
 
-    private DataRecord UVData;
+    private DataRecord uVData;
     private DataEncoding dataEncoding;
 
     private Boolean stopProcessing = false;
@@ -68,23 +68,25 @@ public class UltravioletOutput extends AbstractSensorOutput<ZW100Sensor> impleme
         logger.debug("Initializing Output");
 
         // Get an instance of SWE Factory suitable to build components
-        GeoPosHelper UVHelper = new GeoPosHelper();
+        GeoPosHelper uVHelper = new GeoPosHelper();
 
-        UVData = UVHelper.createRecord()
+        String strUVIndex = "Ultraviolet Index";
+
+        uVData = uVHelper.createRecord()
                 .name(getName())
-                .label("Ultraviolet Index")
+                .label(strUVIndex)
                 .definition("http://sensorml.com/ont/swe/property/UVI")
-                .addField("Sampling Time", UVHelper.createTimeRange().asSamplingTimeIsoGPS())
-                .addField("Ultraviolet Index",
-                        UVHelper.createQuantity()
-                                .name("uvi")
-                                .label("UVI")
+                .addField("Sampling Time", uVHelper.createTimeRange().asSamplingTimeIsoGPS())
+                .addField(strUVIndex,
+                        uVHelper.createQuantity()
+                                .name("ultra-violet-index")
+                                .label(strUVIndex)
                                 .definition("http://sensorml.com/ont/swe/property/UVI")
-                                .description("Ultraviolet Index"))
-                .addField("LatLon", UVHelper.createLocationVectorLLA())
+                                .description(strUVIndex)
+                                .uom("lux"))
                 .build();
 
-        dataEncoding = UVHelper.newTextEncoding(",", "\n");
+        dataEncoding = uVHelper.newTextEncoding(",", "\n");
 
         logger.debug("Initializing Output Complete");
     }
@@ -128,7 +130,7 @@ public class UltravioletOutput extends AbstractSensorOutput<ZW100Sensor> impleme
     @Override
     public DataComponent getRecordDescription() {
 
-        return UVData;
+        return uVData;
     }
 
     @Override
@@ -167,7 +169,7 @@ public class UltravioletOutput extends AbstractSensorOutput<ZW100Sensor> impleme
                 DataBlock dataBlock;
                 if (latestRecord == null) {
 
-                    dataBlock = UVData.createDataBlock();
+                    dataBlock = uVData.createDataBlock();
 
                 } else {
 
@@ -188,15 +190,12 @@ public class UltravioletOutput extends AbstractSensorOutput<ZW100Sensor> impleme
                 ++setCount;
 
                 double time = System.currentTimeMillis() / 1000.;
-                double uvi = Double.NaN;
-                double lat = Double.NaN;
-                double lon = Double.NaN;
 
-                dataBlock.setStringValue(0, UVData.getName());
+                double uvi = Double.NaN;
+
+                dataBlock.setStringValue(0, uVData.getName());
                 dataBlock.setDoubleValue(1, time);
                 dataBlock.setDoubleValue(2, uvi);
-                dataBlock.setDoubleValue(3, lat);
-                dataBlock.setDoubleValue(4, lon);
 
                 latestRecord = dataBlock;
 

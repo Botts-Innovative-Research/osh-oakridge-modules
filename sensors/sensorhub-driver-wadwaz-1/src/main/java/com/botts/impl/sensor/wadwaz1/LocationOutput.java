@@ -11,7 +11,7 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package com.sample.impl.sensor.wadwaz1;
+package com.botts.impl.sensor.wadwaz1;
 
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -31,7 +31,7 @@ import org.vast.swe.helper.GeoPosHelper;
  */
 public class LocationOutput extends AbstractSensorOutput<WADWAZ1Sensor> implements Runnable {
 
-    private static final String SENSOR_OUTPUT_NAME = "Location";
+    private static final String SENSOR_OUTPUT_NAME = "WADWAZ1 Location";
 
     private static final Logger logger = LoggerFactory.getLogger(LocationOutput.class);
 
@@ -73,11 +73,11 @@ public class LocationOutput extends AbstractSensorOutput<WADWAZ1Sensor> implemen
 
         locationData = locationHelper.createRecord()
                 .name(getName())
-                .label(SENSOR_OUTPUT_NAME)
+                .label("Location")
                 .definition("http://sensorml.com/ont/swe/property/Location")
                 .addField("Sampling Time", locationHelper.createTimeRange().asSamplingTimeIsoGPS())
-                .addField(SENSOR_OUTPUT_NAME, locationHelper.createText())
-                .addField("LatLon", locationHelper.createLocationVectorLLA())
+                .addField("Location", locationHelper.createText())
+                .addField("Sensor Location", locationHelper.createLocationVectorLLA())
 
                 .build();
 
@@ -184,13 +184,12 @@ public class LocationOutput extends AbstractSensorOutput<WADWAZ1Sensor> implemen
                 ++setCount;
 
                 double time = System.currentTimeMillis() / 1000.;
-                String location = "";
+
                 double lat = Double.NaN;
                 double lon = Double.NaN;
 
                 dataBlock.setStringValue(0, locationData.getName());
-                dataBlock.setDoubleValue(1,time);
-                dataBlock.setStringValue(2, location);
+                dataBlock.setDoubleValue(1, time);
                 dataBlock.setDoubleValue(3, lat);
                 dataBlock.setDoubleValue(4, lon);
 

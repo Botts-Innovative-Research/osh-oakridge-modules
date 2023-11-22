@@ -1,4 +1,4 @@
-package com.sample.impl.sensor.wadwaz1;
+package com.botts.impl.sensor.wadwaz1;
 
 import org.sensorhub.utils.OshBundleActivator;
 

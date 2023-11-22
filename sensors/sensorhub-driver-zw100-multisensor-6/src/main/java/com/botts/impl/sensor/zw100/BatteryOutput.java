@@ -11,7 +11,7 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package com.sample.impl.sensor.zw100;
+package com.botts.impl.sensor.zw100;
 
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -21,7 +21,6 @@ import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
 
 /**
@@ -32,7 +31,7 @@ import org.vast.swe.helper.GeoPosHelper;
  */
 public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor> implements Runnable {
 
-    private static final String SENSOR_OUTPUT_NAME = "Battery Level";
+    private static final String SENSOR_OUTPUT_NAME = "ZW100 Battery Level";
 
     private static final Logger logger = LoggerFactory.getLogger(BatteryOutput.class);
 
@@ -72,20 +71,19 @@ public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor> implements 
         // Get an instance of SWE Factory suitable to build components
         GeoPosHelper batteryHelper = new GeoPosHelper();
 
+        String strBatteryLevel = "Battery Level";
         batteryData = batteryHelper.createRecord()
                 .name(getName())
-                .label("Battery Level")
+                .label(strBatteryLevel)
                 .definition("http://sensorml.com/ont/swe/property/Battery")
                 .addField("Sampling Time", batteryHelper.createTimeRange().asSamplingTimeIsoGPS())
-                .addField("Battery Level",
+                .addField(strBatteryLevel,
                         batteryHelper.createQuantity()
                                 .name("battery-level")
-                                .label("Battery Level")
+                                .label(strBatteryLevel)
                                 .definition("http://sensorml.com/ont/swe/property/BatteryLevel")
                                 .description("Battery Level of Sensor")
                                 .uomCode("%"))
-                .addField("LatLon", batteryHelper.createLocationVectorLLA())
-
                 .build();
 
 
@@ -195,15 +193,9 @@ public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor> implements 
                 double time = System.currentTimeMillis() / 1000.;
                 double batteryLevel = Double.NaN;
 
-                double lat = Double.NaN;
-                double lon = Double.NaN;
-
-                dataBlock.setStringValue(0,batteryData.getName());
+                dataBlock.setStringValue(0, batteryData.getName());
                 dataBlock.setDoubleValue(1, time);
                 dataBlock.setDoubleValue(2, batteryLevel);
-                dataBlock.setDoubleValue(3, lat);
-                dataBlock.setDoubleValue(4, lon);
-
 
                 latestRecord = dataBlock;
 

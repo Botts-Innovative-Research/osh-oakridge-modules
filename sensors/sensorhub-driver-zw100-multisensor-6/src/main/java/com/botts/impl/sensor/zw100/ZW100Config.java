@@ -11,9 +11,10 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
 ******************************* END LICENSE BLOCK ***************************/
-package com.sample.impl.sensor.zw100;
+package com.botts.impl.sensor.zw100;
 
 import org.sensorhub.api.config.DisplayInfo;
+import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.api.sensor.SensorConfig;
 
 /**
@@ -39,4 +40,11 @@ public class ZW100Config extends SensorConfig {
     @DisplayInfo.Required
     @DisplayInfo(desc = "Serial number or unique identifier")
     public String serialNumber = "sensor001";
+
+    @DisplayInfo(desc="ZW100 Location")
+    public PositionConfig positionConfig = new PositionConfig();
+
+    @Override
+    public PositionConfig.LLALocation getLocation(){return positionConfig.location;}
+
 }

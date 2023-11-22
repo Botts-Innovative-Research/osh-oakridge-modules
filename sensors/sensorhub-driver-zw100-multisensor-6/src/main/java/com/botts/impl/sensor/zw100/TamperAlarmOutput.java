@@ -11,7 +11,7 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package com.sample.impl.sensor.zw100;
+package com.botts.impl.sensor.zw100;
 
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -31,7 +31,7 @@ import org.vast.swe.helper.GeoPosHelper;
  */
 public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor> implements Runnable {
 
-    private static final String SENSOR_OUTPUT_NAME = "Tamper Alarm";
+    private static final String SENSOR_OUTPUT_NAME = "ZW100 Tamper Alarm";
 
     private static final Logger logger = LoggerFactory.getLogger(TamperAlarmOutput.class);
 
@@ -71,20 +71,19 @@ public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor> impleme
         // Get an instance of SWE Factory suitable to build components
         GeoPosHelper tamperAlarmHelper = new GeoPosHelper();
 
+        String strTamperAlarmStatus = "Tamper Alarm Status";
+
         tamperAlarmData = tamperAlarmHelper.createRecord()
                 .name(getName())
-                .label("Tamper Alarm Status")
+                .label(strTamperAlarmStatus)
                 .definition("http://sensorml.com/ont/swe/property/Alarm")
                 .addField("Sampling Time", tamperAlarmHelper.createTimeRange().asSamplingTimeIsoGPS())
-                .addField("Tamper Alarm Status",
-                        tamperAlarmHelper.createText()
+                .addField(strTamperAlarmStatus,
+                        tamperAlarmHelper.createCategory()
                                 .name("tamper-alarm-status")
-                                .label("Tamper Alarm Status")
+                                .label(strTamperAlarmStatus)
                                 .definition("http://sensorml.com/ont/swe/property/Alarm")
                                 .description("Status of Tamper Alarm"))
-//                                .addAllowedValues("OPEN","CLOSED"))
-                .addField("LatLon", tamperAlarmHelper.createLocationVectorLLA())
-
                 .build();
 
         dataEncoding = tamperAlarmHelper.newTextEncoding(",", "\n");
@@ -191,16 +190,13 @@ public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor> impleme
                 ++setCount;
 
                 double time = System.currentTimeMillis() / 1000.;
+
                 String status = "";
 
-                double lat = Double.NaN;
-                double lon = Double.NaN;
 
                 dataBlock.setStringValue(0, tamperAlarmData.getName());
-                dataBlock.setDoubleValue(1,time);
+                dataBlock.setDoubleValue(1, time);
                 dataBlock.setStringValue(2, status);
-                dataBlock.setDoubleValue(3, lat);
-                dataBlock.setDoubleValue(4, lon);
 
                 latestRecord = dataBlock;
 

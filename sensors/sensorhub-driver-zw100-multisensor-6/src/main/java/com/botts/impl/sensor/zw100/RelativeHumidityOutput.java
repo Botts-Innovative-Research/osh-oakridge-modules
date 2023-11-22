@@ -11,7 +11,7 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package com.sample.impl.sensor.zw100;
+package com.botts.impl.sensor.zw100;
 
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -72,19 +72,16 @@ public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> im
 
         relHumData = relHumHelper.createRecord()
                 .name(getName())
-                .label("Relative Humidity")
+                .label(SENSOR_OUTPUT_NAME)
                 .definition("http://sensorml.com/ont/swe/property/RelHum")
                 .addField("Sampling Time", relHumHelper.createTimeRange().asSamplingTimeIsoGPS())
-                .addField("Relative Humidity",
+                .addField(SENSOR_OUTPUT_NAME,
                         relHumHelper.createQuantity()
-                                .name("relative humidity")
-                                .label("Relative Humidity")
+                                .name("relative-humidity")
+                                .label(SENSOR_OUTPUT_NAME)
                                 .definition("http://sensorml.com/ont/swe/property/RelHum")
                                 .description("Measure of Relative Humidity")
-                                .uom("%")
-                )
-
-                .addField("LatLon", relHumHelper.createLocationVectorLLA())
+                                .uom("%"))
                 .build();
 
         dataEncoding = relHumHelper.newTextEncoding(",", "\n");
@@ -192,15 +189,14 @@ public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> im
                 ++setCount;
 
                 double time = System.currentTimeMillis() / 1000.;
+
                 double relHum = Double.NaN;
-                double lat = Double.NaN;
-                double lon = Double.NaN;
+
 
                 dataBlock.setStringValue(0, relHumData.getName());
                 dataBlock.setDoubleValue(1, time);
                 dataBlock.setDoubleValue(2, relHum);
-                dataBlock.setDoubleValue(3, lat);
-                dataBlock.setDoubleValue(4, lon);
+
                 latestRecord = dataBlock;
 
                 latestRecordTime = System.currentTimeMillis();

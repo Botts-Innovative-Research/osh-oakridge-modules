@@ -1,4 +1,4 @@
-package com.sample.impl.sensor.zw100;
+package com.botts.impl.sensor.zw100;
 
 import org.sensorhub.utils.OshBundleActivator;
 

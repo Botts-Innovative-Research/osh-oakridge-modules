@@ -11,12 +11,11 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package com.sample.impl.sensor.zw100;
+package com.botts.impl.sensor.zw100;
 
 import net.opengis.sensorml.v20.PhysicalSystem;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.sensor.PositionConfig.LLALocation;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.api.sensor.SensorException;
 import org.slf4j.Logger;

@@ -11,7 +11,7 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package com.sample.impl.sensor.wadwaz1;
+package com.botts.impl.sensor.wadwaz1;
 
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -31,7 +31,7 @@ import org.vast.swe.helper.GeoPosHelper;
  */
 public class ExternalSwitchAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> implements Runnable {
 
-    private static final String SENSOR_OUTPUT_NAME = "External Switch Alarm";
+    private static final String SENSOR_OUTPUT_NAME = "WADWAZ1 External Switch Alarm";
     private static final Logger logger = LoggerFactory.getLogger(ExternalSwitchAlarmOutput.class);
 
     private DataRecord extSwitchAlarmData;
@@ -70,20 +70,20 @@ public class ExternalSwitchAlarmOutput extends AbstractSensorOutput<WADWAZ1Senso
         // Get an instance of SWE Factory suitable to build components
         GeoPosHelper externalSwitchAlarmHelper = new GeoPosHelper();
 
+        String strExternalSwitchAlarmStatus = "External Switch Alarm Status";
+
         extSwitchAlarmData = externalSwitchAlarmHelper.createRecord()
                 .name(getName())
                 .label("External Switch Alarm")
                 .definition("http://sensorml.com/ont/swe/property/Alarm")
                 .addField("Sampling Time", externalSwitchAlarmHelper.createTimeRange().asSamplingTimeIsoGPS())
-                .addField("External Switch Alarm",
-                        externalSwitchAlarmHelper.createQuantity()
+                .addField(strExternalSwitchAlarmStatus,
+                        externalSwitchAlarmHelper.createCategory()
                                 .name("external-switch-alarm")
-                                .label("External Switch Alarm Status")
+                                .label(strExternalSwitchAlarmStatus)
                                 .definition("http://sensorml.com/ont/swe/property/Alarm")
-                                .description("External Switch Alarm Status"))
-//                                .addAllowedValues())
-                .addField("LatLon", externalSwitchAlarmHelper.createLocationVectorLLA())
-
+                                .description(strExternalSwitchAlarmStatus)
+                                .addAllowedValues("Open", "Close"))
                 .build();
 
         dataEncoding = externalSwitchAlarmHelper.newTextEncoding(",", "\n");
@@ -195,15 +195,9 @@ public class ExternalSwitchAlarmOutput extends AbstractSensorOutput<WADWAZ1Senso
                 double time = System.currentTimeMillis() / 1000.;
                 String status = "";
 
-                double lat = Double.NaN;
-                double lon = Double.NaN;
-
                 dataBlock.setStringValue(0,extSwitchAlarmData.getName());
                 dataBlock.setDoubleValue(1,time);
                 dataBlock.setStringValue(2, status);
-                dataBlock.setDoubleValue(3, lat);
-                dataBlock.setDoubleValue(4, lon);
-
 
 
                 latestRecord = dataBlock;

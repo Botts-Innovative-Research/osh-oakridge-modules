@@ -11,7 +11,7 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package com.sample.impl.sensor.zw100;
+package com.botts.impl.sensor.zw100;
 
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -73,16 +73,15 @@ public class LuminanceOutput extends AbstractSensorOutput<ZW100Sensor> implement
 
         luminanceData = luminanceHelper.createRecord()
                 .name(getName())
-                .label("Luminance")
+                .label(SENSOR_OUTPUT_NAME)
                 .definition("http://sensorml.com/ont/swe/property/Luminance")
                 .addField("Sampling Time", luminanceHelper.createTimeRange().asSamplingTimeIsoGPS())
-                .addField("Luminance",
+                .addField(SENSOR_OUTPUT_NAME,
                         luminanceHelper.createQuantity()
-                                .name("lux")
-                                .label("Luminance")
+                                .name("luminance")
+                                .label(SENSOR_OUTPUT_NAME)
                                 .definition("http://sensorml.com/ont/swe/property/Luminance")
                                 .description("Measure of Luminance in Lux"))
-                .addField("LatLon", luminanceHelper.createLocationVectorLLA())
                 .build();
 
         dataEncoding = luminanceHelper.newTextEncoding(",", "\n");
@@ -191,14 +190,11 @@ public class LuminanceOutput extends AbstractSensorOutput<ZW100Sensor> implement
 
                 double time = System.currentTimeMillis() / 1000.;
                 double luminance = Double.NaN;
-                double lat = Double.NaN;
-                double lon = Double.NaN;
+
 
                 dataBlock.setStringValue(0, luminanceData.getName());
                 dataBlock.setDoubleValue(1, time);
                 dataBlock.setDoubleValue(2, luminance);
-                dataBlock.setDoubleValue(3, lat);
-                dataBlock.setDoubleValue(4, lon);
 
                 latestRecord = dataBlock;
 

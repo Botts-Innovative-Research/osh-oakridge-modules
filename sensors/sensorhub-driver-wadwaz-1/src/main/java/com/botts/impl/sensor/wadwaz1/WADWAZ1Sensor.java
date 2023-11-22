@@ -11,7 +11,7 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package com.sample.impl.sensor.wadwaz1;
+package com.botts.impl.sensor.wadwaz1;
 
 import org.sensorhub.api.comm.ICommProvider;
 
@@ -104,9 +104,11 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
 
     @Override
     public void doStart() throws SensorHubException {
+
 //        locationOutput.setLocationOuput(config.getLocation());
 
-            // init comm provider
+
+        // init comm provider
             if (commProvider == null) {
 
                 // we need to recreate comm provider here because it can be changed by UI
@@ -164,7 +166,7 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
             }
         }
 
-        messageHandler.stopProcessing();
+//        messageHandler.stopProcessing();
     }
 
     @Override

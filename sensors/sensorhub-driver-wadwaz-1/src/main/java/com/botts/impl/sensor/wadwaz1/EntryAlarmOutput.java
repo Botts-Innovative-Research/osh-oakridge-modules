@@ -11,7 +11,7 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package com.sample.impl.sensor.wadwaz1;
+package com.botts.impl.sensor.wadwaz1;
 
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -31,7 +31,7 @@ import org.vast.swe.helper.GeoPosHelper;
  */
 public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> implements Runnable {
 
-    private static final String SENSOR_OUTPUT_NAME = "Entry Alarm";
+    private static final String SENSOR_OUTPUT_NAME = "WADWAZ1 Entry Alarm";
     private static final Logger logger = LoggerFactory.getLogger(EntryAlarmOutput.class);
 
     private DataRecord entryAlarmData;
@@ -68,20 +68,20 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> implem
         // Get an instance of SWE Factory suitable to build components
         GeoPosHelper entryAlarmHelper = new GeoPosHelper();
 
+        String strEntryAlarm = "Entry Alarm";
+
         entryAlarmData = entryAlarmHelper.createRecord()
                 .name(getName())
-                .label("Entry Alarm Status")
+                .label(strEntryAlarm)
                 .definition("http://sensorml.com/ont/swe/property/Entry")
                 .addField("Sampling Time", entryAlarmHelper.createTimeRange().asSamplingTimeIsoGPS())
-                .addField("Entry Alarm Status",
-                        entryAlarmHelper.createText()
-                                .name("entry-alarm-status")
-                                .label("Entry Alarm Status")
+                .addField(strEntryAlarm,
+                        entryAlarmHelper.createCategory()
+                                .name("entry-alarm")
+                                .label(strEntryAlarm + " Status")
                                 .definition("http://sensorml.com/ont/swe/property/Entry")
                                 .description("Status of Entry Alarm")
-                                .addAllowedValues("OPEN","CLOSED"))
-                .addField("LatLon", entryAlarmHelper.createLocationVectorLLA())
-
+                                .addAllowedValues("Open","Close"))
                 .build();
 
         dataEncoding = entryAlarmHelper.newTextEncoding(",", "\n");
@@ -190,14 +190,9 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> implem
                 double time = System.currentTimeMillis() / 1000.;
                 String status = "";
 
-                double lat = Double.NaN;
-                double lon = Double.NaN;
-
                 dataBlock.setStringValue(0, entryAlarmData.getName());
                 dataBlock.setDoubleValue(1, time);
                 dataBlock.setStringValue(2, status);
-                dataBlock.setDoubleValue(3, lat);
-                dataBlock.setDoubleValue(4, lon);
 
                 latestRecord = dataBlock;
 
