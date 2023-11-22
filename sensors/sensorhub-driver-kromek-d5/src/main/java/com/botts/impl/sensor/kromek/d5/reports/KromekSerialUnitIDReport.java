@@ -62,16 +62,16 @@ public class KromekSerialUnitIDReport extends SerialReport {
                         .description("Unit ID")
                         .definition(SWEHelper.getPropertyUri("unitID"))
                         .withFixedSize(KROMEK_SERIAL_MAX_UNIT_ID_LENGTH)
-                        .withElement("unitID", sweFactory.createQuantity()
-                                .label("Unit ID")
-                                .description("Unit ID")
-                                .definition(SWEHelper.getPropertyUri("unitID"))
+                        .withElement("unitIDElement", sweFactory.createQuantity()
+                                .label("Unit ID Element")
+                                .description("Unit ID Element")
+                                .definition(SWEHelper.getPropertyUri("unitIDElement"))
                                 .dataType(DataType.INT)))
                 .build();
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         for (int i = 0; i < KROMEK_SERIAL_MAX_UNIT_ID_LENGTH; i++)
@@ -80,10 +80,10 @@ public class KromekSerialUnitIDReport extends SerialReport {
 
     @Override
     void setReportInfo() {
-        setReportName(KromekSerialUnitIDReport.class.getSimpleName());
-        setReportLabel("Unit ID");
-        setReportDescription("Unit ID");
+        setReportName("KromekSerialUnitIDReport");
+        setReportLabel("Unit ID Report");
+        setReportDescription("Unit ID Report");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
-
+        setPollingRate(1);
     }
 }

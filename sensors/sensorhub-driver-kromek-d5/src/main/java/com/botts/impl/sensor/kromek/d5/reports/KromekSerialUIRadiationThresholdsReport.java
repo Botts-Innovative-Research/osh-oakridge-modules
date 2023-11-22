@@ -45,9 +45,9 @@ public class KromekSerialUIRadiationThresholdsReport extends SerialReport {
         index = bytesToUInt(payload[0], payload[1]);
         thresholdType = KromekSerialRadiationThresholdType.values()[payload[2]];
 
-        //Read in all 34 bytes of the threshold text
+        // Read in all 34 bytes of the threshold text
         byte[] thresholdTextBytes = Arrays.copyOfRange(payload, 3, 37);
-        //Convert to a string. The string is null terminated, so we need to find the null terminator
+        // Convert to a string. The string is null terminated, so we need to find the null terminator
         int nullTerminatorIndex = 0;
         for (int i = 0; i < thresholdTextBytes.length; i++) {
             if (thresholdTextBytes[i] == 0) {
@@ -57,9 +57,9 @@ public class KromekSerialUIRadiationThresholdsReport extends SerialReport {
         }
         thresholdText1 = new String(Arrays.copyOfRange(thresholdTextBytes, 0, nullTerminatorIndex));
 
-        //Read in all 34 bytes of the threshold text
+        // Read in all 34 bytes of the threshold text
         thresholdTextBytes = Arrays.copyOfRange(payload, 37, 71);
-        //Convert to a string. The string is null terminated, so we need to find the null terminator
+        // Convert to a string. The string is null terminated, so we need to find the null terminator
         nullTerminatorIndex = 0;
         for (int i = 0; i < thresholdTextBytes.length; i++) {
             if (thresholdTextBytes[i] == 0) {
@@ -128,7 +128,7 @@ public class KromekSerialUIRadiationThresholdsReport extends SerialReport {
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setIntValue(++index, this.index);
@@ -141,9 +141,10 @@ public class KromekSerialUIRadiationThresholdsReport extends SerialReport {
 
     @Override
     void setReportInfo() {
-        setReportName(KromekSerialUIRadiationThresholdsReport.class.getSimpleName());
-        setReportLabel("Radiation Thresholds");
-        setReportDescription("Radiation Thresholds");
+        setReportName("KromekSerialUIRadiationThresholdsReport");
+        setReportLabel("Radiation Thresholds Report");
+        setReportDescription("Radiation Thresholds Report");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
+        setPollingRate(1);
     }
 }

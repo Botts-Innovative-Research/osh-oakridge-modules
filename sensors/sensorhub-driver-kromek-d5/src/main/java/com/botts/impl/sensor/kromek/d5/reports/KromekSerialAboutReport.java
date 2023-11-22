@@ -22,9 +22,9 @@ import static com.botts.impl.sensor.kromek.d5.reports.Constants.*;
 
 public class KromekSerialAboutReport extends SerialReport {
     private String firmware;
-    private String modelrev;
-    private String productname;
-    private String serialnumber;
+    private String modelRev;
+    private String productName;
+    private String serialNumber;
 
     public KromekSerialAboutReport(byte componentId, byte reportId, byte[] data) {
         super(componentId, reportId);
@@ -43,13 +43,12 @@ public class KromekSerialAboutReport extends SerialReport {
         String firmware2 = String.format("%02X", payload[0]);
         firmware = firmware1 + '.' + firmware2;
 
-        String modelrev1 = String.format("%02X", payload[3]);
+        String modelRev1 = String.format("%02X", payload[3]);
         // Trim off the leading 0 if it has one
-        if (modelrev1.startsWith("0")) modelrev1 = modelrev1.substring(1);
-        String modelrev2 = String.format("%02X", payload[2]);
-        modelrev = modelrev1 + '.' + modelrev2;
+        if (modelRev1.startsWith("0")) modelRev1 = modelRev1.substring(1);
+        String modelRev2 = String.format("%02X", payload[2]);
+        modelRev = modelRev1 + '.' + modelRev2;
 
-        // Read in all KROMEK_SERIAL_REPORTS_PRODUCTNAME_SIZE bytes
         byte[] productNameBytes = Arrays.copyOfRange(payload, 4, 4 + KROMEK_SERIAL_REPORTS_PRODUCTNAME_SIZE);
         // Convert to a string. The string is null terminated, so we need to find the null terminator
         int nullTerminatorIndex = 0;
@@ -59,9 +58,8 @@ public class KromekSerialAboutReport extends SerialReport {
                 break;
             }
         }
-        productname = new String(Arrays.copyOfRange(productNameBytes, 0, nullTerminatorIndex));
+        productName = new String(Arrays.copyOfRange(productNameBytes, 0, nullTerminatorIndex));
 
-        // Read in all KROMEK_SERIAL_REPORTS_SERIALNUMBER_SIZE bytes
         byte[] serialNumberBytes = Arrays.copyOfRange(payload, 4 + KROMEK_SERIAL_REPORTS_PRODUCTNAME_SIZE, 4 + KROMEK_SERIAL_REPORTS_PRODUCTNAME_SIZE + KROMEK_SERIAL_REPORTS_SERIALNUMBER_SIZE);
         // Convert to a string. The string is null terminated, so we need to find the null terminator
         nullTerminatorIndex = 0;
@@ -71,16 +69,16 @@ public class KromekSerialAboutReport extends SerialReport {
                 break;
             }
         }
-        serialnumber = new String(Arrays.copyOfRange(serialNumberBytes, 0, nullTerminatorIndex));
+        serialNumber = new String(Arrays.copyOfRange(serialNumberBytes, 0, nullTerminatorIndex));
     }
 
     @Override
     public String toString() {
         return KromekSerialAboutReport.class.getSimpleName() + " {" +
                 "firmware=" + firmware +
-                ", modelrev=" + modelrev +
-                ", productname='" + productname + '\'' +
-                ", serialnumber='" + serialnumber + '\'' +
+                ", modelRev=" + modelRev +
+                ", productName='" + productName + '\'' +
+                ", serialNumber='" + serialNumber + '\'' +
                 '}';
     }
 
@@ -99,37 +97,37 @@ public class KromekSerialAboutReport extends SerialReport {
                         .label("Firmware")
                         .description("Firmware")
                         .definition(SWEHelper.getPropertyUri("firmware")))
-                .addField("modelrev", sweFactory.createText()
+                .addField("modelRev", sweFactory.createText()
                         .label("Model Revision")
                         .description("Model Revision")
-                        .definition(SWEHelper.getPropertyUri("modelrev")))
-                .addField("productname", sweFactory.createText()
+                        .definition(SWEHelper.getPropertyUri("modelRev")))
+                .addField("productName", sweFactory.createText()
                         .label("Product Name")
                         .description("Product Name")
-                        .definition(SWEHelper.getPropertyUri("productname")))
-                .addField("serialnumber", sweFactory.createText()
+                        .definition(SWEHelper.getPropertyUri("productName")))
+                .addField("serialNumber", sweFactory.createText()
                         .label("Serial Number")
                         .description("Serial Number")
-                        .definition(SWEHelper.getPropertyUri("serialnumber")))
+                        .definition(SWEHelper.getPropertyUri("serialNumber")))
                 .build();
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setStringValue(++index, firmware);
-        dataBlock.setStringValue(++index, modelrev);
-        dataBlock.setStringValue(++index, productname);
-        dataBlock.setStringValue(++index, serialnumber);
+        dataBlock.setStringValue(++index, modelRev);
+        dataBlock.setStringValue(++index, productName);
+        dataBlock.setStringValue(++index, serialNumber);
     }
 
     @Override
     void setReportInfo() {
-        setReportName(KromekSerialAboutReport.class.getSimpleName());
-        setReportLabel("About");
-        setReportDescription("About");
+        setReportName("KromekSerialAboutReport");
+        setReportLabel("About Report");
+        setReportDescription("Information about the device");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
-        setPollingRate(0);
+        setPollingRate(10);
     }
 }

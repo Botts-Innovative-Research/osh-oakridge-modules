@@ -93,7 +93,7 @@ public class KromekSerialCompressionEnabledReport extends SerialReport {
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setBooleanValue(++index, enabled);
@@ -104,8 +104,8 @@ public class KromekSerialCompressionEnabledReport extends SerialReport {
 
     @Override
     void setReportInfo() {
-        setReportName(KromekSerialCompressionEnabledReport.class.getSimpleName());
-        setReportLabel("Compression Enabled");
+        setReportName("KromekSerialCompressionEnabledReport");
+        setReportLabel("Compression Enabled Report");
         setReportDescription("Reports if compression is enabled and the compression parameters");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
         setPollingRate(10);

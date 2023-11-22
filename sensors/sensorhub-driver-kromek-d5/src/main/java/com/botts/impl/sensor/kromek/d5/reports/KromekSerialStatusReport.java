@@ -147,7 +147,7 @@ public class KromekSerialStatusReport extends SerialReport {
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setIntValue(++index, appStatus);
@@ -165,8 +165,8 @@ public class KromekSerialStatusReport extends SerialReport {
 
     @Override
     void setReportInfo() {
-        setReportName(KromekSerialStatusReport.class.getSimpleName());
-        setReportLabel("Status");
+        setReportName("KromekSerialStatusReport");
+        setReportLabel("Status Report");
         setReportDescription("Reports the status of the device");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
         setPollingRate(10);

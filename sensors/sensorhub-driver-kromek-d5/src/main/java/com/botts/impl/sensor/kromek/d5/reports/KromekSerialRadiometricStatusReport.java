@@ -122,7 +122,7 @@ public class KromekSerialRadiometricStatusReport extends SerialReport {
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setBooleanValue(++index, doseAlarmActive);
@@ -137,9 +137,10 @@ public class KromekSerialRadiometricStatusReport extends SerialReport {
 
     @Override
     void setReportInfo() {
-        setReportName(KromekSerialRadiometricStatusReport.class.getSimpleName());
-        setReportLabel("Radiometric Status");
-        setReportDescription("Radiometric Status");
+        setReportName("KromekSerialRadiometricStatusReport");
+        setReportLabel("Radiometric Status Report");
+        setReportDescription("Radiometric Status Report");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
+        setPollingRate(1);
     }
 }

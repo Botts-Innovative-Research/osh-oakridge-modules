@@ -101,7 +101,7 @@ public class KromekSerialDoseInfoReport extends SerialReport {
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setDoubleValue(++index, lifetimeDose);
@@ -113,9 +113,10 @@ public class KromekSerialDoseInfoReport extends SerialReport {
 
     @Override
     void setReportInfo() {
-        setReportName(KromekSerialDoseInfoReport.class.getSimpleName());
-        setReportLabel("Dose Info");
+        setReportName("KromekSerialDoseInfoReport");
+        setReportLabel("Dose Info Report");
         setReportDescription("Kromek Serial Dose Info Report");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
+        setPollingRate(1);
     }
 }

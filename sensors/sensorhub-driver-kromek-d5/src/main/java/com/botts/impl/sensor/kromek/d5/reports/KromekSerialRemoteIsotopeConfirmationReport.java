@@ -66,7 +66,7 @@ public class KromekSerialRemoteIsotopeConfirmationReport extends SerialReport {
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setStringValue(++index, mode.toString());
@@ -74,9 +74,10 @@ public class KromekSerialRemoteIsotopeConfirmationReport extends SerialReport {
 
     @Override
     void setReportInfo() {
-        setReportName(KromekSerialRemoteIsotopeConfirmationReport.class.getSimpleName());
+        setReportName("KromekSerialRemoteIsotopeConfirmationReport");
         setReportLabel("Remote Isotope Confirmation Report");
         setReportDescription("Remote Isotope Confirmation Report");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
+        setPollingRate(1);
     }
 }

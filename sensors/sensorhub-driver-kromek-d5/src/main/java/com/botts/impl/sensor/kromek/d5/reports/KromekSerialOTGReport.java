@@ -63,7 +63,7 @@ public class KromekSerialOTGReport extends SerialReport {
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setStringValue(++index, mode.toString());
@@ -71,9 +71,9 @@ public class KromekSerialOTGReport extends SerialReport {
 
     @Override
     void setReportInfo() {
-        setReportName(KromekSerialOTGReport.class.getSimpleName());
-        setReportLabel("USB OTG");
-        setReportDescription("USB OTG");
+        setReportName("KromekSerialOTGReport");
+        setReportLabel("USB OTG Report");
+        setReportDescription("USB OTG Report");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
         setPollingRate(5);
     }

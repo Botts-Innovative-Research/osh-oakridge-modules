@@ -79,7 +79,7 @@ public class KromekSerialUTCReport extends SerialReport {
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setLongValue(++index, deviceTimestamp);
@@ -89,9 +89,10 @@ public class KromekSerialUTCReport extends SerialReport {
 
     @Override
     void setReportInfo() {
-        setReportName(KromekSerialUTCReport.class.getSimpleName());
+        setReportName("KromekSerialUTCReport");
         setReportLabel("Kromek Serial UTC Report");
         setReportDescription("Kromek Serial UTC Report");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
+        setPollingRate(1);
     }
 }

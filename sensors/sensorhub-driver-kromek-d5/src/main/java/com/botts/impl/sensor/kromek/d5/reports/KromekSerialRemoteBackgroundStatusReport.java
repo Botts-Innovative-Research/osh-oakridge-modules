@@ -104,7 +104,7 @@ public class KromekSerialRemoteBackgroundStatusReport extends SerialReport {
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setStringValue(++index, state.toString());
@@ -117,9 +117,10 @@ public class KromekSerialRemoteBackgroundStatusReport extends SerialReport {
 
     @Override
     void setReportInfo() {
-        setReportName(KromekSerialRemoteBackgroundStatusReport.class.getSimpleName());
-        setReportLabel("Remote Background Status");
-        setReportDescription("Remote Background Status");
+        setReportName("KromekSerialRemoteBackgroundStatusReport");
+        setReportLabel("Remote Background Status Report");
+        setReportDescription("Remote Background Status Report");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
+        setPollingRate(1);
     }
 }

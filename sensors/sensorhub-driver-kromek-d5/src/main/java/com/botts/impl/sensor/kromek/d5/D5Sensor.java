@@ -32,7 +32,7 @@ import static com.botts.impl.sensor.kromek.d5.Shared.findSerialPort;
  * @since Oct. 2023
  */
 public class D5Sensor extends AbstractSensorModule<D5Config> {
-    private static final Logger logger = LoggerFactory.getLogger(D5Sensor.class);
+    private static final Logger log = LoggerFactory.getLogger(D5Sensor.class);
 
     // Map of report classes to their associated output instances
     HashMap<Class<?>, D5Output> outputs;
@@ -58,38 +58,36 @@ public class D5Sensor extends AbstractSensorModule<D5Config> {
         boolean connected = false;
 
         // Try connecting to the sensor via the comm provider
-        if (config.commSettings != null) {
-            if (commProvider == null) {
-                // We need to recreate comm provider here because it can be changed by UI
-                try {
-                    logger.info("Trying to connect to sensor via comm provider.");
-                    var moduleReg = getParentHub().getModuleRegistry();
-                    commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
-                    commProvider.start();
+        if (config.commSettings != null && commProvider == null) {
+            // We need to recreate comm provider here because it can be changed by UI
+            try {
+                log.info("Trying to connect to sensor via comm provider.");
+                var moduleReg = getParentHub().getModuleRegistry();
+                commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
+                commProvider.start();
 
-                    if (commProvider.isStarted()) {
-                        // Connect to data stream
-                        messageRouter = new D5MessageRouter(this, commProvider.getInputStream(), commProvider.getOutputStream());
-                        messageRouter.start();
-                        connected = true;
+                if (commProvider.isStarted()) {
+                    // Connect to data stream
+                    messageRouter = new D5MessageRouter(this, commProvider.getInputStream(), commProvider.getOutputStream());
+                    messageRouter.start();
+                    connected = true;
 
-                        logger.info("Connected to sensor via comm provider.");
-                    } else {
-                        logger.info("Failed to connect to sensor via comm provider.");
-                    }
-                } catch (Exception e) {
-                    commProvider = null;
-                    throw new SensorException("Error while initializing communications ", e);
+                    log.info("Connected to sensor via comm provider.");
+                } else {
+                    log.info("Failed to connect to sensor via comm provider.");
                 }
+            } catch (Exception e) {
+                commProvider = null;
+                throw new SensorException("Error while initializing communications ", e);
             }
         }
 
         // Try establishing a connection to the sensor via USB if we haven't already connected
         if (!connected) {
-            logger.info("Trying to connect to sensor via USB.");
+            log.info("Trying to connect to sensor via USB.");
             String comPortName = findSerialPort();
             if (comPortName == null) {
-                logger.info("No serial port found.");
+                log.info("No serial port found.");
             } else {
                 SerialPort commPort = SerialPort.getCommPort(comPortName);
                 commPort.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 100, 0);
@@ -112,12 +110,8 @@ public class D5Sensor extends AbstractSensorModule<D5Config> {
 
     @Override
     public void doStop() throws SensorHubException {
-        logger.info("Stopping sensor");
+        log.info("Stopping sensor");
         processLock = true;
-
-        for (D5Output output : outputs.values()) {
-            output.doStop();
-        }
 
         if (commProvider != null) {
             commProvider.stop();
@@ -136,95 +130,109 @@ public class D5Sensor extends AbstractSensorModule<D5Config> {
     }
 
     void createOutputs() {
-        // Create and initialize outputs
         if (config.outputs.enableKromekDetectorRadiometricsV1Report) {
-            D5Output output = new D5Output(KromekDetectorRadiometricsV1Report.getReportName(), this);
+            KromekDetectorRadiometricsV1Report report = new KromekDetectorRadiometricsV1Report();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekDetectorRadiometricsV1Report());
+            output.doInit(report);
             outputs.put(KromekDetectorRadiometricsV1Report.class, output);
         }
         if (config.outputs.enableKromekSerialRadiometricStatusReport) {
-            D5Output output = new D5Output(KromekSerialRadiometricStatusReport.getReportName(), this);
+            KromekSerialRadiometricStatusReport report = new KromekSerialRadiometricStatusReport();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekSerialRadiometricStatusReport());
+            output.doInit(report);
             outputs.put(KromekSerialRadiometricStatusReport.class, output);
         }
         if (config.outputs.enableKromekSerialCompressionEnabledReport) {
-            D5Output output = new D5Output(KromekSerialCompressionEnabledReport.getReportName(), this);
+            KromekSerialCompressionEnabledReport report = new KromekSerialCompressionEnabledReport();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekSerialCompressionEnabledReport());
+            output.doInit(report);
             outputs.put(KromekSerialCompressionEnabledReport.class, output);
         }
         if (config.outputs.enableKromekSerialEthernetConfigReport) {
-            D5Output output = new D5Output(KromekSerialEthernetConfigReport.getReportName(), this);
+            KromekSerialEthernetConfigReport report = new KromekSerialEthernetConfigReport();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekSerialEthernetConfigReport());
+            output.doInit(report);
             outputs.put(KromekSerialEthernetConfigReport.class, output);
         }
         if (config.outputs.enableKromekSerialStatusReport) {
-            D5Output output = new D5Output(KromekSerialStatusReport.getReportName(), this);
+            KromekSerialStatusReport report = new KromekSerialStatusReport();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekSerialStatusReport());
+            output.doInit(report);
             outputs.put(KromekSerialStatusReport.class, output);
         }
         if (config.outputs.enableKromekSerialUnitIDReport) {
-            D5Output output = new D5Output(KromekSerialUnitIDReport.getReportName(), this);
+            KromekSerialUnitIDReport report = new KromekSerialUnitIDReport();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekSerialUnitIDReport());
+            output.doInit(report);
             outputs.put(KromekSerialUnitIDReport.class, output);
         }
         if (config.outputs.enableKromekSerialDoseInfoReport) {
-            D5Output output = new D5Output(KromekSerialDoseInfoReport.getReportName(), this);
+            KromekSerialDoseInfoReport report = new KromekSerialDoseInfoReport();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekSerialDoseInfoReport());
+            output.doInit(report);
             outputs.put(KromekSerialDoseInfoReport.class, output);
         }
         if (config.outputs.enableKromekSerialRemoteIsotopeConfirmationReport) {
-            D5Output output = new D5Output(KromekSerialRemoteIsotopeConfirmationReport.getReportName(), this);
+            KromekSerialRemoteIsotopeConfirmationReport report = new KromekSerialRemoteIsotopeConfirmationReport();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekSerialRemoteIsotopeConfirmationReport());
+            output.doInit(report);
             outputs.put(KromekSerialRemoteIsotopeConfirmationReport.class, output);
         }
         if (config.outputs.enableKromekSerialRemoteIsotopeConfirmationStatusReport) {
-            D5Output output = new D5Output(KromekSerialRemoteIsotopeConfirmationStatusReport.getReportName(), this);
+            KromekSerialRemoteIsotopeConfirmationStatusReport report = new KromekSerialRemoteIsotopeConfirmationStatusReport();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekSerialRemoteIsotopeConfirmationStatusReport());
+            output.doInit(report);
             outputs.put(KromekSerialRemoteIsotopeConfirmationStatusReport.class, output);
         }
         if (config.outputs.enableKromekSerialUTCReport) {
-            D5Output output = new D5Output(KromekSerialUTCReport.getReportName(), this);
+            KromekSerialUTCReport report = new KromekSerialUTCReport();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekSerialUTCReport());
+            output.doInit(report);
             outputs.put(KromekSerialUTCReport.class, output);
         }
         if (config.outputs.enableKromekSerialRemoteBackgroundStatusReport) {
-            D5Output output = new D5Output(KromekSerialRemoteBackgroundStatusReport.getReportName(), this);
+            KromekSerialRemoteBackgroundStatusReport report = new KromekSerialRemoteBackgroundStatusReport();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekSerialRemoteBackgroundStatusReport());
+            output.doInit(report);
             outputs.put(KromekSerialRemoteBackgroundStatusReport.class, output);
         }
         if (config.outputs.enableKromekSerialRemoteExtendedIsotopeConfirmationStatusReport) {
-            D5Output output = new D5Output(KromekSerialRemoteExtendedIsotopeConfirmationStatusReport.getReportName(), this);
+            KromekSerialRemoteExtendedIsotopeConfirmationStatusReport report = new KromekSerialRemoteExtendedIsotopeConfirmationStatusReport();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekSerialRemoteExtendedIsotopeConfirmationStatusReport());
+            output.doInit(report);
             outputs.put(KromekSerialRemoteExtendedIsotopeConfirmationStatusReport.class, output);
         }
         if (config.outputs.enableKromekSerialUIRadiationThresholdsReport) {
-            D5Output output = new D5Output(KromekSerialUIRadiationThresholdsReport.getReportName(), this);
+            KromekSerialUIRadiationThresholdsReport report = new KromekSerialUIRadiationThresholdsReport();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekSerialUIRadiationThresholdsReport());
+            output.doInit(report);
             outputs.put(KromekSerialUIRadiationThresholdsReport.class, output);
         }
         if (config.outputs.enableKromekSerialAboutReport) {
-            D5Output output = new D5Output(KromekSerialAboutReport.getReportName(), this);
+            KromekSerialAboutReport report = new KromekSerialAboutReport();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekSerialAboutReport());
+            output.doInit(report);
             outputs.put(KromekSerialAboutReport.class, output);
         }
         if (config.outputs.enableKromekSerialOTGReport) {
-            D5Output output = new D5Output(KromekSerialOTGReport.getReportName(), this);
+            KromekSerialOTGReport report = new KromekSerialOTGReport();
+            D5Output output = new D5Output(this, report.getReportName(), report.getPollingRate());
             addOutput(output, false);
-            output.doInit(new KromekSerialOTGReport());
+            output.doInit(report);
             outputs.put(KromekSerialOTGReport.class, output);
         }
     }

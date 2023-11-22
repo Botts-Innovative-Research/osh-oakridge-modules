@@ -30,12 +30,12 @@ public class KromekSerialRemoteIsotopeConfirmationStatusReport extends SerialRep
     private KromekSerialRemoteControlMode mode;
     private KromekSerialRemoteModeState state;
     private int numNuclideResults;
-    private KromekSerialNuclideIdType nuclideID_1;
-    private KromekSerialNuclideIdCategory categoryID_1;
-    private float confidence_1;
-    private KromekSerialNuclideIdType nuclideID_2;
-    private KromekSerialNuclideIdCategory categoryID_2;
-    private float confidence_2;
+    private KromekSerialNuclideIdType nuclideID1;
+    private KromekSerialNuclideIdCategory categoryID1;
+    private float confidence1;
+    private KromekSerialNuclideIdType nuclideID2;
+    private KromekSerialNuclideIdCategory categoryID2;
+    private float confidence2;
     private long totalGammaCounts;
     private long totalNeutronCounts;
     private float totalDose;
@@ -63,12 +63,12 @@ public class KromekSerialRemoteIsotopeConfirmationStatusReport extends SerialRep
         mode = KromekSerialRemoteControlMode.values()[(int) bytesToUInt(payload[0], payload[1], payload[2], payload[3])];
         state = KromekSerialRemoteModeState.values()[bytesToUInt(payload[4])];
         numNuclideResults = bytesToUInt(payload[5], payload[6]);
-        nuclideID_1 = KromekSerialNuclideIdType.values()[bytesToUInt(payload[7])];
-        categoryID_1 = KromekSerialNuclideIdCategory.values()[bytesToUInt(payload[8])];
-        confidence_1 = bytesToFloat(payload[9], payload[10], payload[11], payload[12]);
-        nuclideID_2 = KromekSerialNuclideIdType.values()[bytesToUInt(payload[13])];
-        categoryID_2 = KromekSerialNuclideIdCategory.values()[bytesToUInt(payload[14])];
-        confidence_2 = bytesToFloat(payload[15], payload[16], payload[17], payload[18]);
+        nuclideID1 = KromekSerialNuclideIdType.values()[bytesToUInt(payload[7])];
+        categoryID1 = KromekSerialNuclideIdCategory.values()[bytesToUInt(payload[8])];
+        confidence1 = bytesToFloat(payload[9], payload[10], payload[11], payload[12]);
+        nuclideID2 = KromekSerialNuclideIdType.values()[bytesToUInt(payload[13])];
+        categoryID2 = KromekSerialNuclideIdCategory.values()[bytesToUInt(payload[14])];
+        confidence2 = bytesToFloat(payload[15], payload[16], payload[17], payload[18]);
         totalGammaCounts = bytesToUInt(payload[19], payload[20], payload[21], payload[22]);
         totalNeutronCounts = bytesToUInt(payload[23], payload[24], payload[25], payload[26]);
         totalDose = bytesToFloat(payload[27], payload[28], payload[29], payload[30]);
@@ -89,12 +89,12 @@ public class KromekSerialRemoteIsotopeConfirmationStatusReport extends SerialRep
                 "mode=" + mode +
                 ", state=" + state +
                 ", numNuclideResults=" + numNuclideResults +
-                ", nuclideID_1=" + nuclideID_1 +
-                ", categoryID_1=" + categoryID_1 +
-                ", confidence_1=" + confidence_1 +
-                ", nuclideID_2=" + nuclideID_2 +
-                ", categoryID_2=" + categoryID_2 +
-                ", confidence_2=" + confidence_2 +
+                ", nuclideID_1=" + nuclideID1 +
+                ", categoryID_1=" + categoryID1 +
+                ", confidence_1=" + confidence1 +
+                ", nuclideID_2=" + nuclideID2 +
+                ", categoryID_2=" + categoryID2 +
+                ", confidence_2=" + confidence2 +
                 ", totalGammaCounts=" + totalGammaCounts +
                 ", totalNeutronCounts=" + totalNeutronCounts +
                 ", totalDose=" + totalDose +
@@ -223,18 +223,18 @@ public class KromekSerialRemoteIsotopeConfirmationStatusReport extends SerialRep
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setStringValue(++index, mode.toString());
         dataBlock.setStringValue(++index, state.toString());
         dataBlock.setIntValue(++index, numNuclideResults);
-        dataBlock.setStringValue(++index, nuclideID_1.toString());
-        dataBlock.setStringValue(++index, categoryID_1.toString());
-        dataBlock.setDoubleValue(++index, confidence_1);
-        dataBlock.setStringValue(++index, nuclideID_2.toString());
-        dataBlock.setStringValue(++index, categoryID_2.toString());
-        dataBlock.setDoubleValue(++index, confidence_2);
+        dataBlock.setStringValue(++index, nuclideID1.toString());
+        dataBlock.setStringValue(++index, categoryID1.toString());
+        dataBlock.setDoubleValue(++index, confidence1);
+        dataBlock.setStringValue(++index, nuclideID2.toString());
+        dataBlock.setStringValue(++index, categoryID2.toString());
+        dataBlock.setDoubleValue(++index, confidence2);
         dataBlock.setLongValue(++index, totalGammaCounts);
         dataBlock.setLongValue(++index, totalNeutronCounts);
         dataBlock.setDoubleValue(++index, totalDose);
@@ -251,9 +251,10 @@ public class KromekSerialRemoteIsotopeConfirmationStatusReport extends SerialRep
 
     @Override
     void setReportInfo() {
-        setReportName(KromekSerialRemoteIsotopeConfirmationStatusReport.class.getSimpleName());
+        setReportName("KromekSerialRemoteIsotopeConfirmationStatusReport");
         setReportLabel("Remote Isotope Confirmation Status Report");
         setReportDescription("Remote Isotope Confirmation Status Report");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
+        setPollingRate(1);
     }
 }

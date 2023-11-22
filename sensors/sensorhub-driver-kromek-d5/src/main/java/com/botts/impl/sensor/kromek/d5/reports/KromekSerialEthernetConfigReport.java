@@ -104,7 +104,7 @@ public class KromekSerialEthernetConfigReport extends SerialReport {
     }
 
     @Override
-    public void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp) {
+    public void setDataBlock(DataBlock dataBlock, double timestamp) {
         int index = 0;
         dataBlock.setDoubleValue(index, timestamp);
         dataBlock.setBooleanValue(++index, dhcp);
@@ -116,10 +116,10 @@ public class KromekSerialEthernetConfigReport extends SerialReport {
 
     @Override
     void setReportInfo() {
-        setReportName(KromekSerialEthernetConfigReport.class.getSimpleName());
-        setReportLabel("Ethernet Config");
+        setReportName("KromekSerialEthernetConfigReport");
+        setReportLabel("Ethernet Config Report");
         setReportDescription("Configuration for the ethernet interface.");
         setReportDefinition(SWEHelper.getPropertyUri(getReportName()));
-        setPollingRate(30);
+        setPollingRate(10);
     }
 }

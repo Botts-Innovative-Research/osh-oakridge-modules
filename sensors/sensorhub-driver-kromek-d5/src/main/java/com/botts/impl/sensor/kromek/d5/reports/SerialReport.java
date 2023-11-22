@@ -24,20 +24,20 @@ import static com.botts.impl.sensor.kromek.d5.Shared.encodeSLIP;
 import static com.botts.impl.sensor.kromek.d5.reports.Constants.*;
 
 public abstract class SerialReport {
+    private static final int OVERHEAD_LENGTH = KROMEK_SERIAL_MESSAGE_OVERHEAD + KROMEK_SERIAL_REPORTS_HEADER_OVERHEAD;
     private final byte componentId;
     private final byte reportId;
 
-    private static String reportName = "Report";
-    private static String reportLabel = "Report";
-    private static String reportDescription = "Report";
-    private static String reportDefinition = SWEHelper.getPropertyUri(reportName);
-    private static final int overheadLength = KROMEK_SERIAL_MESSAGE_OVERHEAD + KROMEK_SERIAL_REPORTS_HEADER_OVERHEAD;
-    private int pollingRate = 1;
+    private String reportName = "Report";
+    private String reportLabel = "Report Label";
+    private String reportDescription = "Report Description";
+    private String reportDefinition = SWEHelper.getPropertyUri(reportName);
+    private  int pollingRate = 1;
 
     /**
      * Create a new message with the given componentId and reportId.
      */
-    public SerialReport(byte componentId, byte reportId) {
+    protected SerialReport(byte componentId, byte reportId) {
         this.componentId = componentId;
         this.reportId = reportId;
         setReportInfo();
@@ -77,7 +77,7 @@ public abstract class SerialReport {
     public byte[] encodeRequest() {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         // Write the length as uint16_t
-        outputStream.write((byte) (overheadLength & 0xFF));
+        outputStream.write((byte) (OVERHEAD_LENGTH & 0xFF));
         outputStream.write((byte) (0));
         outputStream.write(KROMEK_SERIAL_MESSAGE_MODE);
         outputStream.write(componentId);
@@ -173,7 +173,7 @@ public abstract class SerialReport {
      *
      * @return The name of the report.
      */
-    public static String getReportName() {
+    public String getReportName() {
         return reportName;
     }
 
@@ -184,7 +184,7 @@ public abstract class SerialReport {
      * @param reportName The name of the report.
      */
     void setReportName(String reportName) {
-        SerialReport.reportName = reportName;
+        this.reportName = reportName;
     }
 
     /**
@@ -193,7 +193,7 @@ public abstract class SerialReport {
      *
      * @return The label for the report.
      */
-    public static String getReportLabel() {
+    public String getReportLabel() {
         return reportLabel;
     }
 
@@ -204,7 +204,7 @@ public abstract class SerialReport {
      * @param reportLabel The label for the report.
      */
     void setReportLabel(String reportLabel) {
-        SerialReport.reportLabel = reportLabel;
+        this.reportLabel = reportLabel;
     }
 
     /**
@@ -213,7 +213,7 @@ public abstract class SerialReport {
      *
      * @return The description for the report.
      */
-    public static String getReportDescription() {
+    public String getReportDescription() {
         return reportDescription;
     }
 
@@ -224,27 +224,25 @@ public abstract class SerialReport {
      * @param reportDescription The description for the report.
      */
     void setReportDescription(String reportDescription) {
-        SerialReport.reportDescription = reportDescription;
+        this.reportDescription = reportDescription;
     }
 
     /**
      * Get the definition for the report.
-     * This is the URI for the SWE definition of the report.
      *
      * @return The definition for the report.
      */
-    public static String getReportDefinition() {
+    public String getReportDefinition() {
         return reportDefinition;
     }
 
     /**
      * Set the definition for the report.
-     * This is the URI for the SWE definition of the report.
      *
      * @param reportDefinition The definition for the report.
      */
     void setReportDefinition(String reportDefinition) {
-        SerialReport.reportDefinition = reportDefinition;
+        this.reportDefinition = reportDefinition;
     }
 
     /**
@@ -301,7 +299,7 @@ public abstract class SerialReport {
      *
      * @param dataBlock The data block to set.
      */
-    public abstract void setDataBlock(DataBlock dataBlock, DataRecord dataRecord, double timestamp);
+    public abstract void setDataBlock(DataBlock dataBlock, double timestamp);
 
     /**
      * Called by the constructor to set the report info.
@@ -310,7 +308,6 @@ public abstract class SerialReport {
      * @see #setReportName(String)
      * @see #setReportLabel(String)
      * @see #setReportDescription(String)
-     * @see #setReportDefinition(String)
      * @see #setPollingRate(int)
      */
     abstract void setReportInfo();

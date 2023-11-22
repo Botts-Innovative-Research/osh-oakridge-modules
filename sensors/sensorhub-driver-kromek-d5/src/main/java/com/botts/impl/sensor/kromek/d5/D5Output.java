@@ -33,26 +33,26 @@ import java.io.StringWriter;
  */
 public class D5Output extends AbstractSensorOutput<D5Sensor> {
     public static final Logger logger = LoggerFactory.getLogger(D5Output.class);
+    private static final int MAX_NUM_TIMING_SAMPLES = 10;
+    private final long[] timingHistogram = new long[MAX_NUM_TIMING_SAMPLES];
+    private final Object histogramLock = new Object();
+    private final int samplingPeriod;
 
     private DataRecord dataRecord;
     private DataEncoding dataEncoding;
-
     long lastSetTimeMillis = System.currentTimeMillis();
-
-    private static final int MAX_NUM_TIMING_SAMPLES = 10;
     private int setCount = 0;
-    private final long[] timingHistogram = new long[MAX_NUM_TIMING_SAMPLES];
-    private final Object histogramLock = new Object();
 
     /**
-     * Constructor
+     * Constructor for the output.
      *
      * @param parentSensor Sensor driver providing this output
      */
-    D5Output(String outputName, D5Sensor parentSensor) {
+    D5Output(D5Sensor parentSensor, String outputName, int samplingPeriod) {
         super(outputName, parentSensor);
+        this.samplingPeriod = samplingPeriod;
 
-        logger.debug("Output created");
+        logger.debug("Output {} created", outputName);
     }
 
     /**
@@ -69,9 +69,6 @@ public class D5Output extends AbstractSensorOutput<D5Sensor> {
         logger.debug("Initializing output Complete");
     }
 
-    void doStop() {
-    }
-
     @Override
     public DataComponent getRecordDescription() {
         return dataRecord;
@@ -84,15 +81,7 @@ public class D5Output extends AbstractSensorOutput<D5Sensor> {
 
     @Override
     public double getAverageSamplingPeriod() {
-        long accumulator = 0;
-
-        synchronized (histogramLock) {
-            for (int idx = 0; idx < MAX_NUM_TIMING_SAMPLES; ++idx) {
-                accumulator += timingHistogram[idx];
-            }
-        }
-
-        return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
+        return samplingPeriod;
     }
 
     public void setData(SerialReport data) {
@@ -118,10 +107,9 @@ public class D5Output extends AbstractSensorOutput<D5Sensor> {
 
             double timestamp = System.currentTimeMillis() / 1000d;
 
-            data.setDataBlock(dataBlock, dataRecord, timestamp);
+            data.setDataBlock(dataBlock, timestamp);
 
             latestRecord = dataBlock;
-
             latestRecordTime = System.currentTimeMillis();
 
             eventHandler.publish(new DataEvent(latestRecordTime, D5Output.this, dataBlock));
