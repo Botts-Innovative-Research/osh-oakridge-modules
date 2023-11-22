@@ -12,6 +12,7 @@
 package com.botts.impl.sensor.kromek.d5;
 
 import com.botts.impl.sensor.kromek.d5.reports.*;
+import com.fazecast.jSerialComm.SerialPort;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.sensor.SensorException;
@@ -20,6 +21,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
+
+import static com.botts.impl.sensor.kromek.d5.Shared.findSerialPort;
 
 /**
  * Sensor driver for the Kromek D5 providing sensor description, output registration,
@@ -52,30 +55,59 @@ public class D5Sensor extends AbstractSensorModule<D5Config> {
 
     @Override
     public void doStart() throws SensorHubException {
-        if (commProvider == null) {
-            // we need to recreate comm provider here because it can be changed by UI
-            try {
-                if (config.commSettings == null)
-                    throw new SensorHubException("No communication settings specified");
+        boolean connected = false;
 
-                var moduleReg = getParentHub().getModuleRegistry();
-                commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
-                commProvider.start();
-            } catch (Exception e) {
-                commProvider = null;
-                throw new SensorException("Error while initializing communications ", e);
+        // Try connecting to the sensor via the comm provider
+        if (config.commSettings != null) {
+            if (commProvider == null) {
+                // We need to recreate comm provider here because it can be changed by UI
+                try {
+                    logger.info("Trying to connect to sensor via comm provider.");
+                    var moduleReg = getParentHub().getModuleRegistry();
+                    commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
+                    commProvider.start();
+
+                    if (commProvider.isStarted()) {
+                        // Connect to data stream
+                        messageRouter = new D5MessageRouter(this, commProvider.getInputStream(), commProvider.getOutputStream());
+                        messageRouter.start();
+                        connected = true;
+
+                        logger.info("Connected to sensor via comm provider.");
+                    } else {
+                        logger.info("Failed to connect to sensor via comm provider.");
+                    }
+                } catch (Exception e) {
+                    commProvider = null;
+                    throw new SensorException("Error while initializing communications ", e);
+                }
             }
         }
 
-        // connect to data stream
-        try {
-            messageRouter = new D5MessageRouter(this, commProvider.getInputStream(), commProvider.getOutputStream());
-            messageRouter.start();
-        } catch (Exception e) {
-            throw new SensorException("Error while initializing communications ", e);
+        // Try establishing a connection to the sensor via USB if we haven't already connected
+        if (!connected) {
+            logger.info("Trying to connect to sensor via USB.");
+            String comPortName = findSerialPort();
+            if (comPortName == null) {
+                logger.info("No serial port found.");
+            } else {
+                SerialPort commPort = SerialPort.getCommPort(comPortName);
+                commPort.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 100, 0);
+                commPort.openPort();
+
+                // Connect to data stream
+                messageRouter = new D5MessageRouter(this, commPort.getInputStream(), commPort.getOutputStream());
+                messageRouter.start();
+                connected = true;
+            }
         }
 
-        processLock = false;
+        if (connected)
+            processLock = false;
+        else {
+            processLock = true;
+            throw new SensorException("Failed to connect to sensor.");
+        }
     }
 
     @Override

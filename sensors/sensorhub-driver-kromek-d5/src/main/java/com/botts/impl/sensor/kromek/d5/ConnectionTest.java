@@ -20,7 +20,7 @@ import org.junit.Test;
 
 import java.net.Socket;
 
-import static com.botts.impl.sensor.kromek.d5.Shared.printCommPorts;
+import static com.botts.impl.sensor.kromek.d5.Shared.findSerialPort;
 import static com.botts.impl.sensor.kromek.d5.Shared.sendRequest;
 
 public class ConnectionTest {
@@ -48,9 +48,11 @@ public class ConnectionTest {
 
     @Test
     public void testSerialPort() {
-        // COM3 is the USB port the Kromek D5 is connected to on my machine
-        String comPortName = "COM3";
-        printCommPorts();
+        String comPortName = findSerialPort();
+        if (comPortName == null) {
+            System.out.println("No serial port found.");
+            return;
+        }
 
         try {
             SerialPort commPort = SerialPort.getCommPort(comPortName);

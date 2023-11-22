@@ -12,6 +12,7 @@
 
 package com.botts.impl.sensor.kromek.d5;
 
+import com.botts.impl.sensor.kromek.d5.reports.KromekSerialCompressionEnabledReport;
 import com.botts.impl.sensor.kromek.d5.reports.SerialReport;
 import com.fazecast.jSerialComm.SerialPort;
 
@@ -71,15 +72,35 @@ public class Shared {
     }
 
     /**
-     * Print the available serial ports to the console.
+     * Find an open serial port.
+     * This method will try to open each port and send a request to the sensor.
+     * If the sensor responds, then the port is closed and the port name is returned.
+     *
+     * @return The name of the open port, or null if no open port was found.
      */
-    static void printCommPorts() {
+    public static String findSerialPort() {
         SerialPort[] ports = SerialPort.getCommPorts();
-        System.out.print("Available Ports:");
         for (SerialPort port : ports) {
-            System.out.print(" " + port.getSystemPortName());
+            try {
+                port.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 100, 0);
+                if (!port.openPort()) continue;
+
+                // Send a request to the sensor and wait for a response
+                var report = new KromekSerialCompressionEnabledReport();
+                var inputStream = port.getInputStream();
+                var outputStream = port.getOutputStream();
+
+                var receivedReport = Shared.sendRequest(report, inputStream, outputStream);
+                if (receivedReport != null) {
+                    port.closePort();
+                    return port.getSystemPortName();
+                }
+                port.closePort();
+            } catch (Exception e) {
+                // Ignore errors
+            }
         }
-        System.out.println();
+        return null;
     }
 
     /**
