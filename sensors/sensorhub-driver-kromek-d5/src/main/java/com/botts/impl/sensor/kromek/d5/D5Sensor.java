@@ -36,9 +36,11 @@ public class D5Sensor extends AbstractSensorModule<D5Config> {
 
     // Map of report classes to their associated output instances
     HashMap<Class<?>, D5Output> outputs;
-    ICommProvider<?> commProvider;
     Boolean processLock;
     D5MessageRouter messageRouter;
+
+    ICommProvider<?> commProvider;
+    SerialPort commPort;
 
     @Override
     public void doInit() throws SensorHubException {
@@ -89,7 +91,7 @@ public class D5Sensor extends AbstractSensorModule<D5Config> {
             if (comPortName == null) {
                 log.info("No serial port found.");
             } else {
-                SerialPort commPort = SerialPort.getCommPort(comPortName);
+                commPort = SerialPort.getCommPort(comPortName);
                 commPort.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 100, 0);
                 commPort.openPort();
 
@@ -116,6 +118,10 @@ public class D5Sensor extends AbstractSensorModule<D5Config> {
         if (commProvider != null) {
             commProvider.stop();
             commProvider = null;
+        }
+        if (commPort != null) {
+            commPort.closePort();
+            commPort = null;
         }
         if (messageRouter != null) {
             messageRouter.stop();
