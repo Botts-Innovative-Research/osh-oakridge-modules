@@ -15,6 +15,7 @@ package com.botts.impl.sensor.wadwaz1;
 
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.sensor.PositionConfig;
+import org.sensorhub.api.sensor.PositionConfig.LLALocation;
 import org.sensorhub.api.sensor.SensorConfig;
 import org.sensorhub.api.comm.CommProviderConfig;
 
@@ -48,6 +49,7 @@ public class WADWAZ1Config extends SensorConfig {
 
     @DisplayInfo(desc="WADWAZ1 Location")
     public PositionConfig positionConfig = new PositionConfig();
+
     @Override
-    public PositionConfig.LLALocation getLocation(){return positionConfig.location;}
+    public LLALocation getLocation(){return positionConfig.location;}
 }

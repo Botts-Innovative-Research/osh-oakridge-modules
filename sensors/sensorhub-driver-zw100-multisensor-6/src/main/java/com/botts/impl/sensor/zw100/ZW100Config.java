@@ -13,6 +13,8 @@
 ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.zw100;
 
+import org.sensorhub.api.comm.CommProviderConfig;
+import org.sensorhub.api.sensor.PositionConfig.LLALocation;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.api.sensor.SensorConfig;
@@ -41,10 +43,13 @@ public class ZW100Config extends SensorConfig {
     @DisplayInfo(desc = "Serial number or unique identifier")
     public String serialNumber = "sensor001";
 
+    @DisplayInfo(desc = "Communication settings to connect to data stream")
+    public CommProviderConfig<?> commSettings;
+
     @DisplayInfo(desc="ZW100 Location")
     public PositionConfig positionConfig = new PositionConfig();
 
     @Override
-    public PositionConfig.LLALocation getLocation(){return positionConfig.location;}
+    public LLALocation getLocation(){return positionConfig.location;}
 
 }

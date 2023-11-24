@@ -18,6 +18,7 @@ import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.api.sensor.SensorException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.sensorML.SMLHelper;
@@ -47,6 +48,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> {
     LuminanceOutput luminanceOutput;
 
     UltravioletOutput ultravioletOutput;
+
     TamperAlarmOutput tamperAlarmOutput;
 
     BatteryOutput batteryOutput;
@@ -113,15 +115,17 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> {
         addOutput(batteryOutput, false);
         batteryOutput.doInit();
 
-        locationOutput = new LocationOuput(this);
+        locationOutput = new LocationOutput(this);
         addOutput(locationOutput, false);
         locationOutput.doInit();
 
     }
 
+    @Override
     public void doStart() throws SensorHubException {
-//        locationOutput.setLocationOuput(config.getLocation());
-//
+
+        locationOutput.setLocationOutput(config.getLocation());
+
         // init comm provider
         if (commProvider == null) {
 
@@ -180,7 +184,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> {
             }
         }
 
-        messageHandler.stopProcessing();
+//        messageHandler.stopProcessing();
     }
 
     @Override

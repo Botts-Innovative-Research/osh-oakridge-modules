@@ -105,8 +105,7 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
     @Override
     public void doStart() throws SensorHubException {
 
-//        locationOutput.setLocationOuput(config.getLocation());
-
+    locationOutput.setLocationOutput(config.getLocation());
 
         // init comm provider
             if (commProvider == null) {

@@ -18,6 +18,8 @@ import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
+import org.sensorhub.api.sensor.PositionConfig.LLALocation;
+
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +31,7 @@ import org.vast.swe.helper.GeoPosHelper;
  * @author cardy
  * @since 11/16/23
  */
-public class LocationOutput extends AbstractSensorOutput<ZW100Sensor> implements Runnable {
+public class LocationOutput extends AbstractSensorOutput<ZW100Sensor> {
 
     private static final String SENSOR_OUTPUT_NAME = "Location";
 
@@ -76,8 +78,7 @@ public class LocationOutput extends AbstractSensorOutput<ZW100Sensor> implements
                 .label(SENSOR_OUTPUT_NAME)
                 .definition("http://sensorml.com/ont/swe/property/Location")
                 .addField("Sampling Time", locationHelper.createTimeRange().asSamplingTimeIsoGPS())
-                .addField(SENSOR_OUTPUT_NAME, locationHelper.createText())
-                .addField("LatLon", locationHelper.createLocationVectorLLA())
+                .addField("Sensor Location", locationHelper.createLocationVectorLLA())
                 .build();
 
         dataEncoding = locationHelper.newTextEncoding(",", "\n");
@@ -85,23 +86,6 @@ public class LocationOutput extends AbstractSensorOutput<ZW100Sensor> implements
         logger.debug("Initializing Output Complete");
     }
 
-    /**
-     * Begins processing data for output
-     */
-    public void doStart() {
-
-        // Instantiate a new worker thread
-        worker = new Thread(this, this.name);
-
-        logger.info("Starting worker thread: {}", worker.getName());
-
-        // Start the worker thread
-        worker.start();
-    }
-
-    /**
-     * Terminates processing data for output
-     */
     public void doStop() {
 
         synchronized (processingLock) {
@@ -148,8 +132,7 @@ public class LocationOutput extends AbstractSensorOutput<ZW100Sensor> implements
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    @Override
-    public void run() {
+    public void setLocationOutput(LLALocation gpsLocation) {
 
         boolean processSets = true;
 
@@ -183,16 +166,13 @@ public class LocationOutput extends AbstractSensorOutput<ZW100Sensor> implements
                 ++setCount;
 
                 double time = System.currentTimeMillis() / 1000.;
-                String location ="";
 
-                double lat = Double.NaN;
-                double lon = Double.NaN;
 
                 dataBlock.setStringValue(0, locationData.getName());
                 dataBlock.setDoubleValue(1, time);
-                dataBlock.setStringValue(2, location);
-                dataBlock.setDoubleValue(3, lat);
-                dataBlock.setDoubleValue(4, lon);
+                dataBlock.setDoubleValue(3, gpsLocation.lat);
+                dataBlock.setDoubleValue(4, gpsLocation.lon);
+                dataBlock.setDoubleValue(5, gpsLocation.alt);
 
                 latestRecord = dataBlock;
 
