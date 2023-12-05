@@ -58,7 +58,11 @@ public class KromekDetectorRadiometricsV1Report extends SerialReport {
         sequenceNumber = bytesToUInt(payload[8], payload[9], payload[10], payload[11]);
         dose = bytesToFloat(payload[12], payload[13], payload[14], payload[15]);
         doseRate = bytesToFloat(payload[16], payload[17], payload[18], payload[19]);
+        // Convert dose rate from Sv/h to uSv/h
+        doseRate = doseRate * 1000000;
         doseUserAccumulated = bytesToFloat(payload[20], payload[21], payload[22], payload[23]);
+        // Convert dose user accumulated from Sv to uSv
+        doseUserAccumulated = doseUserAccumulated * 1000000;
         neutronLiveTime = bytesToUInt(payload[24], payload[25], payload[26], payload[27]);
         neutronCounts = bytesToUInt(payload[28], payload[29], payload[30], payload[31]);
         neutronTemperature = (float) bytesToInt(payload[32], payload[33]) / 100;
