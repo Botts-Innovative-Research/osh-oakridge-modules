@@ -25,6 +25,8 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Timer;
+import java.util.TimerTask;
 
 /**
  * Sensor driver for the ... providing sensor description, output registration,
@@ -50,6 +52,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     LocationOutput locationOutput;
 
     InputStream msgIn;
+
+    Timer t;
 
     @Override
     public void doInit() throws SensorHubException {
@@ -83,7 +87,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     @Override
     protected void doStart() throws SensorHubException {
 
-        locationOutput.setLocationOuput(config.getLocation());
+//        locationOutput.setLocationOuput(config.getLocation());
+        setLocationRepeatTimer();
 
         // init comm provider
         if (commProvider == null) {
@@ -129,7 +134,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         if (commProvider != null) {
 
             try {
-
+                t.cancel();
+                t.purge();
                 commProvider.stop();
 
             } catch (Exception e) {
@@ -155,5 +161,18 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
             return commProvider.isStarted();
         }
+    }
+
+    void setLocationRepeatTimer(){
+        t = new Timer();
+        TimerTask tt = new TimerTask() {
+            @Override
+            public void run() {
+                locationOutput.setLocationOuput(config.getLocation());
+                System.out.println("location updated");
+            }
+        };
+        t.scheduleAtFixedRate(tt,500,10000);
+
     }
 }
