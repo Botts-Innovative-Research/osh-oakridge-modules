@@ -74,6 +74,32 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public Count createOccupancyCount(){
+        return createCount()
+                .name("CccupancyCount")
+                .label("Occupancy Count")
+                .definition(getPropertyUri("occupancy-count"))
+                .description("Daily count of occupancies in lane")
+                .build();
+    }
+
+    public Quantity createNeutronBackground(){
+        return createQuantity()
+                .name("NeutronBackground")
+                .label("Neutron Background")
+                .definition(getRadUri("neutron-background"))
+                .build();
+    }
+
+    public Quantity createSpeed(){
+        return createQuantity()
+                .name("Speed")
+                .label("Speed")
+                .definition(getRadUri("speed-mph"))
+                .uomCode("mph")
+                .build();
+    }
+
     public Quantity createBatteryCharge(){
         return createQuantity()
                 .name("BatteryCharge")

@@ -143,7 +143,7 @@ public class MessageHandler {
 
             case "GX":
                 occupancyEndTime = System.currentTimeMillis();
-                occupancyOutput.onNewMessage(occupancyStartTime, occupancyEndTime, isGammaAlarm, isNeutronAlarm);
+                occupancyOutput.onNewMessage(occupancyStartTime, occupancyEndTime, isGammaAlarm, isNeutronAlarm, csvLine);
                 currentOccupancy = false;
                 isGammaAlarm = false;
                 isNeutronAlarm = false;
