@@ -15,7 +15,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
     private static final String SENSOR_OUTPUT_NAME = "Occupancy";
 
-    private static final Logger logger = LoggerFactory.getLogger(GammaOutput.class);
+    private static final Logger logger = LoggerFactory.getLogger(OccupancyOutput.class);
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;

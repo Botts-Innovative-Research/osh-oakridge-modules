@@ -24,6 +24,9 @@ public class MessageHandler {
     GammaOutput gammaOutput;
     NeutronOutput neutronOutput;
     OccupancyOutput occupancyOutput;
+    TamperOutput tamperOutput;
+    SpeedOutput speedOutput;
+
 
     final static String ALARM = "Alarm";
     final static String BACKGROUND = "Background";
@@ -67,11 +70,13 @@ public class MessageHandler {
     });
 
 
-    public MessageHandler(InputStream msgIn, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput) {
+    public MessageHandler(InputStream msgIn, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, TamperOutput tamperOutput, SpeedOutput speedOutput) {
         this.msgIn = msgIn;
         this.gammaOutput = gammaOutput;
         this.neutronOutput = neutronOutput;
         this.occupancyOutput = occupancyOutput;
+        this.tamperOutput = tamperOutput;
+        this.speedOutput = speedOutput;
 
         this.messageReader.start();
     }
@@ -151,13 +156,13 @@ public class MessageHandler {
 
             // -------------------- OTHER STATE
             case "TC":
-//                stateData("Tamper Cleared");
+                tamperOutput.onNewMessage(false);
                 break;
             case "TT":
-//                stateData("Tamper Fault");
+                tamperOutput.onNewMessage(true);
                 break;
             case "SP":
-//                speedMessage("Speed Message");
+                speedOutput.onNewMessage(csvLine);
                 break;
             case "SG1":
 //                setupData1("Setup Gamma 1");

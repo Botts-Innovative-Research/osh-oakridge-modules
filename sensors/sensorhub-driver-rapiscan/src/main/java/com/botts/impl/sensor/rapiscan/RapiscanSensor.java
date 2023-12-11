@@ -51,6 +51,10 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     LocationOutput locationOutput;
 
+    TamperOutput tamperOutput;
+
+    SpeedOutput speedOutput;
+
     InputStream msgIn;
 
     Timer t;
@@ -79,6 +83,14 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         locationOutput = new LocationOutput(this);
         addOutput(locationOutput, false);
         locationOutput.init();
+
+        tamperOutput = new TamperOutput(this);
+        addOutput(tamperOutput, false);
+        tamperOutput.init();
+
+        speedOutput = new SpeedOutput(this);
+        addOutput(speedOutput, false);
+        speedOutput.init();
 
 
 
@@ -118,7 +130,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
             msgIn = new BufferedInputStream(commProvider.getInputStream());
 
-            messageHandler = new MessageHandler(msgIn, gammaOutput, neutronOutput, occupancyOutput);
+            messageHandler = new MessageHandler(msgIn, gammaOutput, neutronOutput, occupancyOutput, tamperOutput, speedOutput);
 
 //            csvMsgRead.readMessages(msgIn, gammaOutput, neutronOutput, occupancyOutput);
 
