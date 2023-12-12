@@ -15,6 +15,7 @@ package com.botts.impl.sensor.kromek.d3s;
 
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.data.DataEvent;
+import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,7 +42,7 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
     private static final String SENSOR_OUTPUT_LABEL = "[LABEL]";
     private static final String SENSOR_OUTPUT_DESCRIPTION = "[DESCRIPTION]";
 
-    private static final Logger logger = LoggerFactory.getLogger(D3sOutput.class);
+    private static final Logger log = LoggerFactory.getLogger(D3sOutput.class);
 
     private DataRecord dataStruct;
     private DataEncoding dataEncoding;
@@ -66,7 +67,7 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
 
         super(SENSOR_OUTPUT_NAME, parentSensor);
 
-        logger.debug("Output created");
+        log.debug("Output created");
     }
 
     /**
@@ -75,7 +76,7 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
      */
     void doInit() {
 
-        logger.debug("Initializing Output");
+        log.debug("Initializing Output");
 
         RADHelper rad = new RADHelper();
 
@@ -118,7 +119,7 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
 
         dataEncoding = rad.newTextEncoding(",", "\n");
 
-        logger.debug("Initializing Output Complete");
+        log.debug("Initializing Output Complete");
     }
 
     /**
@@ -127,7 +128,7 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
     public void doStart() {
         stopProcessing = false;
         worker = new Thread(this, this.name);
-        logger.info("Starting worker thread: {}", worker.getName());
+        log.info("Starting worker thread: {}", worker.getName());
         worker.start();
     }
 
@@ -258,7 +259,7 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
                                                 lineCount++;
                                             }
                                         } catch (Exception e){
-                                            parentSensor.getLogger().trace(e.toString());
+                                            log.error(e.toString());
                                         }
 
                                         /* if this is a valid data file with at least 4 lines... */
@@ -273,7 +274,7 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
                             }
                         }
                     } else {
-                        parentSensor.getLogger().trace("dataPath '"+config.dataPath+"' does not exist");
+                        log.error("dataPath '"+config.dataPath+"' does not exist");
                     }
                 }
 
@@ -329,12 +330,12 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
                                 dataBlock.setDoubleValue(i++, dose);  //dose
                             } else {
                                 dataBlock.setDoubleValue(i++, -999);
-                                parentSensor.getLogger().trace("ERROR: unknown dose unit (please set to µSv/h)");
+                                log.error("ERROR: unknown dose unit (please set to µSv/h)");
                             }
 
                         }
                     } catch (Exception e){
-                        parentSensor.getLogger().trace(e.toString());
+                        log.error(e.toString());
                     }
 
                     ++setCount;
@@ -359,11 +360,11 @@ public class D3sOutput extends AbstractSensorOutput<D3sSensor> implements Runnab
 
             StringWriter stringWriter = new StringWriter();
             e.printStackTrace(new PrintWriter(stringWriter));
-            logger.error("Error in worker thread: {} due to exception: {}", Thread.currentThread().getName(), stringWriter.toString());
+            log.error("Error in worker thread: {} due to exception: {}", Thread.currentThread().getName(), stringWriter.toString());
 
         } finally {
 
-            logger.debug("Terminating worker thread: {}", this.name);
+            log.debug("Terminating worker thread: {}", this.name);
         }
     }
 }
