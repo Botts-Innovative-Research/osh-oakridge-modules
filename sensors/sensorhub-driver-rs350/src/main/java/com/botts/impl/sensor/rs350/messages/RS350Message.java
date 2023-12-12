@@ -20,6 +20,7 @@ public class RS350Message {
      RS350ForegroundMeasurement rs350ForegroundMeasurement;
      RS350DerivedData rs350DerivedData;
      RS350RadAlarm  rs350RadAlarm;
+     Boolean radAlarmRecieved = false;
 
 
     public RS350Message(RadInstrumentDataType msg){
@@ -50,6 +51,8 @@ public class RS350Message {
         CharacteristicType analysisEnabled = (CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(3);
 
         rs350Item = new RS350Item(scanMode.getCharacteristicValue(), Double.parseDouble(scanNumber.getCharacteristicValue()), Double.parseDouble(scanTimeoutNumber.getCharacteristicValue()), analysisEnabled.getCharacteristicValue());
+
+        radAlarmRecieved = false;
 
         msg.getRadMeasurementOrRadMeasurementGroupOrEnergyCalibration().forEach(jaxbElement -> {
 
@@ -99,11 +102,12 @@ public class RS350Message {
                     rs350DerivedData = new RS350DerivedData(derivedDataType.getRemark().get(0), derivedDataType.getMeasurementClassCode().name(), derivedDataType.getStartDateTime().toGregorianCalendar().getTimeInMillis(), new Double(derivedDataType.getRealTimeDuration().getSeconds()%60));
 
             }
-                else if (jaxbType == AnalysisResultsType.class){
+                else if (jaxbType == AnalysisResultsType.class && !radAlarmRecieved){
                     AnalysisResultsType analysisResultsType = (AnalysisResultsType) jaxbElement.getValue();
 //                    RadAlarmType radAlarmType = (RadAlarmType) jaxbElement.getValue();
                 analysisResultsType.getRadAlarm().forEach(radAlarmType -> {
                     rs350RadAlarm = new RS350RadAlarm(radAlarmType.getRadAlarmCategoryCode().value(), radAlarmType.getRadAlarmDescription());
+                    radAlarmRecieved = true;
                 });
                 
 
