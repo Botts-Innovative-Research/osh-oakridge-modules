@@ -20,7 +20,6 @@ public class AlarmOutput extends OutputBase {
 
     @Override
     protected void init() {
-        //TODO: Import N42Helper
         RADHelper radHelper = new RADHelper();
 
         dataStruct = radHelper.createRecord()
