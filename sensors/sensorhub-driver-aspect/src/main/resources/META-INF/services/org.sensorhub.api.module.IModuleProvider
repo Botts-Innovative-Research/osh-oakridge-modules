@@ -1,1 +1,2 @@
 com.botts.impl.sensor.aspect.AspectDescriptor
+com.botts.impl.sensor.aspect.comm.ModbusTCPCommModuleDescriptor
