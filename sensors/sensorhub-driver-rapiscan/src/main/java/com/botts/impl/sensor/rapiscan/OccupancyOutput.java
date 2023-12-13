@@ -15,7 +15,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
     private static final String SENSOR_OUTPUT_NAME = "Occupancy";
 
-    private static final Logger logger = LoggerFactory.getLogger(GammaOutput.class);
+    private static final Logger logger = LoggerFactory.getLogger(OccupancyOutput.class);
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
@@ -33,8 +33,10 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
                 .label("Occupancy")
                 .definition(RADHelper.getRadUri("occupancy"))
                 .addField("Timestamp", radHelper.createPrecisionTimeStamp())
+                .addField("OccupancyCount", radHelper.createOccupancyCount())
                 .addField("StartTime", radHelper.createOccupancyStartTime())
                 .addField("EndTime", radHelper.createOccupancyEndTime())
+                .addField("NeutronBackground", radHelper.createNeutronBackground())
                 .addField("GammaAlarm",
                         radHelper.createBoolean()
                                 .name("gamma-alarm")
@@ -51,7 +53,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
     }
 
-    public void onNewMessage(long startTime, long endTime, Boolean isGammaAlarm, Boolean isNeutronAlarm){
+    public void onNewMessage(long startTime, long endTime, Boolean isGammaAlarm, Boolean isNeutronAlarm, String[] csvString){
         if (latestRecord == null) {
 
             dataBlock = dataStruct.createDataBlock();
@@ -60,13 +62,14 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
             dataBlock = latestRecord.renew();
         }
-        String string = "";
 
         dataBlock.setLongValue(0, System.currentTimeMillis()/1000);
-        dataBlock.setLongValue(1, startTime/1000);
-        dataBlock.setLongValue(2, endTime/1000);
-        dataBlock.setBooleanValue(3, isGammaAlarm);
-        dataBlock.setBooleanValue(4, isNeutronAlarm);
+        dataBlock.setIntValue(1, Integer.parseInt(csvString[1]));
+        dataBlock.setLongValue(2, startTime/1000);
+        dataBlock.setLongValue(3, endTime/1000);
+        dataBlock.setDoubleValue(4, Double.parseDouble(csvString[2])/1000);
+        dataBlock.setBooleanValue(5, isGammaAlarm);
+        dataBlock.setBooleanValue(6, isNeutronAlarm);
 
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));
 
