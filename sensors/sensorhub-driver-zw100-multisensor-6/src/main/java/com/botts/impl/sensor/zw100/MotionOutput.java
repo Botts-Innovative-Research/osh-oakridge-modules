@@ -74,13 +74,15 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> implements R
                 .name(getName())
                 .label(SENSOR_OUTPUT_NAME)
                 .definition("http://sensorml.com/ont/swe/property/Motion")
-                .addField("Sampling Time", motionHelper.createTimeRange().asSamplingTimeIsoGPS())
+                .addField("Sampling Time", motionHelper.createTime().asSamplingTimeIsoUTC())
                 .addField(SENSOR_OUTPUT_NAME,
-                        motionHelper.createQuantity()
+                        motionHelper.createCategory()
                                 .name("motion-sensor")
                                 .label(SENSOR_OUTPUT_NAME)
                                 .definition("http://sensorml.com/ont/swe/property/Motion")
-                                .description("Detection of Movement"))
+                                .description("Detection of Movement")
+                                .addAllowedValues("ON", "OFF"))
+
                 .build();
 
         dataEncoding = motionHelper.newTextEncoding(",", "\n");

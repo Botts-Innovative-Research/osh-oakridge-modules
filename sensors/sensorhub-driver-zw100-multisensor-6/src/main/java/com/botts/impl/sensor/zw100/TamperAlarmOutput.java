@@ -77,13 +77,15 @@ public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor> impleme
                 .name(getName())
                 .label(strTamperAlarmStatus)
                 .definition("http://sensorml.com/ont/swe/property/Alarm")
-                .addField("Sampling Time", tamperAlarmHelper.createTimeRange().asSamplingTimeIsoGPS())
+                .addField("Sampling Time", tamperAlarmHelper.createTime().asSamplingTimeIsoUTC())
                 .addField(strTamperAlarmStatus,
                         tamperAlarmHelper.createCategory()
                                 .name("tamper-alarm-status")
                                 .label(strTamperAlarmStatus)
                                 .definition("http://sensorml.com/ont/swe/property/Alarm")
-                                .description("Status of Tamper Alarm"))
+                                .description("Status of Tamper Alarm")
+                                .addAllowedValues("ON", "OFF"))
+
                 .build();
 
         dataEncoding = tamperAlarmHelper.newTextEncoding(",", "\n");

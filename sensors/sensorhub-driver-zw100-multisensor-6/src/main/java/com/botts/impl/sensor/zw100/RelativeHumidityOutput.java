@@ -74,7 +74,7 @@ public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> im
                 .name(getName())
                 .label(SENSOR_OUTPUT_NAME)
                 .definition("http://sensorml.com/ont/swe/property/RelHum")
-                .addField("Sampling Time", relHumHelper.createTimeRange().asSamplingTimeIsoGPS())
+                .addField("Sampling Time", relHumHelper.createTime().asSamplingTimeIsoUTC())
                 .addField(SENSOR_OUTPUT_NAME,
                         relHumHelper.createQuantity()
                                 .name("relative-humidity")

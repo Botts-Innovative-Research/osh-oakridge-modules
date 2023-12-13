@@ -76,13 +76,14 @@ public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor> implements 
                 .name(getName())
                 .label(strBatteryLevel)
                 .definition("http://sensorml.com/ont/swe/property/Battery")
-                .addField("Sampling Time", batteryHelper.createTimeRange().asSamplingTimeIsoGPS())
+                .addField("Sampling Time", batteryHelper.createTime().asSamplingTimeIsoUTC())
                 .addField(strBatteryLevel,
                         batteryHelper.createQuantity()
                                 .name("battery-level")
                                 .label(strBatteryLevel)
                                 .definition("http://sensorml.com/ont/swe/property/BatteryLevel")
                                 .description("Battery Level of Sensor")
+                                .addAllowedInterval(0, 100)
                                 .uomCode("%"))
                 .build();
 

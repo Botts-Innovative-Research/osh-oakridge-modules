@@ -75,7 +75,7 @@ public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> impleme
                 .name(getName())
                 .label(SENSOR_OUTPUT_NAME)
                 .definition("http://sensorml.com/ont/swe/property/Temperature")
-                .addField("Sampling Time", tempHelper.createTimeRange().asSamplingTimeIsoGPS())
+                .addField("Sampling Time", tempHelper.createTime().asSamplingTimeIsoUTC())
                 .addField(SENSOR_OUTPUT_NAME,
                         tempHelper.createQuantity()
                                 .name("temperature")

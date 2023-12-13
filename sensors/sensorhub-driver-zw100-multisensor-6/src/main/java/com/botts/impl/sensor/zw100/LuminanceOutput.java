@@ -75,7 +75,7 @@ public class LuminanceOutput extends AbstractSensorOutput<ZW100Sensor> implement
                 .name(getName())
                 .label(SENSOR_OUTPUT_NAME)
                 .definition("http://sensorml.com/ont/swe/property/Luminance")
-                .addField("Sampling Time", luminanceHelper.createTimeRange().asSamplingTimeIsoGPS())
+                .addField("Sampling Time", luminanceHelper.createTime().asSamplingTimeIsoUTC())
                 .addField(SENSOR_OUTPUT_NAME,
                         luminanceHelper.createQuantity()
                                 .name("luminance")

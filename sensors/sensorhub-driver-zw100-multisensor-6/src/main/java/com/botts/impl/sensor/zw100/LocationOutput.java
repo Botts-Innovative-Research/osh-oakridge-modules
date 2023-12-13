@@ -77,7 +77,7 @@ public class LocationOutput extends AbstractSensorOutput<ZW100Sensor> {
                 .name(getName())
                 .label(SENSOR_OUTPUT_NAME)
                 .definition("http://sensorml.com/ont/swe/property/Location")
-                .addField("Sampling Time", locationHelper.createTimeRange().asSamplingTimeIsoGPS())
+                .addField("Sampling Time", locationHelper.createTime().asSamplingTimeIsoUTC())
                 .addField("Sensor Location", locationHelper.createLocationVectorLLA())
                 .build();
 

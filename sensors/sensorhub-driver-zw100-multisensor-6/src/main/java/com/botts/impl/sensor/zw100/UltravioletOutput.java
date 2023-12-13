@@ -76,14 +76,13 @@ public class UltravioletOutput extends AbstractSensorOutput<ZW100Sensor> impleme
                 .name(getName())
                 .label(strUVIndex)
                 .definition("http://sensorml.com/ont/swe/property/UVI")
-                .addField("Sampling Time", uVHelper.createTimeRange().asSamplingTimeIsoGPS())
+                .addField("Sampling Time", uVHelper.createTime().asSamplingTimeIsoUTC())
                 .addField(strUVIndex,
                         uVHelper.createQuantity()
                                 .name("ultra-violet-index")
                                 .label(strUVIndex)
                                 .definition("http://sensorml.com/ont/swe/property/UVI")
-                                .description(strUVIndex)
-                                .uom("lux"))
+                                .description(strUVIndex))
                 .build();
 
         dataEncoding = uVHelper.newTextEncoding(",", "\n");
