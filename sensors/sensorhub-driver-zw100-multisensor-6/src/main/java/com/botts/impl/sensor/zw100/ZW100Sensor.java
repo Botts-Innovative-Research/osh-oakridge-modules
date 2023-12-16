@@ -14,8 +14,21 @@
 package com.botts.impl.sensor.zw100;
 
 import net.opengis.sensorml.v20.PhysicalSystem;
+import org.openhab.binding.zwave.internal.protocol.SerialMessage;
+import org.openhab.binding.zwave.internal.protocol.ZWaveController;
+import org.openhab.binding.zwave.internal.protocol.ZWaveEventListener;
+import org.openhab.binding.zwave.internal.protocol.ZWaveIoHandler;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveMultiLevelSensorCommandClass;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveNodeStatusEvent;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.impl.comm.UARTConfig;
+import org.sensorhub.impl.comm.rxtx.RxtxSerialCommProvider;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.api.sensor.SensorException;
 
@@ -56,6 +69,8 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> {
     LocationOutput locationOutput;
     InputStream msgIn;
 
+//    UARTConfig uartConfig;
+//    RxtxZWaveIoHandler ioHandler;
 
     @Override
     protected void updateSensorDescription() {
@@ -119,6 +134,8 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> {
         addOutput(locationOutput, false);
         locationOutput.doInit();
 
+//        uartConfig = new UARTConfig(this);
+//        ioHandler = new RxtxZWaveIoHandler(uartConfig);
     }
 
     @Override
@@ -126,42 +143,117 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> {
 
         locationOutput.setLocationOutput(config.getLocation());
 
-        // init comm provider
-        if (commProvider == null) {
+        var uartConfig = new UARTConfig();
+            uartConfig.portName = "COM5";
+            uartConfig.baudRate = 115200;
 
-            // we need to recreate comm provider here because it can be changed by UI
-            try {
+        var ioHandler = new RxtxZWaveIoHandler(uartConfig);
+        var zController = new ZWaveController(ioHandler);
+        ioHandler.start(msg -> zController.incomingPacket(msg));
 
-                if (config.commSettings == null)
-                    throw new SensorHubException("No communication settings specified");
+        zController.addEventListener(new ZWaveEventListener()
+        {
+            public void ZWaveIncomingEvent(ZWaveEvent event)
+            {
+                System.out.println("EVENT: " + event);
 
-                var moduleReg = getParentHub().getModuleRegistry();
+                if (event instanceof ZWaveAlarmCommandClass.ZWaveAlarmValueEvent)
+                {
+                    System.out.println("Node " + ((ZWaveCommandClassValueEvent) event).getNodeId()+ " RETRIEVING " +
+                            "ALARM TYPE" +
+                            "-> " +
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent)event).getAlarmType().name() + " Alarm: " +
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getValue());
+                }
 
-                commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
+                else if (event instanceof ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent)
+                {
+                    System.out.println("Node " + ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getNodeId()+ " RETRIEVING SENSOR TYPE-> " +
+                            ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getSensorType().getLabel() + ": " +
+                            ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getValue());
+                }
 
-                commProvider.start();
+                else if (event instanceof ZWaveCommandClassValueEvent)
+                {
+                    System.out.println("Node " + ((ZWaveCommandClassValueEvent) event).getNodeId()+ " RETRIEVING " +
+                            "COMMAND CLASS NAME-> " +
+                            ((ZWaveCommandClassValueEvent) event).getCommandClass().name() + ": " +
+                            ((ZWaveCommandClassValueEvent) event).getValue());
+                }
 
-            } catch (Exception e) {
+                else if (event instanceof ZWaveNodeStatusEvent)
+                {
+                    System.out.println(">> Received Node Info");
+                    int nodeId = event.getNodeId();
+                    System.out.println("- Node " + nodeId);
+                    for (ZWaveCommandClass cmdClass: zController.getNode(nodeId).getCommandClasses(0))
+                        System.out.println(cmdClass);
+                }
 
-                commProvider = null;
+                else if (event instanceof ZWaveInitializationStateEvent)
+                {
+                    System.out.println(">> Node (Final)" + event.getNodeId() + " " + ((ZWaveInitializationStateEvent)event).getStage());
 
-                throw e;
+                    /*if (event.getNodeId() == 1) // case of controller
+                    {
+                        System.out.println("Changing Wake-up interval of thermostat");
+
+                        // send command to thermostat to wake up more frequently
+                        ZWaveWakeUpCommandClass wakeUp = (ZWaveWakeUpCommandClass)zController.getNode(3).getCommandClass(CommandClass.WAKE_UP);
+                        SerialMessage cmd = wakeUp.setInterval(1800);
+                        zController.sendData(cmd);
+                    }*/
+                }
             }
-        }
+        });
 
-        // connect to data stream
-        try {
 
-            msgIn = new BufferedInputStream(commProvider.getInputStream());
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            public void run()
+            {
+                zController.shutdown();
+                ioHandler.stop();
+            }
+        });
 
-//                messageHandler = new MessageHandler(msgIn, gammaOutput, neutronOutput, occupancyOutput);
-
-//            csvMsgRead.readMessages(msgIn, gammaOutput, neutronOutput, occupancyOutput);
-
-        } catch (IOException e) {
-
-            throw new SensorException("Error while initializing communications ", e);
-        }
+        // init comm provider
+//        if (commProvider == null) {
+//
+//            // we need to recreate comm provider here because it can be changed by UI
+//            try {
+//
+//                if (config.commSettings == null)
+//                    throw new SensorHubException("No communication settings specified");
+//
+//                var moduleReg = getParentHub().getModuleRegistry();
+//
+//                commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
+////
+//                ZWaveController zController = new ZWaveController(commProvider);
+////
+//                commProvider.start();
+//
+//            } catch (Exception e) {
+//
+//                commProvider = null;
+//
+//                throw e;
+//            }
+//        }
+//
+//        // connect to data stream
+//        try {
+//
+//            msgIn = new BufferedInputStream(commProvider.getInputStream());
+//
+////                messageHandler = new MessageHandler(msgIn, gammaOutput, neutronOutput, occupancyOutput);
+//
+////            csvMsgRead.readMessages(msgIn, gammaOutput, neutronOutput, occupancyOutput);
+//
+//        } catch (IOException e) {
+//
+//            throw new SensorException("Error while initializing communications ", e);
+//        }
     }
 
 

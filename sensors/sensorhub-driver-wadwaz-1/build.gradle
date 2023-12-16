@@ -7,6 +7,9 @@ dependencies {
 //    implementation project(':sensorhub-service-video')
 //    implementation project(':sensorhub-driver-videocam')
 //    testImplementation('junit:junit:4.13.1')
+    implementation files('libs/nrjavaserial-3.9.3.jar')
+    implementation files('libs/org.openhab.binding.zwave-1.8.3.jar')
+    implementation files('libs/xstream-1.4.6.jar')
 }
 
 // exclude tests requiring connection to the sensor
