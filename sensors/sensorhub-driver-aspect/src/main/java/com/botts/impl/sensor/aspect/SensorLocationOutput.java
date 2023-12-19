@@ -10,14 +10,14 @@ import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
-public class LocationOutput extends AbstractSensorOutput<AspectSensor> {
+public class SensorLocationOutput extends AbstractSensorOutput<AspectSensor> {
     private static final String SENSOR_OUTPUT_NAME = "Location";
 
     protected DataRecord dataRecord;
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
 
-    LocationOutput(AspectSensor aspectSensor) {
+    SensorLocationOutput(AspectSensor aspectSensor) {
         super(SENSOR_OUTPUT_NAME, aspectSensor);
     }
 
@@ -52,7 +52,7 @@ public class LocationOutput extends AbstractSensorOutput<AspectSensor> {
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();
 
-        eventHandler.publish(new DataEvent(latestRecordTime, LocationOutput.this, dataBlock));
+        eventHandler.publish(new DataEvent(latestRecordTime, SensorLocationOutput.this, dataBlock));
     }
 
     @Override

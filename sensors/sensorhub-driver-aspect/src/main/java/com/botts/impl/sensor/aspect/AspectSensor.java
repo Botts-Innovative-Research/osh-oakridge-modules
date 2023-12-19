@@ -35,7 +35,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     NeutronOutput neutronOutput;
     OccupancyOutput occupancyOutput;
     SpeedOutput speedOutput;
-    LocationOutput locationOutput;
+    SensorLocationOutput sensorLocationOutput;
 
     @Override
     public void doInit() throws SensorHubException {
@@ -62,14 +62,14 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         addOutput(speedOutput, false);
         speedOutput.init();
 
-        locationOutput = new LocationOutput(this);
-        addOutput(locationOutput, false);
-        locationOutput.init();
+        sensorLocationOutput = new SensorLocationOutput(this);
+        addOutput(sensorLocationOutput, false);
+        sensorLocationOutput.init();
     }
 
     @Override
     protected void doStart() throws SensorHubException {
-        locationOutput.setLocationOutput(config.getLocation());
+        sensorLocationOutput.setLocationOutput(config.getLocation());
 
         // Initialize comm provider
         if (commProvider == null) {
