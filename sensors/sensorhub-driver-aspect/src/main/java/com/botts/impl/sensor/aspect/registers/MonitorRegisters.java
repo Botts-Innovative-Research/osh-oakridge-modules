@@ -1,5 +1,7 @@
 package com.botts.impl.sensor.aspect.registers;
 
+import com.botts.impl.sensor.aspect.enums.ChannelStatus;
+import com.botts.impl.sensor.aspect.enums.Inputs;
 import com.ghgande.j2mod.modbus.ModbusException;
 import com.ghgande.j2mod.modbus.io.ModbusTCPTransaction;
 import com.ghgande.j2mod.modbus.msg.ReadMultipleRegistersRequest;
@@ -27,7 +29,7 @@ public class MonitorRegisters {
     private int numberOfObject;
     private int numberOfWheelPair;
     private int objectSpeed;
-    private int outputSignalsRegister;
+    private int outputSignals;
 
     public MonitorRegisters(TCPMasterConnection tcpMasterConnection, int ref, int count) {
         this.tcpMasterConnection = tcpMasterConnection;
@@ -58,7 +60,7 @@ public class MonitorRegisters {
         numberOfObject = response.getRegisterValue(17);
         numberOfWheelPair = response.getRegisterValue(18);
         objectSpeed = response.getRegisterValue(19);
-        outputSignalsRegister = response.getRegisterValue(20);
+        outputSignals = response.getRegisterValue(20);
     }
 
     public String toString() {
@@ -76,7 +78,7 @@ public class MonitorRegisters {
                 ", numberOfObject=" + getNumberOfObject() +
                 ", numberOfWheelPair=" + getNumberOfWheelPair() +
                 ", objectSpeed=" + getObjectSpeed() +
-                ", outputSignalsRegister=0x" + Integer.toHexString(getOutputSignalsRegister()) +
+                ", outputSignals=0x" + Integer.toHexString(getOutputSignals()) +
                 '}';
     }
 
@@ -154,7 +156,50 @@ public class MonitorRegisters {
         return objectSpeed;
     }
 
-    public int getOutputSignalsRegister() {
-        return outputSignalsRegister;
+    public int getOutputSignals() {
+        return outputSignals;
+    }
+
+    public String getGammaAlarmState() {
+        if ((getGammaChannelStatus() & ChannelStatus.Alarm1.getValue()) == ChannelStatus.Alarm1.getValue()
+                || (getGammaChannelStatus() & ChannelStatus.Alarm2.getValue()) == ChannelStatus.Alarm2.getValue()) {
+            return "Alarm";
+        } else if ((getGammaChannelStatus() & ChannelStatus.LowCount.getValue()) == ChannelStatus.LowCount.getValue()) {
+            return "Fault - Gamma Low";
+        } else if ((getGammaChannelStatus() & ChannelStatus.HighCount.getValue()) == ChannelStatus.HighCount.getValue()) {
+            return "Fault - Gamma High";
+        } else {
+            return "Background";
+        }
+    }
+
+    public String getNeutronAlarmState() {
+        if ((getNeutronChannelStatus() & ChannelStatus.Alarm1.getValue()) == ChannelStatus.Alarm1.getValue()
+                || (getNeutronChannelStatus() & ChannelStatus.Alarm2.getValue()) == ChannelStatus.Alarm2.getValue()) {
+            return "Alarm";
+        } else if ((getNeutronChannelStatus() & ChannelStatus.LowCount.getValue()) == ChannelStatus.LowCount.getValue()) {
+            return "Fault - Neutron Low";
+        } else if ((getNeutronChannelStatus() & ChannelStatus.HighCount.getValue()) == ChannelStatus.HighCount.getValue()) {
+            return "Fault - Neutron High";
+        } else {
+            return "Background";
+        }
+    }
+
+    public boolean isGammaAlarm() {
+        return (getGammaChannelStatus() & ChannelStatus.Alarm1.getValue()) == ChannelStatus.Alarm1.getValue()
+                || (getGammaChannelStatus() & ChannelStatus.Alarm2.getValue()) == ChannelStatus.Alarm2.getValue();
+    }
+
+    public boolean isNeutronAlarm() {
+        return (getNeutronChannelStatus() & ChannelStatus.Alarm1.getValue()) == ChannelStatus.Alarm1.getValue()
+                || (getNeutronChannelStatus() & ChannelStatus.Alarm2.getValue()) == ChannelStatus.Alarm2.getValue();
+    }
+
+    public boolean isOccupied() {
+        return (getInputSignals() & Inputs.Occup0.getValue()) == Inputs.Occup0.getValue()
+                || (getInputSignals() & Inputs.Occup1.getValue()) == Inputs.Occup1.getValue()
+                || (getInputSignals() & Inputs.Occup2.getValue()) == Inputs.Occup2.getValue()
+                || (getInputSignals() & Inputs.Occup3.getValue()) == Inputs.Occup3.getValue();
     }
 }

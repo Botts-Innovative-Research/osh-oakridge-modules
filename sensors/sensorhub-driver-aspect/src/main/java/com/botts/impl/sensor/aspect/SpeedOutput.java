@@ -1,5 +1,6 @@
 package com.botts.impl.sensor.aspect;
 
+import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -7,64 +8,73 @@ import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
 public class SpeedOutput extends AbstractSensorOutput<AspectSensor> {
-
     private static final String SENSOR_OUTPUT_NAME = "Speed";
+    private static final int MAX_NUM_TIMING_SAMPLES = 10;
 
-
-    private static final Logger logger = LoggerFactory.getLogger(SpeedOutput.class);
-
-    protected DataRecord dataStruct;
+    protected DataRecord dataRecord;
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
+    private int setCount = 0;
+    private final long[] timingHistogram = new long[MAX_NUM_TIMING_SAMPLES];
+    private final Object histogramLock = new Object();
+    long lastSetTimeMillis = System.currentTimeMillis();
 
-    public SpeedOutput(AspectSensor parentSensor){super(SENSOR_OUTPUT_NAME, parentSensor);}
+    public SpeedOutput(AspectSensor parentSensor) {
+        super(SENSOR_OUTPUT_NAME, parentSensor);
+    }
 
-    protected void init(){
+    protected void init() {
         RADHelper radHelper = new RADHelper();
 
-        dataStruct = radHelper.createRecord()
+        dataRecord = radHelper.createRecord()
                 .name(getName())
-                .label("Speed")
+                .label(getName())
                 .definition(RADHelper.getRadUri("speed"))
                 .addField("Timestamp", radHelper.createPrecisionTimeStamp())
-                .addField("Mph", radHelper.createQuantity().name("mph").label("Mph").definition(RADHelper.getPropertyUri("mph")).uomCode("mph"))
-                .addField("Kph", radHelper.createQuantity().name("kph").label("Kph").definition(RADHelper.getPropertyUri("kph")).uomCode("kph"))
+                .addField("Speed", radHelper.createQuantity()
+                        .name("Speed")
+                        .label("Speed")
+                        .definition(RADHelper.getRadUri("speed"))
+                        .uomCode("mm/s"))
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
-
     }
 
-    public void onNewMessage(String[] csvString, long timeStamp){
-
+    public void setData(MonitorRegisters monitorRegisters, double timeStamp) {
         if (latestRecord == null) {
-
-            dataBlock = dataStruct.createDataBlock();
-
+            dataBlock = dataRecord.createDataBlock();
         } else {
-
             dataBlock = latestRecord.renew();
         }
 
-        dataBlock.setLongValue(0,timeStamp/1000);
-        dataBlock.setDoubleValue(1, Double.parseDouble(csvString[1]));
-        dataBlock.setDoubleValue(2, Double.parseDouble(csvString[2]));
+        synchronized (histogramLock) {
+            int setIndex = setCount % MAX_NUM_TIMING_SAMPLES;
 
-        eventHandler.publish(new DataEvent(timeStamp, SpeedOutput.this, dataBlock));
+            // Get a sampling time for the latest set based on previous set sampling time
+            timingHistogram[setIndex] = System.currentTimeMillis() - lastSetTimeMillis;
 
+            // Set the latest sampling time to now
+            lastSetTimeMillis = System.currentTimeMillis();
+        }
 
+        ++setCount;
+
+        dataBlock.setDoubleValue(0, timeStamp);
+        dataBlock.setIntValue(1, monitorRegisters.getObjectSpeed());
+
+        latestRecord = dataBlock;
+        latestRecordTime = System.currentTimeMillis();
+
+        eventHandler.publish(new DataEvent((long) timeStamp, SpeedOutput.this, dataBlock));
     }
-
-
 
     @Override
     public DataComponent getRecordDescription() {
-        return dataStruct;
+        return dataRecord;
     }
 
     @Override
@@ -74,6 +84,14 @@ public class SpeedOutput extends AbstractSensorOutput<AspectSensor> {
 
     @Override
     public double getAverageSamplingPeriod() {
-        return 0;
+        long accumulator = 0;
+
+        synchronized (histogramLock) {
+            for (int idx = 0; idx < MAX_NUM_TIMING_SAMPLES; ++idx) {
+                accumulator += timingHistogram[idx];
+            }
+        }
+
+        return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 }

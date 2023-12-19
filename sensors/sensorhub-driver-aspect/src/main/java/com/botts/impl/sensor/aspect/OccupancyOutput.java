@@ -1,5 +1,6 @@
 package com.botts.impl.sensor.aspect;
 
+import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -7,79 +8,86 @@ import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
-public class OccupancyOutput  extends AbstractSensorOutput<AspectSensor> {
-
+public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
     private static final String SENSOR_OUTPUT_NAME = "Occupancy";
+    private static final int MAX_NUM_TIMING_SAMPLES = 10;
 
-    private static final Logger logger = LoggerFactory.getLogger(OccupancyOutput.class);
-
-    protected DataRecord dataStruct;
+    protected DataRecord dataRecord;
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
+    private int setCount = 0;
+    private final long[] timingHistogram = new long[MAX_NUM_TIMING_SAMPLES];
+    private final Object histogramLock = new Object();
+    long lastSetTimeMillis = System.currentTimeMillis();
 
-    public OccupancyOutput(AspectSensor parentSensor){
+
+    public OccupancyOutput(AspectSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
-    protected void init(){
+    protected void init() {
         RADHelper radHelper = new RADHelper();
 
-        dataStruct = radHelper.createRecord()
+        dataRecord = radHelper.createRecord()
                 .name(getName())
-                .label("Occupancy")
+                .label(getName())
                 .definition(RADHelper.getRadUri("occupancy"))
                 .addField("Timestamp", radHelper.createPrecisionTimeStamp())
-                .addField("OccupancyDailyCount", radHelper.createOccupancyCount())
-                .addField("NeutronBackground", radHelper.createOccupancyNeutronBackground())
+                .addField("OccupancyCount", radHelper.createOccupancyCount())
                 .addField("StartTime", radHelper.createOccupancyStartTime())
                 .addField("EndTime", radHelper.createOccupancyEndTime())
-                .addField("GammaAlarm",
-                        radHelper.createBoolean()
-                                .name("gamma-alarm")
-                                .label("Gamma Alarm")
-                                .definition(RADHelper.getRadUri("gamma-alarm")))
-                .addField("NeutronAlarm",
-                        radHelper.createBoolean()
-                                .name("neutron-alarm")
-                                .label("Neutron Alarm")
-                                .definition(RADHelper.getRadUri("neutron-alarm")))
+                .addField("GammaAlarm", radHelper.createBoolean()
+                        .name("gamma-alarm")
+                        .label("Gamma Alarm")
+                        .definition(RADHelper.getRadUri("gamma-alarm")))
+                .addField("NeutronAlarm", radHelper.createBoolean()
+                        .name("neutron-alarm")
+                        .label("Neutron Alarm")
+                        .definition(RADHelper.getRadUri("neutron-alarm")))
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
-
     }
 
-    public void onNewMessage(long startTime, long endTime, Boolean isGammaAlarm, Boolean isNeutronAlarm, String[] csvLine){
+    public void setData(MonitorRegisters monitorRegisters, double timeStamp, double startTime, double endTime, boolean gammaAlarm, boolean neutronAlarm) {
+
+
         if (latestRecord == null) {
-
-            dataBlock = dataStruct.createDataBlock();
-
+            dataBlock = dataRecord.createDataBlock();
         } else {
-
             dataBlock = latestRecord.renew();
         }
 
+        synchronized (histogramLock) {
+            int setIndex = setCount % MAX_NUM_TIMING_SAMPLES;
 
-        dataBlock.setLongValue(0, System.currentTimeMillis()/1000);
-        dataBlock.setIntValue(1, Integer.getInteger(csvLine[1]));
-        //Note that in the GX line, one does not divide by 1000 to get the average neutron background like you do for Rapiscan.
-        dataBlock.setLongValue(2, Long.getLong(csvLine[2]));
-        dataBlock.setLongValue(3, startTime/1000);
-        dataBlock.setLongValue(4, endTime/1000);
-        dataBlock.setBooleanValue(5, isGammaAlarm);
-        dataBlock.setBooleanValue(6, isNeutronAlarm);
+            // Get a sampling time for the latest set based on previous set sampling time
+            timingHistogram[setIndex] = System.currentTimeMillis() - lastSetTimeMillis;
+
+            // Set the latest sampling time to now
+            lastSetTimeMillis = System.currentTimeMillis();
+        }
+
+        ++setCount;
+
+        dataBlock.setDoubleValue(0, timeStamp);
+        dataBlock.setIntValue(1, monitorRegisters.getNumberOfObject());
+        dataBlock.setDoubleValue(2, startTime);
+        dataBlock.setDoubleValue(3, endTime);
+        dataBlock.setBooleanValue(4, gammaAlarm);
+        dataBlock.setBooleanValue(5, neutronAlarm);
+
+        latestRecord = dataBlock;
+        latestRecordTime = System.currentTimeMillis();
 
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));
-
     }
 
     @Override
     public DataComponent getRecordDescription() {
-        return dataStruct;
+        return dataRecord;
     }
 
     @Override
@@ -89,6 +97,14 @@ public class OccupancyOutput  extends AbstractSensorOutput<AspectSensor> {
 
     @Override
     public double getAverageSamplingPeriod() {
-        return 0;
+        long accumulator = 0;
+
+        synchronized (histogramLock) {
+            for (int idx = 0; idx < MAX_NUM_TIMING_SAMPLES; ++idx) {
+                accumulator += timingHistogram[idx];
+            }
+        }
+
+        return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 }

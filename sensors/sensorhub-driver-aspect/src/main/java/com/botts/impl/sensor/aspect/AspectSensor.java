@@ -9,59 +9,43 @@
  for the specific language governing rights and limitations under the License.
 
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
-
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.aspect;
 
 
-import org.sensorhub.api.comm.ICommProvider;
+import com.botts.impl.sensor.aspect.comm.IModbusTCPCommProvider;
+import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.sensor.PositionConfig.LLALocation;
-import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-
 /**
- * Sensor driver for the ... providing sensor description, output registration,
- * initialization and shutdown of driver and outputs.
+ * Sensor driver for the Aspect sensor providing sensor description, output registration,
+ * initialization and shutdown of the driver and outputs.
  *
- * @author Drew Botts
- * @since Oct 16, 2023
+ * @author Michael Elmore
+ * @since December 2023
  */
 public class AspectSensor extends AbstractSensorModule<AspectConfig> {
-
+    private static final Logger log = LoggerFactory.getLogger(AspectSensor.class);
+    IModbusTCPCommProvider<?> commProvider;
     MessageHandler messageHandler;
-
-    private static final Logger logger = LoggerFactory.getLogger(AspectSensor.class);
-
-    ICommProvider<?> commProvider;
-
     GammaOutput gammaOutput;
-
     NeutronOutput neutronOutput;
-
     OccupancyOutput occupancyOutput;
-
     SpeedOutput speedOutput;
-
     LocationOutput locationOutput;
-
-    InputStream msgIn;
 
     @Override
     public void doInit() throws SensorHubException {
-
         super.doInit();
 
         // Generate identifiers
-        generateUniqueID("urn:osh:sensor:aspect", config.serialNumber);
+        generateUniqueID("urn:osh:sensor:aspect:", config.serialNumber);
         generateXmlID("Aspect", config.serialNumber);
 
+        // Initialize outputs
         gammaOutput = new GammaOutput(this);
         addOutput(gammaOutput, false);
         gammaOutput.init();
@@ -81,84 +65,60 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         locationOutput = new LocationOutput(this);
         addOutput(locationOutput, false);
         locationOutput.init();
-
-
-
     }
 
     @Override
     protected void doStart() throws SensorHubException {
+        locationOutput.setLocationOutput(config.getLocation());
 
-        locationOutput.setLocationOuput(config.getLocation());
-
-        // init comm provider
+        // Initialize comm provider
         if (commProvider == null) {
-
-            // we need to recreate comm provider here because it can be changed by UI
+            // We need to recreate comm provider here because it can be changed by UI
             try {
-
                 if (config.commSettings == null)
                     throw new SensorHubException("No communication settings specified");
 
                 var moduleReg = getParentHub().getModuleRegistry();
 
-                commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
-
+                commProvider = (IModbusTCPCommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
                 commProvider.start();
-
+                var connection = commProvider.getConnection();
+                var deviceDescriptionRegisters = new DeviceDescriptionRegisters(connection);
+                deviceDescriptionRegisters.readRegisters(1);
             } catch (Exception e) {
-
                 commProvider = null;
-
-                throw e;
+                throw new SensorHubException("Error while initializing communications ", e);
             }
         }
 
-        // connect to data stream
-        try {
-
-            msgIn = new BufferedInputStream(commProvider.getInputStream());
-
-            messageHandler = new MessageHandler(msgIn, gammaOutput, neutronOutput, occupancyOutput, speedOutput);
-
-//            csvMsgRead.readMessages(msgIn, gammaOutput, neutronOutput, occupancyOutput);
-
-        } catch (IOException e) {
-
-            throw new SensorException("Error while initializing communications ", e);
-        }
+        // Start message handler
+        messageHandler = new MessageHandler(commProvider.getConnection(), gammaOutput, neutronOutput, occupancyOutput, speedOutput);
+        messageHandler.start();
     }
 
     @Override
-    public void doStop() throws SensorHubException {
-
+    public void doStop() {
         if (commProvider != null) {
-
             try {
-
                 commProvider.stop();
-
             } catch (Exception e) {
-
-                logger.error("Uncaught exception attempting to stop comms module", e);
-
+                log.error("Uncaught exception attempting to stop comm module", e);
             } finally {
-
                 commProvider = null;
             }
         }
 
-        messageHandler.stopProcessing();
+        if (messageHandler != null) {
+            messageHandler.stop();
+            messageHandler = null;
+        }
     }
 
     @Override
     public boolean isConnected() {
         if (commProvider == null) {
-
             return false;
-
         } else {
-
             return commProvider.isStarted();
         }
     }

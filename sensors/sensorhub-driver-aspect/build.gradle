@@ -7,7 +7,6 @@ dependencies {
     implementation project(':sensorhub-utils-rad')
     testImplementation('junit:junit:4.13.1')
     implementation('junit:junit:4.13.1')
-    implementation('com.opencsv:opencsv:4.1')
     implementation('com.ghgande:j2mod:2.5.5')
 }
 
@@ -22,8 +21,8 @@ test {
 // add info to OSGi manifest
 osgi {
     manifest {
-        attributes ('Bundle-Vendor': 'Botts Inc')
-        attributes ('Bundle-Activator': 'com.botts.impl.sensor.rapiscan.RapiscanActivator')
+        attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
+        attributes('Bundle-Activator': 'com.botts.impl.sensor.aspect.AspectActivator')
     }
 }
 

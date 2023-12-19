@@ -1,187 +1,129 @@
 package com.botts.impl.sensor.aspect;
 
-import com.opencsv.CSVReader;
+import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
+import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
+import com.ghgande.j2mod.modbus.ModbusException;
+import com.ghgande.j2mod.modbus.net.TCPMasterConnection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.StringReader;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 
-public class MessageHandler {
+/**
+ * Handles the incoming messages from the sensor
+ *
+ * @author Michael Elmore
+ * @since December 2023
+ */
+public class MessageHandler implements Runnable {
+    private static final Logger log = LoggerFactory.getLogger(MessageHandler.class);
+    private final TCPMasterConnection tcpMasterConnection;
+    private final GammaOutput gammaOutput;
+    private final NeutronOutput neutronOutput;
+    private final OccupancyOutput occupancyOutput;
+    private final SpeedOutput speedOutput;
+    Thread thread;
 
-    private final InputStream msgIn;
+    int occupancyCount = -1;
+    double startTime = 0;
+    double endTime = 0;
+    boolean gammaAlarm = false;
+    boolean neutronAlarm = false;
 
-    List<String[]> csvList;
-    String[] csvLine;
-    CSVReader reader;
-    Boolean currentOccupancy = false;
-    Boolean isGammaAlarm = false;
-    Boolean isNeutronAlarm = false;
-    long occupancyStartTime;
-    long occupancyEndTime;
-    GammaOutput gammaOutput;
-    NeutronOutput neutronOutput;
-    OccupancyOutput occupancyOutput;
-    SpeedOutput speedOutput;
-
-    final static String ALARM = "Alarm";
-    final static String BACKGROUND = "Background";
-    final static String SCAN = "Scan";
-    final static String FAULT_GH = "Fault - Gamma High";
-    final static String FAULT_GL = "Fault - Gamma Low";
-    final static String FAULT_NH = "Fault - Neutron High";
-
-    private final AtomicBoolean isProcessing = new AtomicBoolean(true);
-
-    private final Thread messageReader = new Thread(new Runnable() {
-        @Override
-        public void run() {
-            boolean continueProcessing = true;
-
-            try{
-                while (continueProcessing){
-                    BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
-                    String msgLine = bufferedReader.readLine();
-                    while (msgLine != null){
-                        reader = new CSVReader(new StringReader(msgLine));
-                        csvList = reader.readAll();
-                        csvLine = csvList.get(0);
-
-
-                        getMainCharDefinition(csvLine[0], csvLine);
-                        System.out.println(msgLine);
-
-                        msgLine = bufferedReader.readLine();
-
-                        synchronized (isProcessing) {
-                            continueProcessing = isProcessing.get();
-                        }
-                    }
-                }
-
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-    });
-
-
-    public MessageHandler(InputStream msgIn, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, SpeedOutput speedOutput) {
-        this.msgIn = msgIn;
+    public MessageHandler(TCPMasterConnection tcpMasterConnection, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, SpeedOutput speedOutput) {
+        this.tcpMasterConnection = tcpMasterConnection;
         this.gammaOutput = gammaOutput;
         this.neutronOutput = neutronOutput;
         this.occupancyOutput = occupancyOutput;
         this.speedOutput = speedOutput;
 
-        this.messageReader.start();
+        thread = new Thread(this, "Message Handler");
     }
 
-    public void stopProcessing() {
+    public void start() {
+        thread.start();
+    }
 
-        synchronized (isProcessing) {
+    public void stop() {
+        thread.interrupt();
+    }
 
-            isProcessing.set(false);
+    @Override
+    public void run() {
+        try {
+            DeviceDescriptionRegisters deviceDescriptionRegisters = new DeviceDescriptionRegisters(tcpMasterConnection);
+            deviceDescriptionRegisters.readRegisters(1);
+
+            MonitorRegisters monitorRegisters = new MonitorRegisters(tcpMasterConnection, deviceDescriptionRegisters.getMonitorRegistersBaseAddress(), deviceDescriptionRegisters.getMonitorRegistersNumberOfRegisters());
+            while (!Thread.currentThread().isInterrupted()) {
+                monitorRegisters.readRegisters(1);
+
+                double timestamp = System.currentTimeMillis() / 1000d;
+
+                gammaOutput.setData(monitorRegisters, timestamp);
+                neutronOutput.setData(monitorRegisters, timestamp);
+                speedOutput.setData(monitorRegisters, timestamp);
+
+                if (checkOccupancyRecord(monitorRegisters, timestamp)) {
+                    occupancyOutput.setData(monitorRegisters, timestamp, startTime, endTime, gammaAlarm, neutronAlarm);
+                }
+            }
+        } catch (ModbusException e) {
+            StringWriter stringWriter = new StringWriter();
+            e.printStackTrace(new PrintWriter(stringWriter));
+            log.error("Error in worker thread: {} due to exception: {}", Thread.currentThread().getName(), stringWriter);
         }
     }
 
-
-    void getMainCharDefinition(String mainChar, String[] csvLine){
-        switch (mainChar){
-            // ------------------- NOT OCCUPIED
-            case "GB":
-                gammaOutput.onNewMessage(csvLine, System.currentTimeMillis(), BACKGROUND);
-                break;
-            case "GH":
-                gammaOutput.onNewMessage(csvLine, System.currentTimeMillis(), FAULT_GH);
-                break;
-            case "GL":
-                gammaOutput.onNewMessage(csvLine, System.currentTimeMillis(), FAULT_GL);
-                break;
-            case "NB":
-                neutronOutput.onNewMessage(csvLine, System.currentTimeMillis(), BACKGROUND);
-                break;
-            case "NH":
-                neutronOutput.onNewMessage(csvLine, System.currentTimeMillis(), FAULT_NH);
-                break;
-
-            // --------------- OCCUPIED
-            case  "GA":
-                if (!currentOccupancy){
-                    occupancyStartTime = System.currentTimeMillis();
-                    currentOccupancy = true;
-                }
-                gammaOutput.onNewMessage(csvLine, System.currentTimeMillis(), ALARM);
-                isGammaAlarm = true;
-                break;
-
-            case "GS":
-                if (!currentOccupancy){
-                    occupancyStartTime = System.currentTimeMillis();
-                    currentOccupancy = true;
-
-                }
-                gammaOutput.onNewMessage(csvLine, System.currentTimeMillis(), SCAN);
-                break;
-
-            case "NA":
-                if (!currentOccupancy){
-                    occupancyStartTime = System.currentTimeMillis();
-                    currentOccupancy = true;
-                }
-                neutronOutput.onNewMessage(csvLine, System.currentTimeMillis(), ALARM);
-                isNeutronAlarm = true;
-                break;
-
-            case "NS":
-                if (!currentOccupancy){
-                    occupancyStartTime = System.currentTimeMillis();
-                    currentOccupancy = true;
-
-                }
-                neutronOutput.onNewMessage(csvLine, System.currentTimeMillis(), SCAN);
-                break;
-
-            case "GX":
-                occupancyEndTime = System.currentTimeMillis();
-                occupancyOutput.onNewMessage(occupancyStartTime, occupancyEndTime, isGammaAlarm, isNeutronAlarm, csvLine);
-                currentOccupancy = false;
-                isGammaAlarm = false;
-                isNeutronAlarm = false;
-                break;
-
-            // -------------------- OTHER STATE
-            case "TC":
-//                stateData("Tamper Cleared");
-                break;
-            case "TT":
-//                stateData("Tamper Fault");
-                break;
-            case "SP":
-                speedOutput.onNewMessage(csvLine, System.currentTimeMillis());
-                break;
-            case "SG1":
-//                setupData1("Setup Gamma 1");
-//                setSetup1();
-                break;
-            case "SG2":
-//                setupData2("Setup Gamma 2");
-//                setSetup2();
-                break;
-            case "SG3":
-//                setupData3("Setup Gamma 3");
-//                setSetup3();
-                break;
-            case "SN1":
-//                setupData4("Setup Neutron 1");
-//                setSetup4();
-                break;
-            case "SN2":
-//                setupData5("Setup Neutron 2");
-//                setSetup5();
-                break;
+    /**
+     * Checks whether to write the occupancy record and sets the start time, end time, and alarm flags
+     *
+     * @param monitorRegisters the monitor registers
+     * @param timestamp        the timestamp
+     * @return true if the record should be written, false otherwise
+     */
+    private boolean checkOccupancyRecord(MonitorRegisters monitorRegisters, double timestamp) {
+        // Initialize the occupancy count
+        if (occupancyCount == -1) {
+            occupancyCount = monitorRegisters.getNumberOfObject();
+            return false;
         }
-    }
 
+        // If the occupancy count has changed, then we need to set the start time
+        if (occupancyCount != monitorRegisters.getNumberOfObject()) {
+            startTime = timestamp;
+            endTime = 0;
+            occupancyCount = monitorRegisters.getNumberOfObject();
+            gammaAlarm = false;
+            neutronAlarm = false;
+            return false;
+        }
+
+        // If both start time and end time are set, the record has already been written
+        if (startTime != 0 && endTime != 0) {
+            return false;
+        }
+
+        if (startTime == 0 && endTime == 0) {
+            return false;
+        }
+
+        // If an alarm occurs during this time, set the alarm flag
+        if (monitorRegisters.isGammaAlarm()) {
+            gammaAlarm = true;
+        }
+        if (monitorRegisters.isNeutronAlarm()) {
+            neutronAlarm = true;
+        }
+
+        // If the sensor is still occupied, wait for it to become unoccupied
+        if (monitorRegisters.isOccupied()) {
+            return false;
+        }
+
+        // If the sensor is now unoccupied, set the end time
+        endTime = timestamp;
+        return true;
+    }
 }

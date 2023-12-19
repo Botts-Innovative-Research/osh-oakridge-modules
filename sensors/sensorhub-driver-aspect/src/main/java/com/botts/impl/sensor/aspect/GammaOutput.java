@@ -1,5 +1,6 @@
 package com.botts.impl.sensor.aspect;
 
+import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -7,80 +8,85 @@ import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
-
-import java.util.List;
 
 public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
     private static final String SENSOR_OUTPUT_NAME = "Gamma Scan";
+    private static final int MAX_NUM_TIMING_SAMPLES = 10;
 
-    private static final Logger logger = LoggerFactory.getLogger(GammaOutput.class);
-
-    protected DataRecord dataStruct;
+    protected DataRecord dataRecord;
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
+    private int setCount = 0;
+    private final long[] timingHistogram = new long[MAX_NUM_TIMING_SAMPLES];
+    private final Object histogramLock = new Object();
+    long lastSetTimeMillis = System.currentTimeMillis();
 
-    GammaOutput(AspectSensor parentSensor){
+    GammaOutput(AspectSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
     protected void init() {
         RADHelper radHelper = new RADHelper();
 
-        dataStruct = radHelper.createRecord()
+        dataRecord = radHelper.createRecord()
                 .name(getName())
-                .label("Gamma Scan")
+                .label(getName())
                 .definition(RADHelper.getRadUri("gamma-scan"))
                 .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-                .addField("Gamma1", radHelper.createGammaGrossCount())
-                .addField("Gamma2", radHelper.createGammaGrossCount())
-                .addField("Gamma3", radHelper.createGammaGrossCount())
-                .addField("Gamma4", radHelper.createGammaGrossCount())
-                .addField("Alarm State",
-                        radHelper.createCategory()
-                                .name("Alarm")
-                                .label("Alarm")
-                                .definition(RADHelper.getRadUri("alarm"))
-                                .addAllowedValues("Alarm", "Background", "Scan", "Fault - Gamma High", "Fault - Gamma Low"))
+                .addField("GammaGrossCount", radHelper.createGammaGrossCount())
+                .addField("GammaBackground", radHelper.createQuantity()
+                        .name("GammaBackground")
+                        .label("Gamma Background")
+                        .definition(RADHelper.getRadUri("gamma-background")))
+                .addField("GammaVariance", radHelper.createCount()
+                        .name("GammaVariance")
+                        .label("Gamma Variance")
+                        .definition(RADHelper.getRadUri("gamma-variance")))
+                .addField("Alarm State", radHelper.createCategory()
+                        .name("AlarmState")
+                        .label("Alarm State")
+                        .definition(RADHelper.getRadUri("alarm"))
+                        .addAllowedValues("Alarm", "Background", "Fault - Gamma High", "Fault - Gamma Low"))
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
-
-
     }
 
-    public void onNewMessage(String[] csvString, long timeStamp, String alarmState){
-
+    public void setData(MonitorRegisters monitorRegisters, double timeStamp) {
         if (latestRecord == null) {
-
-            dataBlock = dataStruct.createDataBlock();
-
+            dataBlock = dataRecord.createDataBlock();
         } else {
-
             dataBlock = latestRecord.renew();
         }
 
-        dataBlock.setLongValue(0,timeStamp/1000);
-        dataBlock.setIntValue(1, Integer.parseInt(csvString[1]));
-        dataBlock.setIntValue(2, Integer.parseInt(csvString[2]));
-        dataBlock.setIntValue(3, Integer.parseInt(csvString[3]));
-        dataBlock.setIntValue(4, Integer.parseInt(csvString[4]));
-        dataBlock.setStringValue(5, alarmState);
+        synchronized (histogramLock) {
+            int setIndex = setCount % MAX_NUM_TIMING_SAMPLES;
 
-        eventHandler.publish(new DataEvent(timeStamp, GammaOutput.this, dataBlock));
+            // Get a sampling time for the latest set based on previous set sampling time
+            timingHistogram[setIndex] = System.currentTimeMillis() - lastSetTimeMillis;
 
+            // Set the latest sampling time to now
+            lastSetTimeMillis = System.currentTimeMillis();
+        }
 
+        ++setCount;
 
+        dataBlock.setDoubleValue(0, timeStamp);
+        dataBlock.setIntValue(1, monitorRegisters.getGammaChannelCount());
+        dataBlock.setFloatValue(2, monitorRegisters.getGammaChannelBackground());
+        dataBlock.setFloatValue(3, monitorRegisters.getGammaChannelVariance());
+        dataBlock.setStringValue(4, monitorRegisters.getGammaAlarmState());
 
+        latestRecord = dataBlock;
+        latestRecordTime = System.currentTimeMillis();
 
-
+        eventHandler.publish(new DataEvent((long) timeStamp, GammaOutput.this, dataBlock));
     }
 
     @Override
     public DataComponent getRecordDescription() {
-        return dataStruct;
+        return dataRecord;
     }
 
     @Override
@@ -90,6 +96,14 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
 
     @Override
     public double getAverageSamplingPeriod() {
-        return 0;
+        long accumulator = 0;
+
+        synchronized (histogramLock) {
+            for (int idx = 0; idx < MAX_NUM_TIMING_SAMPLES; ++idx) {
+                accumulator += timingHistogram[idx];
+            }
+        }
+
+        return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 }
