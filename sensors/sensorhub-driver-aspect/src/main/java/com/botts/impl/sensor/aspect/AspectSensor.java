@@ -80,7 +80,11 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
 
                 var moduleReg = getParentHub().getModuleRegistry();
 
-                commProvider = (IModbusTCPCommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
+                var commModule = moduleReg.loadSubModule(config.commSettings, true);
+                if (!(commModule instanceof IModbusTCPCommProvider<?>))
+                    throw new SensorHubException("Please select the Modbus TCP communication module.");
+
+                commProvider = (IModbusTCPCommProvider<?>) commModule;
                 commProvider.start();
                 var connection = commProvider.getConnection();
                 var deviceDescriptionRegisters = new DeviceDescriptionRegisters(connection);
