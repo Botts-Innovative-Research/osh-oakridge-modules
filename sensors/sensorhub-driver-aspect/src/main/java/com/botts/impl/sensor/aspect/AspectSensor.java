@@ -14,6 +14,7 @@ package com.botts.impl.sensor.aspect;
 
 
 import com.botts.impl.sensor.aspect.comm.IModbusTCPCommProvider;
+import com.botts.impl.sensor.aspect.output.*;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;

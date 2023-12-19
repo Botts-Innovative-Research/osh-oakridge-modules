@@ -1,5 +1,6 @@
-package com.botts.impl.sensor.aspect;
+package com.botts.impl.sensor.aspect.output;
 
+import com.botts.impl.sensor.aspect.AspectSensor;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -17,11 +18,11 @@ public class SensorLocationOutput extends AbstractSensorOutput<AspectSensor> {
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
 
-    SensorLocationOutput(AspectSensor aspectSensor) {
+    public SensorLocationOutput(AspectSensor aspectSensor) {
         super(SENSOR_OUTPUT_NAME, aspectSensor);
     }
 
-    protected void init() {
+    public void init() {
         RADHelper radHelper = new RADHelper();
 
         dataRecord = radHelper.createRecord()

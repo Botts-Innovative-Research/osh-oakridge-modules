@@ -1,5 +1,9 @@
 package com.botts.impl.sensor.aspect;
 
+import com.botts.impl.sensor.aspect.output.GammaOutput;
+import com.botts.impl.sensor.aspect.output.NeutronOutput;
+import com.botts.impl.sensor.aspect.output.OccupancyOutput;
+import com.botts.impl.sensor.aspect.output.SpeedOutput;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
 import com.ghgande.j2mod.modbus.ModbusException;

@@ -1,5 +1,6 @@
-package com.botts.impl.sensor.aspect;
+package com.botts.impl.sensor.aspect.output;
 
+import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -10,8 +11,8 @@ import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
-public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
-    private static final String SENSOR_OUTPUT_NAME = "Gamma Scan";
+public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
+    private static final String SENSOR_OUTPUT_NAME = "Neutron Scan";
     private static final int MAX_NUM_TIMING_SAMPLES = 10;
 
     protected DataRecord dataRecord;
@@ -22,32 +23,32 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
     private final Object histogramLock = new Object();
     long lastSetTimeMillis = System.currentTimeMillis();
 
-    GammaOutput(AspectSensor parentSensor) {
+    public NeutronOutput(AspectSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
-    protected void init() {
+    public void init() {
         RADHelper radHelper = new RADHelper();
 
         dataRecord = radHelper.createRecord()
                 .name(getName())
                 .label(getName())
-                .definition(RADHelper.getRadUri("gamma-scan"))
-                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-                .addField("GammaGrossCount", radHelper.createGammaGrossCount())
-                .addField("GammaBackground", radHelper.createQuantity()
-                        .name("GammaBackground")
-                        .label("Gamma Background")
-                        .definition(RADHelper.getRadUri("gamma-background")))
-                .addField("GammaVariance", radHelper.createCount()
-                        .name("GammaVariance")
-                        .label("Gamma Variance")
-                        .definition(RADHelper.getRadUri("gamma-variance")))
-                .addField("Alarm State", radHelper.createCategory()
+                .definition(RADHelper.getRadUri("neutron-scan"))
+                .addField("SamplingTime", radHelper.createPrecisionTimeStamp())
+                .addField("NeutronGrossCount", radHelper.createNeutronGrossCount())
+                .addField("NeutronBackground", radHelper.createQuantity()
+                        .name("NeutronBackground")
+                        .label("Neutron Background")
+                        .definition(RADHelper.getRadUri("neutron-background")))
+                .addField("NeutronVariance", radHelper.createCount()
+                        .name("NeutronVariance")
+                        .label("Neutron Variance")
+                        .definition(RADHelper.getRadUri("neutron-variance")))
+                .addField("AlarmState", radHelper.createCategory()
                         .name("AlarmState")
                         .label("Alarm State")
                         .definition(RADHelper.getRadUri("alarm"))
-                        .addAllowedValues("Alarm", "Background", "Fault - Gamma High", "Fault - Gamma Low"))
+                        .addAllowedValues("Alarm", "Background", "Fault - Neutron High", "Fault - Neutron Low"))
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
@@ -73,15 +74,15 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
         ++setCount;
 
         dataBlock.setDoubleValue(0, timeStamp);
-        dataBlock.setIntValue(1, monitorRegisters.getGammaChannelCount());
-        dataBlock.setFloatValue(2, monitorRegisters.getGammaChannelBackground());
-        dataBlock.setFloatValue(3, monitorRegisters.getGammaChannelVariance());
-        dataBlock.setStringValue(4, monitorRegisters.getGammaAlarmState());
+        dataBlock.setIntValue(1, monitorRegisters.getNeutronChannelCount());
+        dataBlock.setFloatValue(2, monitorRegisters.getNeutronChannelBackground());
+        dataBlock.setFloatValue(3, monitorRegisters.getNeutronChannelVariance());
+        dataBlock.setStringValue(4, monitorRegisters.getNeutronAlarmState());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();
 
-        eventHandler.publish(new DataEvent((long) timeStamp, GammaOutput.this, dataBlock));
+        eventHandler.publish(new DataEvent((long) timeStamp, NeutronOutput.this, dataBlock));
     }
 
     @Override

@@ -1,5 +1,6 @@
-package com.botts.impl.sensor.aspect;
+package com.botts.impl.sensor.aspect.output;
 
+import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -10,8 +11,8 @@ import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
-public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
-    private static final String SENSOR_OUTPUT_NAME = "Neutron Scan";
+public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
+    private static final String SENSOR_OUTPUT_NAME = "Occupancy";
     private static final int MAX_NUM_TIMING_SAMPLES = 10;
 
     protected DataRecord dataRecord;
@@ -22,38 +23,37 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
     private final Object histogramLock = new Object();
     long lastSetTimeMillis = System.currentTimeMillis();
 
-    public NeutronOutput(AspectSensor parentSensor) {
+    public OccupancyOutput(AspectSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
-    protected void init() {
+    public void init() {
         RADHelper radHelper = new RADHelper();
 
         dataRecord = radHelper.createRecord()
                 .name(getName())
                 .label(getName())
-                .definition(RADHelper.getRadUri("neutron-scan"))
-                .addField("SamplingTime", radHelper.createPrecisionTimeStamp())
-                .addField("NeutronGrossCount", radHelper.createNeutronGrossCount())
-                .addField("NeutronBackground", radHelper.createQuantity()
-                        .name("NeutronBackground")
-                        .label("Neutron Background")
-                        .definition(RADHelper.getRadUri("neutron-background")))
-                .addField("NeutronVariance", radHelper.createCount()
-                        .name("NeutronVariance")
-                        .label("Neutron Variance")
-                        .definition(RADHelper.getRadUri("neutron-variance")))
-                .addField("AlarmState", radHelper.createCategory()
-                        .name("AlarmState")
-                        .label("Alarm State")
-                        .definition(RADHelper.getRadUri("alarm"))
-                        .addAllowedValues("Alarm", "Background", "Fault - Neutron High", "Fault - Neutron Low"))
+                .definition(RADHelper.getRadUri("occupancy"))
+                .addField("Timestamp", radHelper.createPrecisionTimeStamp())
+                .addField("OccupancyCount", radHelper.createOccupancyCount())
+                .addField("StartTime", radHelper.createOccupancyStartTime())
+                .addField("EndTime", radHelper.createOccupancyEndTime())
+                .addField("GammaAlarm", radHelper.createBoolean()
+                        .name("gamma-alarm")
+                        .label("Gamma Alarm")
+                        .definition(RADHelper.getRadUri("gamma-alarm")))
+                .addField("NeutronAlarm", radHelper.createBoolean()
+                        .name("neutron-alarm")
+                        .label("Neutron Alarm")
+                        .definition(RADHelper.getRadUri("neutron-alarm")))
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
 
-    public void setData(MonitorRegisters monitorRegisters, double timeStamp) {
+    public void setData(MonitorRegisters monitorRegisters, double timeStamp, double startTime, double endTime, boolean gammaAlarm, boolean neutronAlarm) {
+
+
         if (latestRecord == null) {
             dataBlock = dataRecord.createDataBlock();
         } else {
@@ -73,15 +73,16 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
         ++setCount;
 
         dataBlock.setDoubleValue(0, timeStamp);
-        dataBlock.setIntValue(1, monitorRegisters.getNeutronChannelCount());
-        dataBlock.setFloatValue(2, monitorRegisters.getNeutronChannelBackground());
-        dataBlock.setFloatValue(3, monitorRegisters.getNeutronChannelVariance());
-        dataBlock.setStringValue(4, monitorRegisters.getNeutronAlarmState());
+        dataBlock.setIntValue(1, monitorRegisters.getNumberOfObject());
+        dataBlock.setDoubleValue(2, startTime);
+        dataBlock.setDoubleValue(3, endTime);
+        dataBlock.setBooleanValue(4, gammaAlarm);
+        dataBlock.setBooleanValue(5, neutronAlarm);
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();
 
-        eventHandler.publish(new DataEvent((long) timeStamp, NeutronOutput.this, dataBlock));
+        eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));
     }
 
     @Override

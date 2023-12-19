@@ -1,5 +1,6 @@
-package com.botts.impl.sensor.aspect;
+package com.botts.impl.sensor.aspect.output;
 
+import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -10,8 +11,8 @@ import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
-public class SpeedOutput extends AbstractSensorOutput<AspectSensor> {
-    private static final String SENSOR_OUTPUT_NAME = "Speed";
+public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
+    private static final String SENSOR_OUTPUT_NAME = "Gamma Scan";
     private static final int MAX_NUM_TIMING_SAMPLES = 10;
 
     protected DataRecord dataRecord;
@@ -22,23 +23,32 @@ public class SpeedOutput extends AbstractSensorOutput<AspectSensor> {
     private final Object histogramLock = new Object();
     long lastSetTimeMillis = System.currentTimeMillis();
 
-    public SpeedOutput(AspectSensor parentSensor) {
+    public GammaOutput(AspectSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
-    protected void init() {
+    public void init() {
         RADHelper radHelper = new RADHelper();
 
         dataRecord = radHelper.createRecord()
                 .name(getName())
                 .label(getName())
-                .definition(RADHelper.getRadUri("speed"))
-                .addField("Timestamp", radHelper.createPrecisionTimeStamp())
-                .addField("Speed", radHelper.createQuantity()
-                        .name("Speed")
-                        .label("Speed")
-                        .definition(RADHelper.getRadUri("speed"))
-                        .uomCode("mm/s"))
+                .definition(RADHelper.getRadUri("gamma-scan"))
+                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
+                .addField("GammaGrossCount", radHelper.createGammaGrossCount())
+                .addField("GammaBackground", radHelper.createQuantity()
+                        .name("GammaBackground")
+                        .label("Gamma Background")
+                        .definition(RADHelper.getRadUri("gamma-background")))
+                .addField("GammaVariance", radHelper.createCount()
+                        .name("GammaVariance")
+                        .label("Gamma Variance")
+                        .definition(RADHelper.getRadUri("gamma-variance")))
+                .addField("Alarm State", radHelper.createCategory()
+                        .name("AlarmState")
+                        .label("Alarm State")
+                        .definition(RADHelper.getRadUri("alarm"))
+                        .addAllowedValues("Alarm", "Background", "Fault - Gamma High", "Fault - Gamma Low"))
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
@@ -64,12 +74,15 @@ public class SpeedOutput extends AbstractSensorOutput<AspectSensor> {
         ++setCount;
 
         dataBlock.setDoubleValue(0, timeStamp);
-        dataBlock.setIntValue(1, monitorRegisters.getObjectSpeed());
+        dataBlock.setIntValue(1, monitorRegisters.getGammaChannelCount());
+        dataBlock.setFloatValue(2, monitorRegisters.getGammaChannelBackground());
+        dataBlock.setFloatValue(3, monitorRegisters.getGammaChannelVariance());
+        dataBlock.setStringValue(4, monitorRegisters.getGammaAlarmState());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();
 
-        eventHandler.publish(new DataEvent((long) timeStamp, SpeedOutput.this, dataBlock));
+        eventHandler.publish(new DataEvent((long) timeStamp, GammaOutput.this, dataBlock));
     }
 
     @Override
