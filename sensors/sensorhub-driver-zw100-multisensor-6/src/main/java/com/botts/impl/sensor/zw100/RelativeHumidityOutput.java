@@ -190,12 +190,12 @@ public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> im
 
                 double time = System.currentTimeMillis() / 1000.;
 
-                double relHum = Double.NaN;
-
+//             double relHum = Double.NaN;
+               String message = "";
 
                 dataBlock.setStringValue(0, relHumData.getName());
                 dataBlock.setDoubleValue(1, time);
-                dataBlock.setDoubleValue(2, relHum);
+                dataBlock.setStringValue(2, ZWaveMessageHandler.onMessage(message));
 
                 latestRecord = dataBlock;
 

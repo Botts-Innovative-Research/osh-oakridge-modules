@@ -29,7 +29,7 @@ import org.vast.swe.helper.GeoPosHelper;
  * @author your_name
  * @since date
  */
-public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> implements Runnable {
+public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> {
 
     private static final String SENSOR_OUTPUT_NAME = "Temperature";
 
@@ -77,12 +77,12 @@ public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> impleme
                 .definition("http://sensorml.com/ont/swe/property/Temperature")
                 .addField("Sampling Time", tempHelper.createTime().asSamplingTimeIsoUTC())
                 .addField(SENSOR_OUTPUT_NAME,
-                        tempHelper.createQuantity()
+                        tempHelper.createText()
                                 .name("temperature")
                                 .label(SENSOR_OUTPUT_NAME)
                                 .definition("http://sensorml.com/ont/swe/property/Temperature")
-                                .description("Measure of Temperature in Degrees Fahrenheit")
-                                .uom("°F"))
+                                .description("Measure of Temperature in Degrees Fahrenheit"))
+//                                .uom("°F"))
                 .build();
 
         dataEncoding = tempHelper.newTextEncoding(",", "\n");
@@ -93,16 +93,16 @@ public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> impleme
     /**
      * Begins processing data for output
      */
-    public void doStart() {
-
-        // Instantiate a new worker thread
-        worker = new Thread(this, this.name);
-
-        logger.info("Starting worker thread: {}", worker.getName());
-
-        // Start the worker thread
-        worker.start();
-    }
+//    public void doStart() {
+//
+//        // Instantiate a new worker thread
+//        worker = new Thread(this, this.name);
+//
+//        logger.info("Starting worker thread: {}", worker.getName());
+//
+//        // Start the worker thread
+//        worker.start();
+//    }
 
     /**
      * Terminates processing data for output
@@ -154,8 +154,8 @@ public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> impleme
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    @Override
-    public void run() {
+//    @Override
+    public void onNewMessage(String message) {
 
         boolean processSets = true;
 
@@ -190,12 +190,12 @@ public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> impleme
 
                 double time = System.currentTimeMillis() / 1000.;
 
-                double temperature = Double.NaN;
+//                double temperature = Double.NaN;
 
 
-                dataBlock.setStringValue(0, tempData.getName());
-                dataBlock.setDoubleValue(1, time);
-                dataBlock.setDoubleValue(2, temperature);
+//                dataBlock.setStringValue(0, tempData.getName());
+                dataBlock.setDoubleValue(0, time);
+                dataBlock.setStringValue(1, message);
 
                 latestRecord = dataBlock;
 

@@ -29,7 +29,7 @@ import org.vast.swe.helper.GeoPosHelper;
  * @author cardy
  * @since 11/16/23
  */
-public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor> implements Runnable {
+public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor>{
 
     private static final String SENSOR_OUTPUT_NAME = "ZW100 Battery Level";
 
@@ -96,16 +96,16 @@ public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor> implements 
     /**
      * Begins processing data for output
      */
-    public void doStart() {
-
-        // Instantiate a new worker thread
-        worker = new Thread(this, this.name);
-
-        logger.info("Starting worker thread: {}", worker.getName());
-
-        // Start the worker thread
-        worker.start();
-    }
+//    public void doStart() {
+//
+//        // Instantiate a new worker thread
+//        worker = new Thread(this, this.name);
+//
+//        logger.info("Starting worker thread: {}", worker.getName());
+//
+//        // Start the worker thread
+//        worker.start();
+//    }
 
     /**
      * Terminates processing data for output
@@ -157,8 +157,8 @@ public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor> implements 
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    @Override
-    public void run() {
+//    @Override
+    public void onNewMessage(String message) {
 
         boolean processSets = true;
 
@@ -192,11 +192,10 @@ public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor> implements 
                 ++setCount;
 
                 double time = System.currentTimeMillis() / 1000.;
-                double batteryLevel = Double.NaN;
 
-                dataBlock.setStringValue(0, batteryData.getName());
-                dataBlock.setDoubleValue(1, time);
-                dataBlock.setDoubleValue(2, batteryLevel);
+//                dataBlock.setStringValue(0, batteryData.getName());
+                dataBlock.setDoubleValue(0, time);
+                dataBlock.setStringValue(1, message);
 
                 latestRecord = dataBlock;
 

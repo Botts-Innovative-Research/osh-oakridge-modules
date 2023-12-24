@@ -32,6 +32,7 @@ public class ZW100Descriptor extends JarModuleProvider implements IModuleProvide
      *
      * @return The class used to interact with the sensor/sensor platform.
      */
+    @Override
     public Class<? extends IModule<?>> getModuleClass() {
 
         return ZW100Sensor.class;
@@ -42,6 +43,7 @@ public class ZW100Descriptor extends JarModuleProvider implements IModuleProvide
      *
      * @return The java class used to exposing configuration settings for the driver.
      */
+    @Override
     public Class<? extends ModuleConfig> getModuleConfigClass() {
 
         return ZW100Config.class;

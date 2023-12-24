@@ -50,7 +50,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> {
     private static final Logger logger = LoggerFactory.getLogger(ZW100Sensor.class);
 
     ICommProvider<?> commProvider;
-//    MessageHandler messageHandler;
 
     MotionOutput motionOutput;
 
@@ -67,8 +66,12 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> {
     BatteryOutput batteryOutput;
 
     LocationOutput locationOutput;
+
+    String message;
+    String tempMessage;
+    ZWaveMessageHandler zWaveMessageHandler;
     InputStream msgIn;
-    ZWaveMessageHandler zWaveConnect = new ZWaveMessageHandler();
+
 
 
     @Override
@@ -86,7 +89,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> {
 
                 SMLHelper smlWADWAZHelper = new SMLHelper();
                 smlWADWAZHelper.edit((PhysicalSystem) sensorDescription)
-                        .addIdentifier(smlWADWAZHelper.identifiers.modelNumber("ZW100-Mutlisensor-6"))
+                        .addIdentifier(smlWADWAZHelper.identifiers.modelNumber("ZW100-Multisensor-6"))
                         .addClassifier(smlWADWAZHelper.classifiers.sensorType(""));
             }
         }
@@ -141,9 +144,60 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> {
 
         locationOutput.setLocationOutput(config.getLocation());
 
+        ZWaveMessageHandler zWaveConnect = new ZWaveMessageHandler(message, motionOutput,
+                relativeHumidityOutput, temperatureOutput, luminanceOutput, ultravioletOutput, tamperAlarmOutput, batteryOutput, locationOutput);
         zWaveConnect.ZWaveConnect("COM5", 115200);
 
+//        zWaveMessageHandler = new ZWaveMessageHandler(message, motionOutput, relativeHumidityOutput,
+//                temperatureOutput, luminanceOutput, ultravioletOutput, tamperAlarmOutput,
+//                batteryOutput, locationOutput);
+
+//        zWaveMessageHandler.motionOutput.onNewMessage(message);
+//        zWaveMessageHandler.temperatureOutput.onNewMessage(message);
+
+//        zWaveMessageHandler = new ZWaveMessageHandler(message, motionOutput, relativeHumidityOutput,
+//                temperatureOutput, luminanceOutput, ultravioletOutput, tamperAlarmOutput,
+//                batteryOutput, locationOutput);
+
+//        if (commProvider == null) {
+//
+//            // we need to recreate comm provider here because it can be changed by UI
+//            try {
+//
+//                if (config.commSettings == null)
+//                    throw new SensorHubException("No communication settings specified");
+//
+//                var moduleReg = getParentHub().getModuleRegistry();
+//
+//                commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
+//
+//                commProvider.start();
+//
+//            } catch (Exception e) {
+//
+//                commProvider = null;
+//
+//                throw e;
+//            }
+//        }
+//
+//        // connect to data stream
+//        try {
+//
+//            msgIn = new BufferedInputStream(commProvider.getInputStream());
+//
+//            zWaveMessageHandler = new ZWaveMessageHandler(message, motionOutput, relativeHumidityOutput,
+//                    temperatureOutput, luminanceOutput, ultravioletOutput, tamperAlarmOutput,
+//                    batteryOutput, locationOutput);
+//
+////            csvMsgRead.readMessages(msgIn, gammaOutput, neutronOutput, occupancyOutput);
+//
+//        } catch (IOException e) {
+//
+//            throw new SensorException("Error while initializing communications ", e);
+//        }
     }
+
 
 
     @Override

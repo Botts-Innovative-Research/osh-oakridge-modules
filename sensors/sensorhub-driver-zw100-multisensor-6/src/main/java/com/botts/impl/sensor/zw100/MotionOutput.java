@@ -29,7 +29,7 @@ import org.vast.swe.helper.GeoPosHelper;
  * @author your_name
  * @since date
  */
-public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> implements Runnable {
+public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
 
     private static final String SENSOR_OUTPUT_NAME = "Motion Sensor";
     private static final Logger logger = LoggerFactory.getLogger(MotionOutput.class);
@@ -81,7 +81,7 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> implements R
                                 .label(SENSOR_OUTPUT_NAME)
                                 .definition("http://sensorml.com/ont/swe/property/Motion")
                                 .description("Detection of Movement")
-                                .addAllowedValues("ON", "OFF"))
+                                .addAllowedValues("Triggered", "Un-triggered"))
 
                 .build();
 
@@ -93,29 +93,28 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> implements R
     /**
      * Begins processing data for output
      */
-    public void doStart() {
-
-        // Instantiate a new worker thread
-        worker = new Thread(this, this.name);
-
-
-        logger.info("Starting worker thread: {}", worker.getName());
-
-        // Start the worker thread
-        worker.start();
-    }
+//    public void doStart() {
+//
+//        // Instantiate a new worker thread
+//        worker = new Thread(this, this.name);
+//
+//        logger.info("Starting worker thread: {}", worker.getName());
+//
+//        // Start the worker thread
+//        worker.start();
+//    }
 
     /**
      * Terminates processing data for output
      */
-    public void doStop() {
-
-        synchronized (processingLock) {
-
-            stopProcessing = true;
-        }
-
-    }
+//    public void doStop() {
+//
+//        synchronized (processingLock) {
+//
+//            stopProcessing = true;
+//        }
+//
+//    }
 
     /**
      * Check to validate data processing is still running
@@ -155,72 +154,71 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> implements R
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    @Override
-    public void run() {
+    public void onNewMessage(String message) {
 
-        boolean processSets = true;
+            boolean processSets = true;
 
-        long lastSetTimeMillis = System.currentTimeMillis();
+            long lastSetTimeMillis = System.currentTimeMillis();
 
-        try {
+            try {
 
-            while (processSets) {
+                while (processSets) {
 
-                DataBlock dataBlock;
-                if (latestRecord == null) {
+                    DataBlock dataBlock;
+                    if (latestRecord == null) {
 
-                    dataBlock = motionData.createDataBlock();
+                        dataBlock = motionData.createDataBlock();
 
-                } else {
+                    } else {
 
-                    dataBlock = latestRecord.renew();
+                        dataBlock = latestRecord.renew();
+                    }
+
+                    synchronized (histogramLock) {
+
+                        int setIndex = setCount % MAX_NUM_TIMING_SAMPLES;
+
+                        // Get a sampling time for latest set based on previous set sampling time
+                        timingHistogram[setIndex] = System.currentTimeMillis() - lastSetTimeMillis;
+
+                        // Set latest sampling time to now
+                        lastSetTimeMillis = timingHistogram[setIndex];
+                    }
+
+                    ++setCount;
+
+
+                    double time = System.currentTimeMillis() / 1000.;
+
+//                    dataBlock.setStringValue(0, sensorName);
+                    dataBlock.setDoubleValue(0, time);
+                    dataBlock.setStringValue(1, message);
+
+                    latestRecord = dataBlock;
+
+                    latestRecordTime = System.currentTimeMillis();
+
+                    eventHandler.publish(new DataEvent(latestRecordTime, MotionOutput.this, dataBlock));
+
+                    synchronized (processingLock) {
+
+                        processSets = !stopProcessing;
+                    }
                 }
 
-                synchronized (histogramLock) {
+            } catch (Exception e) {
 
-                    int setIndex = setCount % MAX_NUM_TIMING_SAMPLES;
+                logger.error("Error in worker thread: {}", Thread.currentThread().getName(), e);
 
-                    // Get a sampling time for latest set based on previous set sampling time
-                    timingHistogram[setIndex] = System.currentTimeMillis() - lastSetTimeMillis;
+            } finally {
 
-                    // Set latest sampling time to now
-                    lastSetTimeMillis = timingHistogram[setIndex];
-                }
+                // Reset the flag so that when driver is restarted loop thread continues
+                // until doStop called on the output again
+                stopProcessing = false;
 
-                ++setCount;
-
-                double time = System.currentTimeMillis() / 1000.;
-
-                String motion = "";
-
-
-                dataBlock.setStringValue(0, motionData.getName());
-                dataBlock.setDoubleValue(1, time);
-                dataBlock.setStringValue(2, motion);
-
-                latestRecord = dataBlock;
-
-                latestRecordTime = System.currentTimeMillis();
-
-                eventHandler.publish(new DataEvent(latestRecordTime, MotionOutput.this, dataBlock));
-
-                synchronized (processingLock) {
-
-                    processSets = !stopProcessing;
-                }
+                logger.debug("Terminating worker thread: {}", this.name);
             }
-
-        } catch (Exception e) {
-
-            logger.error("Error in worker thread: {}", Thread.currentThread().getName(), e);
-
-        } finally {
-
-            // Reset the flag so that when driver is restarted loop thread continues
-            // until doStop called on the output again
-            stopProcessing = false;
-
-            logger.debug("Terminating worker thread: {}", this.name);
         }
     }
-}
+
+

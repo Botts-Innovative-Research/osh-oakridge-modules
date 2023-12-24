@@ -29,7 +29,7 @@ import org.vast.swe.helper.GeoPosHelper;
  * @author cardy
  * @since 11/16/23
  */
-public class LuminanceOutput extends AbstractSensorOutput<ZW100Sensor> implements Runnable {
+public class LuminanceOutput extends AbstractSensorOutput<ZW100Sensor>{
 
     private static final String SENSOR_OUTPUT_NAME = "Luminance";
 
@@ -92,17 +92,17 @@ public class LuminanceOutput extends AbstractSensorOutput<ZW100Sensor> implement
     /**
      * Begins processing data for output
      */
-    public void doStart() {
-
-        // Instantiate a new worker thread
-        worker = new Thread(this, this.name);
-
-
-        logger.info("Starting worker thread: {}", worker.getName());
-
-        // Start the worker thread
-        worker.start();
-    }
+//    public void doStart() {
+//
+//        // Instantiate a new worker thread
+//        worker = new Thread(this, this.name);
+//
+//
+//        logger.info("Starting worker thread: {}", worker.getName());
+//
+//        // Start the worker thread
+//        worker.start();
+//    }
 
     /**
      * Terminates processing data for output
@@ -154,8 +154,8 @@ public class LuminanceOutput extends AbstractSensorOutput<ZW100Sensor> implement
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    @Override
-    public void run() {
+//    @Override
+    public void onNewMessage(String message){
 
         boolean processSets = true;
 
@@ -192,9 +192,9 @@ public class LuminanceOutput extends AbstractSensorOutput<ZW100Sensor> implement
                 double luminance = Double.NaN;
 
 
-                dataBlock.setStringValue(0, luminanceData.getName());
-                dataBlock.setDoubleValue(1, time);
-                dataBlock.setDoubleValue(2, luminance);
+//                dataBlock.setStringValue(0, luminanceData.getName());
+                dataBlock.setDoubleValue(0, time);
+                dataBlock.setStringValue(1, message);
 
                 latestRecord = dataBlock;
 
