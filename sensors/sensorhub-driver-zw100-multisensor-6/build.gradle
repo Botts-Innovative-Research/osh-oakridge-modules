@@ -18,8 +18,8 @@ dependencies {
 //    implementation files('libs/logback-core-1.2.11.jar')
 //    implementation files('libs/slf4j-api-1.7.32.jar')
 
-    implementation project(':sensorhub-comm-rxtx')
-    embeddedImpl 'gnu.io:rxtx:2.2-pre1'
+        implementation project(':sensorhub-comm-rxtx')
+        embeddedImpl 'gnu.io:rxtx:2.2-pre1'
 
 
 

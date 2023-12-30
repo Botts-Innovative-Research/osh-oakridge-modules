@@ -90,21 +90,6 @@ public class LuminanceOutput extends AbstractSensorOutput<ZW100Sensor>{
     }
 
     /**
-     * Begins processing data for output
-     */
-//    public void doStart() {
-//
-//        // Instantiate a new worker thread
-//        worker = new Thread(this, this.name);
-//
-//
-//        logger.info("Starting worker thread: {}", worker.getName());
-//
-//        // Start the worker thread
-//        worker.start();
-//    }
-
-    /**
      * Terminates processing data for output
      */
     public void doStop() {
@@ -154,8 +139,7 @@ public class LuminanceOutput extends AbstractSensorOutput<ZW100Sensor>{
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-//    @Override
-    public void onNewMessage(String message){
+    public void onNewMessage(String sensorValue){
 
         boolean processSets = true;
 
@@ -163,7 +147,7 @@ public class LuminanceOutput extends AbstractSensorOutput<ZW100Sensor>{
 
         try {
 
-            while (processSets) {
+//            while (processSets) {
 
                 DataBlock dataBlock;
                 if (latestRecord == null) {
@@ -189,12 +173,10 @@ public class LuminanceOutput extends AbstractSensorOutput<ZW100Sensor>{
                 ++setCount;
 
                 double time = System.currentTimeMillis() / 1000.;
-                double luminance = Double.NaN;
 
 
-//                dataBlock.setStringValue(0, luminanceData.getName());
                 dataBlock.setDoubleValue(0, time);
-                dataBlock.setStringValue(1, message);
+                dataBlock.setStringValue(1, sensorValue);
 
                 latestRecord = dataBlock;
 
@@ -202,11 +184,11 @@ public class LuminanceOutput extends AbstractSensorOutput<ZW100Sensor>{
 
                 eventHandler.publish(new DataEvent(latestRecordTime, LuminanceOutput.this, dataBlock));
 
-                synchronized (processingLock) {
-
-                    processSets = !stopProcessing;
-                }
-            }
+//                synchronized (processingLock) {
+//
+//                    processSets = !stopProcessing;
+//                }
+//            }
 
         } catch (Exception e) {
 

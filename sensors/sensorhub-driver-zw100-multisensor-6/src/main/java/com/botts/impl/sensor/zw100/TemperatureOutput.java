@@ -23,6 +23,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.swe.helper.GeoPosHelper;
 
+import java.util.Objects;
+
 /**
  * Output specification and provider for {@link ZW100Sensor}.
  *
@@ -77,32 +79,18 @@ public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> {
                 .definition("http://sensorml.com/ont/swe/property/Temperature")
                 .addField("Sampling Time", tempHelper.createTime().asSamplingTimeIsoUTC())
                 .addField(SENSOR_OUTPUT_NAME,
-                        tempHelper.createText()
+                        tempHelper.createQuantity()
                                 .name("temperature")
                                 .label(SENSOR_OUTPUT_NAME)
                                 .definition("http://sensorml.com/ont/swe/property/Temperature")
-                                .description("Measure of Temperature in Degrees Fahrenheit"))
-//                                .uom("°F"))
+                                .description("Measure of Temperature in Degrees Fahrenheit")
+                                .uom("°F"))
                 .build();
 
         dataEncoding = tempHelper.newTextEncoding(",", "\n");
 
         logger.debug("Initializing Output Complete");
     }
-
-    /**
-     * Begins processing data for output
-     */
-//    public void doStart() {
-//
-//        // Instantiate a new worker thread
-//        worker = new Thread(this, this.name);
-//
-//        logger.info("Starting worker thread: {}", worker.getName());
-//
-//        // Start the worker thread
-//        worker.start();
-//    }
 
     /**
      * Terminates processing data for output
@@ -155,7 +143,8 @@ public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> {
     }
 
 //    @Override
-    public void onNewMessage(String message) {
+    public void onNewMessage(String sensorValue) {
+
 
         boolean processSets = true;
 
@@ -163,7 +152,7 @@ public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> {
 
         try {
 
-            while (processSets) {
+//            while (processSets) {
 
                 DataBlock dataBlock;
                 if (latestRecord == null) {
@@ -190,12 +179,9 @@ public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> {
 
                 double time = System.currentTimeMillis() / 1000.;
 
-//                double temperature = Double.NaN;
 
-
-//                dataBlock.setStringValue(0, tempData.getName());
                 dataBlock.setDoubleValue(0, time);
-                dataBlock.setStringValue(1, message);
+                dataBlock.setStringValue(1, sensorValue);
 
                 latestRecord = dataBlock;
 
@@ -203,11 +189,11 @@ public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> {
 
                 eventHandler.publish(new DataEvent(latestRecordTime, TemperatureOutput.this, dataBlock));
 
-                synchronized (processingLock) {
-
-                    processSets = !stopProcessing;
-                }
-            }
+//                synchronized (processingLock) {
+//
+//                    processSets = !stopProcessing;
+//                }
+//            }
 
         } catch (Exception e) {
 

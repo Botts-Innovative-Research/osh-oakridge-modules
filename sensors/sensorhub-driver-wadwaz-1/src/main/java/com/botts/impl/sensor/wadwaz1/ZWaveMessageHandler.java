@@ -1,7 +1,13 @@
 package com.botts.impl.sensor.zw100;
 
-import org.openhab.binding.zwave.internal.protocol.*;
-import org.openhab.binding.zwave.internal.protocol.commandclass.*;
+import org.openhab.binding.zwave.internal.protocol.SerialMessage;
+import org.openhab.binding.zwave.internal.protocol.ZWaveController;
+import org.openhab.binding.zwave.internal.protocol.ZWaveEventListener;
+import org.openhab.binding.zwave.internal.protocol.ZWaveNode;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveMultiLevelSensorCommandClass;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveWakeUpCommandClass;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
@@ -10,30 +16,22 @@ import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitS
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStageAdvancer;
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeSerializer;
 import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveCommandClassTransactionPayload;
-import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveCommandClassTransactionPayloadBuilder;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.impl.comm.UARTConfig;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.lang.reflect.Array;
 import java.sql.SQLOutput;
 import java.util.*;
-import java.util.function.Consumer;
 
 
 public class ZWaveMessageHandler {
 
     MotionOutput motionOutput;
-    RelativeHumidityOutput relativeHumidityOutput;
-    TemperatureOutput temperatureOutput;
-    LuminanceOutput luminanceOutput;
-    UltravioletOutput ultravioletOutput;
     TamperAlarmOutput tamperAlarmOutput;
     BatteryOutput batteryOutput;
     LocationOutput locationOutput;
 
-    ZWaveMultiLevelSensorCommandClass.SensorType multilevelSensorType;
+
     String alarmType;
     String alarmValue;
     String multiSensorType;
@@ -44,16 +42,10 @@ public class ZWaveMessageHandler {
     Timer motionTimer = new Timer(); // creating timer
 
 
-    public ZWaveMessageHandler(MotionOutput motionOutput, RelativeHumidityOutput relativeHumidityOutput,
-                               TemperatureOutput temperatureOutput, LuminanceOutput luminanceOutput,
-                               UltravioletOutput ultravioletOutput, TamperAlarmOutput tamperAlarmOutput,
+    public ZWaveMessageHandler(MotionOutput motionOutput, TamperAlarmOutput tamperAlarmOutput,
                                BatteryOutput batteryOutput, LocationOutput locationOutput) {
 
         this.motionOutput = motionOutput;
-        this.relativeHumidityOutput = relativeHumidityOutput;
-        this.temperatureOutput = temperatureOutput;
-        this.luminanceOutput = luminanceOutput;
-        this.ultravioletOutput = ultravioletOutput;
         this.tamperAlarmOutput = tamperAlarmOutput;
         this.batteryOutput = batteryOutput;
         this.locationOutput = locationOutput;
@@ -106,9 +98,6 @@ public class ZWaveMessageHandler {
                     System.out.println("Node " + ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getNodeId() + " SENSOR TYPE-> " +
                             ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getSensorType().getLabel() + ": " +
                             ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getValue());
-
-                multilevelSensorType =
-                    ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getSensorType();
 
 
                     multiSensorType =
@@ -164,62 +153,13 @@ public class ZWaveMessageHandler {
                     System.out.println(zController.getNodes());
 
 
-                    if (((ZWaveInitializationStateEvent) event).getStage() == ZWaveNodeInitStage.DISCOVERY_COMPLETE && (zController.getNode(9) != null)) {
+                    if (((ZWaveInitializationStateEvent) event).getStage() == ZWaveNodeInitStage.DISCOVERY_COMPLETE) {
+                        if (zController.getNode(9) != null) {
+                            System.out.println("NODE 9 " + zController.getNode(9).isAwake() + "________________");
+                            System.out.println("NODE 1 " + zController.getNode(1).isAwake() + "________________");
 
-                        System.out.println("NODE 9 " + zController.getNode(9).isAwake() + "________________");
-                        System.out.println("NODE 1 " + zController.getNode(1).isAwake() + "________________");
-                        System.out.println("NODE 13 " + zController.getNode(13).isAwake() + "________________");
-                        System.out.println("NODE 3 " + zController.getNode(3).isAwake() + "________________");
-                        System.out.println("NODE 4 " + zController.getNode(4).isAwake() + "________________");
-                        System.out.println("NODE 6 " + zController.getNode(6).isAwake() + "________________");
-                        System.out.println("NODE 8 " + zController.getNode(8).isAwake() + "________________");
-
-
-//                        zController.getNode(13).setAwake(true);
-//                        zController.getNode(4).setAwake(true);
-//                        zController.getNode(6).setAwake(true);
-//                        zController.getNode(8).setAwake(true);
-
-//                        zController.reinitialiseNode(13);
-
-//                        System.out.println("NODE 1 COMMAND CLASSES " + zController.getNode(1).getCommandClasses(0));
-//                        System.out.println("NODE 3 COMMAND CLASSES " + zController.getNode(3).getCommandClasses(0));
-//                        System.out.println("NODE 4 COMMAND CLASSES " + zController.getNode(4).getCommandClasses(0));
-//                        System.out.println("NODE 6 COMMAND CLASSES " + zController.getNode(6).getCommandClasses(0));
-//                        System.out.println("NODE 8 COMMAND CLASSES " + zController.getNode(8).getCommandClasses(0));
-//                        System.out.println("NODE 9 COMMAND CLASSES " + zController.getNode(9).getCommandClasses(0));
-//                        System.out.println("NODE 13 COMMAND CLASSES " + zController.getNode(13).getCommandClasses(0));
-
-
-//                            ZWaveCommandClassValueEvent alarmCommandClass = (ZWaveCommandClassValueEvent)zController.getNode()
                             ZWaveMultiLevelSensorCommandClass multiLevelSensorCommandClass =
                                     (ZWaveMultiLevelSensorCommandClass) zController.getNode(9).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_SENSOR_MULTILEVEL);
-
-                            Collection<ZWaveCommandClassTransactionPayload> values =
-                            multiLevelSensorCommandClass.getDynamicValues(true);
-
-                        ZWaveCommandClassTransactionPayload temp =
-                                multiLevelSensorCommandClass.getMessage(multilevelSensorType);
-
-
-
-//                            ZWaveCommandClassTransactionPayload lum =
-//                                    multiLevelSensorCommandClass.getMessage(ZWaveMultiLevelSensorCommandClass.SensorType.valueOf(ZWaveMultiLevelSensorCommandClass.SensorType.LUMINANCE.getLabel()));
-//                            ZWaveCommandClassTransactionPayload relHum =
-//                                multiLevelSensorCommandClass.getMessage(ZWaveMultiLevelSensorCommandClass.SensorType.RELATIVE_HUMIDITY);
-//                            ZWaveCommandClassTransactionPayload uv =
-//                                multiLevelSensorCommandClass.getMessage(ZWaveMultiLevelSensorCommandClass.SensorType.getSensorType(ZWaveMultiLevelSensorCommandClass.SensorType.getSensorType(27).getKey()));
-
-
-//                        ZWaveCommandClassTransactionPayload eventMulti =
-//                        multiLevelSensorCommandClass.getMessage(ZWaveMultiLevelSensorCommandClass.SensorType.valueOf(((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getSensorType().getLabel()));
-//                            zController.sendData(eventMulti);
-
-                            zController.sendData(temp);
-//                            zController.sendData(lum);
-//                            zController.sendData(relHum);
-//                            zController.sendData((uv));
-
 
                             ZWaveWakeUpCommandClass wakeupCommandClass =
                                     (ZWaveWakeUpCommandClass) zController.getNode(9).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
@@ -228,31 +168,26 @@ public class ZWaveMessageHandler {
                                 ZWaveCommandClassTransactionPayload cmd =
                                         wakeupCommandClass.setInterval(9, 1800);
 
-//                            multiLevelSensorCommandClass.getValueMessage();
-//                            multiLevelSensorCommandClass.getReportMessage("Temperature", )
+                                ZWaveCommandClassTransactionPayload multi =
+                                        multiLevelSensorCommandClass.getValueMessage();
+                                ZWaveCommandClassTransactionPayload lum =
+                                        multiLevelSensorCommandClass.getMessage(ZWaveMultiLevelSensorCommandClass.SensorType.getSensorType(3));
+                                multiLevelSensorCommandClass.getSupportedSensorMessage();
 
-//                                System.out.println(multiLevelSensorCommandClass.getValueMessage() + " THIS IS THE " +
-//                                        "GET VALUE MESSAGE");
+//                                Collection<ZWaveCommandClassTransactionPayload> mo =
+//                                        multiLevelSensorCommandClass.getDynamicValues(true);
 
-//                                ZWaveCommandClassTransactionPayloadBuilder zWaveCommandClassTransactionPayloadBuilder = new ZWaveCommandClassTransactionPayloadBuilder(zController.getNode(9).getNodeId(), ZWaveCommandClass.CommandClass.COMMAND_CLASS_SENSOR_MULTILEVEL, 5);
-//
-//                                zWaveCommandClassTransactionPayloadBuilder.withPayload().withPriority(ZWaveTransaction.TransactionPriority.Poll).build();
-//
-//                                zController.sendData(zWaveCommandClassTransactionPayloadBuilder.withPayload().withPriority(ZWaveTransaction.TransactionPriority.Poll).build());
-//                                zController.sendTransaction(zWaveCommandClassTransactionPayloadBuilder.withPayload().withPriority(ZWaveTransaction.TransactionPriority.Poll).build());
-//
-//                                ZWaveCommandClassTransactionPayload multi =
-//                                        multiLevelSensorCommandClass.getValueMessage();
-//
+                                zController.getNode(1).setAwake(true);
+                                zController.sendData(lum);
+                                zController.sendData(multi);
+                                zController.sendData(cmd);
+//                                zController.updateControllerProperty();
+//                                zController.sendData((ZWaveCommandClassTransactionPayload) mo);
 
-//                                zController.getNode(13).setAwake(true);
-//                                zController.sendData(multi);
-//                                zController.sendData(cmd);
+                                zController.getNode(9).setAwake(false);
 
                             }
-
-
-
+                        }
                     }
 
 

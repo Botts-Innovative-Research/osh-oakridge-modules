@@ -83,7 +83,6 @@ public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor>{
                                 .label(strBatteryLevel)
                                 .definition("http://sensorml.com/ont/swe/property/BatteryLevel")
                                 .description("Battery Level of Sensor")
-                                .addAllowedInterval(0, 100)
                                 .uomCode("%"))
                 .build();
 
@@ -92,20 +91,6 @@ public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor>{
 
         logger.debug("Initializing Output Complete");
     }
-
-    /**
-     * Begins processing data for output
-     */
-//    public void doStart() {
-//
-//        // Instantiate a new worker thread
-//        worker = new Thread(this, this.name);
-//
-//        logger.info("Starting worker thread: {}", worker.getName());
-//
-//        // Start the worker thread
-//        worker.start();
-//    }
 
     /**
      * Terminates processing data for output
@@ -158,7 +143,7 @@ public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor>{
     }
 
 //    @Override
-    public void onNewMessage(String message) {
+    public void onNewMessage(String batteryLevel) {
 
         boolean processSets = true;
 
@@ -166,7 +151,7 @@ public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor>{
 
         try {
 
-            while (processSets) {
+//            while (processSets) {
 
                 DataBlock dataBlock;
                 if (latestRecord == null) {
@@ -193,9 +178,8 @@ public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor>{
 
                 double time = System.currentTimeMillis() / 1000.;
 
-//                dataBlock.setStringValue(0, batteryData.getName());
                 dataBlock.setDoubleValue(0, time);
-                dataBlock.setStringValue(1, message);
+                dataBlock.setStringValue(1, batteryLevel);
 
                 latestRecord = dataBlock;
 
@@ -203,11 +187,11 @@ public class BatteryOutput extends AbstractSensorOutput<ZW100Sensor>{
 
                 eventHandler.publish(new DataEvent(latestRecordTime, BatteryOutput.this, dataBlock));
 
-                synchronized (processingLock) {
-
-                    processSets = !stopProcessing;
-                }
-            }
+//                synchronized (processingLock) {
+//
+//                    processSets = !stopProcessing;
+//                }
+//            }
 
         } catch (Exception e) {
 

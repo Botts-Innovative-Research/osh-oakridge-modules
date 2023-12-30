@@ -140,7 +140,7 @@ public class LocationOutput extends AbstractSensorOutput<ZW100Sensor> {
 
         try {
 
-            while (processSets) {
+//            while (processSets) {
 
                 DataBlock dataBlock;
                 if (latestRecord == null) {
@@ -168,11 +168,10 @@ public class LocationOutput extends AbstractSensorOutput<ZW100Sensor> {
                 double time = System.currentTimeMillis() / 1000.;
 
 
-                dataBlock.setStringValue(0, locationData.getName());
-                dataBlock.setDoubleValue(1, time);
-                dataBlock.setDoubleValue(3, gpsLocation.lat);
-                dataBlock.setDoubleValue(4, gpsLocation.lon);
-                dataBlock.setDoubleValue(5, gpsLocation.alt);
+                dataBlock.setDoubleValue(0, time);
+                dataBlock.setDoubleValue(1, gpsLocation.lat);
+                dataBlock.setDoubleValue(2, gpsLocation.lon);
+                dataBlock.setDoubleValue(3, gpsLocation.alt);
 
                 latestRecord = dataBlock;
 
@@ -180,11 +179,11 @@ public class LocationOutput extends AbstractSensorOutput<ZW100Sensor> {
 
                 eventHandler.publish(new DataEvent(latestRecordTime, LocationOutput.this, dataBlock));
 
-                synchronized (processingLock) {
-
-                    processSets = !stopProcessing;
-                }
-            }
+//                synchronized (processingLock) {
+//
+//                    processSets = !stopProcessing;
+//                }
+//            }
 
         } catch (Exception e) {
 

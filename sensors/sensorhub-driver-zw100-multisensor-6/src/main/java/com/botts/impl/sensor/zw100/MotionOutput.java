@@ -23,6 +23,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.swe.helper.GeoPosHelper;
 
+import java.util.Objects;
+import java.util.Timer;
+import java.util.TimerTask;
+
 /**
  * Output specification and provider for {@link ZW100Sensor}.
  *
@@ -45,6 +49,7 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
     private final long[] timingHistogram = new long[MAX_NUM_TIMING_SAMPLES];
     private final Object histogramLock = new Object();
 
+    boolean isMotion = false;
     private Thread worker;
 
     /**
@@ -76,12 +81,11 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
                 .definition("http://sensorml.com/ont/swe/property/Motion")
                 .addField("Sampling Time", motionHelper.createTime().asSamplingTimeIsoUTC())
                 .addField(SENSOR_OUTPUT_NAME,
-                        motionHelper.createCategory()
+                        motionHelper.createBoolean()
                                 .name("motion-sensor")
                                 .label(SENSOR_OUTPUT_NAME)
                                 .definition("http://sensorml.com/ont/swe/property/Motion")
-                                .description("Detection of Movement")
-                                .addAllowedValues("Triggered", "Un-triggered"))
+                                .description("Detection of Movement"))
 
                 .build();
 
@@ -154,7 +158,37 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    public void onNewMessage(String message) {
+
+//    motionEvent(){
+//        it checks Burglar and 255
+//        it starts a timer task or atomic boolean or something
+//        calls onMessage with isMotion = true
+//        at end of timer calls onMessage isMotion = false
+
+
+Timer motionTimer = new Timer(); // creating timer
+
+
+
+//    public void motionEventB(String alarmType, String alarmValue) throws InterruptedException {
+//        isMotion = false;
+//
+//        if (Objects.equals(alarmType, "BURGLAR") && Objects.equals(alarmValue, "255")) {
+//
+//            onNewMessage(alarmType, alarmValue, true);
+//
+//            onNewMessage(alarmType, alarmValue, false);
+//        }
+//    }
+
+    public void onNewMessage(String alarmType, String alarmValue, Boolean isMotion) {
+
+        if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "255")) {
+            isMotion = true;
+        } else if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && (Objects.equals(alarmValue, "0"))){
+            isMotion = false;
+        }
+
 
             boolean processSets = true;
 
@@ -162,7 +196,7 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
 
             try {
 
-                while (processSets) {
+//                while (processSets) {
 
                     DataBlock dataBlock;
                     if (latestRecord == null) {
@@ -190,9 +224,8 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
 
                     double time = System.currentTimeMillis() / 1000.;
 
-//                    dataBlock.setStringValue(0, sensorName);
                     dataBlock.setDoubleValue(0, time);
-                    dataBlock.setStringValue(1, message);
+                    dataBlock.setBooleanValue(1, isMotion);
 
                     latestRecord = dataBlock;
 
@@ -200,11 +233,11 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
 
                     eventHandler.publish(new DataEvent(latestRecordTime, MotionOutput.this, dataBlock));
 
-                    synchronized (processingLock) {
-
-                        processSets = !stopProcessing;
-                    }
-                }
+//                    synchronized (processingLock) {
+//
+//                        processSets = !stopProcessing;
+//                    }
+//                }
 
             } catch (Exception e) {
 
@@ -219,6 +252,7 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
                 logger.debug("Terminating worker thread: {}", this.name);
             }
         }
+
     }
 
 

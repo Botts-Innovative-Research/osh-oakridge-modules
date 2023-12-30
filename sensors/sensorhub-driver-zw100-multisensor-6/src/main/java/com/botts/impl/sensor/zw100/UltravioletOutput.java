@@ -29,7 +29,7 @@ import org.vast.swe.helper.GeoPosHelper;
  * @author your_name
  * @since date
  */
-public class UltravioletOutput extends AbstractSensorOutput<ZW100Sensor> implements Runnable {
+public class UltravioletOutput extends AbstractSensorOutput<ZW100Sensor>{
 
     private static final String SENSOR_OUTPUT_NAME = "Ultraviolet";
     private static final Logger logger = LoggerFactory.getLogger(UltravioletOutput.class);
@@ -90,19 +90,6 @@ public class UltravioletOutput extends AbstractSensorOutput<ZW100Sensor> impleme
         logger.debug("Initializing Output Complete");
     }
 
-    /**
-     * Begins processing data for output
-     */
-    public void doStart() {
-
-        // Instantiate a new worker thread
-        worker = new Thread(this, this.name);
-
-        logger.info("Starting worker thread: {}", worker.getName());
-
-        // Start the worker thread
-        worker.start();
-    }
 
     /**
      * Terminates processing data for output
@@ -154,8 +141,7 @@ public class UltravioletOutput extends AbstractSensorOutput<ZW100Sensor> impleme
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    @Override
-    public void run() {
+    public void onNewMessage(String sensorValue) {
 
         boolean processSets = true;
 
@@ -163,7 +149,7 @@ public class UltravioletOutput extends AbstractSensorOutput<ZW100Sensor> impleme
 
         try {
 
-            while (processSets) {
+//            while (processSets) {
 
                 DataBlock dataBlock;
                 if (latestRecord == null) {
@@ -190,11 +176,8 @@ public class UltravioletOutput extends AbstractSensorOutput<ZW100Sensor> impleme
 
                 double time = System.currentTimeMillis() / 1000.;
 
-                double uvi = Double.NaN;
-
-                dataBlock.setStringValue(0, uVData.getName());
-                dataBlock.setDoubleValue(1, time);
-                dataBlock.setDoubleValue(2, uvi);
+                dataBlock.setDoubleValue(0, time);
+                dataBlock.setStringValue(1, sensorValue);
 
                 latestRecord = dataBlock;
 
@@ -202,11 +185,11 @@ public class UltravioletOutput extends AbstractSensorOutput<ZW100Sensor> impleme
 
                 eventHandler.publish(new DataEvent(latestRecordTime, UltravioletOutput.this, dataBlock));
 
-                synchronized (processingLock) {
-
-                    processSets = !stopProcessing;
-                }
-            }
+//                synchronized (processingLock) {
+//
+//                    processSets = !stopProcessing;
+//                }
+//            }
 
         } catch (Exception e) {
 

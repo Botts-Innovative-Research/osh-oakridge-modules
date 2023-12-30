@@ -23,13 +23,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.swe.helper.GeoPosHelper;
 
+import java.util.Objects;
+
 /**
  * Output specification and provider for {@link ZW100Sensor}.
  *
  * @author cardy
  * @since 11/14/23
  */
-public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor> implements Runnable {
+public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor>{
 
     private static final String SENSOR_OUTPUT_NAME = "ZW100 Tamper Alarm";
 
@@ -83,28 +85,14 @@ public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor> impleme
                                 .name("tamper-alarm-status")
                                 .label(strTamperAlarmStatus)
                                 .definition("http://sensorml.com/ont/swe/property/Alarm")
-                                .description("Status of Tamper Alarm")
-                                .addAllowedValues("ON", "OFF"))
+                                .description("Status of Tamper Alarm"))
+//                                .addAllowedValues("ON", "OFF"))
 
                 .build();
 
         dataEncoding = tamperAlarmHelper.newTextEncoding(",", "\n");
 
         logger.debug("Initializing Output Complete");
-    }
-
-    /**
-     * Begins processing data for output
-     */
-    public void doStart() {
-
-        // Instantiate a new worker thread
-        worker = new Thread(this, this.name);
-
-        logger.info("Starting worker thread: {}", worker.getName());
-
-        // Start the worker thread
-        worker.start();
     }
 
     /**
@@ -157,16 +145,20 @@ public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor> impleme
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    @Override
-    public void run() {
+    public void onNewMessage(String alarmType, String alarmValue, Boolean isVibration) {
 
+        if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "255")) {
+            isVibration = true;
+        } else if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && (Objects.equals(alarmValue, "0"))){
+            isVibration = false;
+        }
         boolean processSets = true;
 
         long lastSetTimeMillis = System.currentTimeMillis();
 
         try {
 
-            while (processSets) {
+//            while (processSets) {
 
                 DataBlock dataBlock;
                 if (latestRecord == null) {
@@ -196,9 +188,8 @@ public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor> impleme
                 String status = "";
 
 
-                dataBlock.setStringValue(0, tamperAlarmData.getName());
-                dataBlock.setDoubleValue(1, time);
-                dataBlock.setStringValue(2, status);
+                dataBlock.setDoubleValue(0, time);
+                dataBlock.setBooleanValue(1, isVibration);
 
                 latestRecord = dataBlock;
 
@@ -206,11 +197,11 @@ public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor> impleme
 
                 eventHandler.publish(new DataEvent(latestRecordTime, TamperAlarmOutput.this, dataBlock));
 
-                synchronized (processingLock) {
-
-                    processSets = !stopProcessing;
-                }
-            }
+//                synchronized (processingLock) {
+//
+//                    processSets = !stopProcessing;
+//                }
+//            }
 
         } catch (Exception e) {
 

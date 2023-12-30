@@ -29,7 +29,7 @@ import org.vast.swe.helper.GeoPosHelper;
  * @author cardy
  * @since 11/16/23
  */
-public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> implements Runnable {
+public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> {
 
     private static final String SENSOR_OUTPUT_NAME = "Relative Humidity";
 
@@ -89,24 +89,7 @@ public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> im
         logger.debug("Initializing Output Complete");
     }
 
-    /**
-     * Begins processing data for output
-     */
-    public void doStart() {
 
-        // Instantiate a new worker thread
-        worker = new Thread(this, this.name);
-
-
-        logger.info("Starting worker thread: {}", worker.getName());
-
-        // Start the worker thread
-        worker.start();
-    }
-
-    /**
-     * Terminates processing data for output
-     */
     public void doStop() {
 
         synchronized (processingLock) {
@@ -115,7 +98,6 @@ public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> im
         }
 
     }
-
     /**
      * Check to validate data processing is still running
      *
@@ -154,8 +136,7 @@ public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> im
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    @Override
-    public void run() {
+    public void onNewMessage(String sensorValue) {
 
         boolean processSets = true;
 
@@ -163,7 +144,7 @@ public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> im
 
         try {
 
-            while (processSets) {
+//            while (processSets) {
 
                 DataBlock dataBlock;
                 if (latestRecord == null) {
@@ -190,12 +171,9 @@ public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> im
 
                 double time = System.currentTimeMillis() / 1000.;
 
-//             double relHum = Double.NaN;
-               String message = "";
 
-                dataBlock.setStringValue(0, relHumData.getName());
-                dataBlock.setDoubleValue(1, time);
-                dataBlock.setStringValue(2, ZWaveMessageHandler.onMessage(message));
+                dataBlock.setDoubleValue(0, time);
+                dataBlock.setStringValue(1, sensorValue);
 
                 latestRecord = dataBlock;
 
@@ -203,11 +181,11 @@ public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> im
 
                 eventHandler.publish(new DataEvent(latestRecordTime, RelativeHumidityOutput.this, dataBlock));
 
-                synchronized (processingLock) {
-
-                    processSets = !stopProcessing;
-                }
-            }
+//                synchronized (processingLock) {
+//
+//                    processSets = !stopProcessing;
+//                }
+//            }
 
         } catch (Exception e) {
 

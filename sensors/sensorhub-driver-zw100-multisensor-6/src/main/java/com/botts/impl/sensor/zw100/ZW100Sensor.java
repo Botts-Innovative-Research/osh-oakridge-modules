@@ -67,13 +67,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> {
 
     LocationOutput locationOutput;
 
-    String message;
-    String tempMessage;
-    ZWaveMessageHandler zWaveMessageHandler;
-    InputStream msgIn;
-
-
-
     @Override
     protected void updateSensorDescription() {
 
@@ -136,7 +129,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> {
         addOutput(locationOutput, false);
         locationOutput.doInit();
 
-
     }
 
     @Override
@@ -144,60 +136,11 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> {
 
         locationOutput.setLocationOutput(config.getLocation());
 
-        ZWaveMessageHandler zWaveConnect = new ZWaveMessageHandler(message, motionOutput,
+        ZWaveMessageHandler zWaveConnect = new ZWaveMessageHandler(motionOutput,
                 relativeHumidityOutput, temperatureOutput, luminanceOutput, ultravioletOutput, tamperAlarmOutput, batteryOutput, locationOutput);
+
         zWaveConnect.ZWaveConnect("COM5", 115200);
-
-//        zWaveMessageHandler = new ZWaveMessageHandler(message, motionOutput, relativeHumidityOutput,
-//                temperatureOutput, luminanceOutput, ultravioletOutput, tamperAlarmOutput,
-//                batteryOutput, locationOutput);
-
-//        zWaveMessageHandler.motionOutput.onNewMessage(message);
-//        zWaveMessageHandler.temperatureOutput.onNewMessage(message);
-
-//        zWaveMessageHandler = new ZWaveMessageHandler(message, motionOutput, relativeHumidityOutput,
-//                temperatureOutput, luminanceOutput, ultravioletOutput, tamperAlarmOutput,
-//                batteryOutput, locationOutput);
-
-//        if (commProvider == null) {
-//
-//            // we need to recreate comm provider here because it can be changed by UI
-//            try {
-//
-//                if (config.commSettings == null)
-//                    throw new SensorHubException("No communication settings specified");
-//
-//                var moduleReg = getParentHub().getModuleRegistry();
-//
-//                commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
-//
-//                commProvider.start();
-//
-//            } catch (Exception e) {
-//
-//                commProvider = null;
-//
-//                throw e;
-//            }
-//        }
-//
-//        // connect to data stream
-//        try {
-//
-//            msgIn = new BufferedInputStream(commProvider.getInputStream());
-//
-//            zWaveMessageHandler = new ZWaveMessageHandler(message, motionOutput, relativeHumidityOutput,
-//                    temperatureOutput, luminanceOutput, ultravioletOutput, tamperAlarmOutput,
-//                    batteryOutput, locationOutput);
-//
-////            csvMsgRead.readMessages(msgIn, gammaOutput, neutronOutput, occupancyOutput);
-//
-//        } catch (IOException e) {
-//
-//            throw new SensorException("Error while initializing communications ", e);
-//        }
     }
-
 
 
     @Override

@@ -43,9 +43,6 @@ public class ZW100Config extends SensorConfig {
     @DisplayInfo(desc = "Serial number or unique identifier")
     public String serialNumber = "sensor001";
 
-    @DisplayInfo(desc = "Communication settings to connect to data stream")
-    public CommProviderConfig<?> commSettings;
-
     @DisplayInfo(desc="ZW100 Location")
     public PositionConfig positionConfig = new PositionConfig();
 
