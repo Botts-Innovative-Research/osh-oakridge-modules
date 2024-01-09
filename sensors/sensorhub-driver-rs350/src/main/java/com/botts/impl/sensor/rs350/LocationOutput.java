@@ -1,6 +1,7 @@
 package com.botts.impl.sensor.rs350;
 
 import com.botts.impl.sensor.rs350.messages.RS350Message;
+import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
@@ -20,18 +21,21 @@ public class LocationOutput extends OutputBase {
 
     @Override
     protected void init() {
+        dataStruct = createDataRecord();
+
+        dataEncoding = new TextEncodingImpl(",", "\n");
+    }
+
+    public DataRecord createDataRecord() {
         RADHelper radHelper = new RADHelper();
 
-        dataStruct = radHelper.createRecord()
+        return radHelper.createRecord()
                 .name(getName())
                 .label("Location")
                 .definition(RADHelper.getRadUri("location-output"))
                 .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
                 .addField("Sensor Location", radHelper.createLocationVectorLLA())
                 .build();
-
-        dataEncoding = new TextEncodingImpl(",", "\n");
-
     }
 
 //    protected void parseData(RS350Message msg) {
@@ -54,9 +58,7 @@ public class LocationOutput extends OutputBase {
 
     @Override
     public void onNewMessage(RS350Message message) {
-
         if (message.getRs350ForegroundMeasurement().getLat() != null) {
-
             createOrRenewDataBlock();
 
             latestRecordTime = System.currentTimeMillis() / 1000;
@@ -66,6 +68,7 @@ public class LocationOutput extends OutputBase {
             dataBlock.setDoubleValue(2, message.getRs350ForegroundMeasurement().getLon());
             dataBlock.setDoubleValue(3, message.getRs350ForegroundMeasurement().getAlt());
 
+            latestRecord = dataBlock;
             eventHandler.publish(new DataEvent(latestRecordTime, LocationOutput.this, dataBlock));
         }
     }

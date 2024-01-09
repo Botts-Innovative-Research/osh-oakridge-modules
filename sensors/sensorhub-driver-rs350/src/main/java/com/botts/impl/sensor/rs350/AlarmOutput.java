@@ -1,6 +1,7 @@
 package com.botts.impl.sensor.rs350;
 
 import com.botts.impl.sensor.rs350.messages.RS350Message;
+import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
@@ -20,9 +21,15 @@ public class AlarmOutput extends OutputBase {
 
     @Override
     protected void init() {
+        dataStruct = createDataRecord();
+
+        dataEncoding = new TextEncodingImpl(",", "\n");
+    }
+
+    public DataRecord createDataRecord() {
         RADHelper radHelper = new RADHelper();
 
-        dataStruct = radHelper.createRecord()
+        return radHelper.createRecord()
                 .name(getName())
                 .label("Alarm")
                 .definition(RADHelper.getRadUri("Alarm-output"))
@@ -47,8 +54,6 @@ public class AlarmOutput extends OutputBase {
                                 .label("Alarm Description")
                                 .definition(RADHelper.getRadUri("alarm-description")))
                 .build();
-
-        dataEncoding = new TextEncodingImpl(",", "\n");
     }
 
 //    public void parseData(RS350Message msg) {
@@ -86,6 +91,7 @@ public class AlarmOutput extends OutputBase {
             dataBlock.setStringValue(4, message.getRs350RadAlarm().getCategoryCode());
             dataBlock.setStringValue(5, message.getRs350RadAlarm().getDescription());
 
+            latestRecord = dataBlock;
             eventHandler.publish(new DataEvent(latestRecordTime, AlarmOutput.this, dataBlock));
         }
     }

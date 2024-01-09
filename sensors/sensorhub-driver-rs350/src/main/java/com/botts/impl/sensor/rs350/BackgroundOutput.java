@@ -1,11 +1,13 @@
 package com.botts.impl.sensor.rs350;
 
 import com.botts.impl.sensor.rs350.messages.RS350Message;
+import net.opengis.swe.v20.DataBlock;
+import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vast.data.DataBlockMixed;
+import org.vast.data.DataArrayImpl;
 import org.vast.data.TextEncodingImpl;
 
 public class BackgroundOutput extends OutputBase {
@@ -21,13 +23,17 @@ public class BackgroundOutput extends OutputBase {
 
     @Override
     protected void init() {
+        dataStruct = createDataRecord();
+
+        dataEncoding = new TextEncodingImpl(",", "\n");
+    }
+
+    public DataRecord createDataRecord() {
         RADHelper radHelper = new RADHelper();
         final String LIN_SPEC_ID = "lin-spectrum";
         final String CMP_SPEC_ID = "cmp-spectrum";
 
-        // OUTPUT
-
-        dataStruct = radHelper.createRecord()
+        return radHelper.createRecord()
                 .name(getName())
                 .label("Background Report")
                 .definition(RADHelper.getRadUri("background-report"))
@@ -44,9 +50,6 @@ public class BackgroundOutput extends OutputBase {
                 .addField("GammaGrossCount", radHelper.createGammaGrossCount())
                 .addField("Neutron Gross Count", radHelper.createNeutronGrossCount())
                 .build();
-
-        dataEncoding = new TextEncodingImpl(",", "\n");
-
     }
 
 //    public void parseData(RS350Message msg) {
@@ -71,22 +74,36 @@ public class BackgroundOutput extends OutputBase {
 
     @Override
     public void onNewMessage(RS350Message message) {
-
         if (message.getRs350BackgroundMeasurement() != null) {
-
-            createOrRenewDataBlock();
+            logger.info("Background Output");
+            dataStruct = createDataRecord();
+            DataBlock dataBlock = dataStruct.createDataBlock();
+            dataStruct.setData(dataBlock);
 
             latestRecordTime = System.currentTimeMillis() / 1000;
+            int index = 0;
 
-            dataBlock.setLongValue(0, message.getRs350BackgroundMeasurement().getStartDateTime() / 1000);
-            dataBlock.setDoubleValue(1, message.getRs350BackgroundMeasurement().getRealTimeDuration());
-            dataBlock.setIntValue(2, message.getRs350BackgroundMeasurement().getLinEnCalSpectrum().length);
-            ((DataBlockMixed) dataBlock).getUnderlyingObject()[3].setUnderlyingObject(message.getRs350BackgroundMeasurement().getLinEnCalSpectrum());
-            dataBlock.setIntValue(4, message.getRs350BackgroundMeasurement().getLinEnCalSpectrum().length);
-            ((DataBlockMixed) dataBlock).getUnderlyingObject()[5].setUnderlyingObject(message.getRs350BackgroundMeasurement().getLinEnCalSpectrum());
-            dataBlock.setDoubleValue(6, message.getRs350BackgroundMeasurement().getGammaGrossCount());
-            dataBlock.setDoubleValue(7, message.getRs350BackgroundMeasurement().getNeutronGrossCount());
+            dataBlock.setLongValue(index++, message.getRs350BackgroundMeasurement().getStartDateTime() / 1000);
+            dataBlock.setDoubleValue(index++, message.getRs350BackgroundMeasurement().getRealTimeDuration());
 
+            double[] linEnCalSpectrum = message.getRs350BackgroundMeasurement().getLinEnCalSpectrum();
+            dataBlock.setIntValue(index++, linEnCalSpectrum.length);
+            ((DataArrayImpl) dataStruct.getComponent("LinSpectrum")).updateSize();
+            for (int i = 0; i < linEnCalSpectrum.length; i++) {
+                dataBlock.setDoubleValue(index++, linEnCalSpectrum[i]);
+            }
+
+            double[] cmpEnCalSpectrum = message.getRs350BackgroundMeasurement().getCmpEnCalSpectrum();
+            dataBlock.setIntValue(index++, cmpEnCalSpectrum.length);
+            ((DataArrayImpl) dataStruct.getComponent("CmpSpectrum")).updateSize();
+            for (int i = 0; i < cmpEnCalSpectrum.length; i++) {
+                dataBlock.setDoubleValue(index++, cmpEnCalSpectrum[i]);
+            }
+
+            dataBlock.setDoubleValue(index++, message.getRs350BackgroundMeasurement().getGammaGrossCount());
+            dataBlock.setDoubleValue(index, message.getRs350BackgroundMeasurement().getNeutronGrossCount());
+
+            latestRecord = dataBlock;
             eventHandler.publish(new DataEvent(latestRecordTime, BackgroundOutput.this, dataBlock));
         }
     }

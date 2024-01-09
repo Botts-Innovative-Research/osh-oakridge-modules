@@ -1,6 +1,7 @@
 package com.botts.impl.sensor.rs350;
 
 import com.botts.impl.sensor.rs350.messages.RS350Message;
+import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
@@ -21,40 +22,41 @@ public class StatusOutput extends OutputBase {
 
     @Override
     protected void init() {
+        dataStruct = createDataRecord();
 
+        dataEncoding = new TextEncodingImpl(",", "\n");
+    }
+
+    public DataRecord createDataRecord() {
         RADHelper radHelper = new RADHelper();
 
-        // OUTPUT
-        dataStruct = radHelper.createRecord()
+        return radHelper.createRecord()
                 .name(getName())
                 .label("Status")
-                .definition(radHelper.getRadUri("device-status"))
+                .definition(RADHelper.getRadUri("device-status"))
                 .addField("Latest Record Time", radHelper.createPrecisionTimeStamp())
                 .addField("Battery Charge", radHelper.createBatteryCharge())
                 .addField("Scan Mode",
                         radHelper.createText()
                                 .name("ScanMode")
                                 .label("Scan Mode")
-                                .definition(radHelper.getRadUri("scan-mode"))
+                                .definition(RADHelper.getRadUri("scan-mode"))
                                 .build())
                 .addField("Scan Timeout",
                         radHelper.createQuantity()
                                 .name("ScanTimeout")
                                 .label("Scan Timeout")
-                                .definition(radHelper.getRadUri("scan-timeout"))
+                                .definition(RADHelper.getRadUri("scan-timeout"))
                                 .build())
                 .addField("Analysis Enabled",
                         radHelper.createText()
                                 .name("AnalysisEnabled")
                                 .label("Analysis Enabled")
-                                .definition(radHelper.getRadUri("analysis-enabled"))
+                                .definition(RADHelper.getRadUri("analysis-enabled"))
                                 .build())
                 .addField("LinCalibration", radHelper.createLinCalibration())
                 .addField("CmpCalibration", radHelper.createCmpCalibration())
                 .build();
-
-        dataEncoding = new TextEncodingImpl(",", "\n");
-
         // Time
 
         // Battery Charge (%)
@@ -67,30 +69,28 @@ public class StatusOutput extends OutputBase {
         // Location (location vector)
     }
 
-    public void parseData(RS350Message msg) {
-        if (latestRecord == null)
-            dataBlock = dataStruct.createDataBlock();
-        else
-            dataBlock = latestRecord.renew();
-
-        latestRecordTime = System.currentTimeMillis() / 1000;
-
-        dataBlock.setLongValue(0, latestRecordTime);
-        dataBlock.setDoubleValue(1, msg.getRs350InstrumentCharacteristics().getBatteryCharge());
-        dataBlock.setStringValue(2, msg.getRs350Item().getRsiScanMode());
-        dataBlock.setDoubleValue(3, msg.getRs350Item().getRsiScanTimeoutNumber());
-        dataBlock.setStringValue(4, msg.getRs350Item().getRsiAnalysisEnabled());
-        ((DataBlockMixed) dataBlock).getUnderlyingObject()[5].setUnderlyingObject(msg.getRs350LinEnergyCalibration().getLinEnCal());
-        ((DataBlockMixed) dataBlock).getUnderlyingObject()[6].setUnderlyingObject(msg.getRs350CmpEnergyCalibration().getCmpEnCal());
-
-        eventHandler.publish(new DataEvent(latestRecordTime, StatusOutput.this, dataBlock));
-    }
+    // public void parseData(RS350Message msg) {
+    //     if (latestRecord == null)
+    //         dataBlock = dataStruct.createDataBlock();
+    //     else
+    //         dataBlock = latestRecord.renew();
+    //
+    //     latestRecordTime = System.currentTimeMillis() / 1000;
+    //
+    //     dataBlock.setLongValue(0, latestRecordTime);
+    //     dataBlock.setDoubleValue(1, msg.getRs350InstrumentCharacteristics().getBatteryCharge());
+    //     dataBlock.setStringValue(2, msg.getRs350Item().getRsiScanMode());
+    //     dataBlock.setDoubleValue(3, msg.getRs350Item().getRsiScanTimeoutNumber());
+    //     dataBlock.setStringValue(4, msg.getRs350Item().getRsiAnalysisEnabled());
+    //     ((DataBlockMixed) dataBlock).getUnderlyingObject()[5].setUnderlyingObject(msg.getRs350LinEnergyCalibration().getLinEnCal());
+    //     ((DataBlockMixed) dataBlock).getUnderlyingObject()[6].setUnderlyingObject(msg.getRs350CmpEnergyCalibration().getCmpEnCal());
+    //
+    //     eventHandler.publish(new DataEvent(latestRecordTime, StatusOutput.this, dataBlock));
+    // }
 
     @Override
     public void onNewMessage(RS350Message message) {
-
         if (message.getRs350InstrumentCharacteristics() != null) {
-
             createOrRenewDataBlock();
 
             latestRecordTime = System.currentTimeMillis() / 1000;
@@ -103,6 +103,7 @@ public class StatusOutput extends OutputBase {
             ((DataBlockMixed) dataBlock).getUnderlyingObject()[5].setUnderlyingObject(message.getRs350LinEnergyCalibration().getLinEnCal());
             ((DataBlockMixed) dataBlock).getUnderlyingObject()[6].setUnderlyingObject(message.getRs350CmpEnergyCalibration().getCmpEnCal());
 
+            latestRecord = dataBlock;
             eventHandler.publish(new DataEvent(latestRecordTime, StatusOutput.this, dataBlock));
         }
     }

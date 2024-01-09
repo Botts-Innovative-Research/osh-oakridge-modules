@@ -1,6 +1,7 @@
 package com.botts.impl.sensor.rs350;
 
 import com.botts.impl.sensor.rs350.messages.RS350Message;
+import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,9 +19,13 @@ public class DerivedDataOutput extends OutputBase {
 
     @Override
     protected void init() {
+        dataStruct = createDataRecord();
+    }
+
+    public DataRecord createDataRecord() {
         RADHelper radHelper = new RADHelper();
 
-        dataStruct = radHelper.createRecord()
+        return radHelper.createRecord()
                 .build();
     }
 

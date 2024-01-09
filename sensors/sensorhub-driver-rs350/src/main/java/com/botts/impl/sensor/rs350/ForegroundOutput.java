@@ -1,11 +1,13 @@
 package com.botts.impl.sensor.rs350;
 
 import com.botts.impl.sensor.rs350.messages.RS350Message;
+import net.opengis.swe.v20.DataBlock;
+import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vast.data.DataBlockMixed;
+import org.vast.data.DataArrayImpl;
 import org.vast.data.TextEncodingImpl;
 
 public class ForegroundOutput extends OutputBase {
@@ -21,12 +23,17 @@ public class ForegroundOutput extends OutputBase {
 
     @Override
     protected void init() {
+        dataStruct = createDataRecord();
+
+        dataEncoding = new TextEncodingImpl(",", "\n");
+    }
+
+    public DataRecord createDataRecord() {
         RADHelper radHelper = new RADHelper();
         final String LIN_SPEC_ID = "lin-spectrum";
         final String CMP_SPEC_ID = "cmp-spectrum";
-        // OUTPUT
 
-        dataStruct = radHelper.createRecord()
+        return radHelper.createRecord()
                 .name(getName())
                 .label("Foreground Report")
                 .definition(RADHelper.getRadUri("foreground-report"))
@@ -44,9 +51,6 @@ public class ForegroundOutput extends OutputBase {
                 .addField("NeutronGrossCount", radHelper.createNeutronGrossCount())
                 .addField("DoseRate", radHelper.createDoseUSVh())
                 .build();
-
-        dataEncoding = new TextEncodingImpl(",", "\n");
-
     }
 
 //    public void parseData(RS350Message msg) {
@@ -73,23 +77,36 @@ public class ForegroundOutput extends OutputBase {
 
     @Override
     public void onNewMessage(RS350Message message) {
-
         if (message.getRs350ForegroundMeasurement() != null) {
-
-            createOrRenewDataBlock();
+            dataStruct = createDataRecord();
+            DataBlock dataBlock = dataStruct.createDataBlock();
+            dataStruct.setData(dataBlock);
 
             latestRecordTime = System.currentTimeMillis() / 1000;
+            int index = 0;
 
-            dataBlock.setLongValue(0, message.getRs350ForegroundMeasurement().getStartDateTime() / 1000);
-            dataBlock.setDoubleValue(1, message.getRs350ForegroundMeasurement().getRealTimeDuration());
-            dataBlock.setIntValue(2, message.getRs350ForegroundMeasurement().getLinEnCalSpectrum().length);
-            ((DataBlockMixed) dataBlock).getUnderlyingObject()[3].setUnderlyingObject(message.getRs350ForegroundMeasurement().getLinEnCalSpectrum());
-            dataBlock.setIntValue(4, message.getRs350ForegroundMeasurement().getLinEnCalSpectrum().length);
-            ((DataBlockMixed) dataBlock).getUnderlyingObject()[5].setUnderlyingObject(message.getRs350ForegroundMeasurement().getLinEnCalSpectrum());
-            dataBlock.setDoubleValue(6, message.getRs350ForegroundMeasurement().getGammaGrossCount());
-            dataBlock.setDoubleValue(7, message.getRs350ForegroundMeasurement().getNeutronGrossCount());
-            dataBlock.setDoubleValue(8, message.getRs350ForegroundMeasurement().getDoseRate());
+            dataBlock.setLongValue(index++, message.getRs350ForegroundMeasurement().getStartDateTime() / 1000);
+            dataBlock.setDoubleValue(index++, message.getRs350ForegroundMeasurement().getRealTimeDuration());
 
+            double[] linEnCalSpectrum = message.getRs350ForegroundMeasurement().getLinEnCalSpectrum();
+            dataBlock.setIntValue(index++, linEnCalSpectrum.length);
+            ((DataArrayImpl) dataStruct.getComponent("LinSpectrum")).updateSize();
+            for (double v : linEnCalSpectrum) {
+                dataBlock.setDoubleValue(index++, v);
+            }
+
+            double[] cmpEnCalSpectrum = message.getRs350ForegroundMeasurement().getCmpEnCalSpectrum();
+            dataBlock.setIntValue(index++, cmpEnCalSpectrum.length);
+            ((DataArrayImpl) dataStruct.getComponent("CmpSpectrum")).updateSize();
+            for (double v : cmpEnCalSpectrum) {
+                dataBlock.setDoubleValue(index++, v);
+            }
+
+            dataBlock.setDoubleValue(index++, message.getRs350ForegroundMeasurement().getGammaGrossCount());
+            dataBlock.setDoubleValue(index++, message.getRs350ForegroundMeasurement().getNeutronGrossCount());
+            dataBlock.setDoubleValue(index, message.getRs350ForegroundMeasurement().getDoseRate());
+
+            latestRecord = dataBlock;
             eventHandler.publish(new DataEvent(latestRecordTime, ForegroundOutput.this, dataBlock));
         }
     }
