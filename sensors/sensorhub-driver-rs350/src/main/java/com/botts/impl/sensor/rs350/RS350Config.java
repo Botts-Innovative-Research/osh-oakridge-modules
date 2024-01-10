@@ -9,7 +9,7 @@ import org.sensorhub.api.sensor.SensorConfig;
 
 public class RS350Config extends SensorConfig {
     public RS350Config() {
-        moduleClass = RS350Config.class.getCanonicalName();
+        moduleClass = RS350Sensor.class.getCanonicalName();
     }
 
     @DisplayInfo.Required
