@@ -8,6 +8,9 @@ import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.sensor.SensorConfig;
 
 public class RS350Config extends SensorConfig {
+    public RS350Config() {
+        moduleClass = RS350Config.class.getCanonicalName();
+    }
 
     @DisplayInfo.Required
     public String serialNumber;
