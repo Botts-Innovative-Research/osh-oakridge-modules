@@ -25,6 +25,8 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Timer;
+import java.util.TimerTask;
 
 /**
  * Sensor driver for the ... providing sensor description, output registration,
@@ -49,7 +51,13 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     LocationOutput locationOutput;
 
+    TamperOutput tamperOutput;
+
+    SpeedOutput speedOutput;
+
     InputStream msgIn;
+
+    Timer t;
 
     @Override
     public void doInit() throws SensorHubException {
@@ -76,6 +84,14 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         addOutput(locationOutput, false);
         locationOutput.init();
 
+        tamperOutput = new TamperOutput(this);
+        addOutput(tamperOutput, false);
+        tamperOutput.init();
+
+        speedOutput = new SpeedOutput(this);
+        addOutput(speedOutput, false);
+        speedOutput.init();
+
 
 
     }
@@ -83,7 +99,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     @Override
     protected void doStart() throws SensorHubException {
 
-        locationOutput.setLocationOuput(config.getLocation());
+//        locationOutput.setLocationOuput(config.getLocation());
+        setLocationRepeatTimer();
 
         // init comm provider
         if (commProvider == null) {
@@ -113,7 +130,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
             msgIn = new BufferedInputStream(commProvider.getInputStream());
 
-            messageHandler = new MessageHandler(msgIn, gammaOutput, neutronOutput, occupancyOutput);
+            messageHandler = new MessageHandler(msgIn, gammaOutput, neutronOutput, occupancyOutput, tamperOutput, speedOutput);
 
 //            csvMsgRead.readMessages(msgIn, gammaOutput, neutronOutput, occupancyOutput);
 
@@ -129,7 +146,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         if (commProvider != null) {
 
             try {
-
+                t.cancel();
+                t.purge();
                 commProvider.stop();
 
             } catch (Exception e) {
@@ -155,5 +173,18 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
             return commProvider.isStarted();
         }
+    }
+
+    void setLocationRepeatTimer(){
+        t = new Timer();
+        TimerTask tt = new TimerTask() {
+            @Override
+            public void run() {
+                locationOutput.setLocationOuput(config.getLocation());
+                System.out.println("location updated");
+            }
+        };
+        t.scheduleAtFixedRate(tt,500,10000);
+
     }
 }

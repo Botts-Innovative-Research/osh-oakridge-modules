@@ -6,6 +6,7 @@ import jakarta.xml.bind.JAXBElement;
 import jakarta.xml.bind.JAXBException;
 import jakarta.xml.bind.Unmarshaller;
 import net.opengis.swe.v20.*;
+import net.opengis.swe.v20.Boolean;
 import org.vast.swe.SWEBuilders;
 import org.vast.swe.helper.GeoPosHelper;
 import org.vast.swe.helper.RasterHelper;
@@ -71,6 +72,34 @@ public class RADHelper extends GeoPosHelper {
                 .label("End Time")
                 .definition(getRadUri("occupancy-end-time"))
                 .description("The end time of occupancy data")
+                .build();
+    }
+
+    public Boolean createTamperStatus(){
+        return createBoolean()
+                .name("TamperStatus")
+                .label("Tamper Status")
+                .definition(getRadUri("tamper-status"))
+                .description("True if the rpm is currently reporting a Tamper state")
+                .build();
+    }
+
+
+
+    public Quantity createNeutronBackground(){
+        return createQuantity()
+                .name("NeutronBackground")
+                .label("Neutron Background")
+                .definition(getRadUri("neutron-background"))
+                .build();
+    }
+
+    public Quantity createSpeed(){
+        return createQuantity()
+                .name("Speed")
+                .label("Speed")
+                .definition(getRadUri("speed-mph"))
+                .uomCode("mph")
                 .build();
     }
 
