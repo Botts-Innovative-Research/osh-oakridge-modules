@@ -13,9 +13,18 @@
 package com.botts.impl.sensor.kromek.d5.enums;
 
 public enum KromekSerialNuclideIdCategory {
-    KROMEK_SERIAL_NUCLIDE_ID_CATEGORY_SNM, // Special Nuclear Material
-    KROMEK_SERIAL_NUCLIDE_ID_CATEGORY_Medical,
-    KROMEK_SERIAL_NUCLIDE_ID_CATEGORY_Industrial,
-    KROMEK_SERIAL_NUCLIDE_ID_CATEGORY_NORM, // Naturally Occurring Radioactive Material
-    KROMEK_SERIAL_NUCLIDE_ID_CATEGORY_UNKNOWN
+    KROMEK_SERIAL_NUCLIDE_ID_CATEGORY_SNM("Special Nuclear Material"), // Special Nuclear Material
+    KROMEK_SERIAL_NUCLIDE_ID_CATEGORY_Medical("Medical"),
+    KROMEK_SERIAL_NUCLIDE_ID_CATEGORY_Industrial("Industrial"),
+    KROMEK_SERIAL_NUCLIDE_ID_CATEGORY_NORM("Naturally Ocurring Radioactive Material"), // Naturally Occurring Radioactive Material
+    KROMEK_SERIAL_NUCLIDE_ID_CATEGORY_UNKNOWN("UNKNOWN");
+
+    private String name;
+     KromekSerialNuclideIdCategory(String name){
+         this.name = name;
+     }
+
+    public String getName() {
+        return name;
+    }
 }
