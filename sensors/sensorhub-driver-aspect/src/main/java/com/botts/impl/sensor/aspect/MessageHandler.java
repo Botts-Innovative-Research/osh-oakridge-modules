@@ -6,13 +6,14 @@ import com.botts.impl.sensor.aspect.output.OccupancyOutput;
 import com.botts.impl.sensor.aspect.output.SpeedOutput;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
-import com.ghgande.j2mod.modbus.ModbusException;
 import com.ghgande.j2mod.modbus.net.TCPMasterConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+
+import static java.lang.Thread.sleep;
 
 /**
  * Handles the incoming messages from the sensor
@@ -72,8 +73,9 @@ public class MessageHandler implements Runnable {
                 if (checkOccupancyRecord(monitorRegisters, timestamp)) {
                     occupancyOutput.setData(monitorRegisters, timestamp, startTime, endTime, gammaAlarm, neutronAlarm);
                 }
+                sleep(500);
             }
-        } catch (ModbusException e) {
+        } catch (Exception e) {
             StringWriter stringWriter = new StringWriter();
             e.printStackTrace(new PrintWriter(stringWriter));
             log.error("Error in worker thread: {} due to exception: {}", Thread.currentThread().getName(), stringWriter);
