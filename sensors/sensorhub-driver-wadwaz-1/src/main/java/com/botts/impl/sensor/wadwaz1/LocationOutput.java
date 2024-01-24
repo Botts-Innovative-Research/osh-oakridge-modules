@@ -77,7 +77,7 @@ public class LocationOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
                 .name(getName())
                 .label("Location")
                 .definition("http://sensorml.com/ont/swe/property/Location")
-                .addField("Sampling Time", locationHelper.createTimeRange().asSamplingTimeIsoGPS())
+                .addField("Sampling Time", locationHelper.createTime().asSamplingTimeIsoUTC())
                 .addField("Sensor Location", locationHelper.createLocationVectorLLA())
 
                 .build();
@@ -141,7 +141,7 @@ public class LocationOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
 
         try {
 
-            while (processSets) {
+//            while (processSets) {
 
                 DataBlock dataBlock;
                 if (latestRecord == null) {
@@ -169,11 +169,8 @@ public class LocationOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
                 double time = System.currentTimeMillis() / 1000.;
 
 
-                dataBlock.setStringValue(0, locationData.getName());
-                dataBlock.setDoubleValue(1, time);
-                dataBlock.setDoubleValue(3, gpsLocation.lat);
-                dataBlock.setDoubleValue(4, gpsLocation.lon);
-                dataBlock.setDoubleValue(5, gpsLocation.alt);
+                dataBlock.setDoubleValue(0, time);
+                dataBlock.setDoubleValue(1, gpsLocation.lat);
 
                 latestRecord = dataBlock;
 
@@ -181,11 +178,11 @@ public class LocationOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
 
                 eventHandler.publish(new DataEvent(latestRecordTime, LocationOutput.this, dataBlock));
 
-                synchronized (processingLock) {
-
-                    processSets = !stopProcessing;
-                }
-            }
+//                synchronized (processingLock) {
+//
+//                    processSets = !stopProcessing;
+//                }
+//            }
 
         } catch (Exception e) {
 

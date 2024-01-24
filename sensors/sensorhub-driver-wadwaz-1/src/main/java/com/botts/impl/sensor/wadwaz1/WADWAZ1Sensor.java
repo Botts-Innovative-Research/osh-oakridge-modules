@@ -42,7 +42,6 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
     private static final Logger logger = LoggerFactory.getLogger(WADWAZ1Sensor.class);
 
     ICommProvider<?> commProvider;
-//    MessageHandler messageHandler;
     EntryAlarmOutput entryAlarmOutput;
     BatteryOutput batteryOutput;
     TamperAlarmOutput tamperAlarmOutput;
@@ -105,44 +104,13 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
     @Override
     public void doStart() throws SensorHubException {
 
-    locationOutput.setLocationOutput(config.getLocation());
+        ZWaveMessageHandler zWaveConnect = new ZWaveMessageHandler(entryAlarmOutput,
+                tamperAlarmOutput, externalSwitchAlarmOutput, batteryOutput, locationOutput);
 
-        // init comm provider
-            if (commProvider == null) {
+        zWaveConnect.ZWaveConnect("COM5", 115200);
 
-                // we need to recreate comm provider here because it can be changed by UI
-                try {
+        locationOutput.setLocationOutput(config.getLocation());
 
-                    if (config.commSettings == null)
-                        throw new SensorHubException("No communication settings specified");
-
-                    var moduleReg = getParentHub().getModuleRegistry();
-
-                    commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
-
-                    commProvider.start();
-
-                } catch (Exception e) {
-
-                    commProvider = null;
-
-                    throw e;
-                }
-            }
-
-            // connect to data stream
-            try {
-
-                msgIn = new BufferedInputStream(commProvider.getInputStream());
-
-//                messageHandler = new MessageHandler(msgIn, gammaOutput, neutronOutput, occupancyOutput);
-
-//            csvMsgRead.readMessages(msgIn, gammaOutput, neutronOutput, occupancyOutput);
-
-            } catch (IOException e) {
-
-                throw new SensorException("Error while initializing communications ", e);
-            }
         }
 
 

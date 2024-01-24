@@ -4,12 +4,23 @@ version = '1.0.0'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
-//    implementation project(':sensorhub-service-video')
-//    implementation project(':sensorhub-driver-videocam')
 //    testImplementation('junit:junit:4.13.1')
-    implementation files('libs/nrjavaserial-3.9.3.jar')
-    implementation files('libs/org.openhab.binding.zwave-1.8.3.jar')
-    implementation files('libs/xstream-1.4.6.jar')
+//    implementation files('libs/org.openhab.core.thing-4.0.4.jar')
+//    implementation files('libs/org.openhab.binding.zwave-4.0.4.jar')
+//    implementation files('libs/org.openhab.core-4.0.4.jar')
+
+    implementation files('libs/org.openhab.core.thing-4.1.1.jar')
+    implementation files('libs/org.openhab.binding.zwave-4.1.1.jar')
+    implementation files('libs/org.openhab.core-4.1.1.jar')
+    implementation files('libs/org.openhab.core.config.core-4.1.1.jar')
+
+    implementation files('libs/nrjavaserial-5.2.1.jar')
+    implementation files('libs/xstream-1.4.20.jar')
+    implementation files('libs/librxtxSerial.so')
+
+
+    implementation project(':sensorhub-comm-rxtx')
+    embeddedImpl 'gnu.io:rxtx:2.2-pre1'
 }
 
 // exclude tests requiring connection to the sensor
@@ -32,7 +43,7 @@ osgi {
 ext.pom >>= {
     developers {
         developer {
-            id 'cardy'
+            id 'Cardy2'
             name 'Cardy'
             organization 'Botts Innovative Research'
             organizationUrl 'http://www.botts-inc.com'

@@ -185,12 +185,12 @@ Timer motionTimer = new Timer(); // creating timer
 
         if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "255")) {
             isMotion = true;
-        } else if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && (Objects.equals(alarmValue, "0"))){
+        } else if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "0")) {
             isMotion = false;
         }
 
 
-            boolean processSets = true;
+        boolean processSets = true;
 
             long lastSetTimeMillis = System.currentTimeMillis();
 

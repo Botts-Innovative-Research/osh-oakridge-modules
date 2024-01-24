@@ -29,7 +29,7 @@ import org.vast.swe.helper.GeoPosHelper;
  * @author cardy
  * @since 11/14/23
  */
-public class BatteryOutput extends AbstractSensorOutput<WADWAZ1Sensor> implements Runnable {
+public class BatteryOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
 
     private static final String SENSOR_OUTPUT_NAME = "WADWAZ1 Battery Level";
 
@@ -45,8 +45,6 @@ public class BatteryOutput extends AbstractSensorOutput<WADWAZ1Sensor> implement
     private int setCount = 0;
     private final long[] timingHistogram = new long[MAX_NUM_TIMING_SAMPLES];
     private final Object histogramLock = new Object();
-
-    private Thread worker;
 
     /**
      * Constructor
@@ -77,7 +75,7 @@ public class BatteryOutput extends AbstractSensorOutput<WADWAZ1Sensor> implement
                 .name(getName())
                 .label(strBatteryLevel)
                 .definition("http://sensorml.com/ont/swe/property/Battery")
-                .addField("Sampling Time", batteryHelper.createTimeRange().asSamplingTimeIsoGPS())
+                .addField("Sampling Time", batteryHelper.createTime().asSamplingTimeIsoUTC())
                 .addField(strBatteryLevel,
                         batteryHelper.createQuantity()
                                 .name("battery-level")
@@ -91,42 +89,6 @@ public class BatteryOutput extends AbstractSensorOutput<WADWAZ1Sensor> implement
         dataEncoding = batteryHelper.newTextEncoding(",", "\n");
 
         logger.debug("Initializing Output Complete");
-    }
-
-    /**
-     * Begins processing data for output
-     */
-    public void doStart() {
-
-        // Instantiate a new worker thread
-        worker = new Thread(this, this.name);
-
-        logger.info("Starting worker thread: {}", worker.getName());
-
-        // Start the worker thread
-        worker.start();
-    }
-
-    /**
-     * Terminates processing data for output
-     */
-    public void doStop() {
-
-        synchronized (processingLock) {
-
-            stopProcessing = true;
-        }
-
-    }
-
-    /**
-     * Check to validate data processing is still running
-     *
-     * @return true if worker thread is active, false otherwise
-     */
-    public boolean isAlive() {
-
-        return worker.isAlive();
     }
 
     @Override
@@ -157,8 +119,7 @@ public class BatteryOutput extends AbstractSensorOutput<WADWAZ1Sensor> implement
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    @Override
-    public void run() {
+    public void onNewMessage(String batteryLevel) {
 
         boolean processSets = true;
 
@@ -166,7 +127,7 @@ public class BatteryOutput extends AbstractSensorOutput<WADWAZ1Sensor> implement
 
         try {
 
-            while (processSets) {
+//            while (processSets) {
 
                 DataBlock dataBlock;
                 if (latestRecord == null) {
@@ -192,11 +153,9 @@ public class BatteryOutput extends AbstractSensorOutput<WADWAZ1Sensor> implement
                 ++setCount;
 
                 double time = System.currentTimeMillis() / 1000.;
-                double batteryLevel = Double.NaN;
 
-                dataBlock.setStringValue(0,batteryData.getName());
-                dataBlock.setDoubleValue(1, time);
-                dataBlock.setDoubleValue(2, batteryLevel);
+                dataBlock.setDoubleValue(0, time);
+                dataBlock.setStringValue(1, batteryLevel);
 
 
                 latestRecord = dataBlock;
@@ -205,11 +164,11 @@ public class BatteryOutput extends AbstractSensorOutput<WADWAZ1Sensor> implement
 
                 eventHandler.publish(new DataEvent(latestRecordTime, BatteryOutput.this, dataBlock));
 
-                synchronized (processingLock) {
-
-                    processSets = !stopProcessing;
-                }
-            }
+//                synchronized (processingLock) {
+//
+//                    processSets = !stopProcessing;
+//                }
+//            }
 
         } catch (Exception e) {
 

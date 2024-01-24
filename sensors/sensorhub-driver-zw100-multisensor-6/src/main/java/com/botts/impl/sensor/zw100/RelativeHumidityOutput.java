@@ -46,7 +46,6 @@ public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> {
     private final long[] timingHistogram = new long[MAX_NUM_TIMING_SAMPLES];
     private final Object histogramLock = new Object();
 
-    private Thread worker;
 
     /**
      * Constructor
@@ -97,15 +96,6 @@ public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> {
             stopProcessing = true;
         }
 
-    }
-    /**
-     * Check to validate data processing is still running
-     *
-     * @return true if worker thread is active, false otherwise
-     */
-    public boolean isAlive() {
-
-        return worker.isAlive();
     }
 
     @Override
@@ -181,11 +171,6 @@ public class RelativeHumidityOutput extends AbstractSensorOutput<ZW100Sensor> {
 
                 eventHandler.publish(new DataEvent(latestRecordTime, RelativeHumidityOutput.this, dataBlock));
 
-//                synchronized (processingLock) {
-//
-//                    processSets = !stopProcessing;
-//                }
-//            }
 
         } catch (Exception e) {
 

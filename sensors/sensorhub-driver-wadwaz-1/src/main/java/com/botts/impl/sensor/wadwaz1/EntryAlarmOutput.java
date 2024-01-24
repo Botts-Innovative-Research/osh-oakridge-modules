@@ -23,13 +23,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.swe.helper.GeoPosHelper;
 
+import java.util.Objects;
+
 /**
  * Output specification and provider for {@link WADWAZ1Sensor}.
  *
  * @author cardy
  * @since 11/14/23
  */
-public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> implements Runnable {
+public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
 
     private static final String SENSOR_OUTPUT_NAME = "WADWAZ1 Entry Alarm";
     private static final Logger logger = LoggerFactory.getLogger(EntryAlarmOutput.class);
@@ -45,7 +47,7 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> implem
     private final long[] timingHistogram = new long[MAX_NUM_TIMING_SAMPLES];
     private final Object histogramLock = new Object();
 
-    private Thread worker;
+    boolean isEntry = false;
 
     /**
      * Constructor
@@ -74,55 +76,18 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> implem
                 .name(getName())
                 .label(strEntryAlarm)
                 .definition("http://sensorml.com/ont/swe/property/Entry")
-                .addField("Sampling Time", entryAlarmHelper.createTimeRange().asSamplingTimeIsoGPS())
+                .addField("Sampling Time", entryAlarmHelper.createTime().asSamplingTimeIsoUTC())
                 .addField(strEntryAlarm,
-                        entryAlarmHelper.createCategory()
+                        entryAlarmHelper.createBoolean()
                                 .name("entry-alarm")
                                 .label(strEntryAlarm + " Status")
                                 .definition("http://sensorml.com/ont/swe/property/Entry")
-                                .description("Status of Entry Alarm")
-                                .addAllowedValues("Open","Close"))
+                                .description("Status of Entry Alarm"))
                 .build();
 
         dataEncoding = entryAlarmHelper.newTextEncoding(",", "\n");
 
         logger.debug("Initializing Output Complete");
-    }
-
-    /**
-     * Begins processing data for output
-     */
-    public void doStart() {
-
-        // Instantiate a new worker thread
-        worker = new Thread(this, this.name);
-
-        logger.info("Starting worker thread: {}", worker.getName());
-
-        // Start the worker thread
-        worker.start();
-    }
-
-    /**
-     * Terminates processing data for output
-     */
-    public void doStop() {
-
-        synchronized (processingLock) {
-
-            stopProcessing = true;
-        }
-
-    }
-
-    /**
-     * Check to validate data processing is still running
-     *
-     * @return true if worker thread is active, false otherwise
-     */
-    public boolean isAlive() {
-
-        return worker.isAlive();
     }
 
     @Override
@@ -153,8 +118,13 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> implem
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    @Override
-    public void run() {
+    public void onNewMessage(String alarmType, String alarmValue, Boolean isEntry) {
+
+        if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "255")) {
+            isEntry = true;
+        } else if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && (Objects.equals(alarmValue, "0"))){
+            isEntry = false;
+        }
 
         boolean processSets = true;
 
@@ -162,7 +132,7 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> implem
 
         try {
 
-            while (processSets) {
+//            while (processSets) {
 
                 DataBlock dataBlock;
                 if (latestRecord == null) {
@@ -188,11 +158,9 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> implem
                 ++setCount;
 
                 double time = System.currentTimeMillis() / 1000.;
-                String status = "";
 
-                dataBlock.setStringValue(0, entryAlarmData.getName());
-                dataBlock.setDoubleValue(1, time);
-                dataBlock.setStringValue(2, status);
+                dataBlock.setDoubleValue(0, time);
+                dataBlock.setBooleanValue(1, isEntry);
 
                 latestRecord = dataBlock;
 
@@ -200,11 +168,11 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> implem
 
                 eventHandler.publish(new DataEvent(latestRecordTime, EntryAlarmOutput.this, dataBlock));
 
-                synchronized (processingLock) {
-
-                    processSets = !stopProcessing;
-                }
-            }
+//                synchronized (processingLock) {
+//
+//                    processSets = !stopProcessing;
+//                }
+//            }
 
         } catch (Exception e) {
 

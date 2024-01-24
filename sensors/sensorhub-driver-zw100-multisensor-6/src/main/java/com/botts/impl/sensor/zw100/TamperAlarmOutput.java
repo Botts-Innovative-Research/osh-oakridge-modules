@@ -145,13 +145,14 @@ public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor>{
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    public void onNewMessage(String alarmType, String alarmValue, Boolean isVibration) {
+    public void onNewMessage(String alarmType, String alarmValue, int alarmEvent, Boolean isVibration) {
 
-        if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "255")) {
+        if (Objects.equals(alarmType, "BURGLAR") &&  alarmEvent == 3 && Objects.equals(alarmValue, "255")) {
             isVibration = true;
-        } else if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && (Objects.equals(alarmValue, "0"))){
+        } else if (Objects.equals(alarmType, "BURGLAR") && alarmEvent == 0){
             isVibration = false;
         }
+
         boolean processSets = true;
 
         long lastSetTimeMillis = System.currentTimeMillis();

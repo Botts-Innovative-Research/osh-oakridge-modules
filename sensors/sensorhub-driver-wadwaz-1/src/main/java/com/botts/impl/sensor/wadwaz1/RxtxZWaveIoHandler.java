@@ -1,4 +1,4 @@
-package com.botts.impl.sensor.zw100;
+package com.botts.impl.sensor.wadwaz1;
 
 import gnu.io.CommPort;
 import gnu.io.CommPortIdentifier;

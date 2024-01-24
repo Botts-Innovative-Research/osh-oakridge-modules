@@ -23,17 +23,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.swe.helper.GeoPosHelper;
 
+import java.util.Objects;
+
 /**
  * Output specification and provider for {@link WADWAZ1Sensor}.
  *
  * @author cardy
  * @since 11/14/23
  */
-public class TamperAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> implements Runnable {
+public class TamperAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
 
     private static final String SENSOR_OUTPUT_NAME = "WADWAZ1 Tamper Alarm";
-//    private static final String SENSOR_OUTPUT_LABEL = "[LABEL]";
-//    private static final String SENSOR_OUTPUT_DESCRIPTION = "[DESCRIPTION]";
 
     private static final Logger logger = LoggerFactory.getLogger(TamperAlarmOutput.class);
 
@@ -47,8 +47,6 @@ public class TamperAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> imple
     private int setCount = 0;
     private final long[] timingHistogram = new long[MAX_NUM_TIMING_SAMPLES];
     private final Object histogramLock = new Object();
-
-    private Thread worker;
 
     /**
      * Constructor
@@ -79,9 +77,9 @@ public class TamperAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> imple
                 .name(getName())
                 .label("Tamper Alarm")
                 .definition("http://sensorml.com/ont/swe/property/Alarm")
-                .addField("Sampling Time", tamperAlarmHelper.createTimeRange().asSamplingTimeIsoGPS())
+                .addField("Sampling Time", tamperAlarmHelper.createTime().asSamplingTimeIsoUTC())
                 .addField(strTamperAlarmStatus,
-                        tamperAlarmHelper.createCategory()
+                        tamperAlarmHelper.createBoolean()
                                 .name("tamper-alarm-status")
                                 .label(strTamperAlarmStatus)
                                 .definition("http://sensorml.com/ont/swe/property/Alarm")
@@ -91,42 +89,6 @@ public class TamperAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> imple
         dataEncoding = tamperAlarmHelper.newTextEncoding(",", "\n");
 
         logger.debug("Initializing Output Complete");
-    }
-
-    /**
-     * Begins processing data for output
-     */
-    public void doStart() {
-
-        // Instantiate a new worker thread
-        worker = new Thread(this, this.name);
-
-        logger.info("Starting worker thread: {}", worker.getName());
-
-        // Start the worker thread
-        worker.start();
-    }
-
-    /**
-     * Terminates processing data for output
-     */
-    public void doStop() {
-
-        synchronized (processingLock) {
-
-            stopProcessing = true;
-        }
-
-    }
-
-    /**
-     * Check to validate data processing is still running
-     *
-     * @return true if worker thread is active, false otherwise
-     */
-    public boolean isAlive() {
-
-        return worker.isAlive();
     }
 
     @Override
@@ -157,8 +119,11 @@ public class TamperAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> imple
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    @Override
-    public void run() {
+    public void onNewMessage(String alarmType, String alarmValue, Boolean isTamperAlarm) {
+
+        if (Objects.equals(alarmType, "BURGLAR") && Objects.equals(alarmValue, "255")) {
+            isTamperAlarm = true;
+        }
 
         boolean processSets = true;
 
@@ -166,7 +131,7 @@ public class TamperAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> imple
 
         try {
 
-            while (processSets) {
+//            while (processSets) {
 
                 DataBlock dataBlock;
                 if (latestRecord == null) {
@@ -192,11 +157,9 @@ public class TamperAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> imple
                 ++setCount;
 
                 double time = System.currentTimeMillis() / 1000.;
-                String status = "";
 
-                dataBlock.setStringValue(0, tamperAlarmData.getName());
-                dataBlock.setDoubleValue(1,time);
-                dataBlock.setStringValue(2, status);
+                dataBlock.setDoubleValue(0,time);
+                dataBlock.setBooleanValue(1, isTamperAlarm);
 
                 latestRecord = dataBlock;
 
@@ -204,11 +167,11 @@ public class TamperAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> imple
 
                 eventHandler.publish(new DataEvent(latestRecordTime, TamperAlarmOutput.this, dataBlock));
 
-                synchronized (processingLock) {
-
-                    processSets = !stopProcessing;
-                }
-            }
+//                synchronized (processingLock) {
+//
+//                    processSets = !stopProcessing;
+//                }
+//            }
 
         } catch (Exception e) {
 

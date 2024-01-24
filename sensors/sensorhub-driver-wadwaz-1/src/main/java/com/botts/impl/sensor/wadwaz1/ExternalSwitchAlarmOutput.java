@@ -76,7 +76,7 @@ public class ExternalSwitchAlarmOutput extends AbstractSensorOutput<WADWAZ1Senso
                 .name(getName())
                 .label("External Switch Alarm")
                 .definition("http://sensorml.com/ont/swe/property/Alarm")
-                .addField("Sampling Time", externalSwitchAlarmHelper.createTimeRange().asSamplingTimeIsoGPS())
+                .addField("Sampling Time", externalSwitchAlarmHelper.createTime().asSamplingTimeIsoUTC())
                 .addField(strExternalSwitchAlarmStatus,
                         externalSwitchAlarmHelper.createCategory()
                                 .name("external-switch-alarm")
@@ -90,21 +90,6 @@ public class ExternalSwitchAlarmOutput extends AbstractSensorOutput<WADWAZ1Senso
 
         logger.debug("Initializing Output Complete");
     }
-
-    /**
-     * Begins processing data for output
-     */
-    public void doStart() {
-
-        // Instantiate a new worker thread
-        worker = new Thread(this, this.name);
-
-        logger.info("Starting worker thread: {}", worker.getName());
-
-        // Start the worker thread
-        worker.start();
-    }
-
     /**
      * Terminates processing data for output
      */
@@ -195,9 +180,8 @@ public class ExternalSwitchAlarmOutput extends AbstractSensorOutput<WADWAZ1Senso
                 double time = System.currentTimeMillis() / 1000.;
                 String status = "";
 
-                dataBlock.setStringValue(0,extSwitchAlarmData.getName());
-                dataBlock.setDoubleValue(1,time);
-                dataBlock.setStringValue(2, status);
+                dataBlock.setDoubleValue(0,time);
+                dataBlock.setStringValue(1, status);
 
 
                 latestRecord = dataBlock;
