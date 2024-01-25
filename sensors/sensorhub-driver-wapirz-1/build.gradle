@@ -1,5 +1,5 @@
-description = 'WADWAZ-1 Window Door Sensor'
-ext.details = "Radio Frequency (Z-Wave) Controlled Wireless Door / Window Sensor"
+description = 'Linear/GoControl WAPIRZ-1 Motion Detector (with Temperature Device Handler)'
+ext.details = "Radio Frequency (Z-Wave) Motion Sensor"
 version = '1.0.0'
 
 dependencies {
