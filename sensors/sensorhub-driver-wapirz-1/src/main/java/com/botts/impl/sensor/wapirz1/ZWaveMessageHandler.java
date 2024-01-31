@@ -11,6 +11,7 @@ import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStat
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveNodeStatusEvent;
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
 import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveCommandClassTransactionPayload;
+import org.openhab.core.thing.events.ThingStatusInfoChangedEvent;
 import org.sensorhub.impl.comm.UARTConfig;
 
 import java.util.Objects;
@@ -26,6 +27,8 @@ public class ZWaveMessageHandler {
 
     String alarmType;
     String alarmValue;
+    int alarmEvent;
+    int v1AlarmCode;
     String commandClassType;
     String commandClassValue;
     String message;
@@ -66,16 +69,32 @@ public class ZWaveMessageHandler {
                             " ALARM TYPE" +
                             "-> " +
                             ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmType().name() + " Alarm: " +
-                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getValue());
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getValue() + " Alarm Status: " +
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmStatus() + " V1 Alarm Code:" +
+                            " " +
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getV1AlarmCode() + " V1 Alarm " +
+                            "Level:" +
+                            " " +
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getV1AlarmLevel() + " Alarm Event: " +
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmEvent() + " Declaring " +
+                            "Class: " +
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmType().getDeclaringClass() + " Report Type Name: " +
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getReportType().name());
 
 
                     alarmType = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmType().name();
                     alarmValue = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getValue().toString();
+                    alarmEvent = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmEvent();
+                    v1AlarmCode = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getV1AlarmCode();
 
-                    tamperAlarmOutput.onNewMessage(alarmType, alarmValue, false);
+
+                    tamperAlarmOutput.onNewMessage(alarmType, alarmValue, alarmEvent, v1AlarmCode, false);
+
 
                     System.out.println("Alarm Type: " + alarmType);
                     System.out.println("Alarm Value: " + alarmValue);
+
+
 
 
                 } else if (event instanceof ZWaveCommandClassValueEvent) {
@@ -90,7 +109,9 @@ public class ZWaveMessageHandler {
 
                     handleCommandClassData(commandClassType, commandClassValue);
 
-                    motionOutput.onNewMessage(commandClassType, commandClassValue, false);
+                    motionOutput.onNewMessage(commandClassType, commandClassValue, v1AlarmCode, false);
+
+
 
 
                     System.out.println("Command Class Type: " + commandClassType);
@@ -100,7 +121,10 @@ public class ZWaveMessageHandler {
                 } else if (event instanceof  ZWaveBinarySensorCommandClass.ZWaveBinarySensorValueEvent) {
                     System.out.println("Node " + ((ZWaveBinarySensorCommandClass.ZWaveBinarySensorValueEvent) event).getNodeId() + " SENSOR TYPE-> " +
                             ((ZWaveBinarySensorCommandClass.ZWaveBinarySensorValueEvent) event).getSensorType().getLabel() + ": " +
-                            ((ZWaveBinarySensorCommandClass.ZWaveBinarySensorValueEvent) event).getValue());
+                            ((ZWaveBinarySensorCommandClass.ZWaveBinarySensorValueEvent) event).getValue() +
+                            ((ZWaveBinarySensorCommandClass.ZWaveBinarySensorValueEvent) event).getValue().byteValue() +
+                            ((ZWaveBinarySensorCommandClass.ZWaveBinarySensorValueEvent) event).getValue().intValue() +
+                            ((ZWaveBinarySensorCommandClass.ZWaveBinarySensorValueEvent) event).getType());
 
                 }
 //                else if (event instanceof ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) {
@@ -136,10 +160,11 @@ public class ZWaveMessageHandler {
 //
                         System.out.println(zController.sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(1)));
 
-//                        ZWaveConfigurationParameter reTriggerWait = new ZWaveConfigurationParameter(1,1,2);
-//                        ZWaveCommandClassTransactionPayload configReTriggerWait =
-//                                zWaveConfigurationCommandClass.setConfigMessage(reTriggerWait);
-//                        zController.sendTransaction(configReTriggerWait);
+//                        config_1_1
+                        ZWaveConfigurationParameter reTriggerWait = new ZWaveConfigurationParameter(1,1,1);
+                        ZWaveCommandClassTransactionPayload configReTriggerWait =
+                                zWaveConfigurationCommandClass.setConfigMessage(reTriggerWait);
+                        zController.sendTransaction(configReTriggerWait);
 //                        System.out.println(zController.sendTransaction(zWaveConfigurationCommandClass.getConfigMessage
 //                        (1)));
 

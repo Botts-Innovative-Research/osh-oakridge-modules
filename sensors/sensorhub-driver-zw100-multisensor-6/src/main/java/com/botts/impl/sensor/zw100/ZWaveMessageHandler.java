@@ -7,6 +7,7 @@ import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveNodeStatusEvent;
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
+import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveCommandClassTransactionPayload;
 import org.sensorhub.impl.comm.UARTConfig;
 
 import java.util.*;
@@ -74,10 +75,17 @@ public class ZWaveMessageHandler {
                             " ALARM TYPE" +
                             "-> " +
                             ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmType().name() + " Alarm: " +
-                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getValue());
-                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getV1AlarmCode();
-                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getV1AlarmLevel();
-                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmStatus();
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getValue() + " Alarm Status: " +
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmStatus() + " V1 Alarm Code:" +
+                            " " +
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getV1AlarmCode() + " V1 Alarm " +
+                            "Level:" +
+                            " " +
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getV1AlarmLevel() + " Alarm Event: " +
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmEvent() + " Declaring " +
+                            "Class: " +
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmType().getDeclaringClass() + " Report Type Name: " +
+                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getReportType().name());
 
 
                     alarmEvent = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmEvent();
@@ -140,12 +148,17 @@ public class ZWaveMessageHandler {
 
                     System.out.println(zController.getNodes());
 
+
+
                     // Using Node Advancer -> check command class before running config commands (determine which init
                     // stages pertain to specific commands?)
 
-                    if (((ZWaveInitializationStateEvent) event).getStage() == ZWaveNodeInitStage.DONE && (zController.getNode(16) != null) && (zController.getNode(1) != null)) {
-//                    if (zController.getNode(16).get = )
-//                        System.out.println(zController.getNode(16).getCommandClasses(0));
+//                    if (((ZWaveInitializationStateEvent) event).getStage() == ZWaveNodeInitStage.DONE &&
+//                    (zController.getNode(19) != null) && (zController.getNode(1) != null)) {
+                    if (((ZWaveInitializationStateEvent) event).getStage() == ZWaveNodeInitStage.DONE && (zController.getNode(19).getNodeInitStage() == ZWaveNodeInitStage.DONE ) && (zController.getNode(1) != null)) {
+//                        if (((ZWaveInitializationStateEvent) event).getStage() == ZWaveNodeInitStage.DONE && (zController.getNode(19).getNodeInitStage() == ZWaveNodeInitStage.DONE ) && (zController.getNode(1) != null)) {
+
+//                        System.out.println(zController.getNode(19).getCommandClasses(0));
 
                         // Run configuration commands on the first build after the multisensor is added to the network.
                         // Multisensor must be in config mode before starting the node on OSH. To access config mode:
@@ -155,7 +168,7 @@ public class ZWaveMessageHandler {
                         //
 
                         ZWaveConfigurationCommandClass zWaveConfigurationCommandClass =
-                                (ZWaveConfigurationCommandClass)zController.getNode(16).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_CONFIGURATION);
+                                (ZWaveConfigurationCommandClass)zController.getNode(19).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_CONFIGURATION);
 
                         //CONFIGURATION COMMANDS
 
@@ -166,44 +179,44 @@ public class ZWaveMessageHandler {
 //                        zController.sendTransaction(setConfigUnlock);
 
 
-                        System.out.println(zController.sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(252)));
-
-                        //Set node ID?
-
-                        //Get report every 240 seconds/ 4 min (on battery)
+//                        System.out.println(zController.sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(252)));
+//
+//                        //Set node ID?
+//
+//                        //Get report every 240 seconds/ 4 min (on battery)
 //                        ZWaveConfigurationParameter sensorReportInterval = new ZWaveConfigurationParameter(111,240, 4);
 //                        ZWaveCommandClassTransactionPayload setSensorReportInterval =
 //                                zWaveConfigurationCommandClass.setConfigMessage(sensorReportInterval);
 //                        zController.sendTransaction(setSensorReportInterval);
-
-                        //Set temperature unit to F
+//
+////                        Set temperature unit to F
 //                        ZWaveConfigurationParameter tempUnit = new ZWaveConfigurationParameter(64,2,1);
 //                        ZWaveCommandClassTransactionPayload setTempUnit =
 //                                zWaveConfigurationCommandClass.setConfigMessage(tempUnit);
 //                        zController.sendTransaction(setTempUnit);
-
-                        System.out.println("CONFIG " +
-                                "MESSAGE__________________________________________________________");
+//
+//                        System.out.println("CONFIG " +
+//                                "MESSAGE__________________________________________________________");
                         System.out.println(zController.sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(111)));
                         System.out.println(zController.sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(5)));
                         System.out.println(zController.sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(64)));
 
 //                        Set wakeup time to 240s
 //                            ZWaveWakeUpCommandClass wakeupCommandClass =
-//                                    (ZWaveWakeUpCommandClass) zController.getNode(16).getCommandClass
+//                                    (ZWaveWakeUpCommandClass) zController.getNode(19).getCommandClass
 //                                    (ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
 //
 //                            if (wakeupCommandClass != null) {
 //                                ZWaveCommandClassTransactionPayload wakeUp =
-//                                        wakeupCommandClass.setInterval(16, 240);
+//                                        wakeupCommandClass.setInterval(19, 240);
 //
 //                                zController.sendTransaction(wakeUp);
 //                                System.out.println("INTERVAL MESSAGE: _____" + zController.sendTransaction(wakeupCommandClass.getIntervalMessage()));
 //                            }
 
 
-//                        //The Multisensor will send BASIC SET CC(0x00) to the associated nodes if no motion is
-//                        // triggered again in 10 seconds
+                        //The Multisensor will send BASIC SET CC(0x00) to the associated nodes if no motion is
+                        // triggered again in 10 seconds
 //                        ZWaveConfigurationParameter motionSensorReset =
 //                                new ZWaveConfigurationParameter(3,10,2);
 //                        //Send Basic Set CC
@@ -236,12 +249,12 @@ public class ZWaveMessageHandler {
                           //1 = send Basic Set CC.
                           //2 = send Sensor Binary Report CC.
 //                        ZWaveConfigurationParameter motionCommand =
-//                                new ZWaveConfigurationParameter(5,2,1);
+//                                new ZWaveConfigurationParameter(5,1,1);
 //                        ZWaveCommandClassTransactionPayload configMotionCommand =
 //                                zWaveConfigurationCommandClass.setConfigMessage(motionCommand);
 //                        zController.sendTransaction(configMotionCommand);
+////
 //
-
 //                        ZWaveCommandClassTransactionPayload configMotionReset =
 //                                zWaveConfigurationCommandClass.setConfigMessage(motionSensorReset);
 //                        ZWaveCommandClassTransactionPayload configMotionTriggeredCommand =
@@ -260,7 +273,7 @@ public class ZWaveMessageHandler {
 //                                zWaveConfigurationCommandClass.setConfigMessage(uvThreshold);
 //                        ZWaveCommandClassTransactionPayload configTempUnit =
 //                                zWaveConfigurationCommandClass.setConfigMessage(temperatureUnit);
-//
+////
 //                        zController.sendTransaction(configMotionReset);
 //                        zController.sendTransaction(configMotionTriggeredCommand);
 //                        zController.sendTransaction(configSelectiveReporting);

@@ -159,11 +159,11 @@ public class MotionOutput extends AbstractSensorOutput<WAPIRZ1Sensor> {
     }
 
 
-    public void onNewMessage(String alarmType, String alarmValue, Boolean isMotion) {
+    public void onNewMessage(String alarmType, String alarmValue, int v1AlarmCode, Boolean isMotion) {
 
-        if (Objects.equals(alarmType, "COMMAND_CLASS_SENSOR_BINARY") && Objects.equals(alarmValue, "255")) {
+        if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "255")) {
             isMotion = true;
-        } else if (Objects.equals(alarmType, "COMMAND_CLASS_SENSOR_BINARY") && Objects.equals(alarmValue, "0")) {
+        } else if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "0")) {
             isMotion = false;
         }
 
