@@ -19,6 +19,7 @@ import com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 
 import net.opengis.sensorml.v20.PhysicalSystem;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.event.IEventListener;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.sensor.SensorException;
 
@@ -79,6 +80,10 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
 
         super.doInit();
 
+        // Generate identifiers
+        generateUniqueID("[urn:osh:sensor:wadwaz-1]", config.serialNumber);
+        generateXmlID("[WADWAZ-1]", config.serialNumber);
+
         initAsync = true;
 
 //        logger = LoggerFactory.getLogger(WADWAZ1Sensor.class);
@@ -89,40 +94,37 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
 
         commService = moduleRegistry.getModuleByType(ZwaveCommService.class);
 
-//        if (commService == null) {
-//
-//            throw new SensorHubException("CommService needs to be configured");
-//
-//        } else {
-//
-//            moduleRegistry.waitForModule(commService.getLocalID(), ModuleEvent.ModuleState.STARTED)
-//                    .thenRun(() -> commService.registerListener(this));
-//
-//            CompletableFuture.runAsync(() -> {
-//                        try {
-//
-//                            initializeVirtualSystem();
-//
-//                        } catch (SensorException e) {
-//
-//                            throw new CompletionException(e);
-//                        }
-//                    })
-//                    .thenRun(() -> setState(ModuleEvent.ModuleState.INITIALIZED))
-//                    .exceptionally(err -> {
-//
-//                        reportError(err.getMessage(), err.getCause());
-//
-//                        setState(ModuleEvent.ModuleState.LOADED);
-//
-//                        return null;
-//                    });
-//        }
-//    }
+        if (commService == null) {
 
-        // Generate identifiers
-        generateUniqueID("[urn:osh:sensor:wadwaz-1]", config.serialNumber);
-        generateXmlID("[WADWAZ-1]", config.serialNumber);
+            throw new SensorHubException("CommService needs to be configured");
+
+        } else {
+
+            moduleRegistry.waitForModule(commService.getLocalID(), ModuleEvent.ModuleState.STARTED)
+                    .thenRun(() -> commService.registerListener((IEventListener) this));
+
+            CompletableFuture.runAsync(() -> {
+                        try {
+
+                            moduleRegistry.initModule("[urn:osh:sensor:wadwaz-1]");
+
+                        } catch (SensorException e) {
+
+                            throw new CompletionException(e);
+                        } catch (SensorHubException e) {
+                            throw new RuntimeException(e);
+                        }
+                    })
+                    .thenRun(() -> setState(ModuleEvent.ModuleState.INITIALIZED))
+                    .exceptionally(err -> {
+
+                        reportError(err.getMessage(), err.getCause());
+
+                        setState(ModuleEvent.ModuleState.LOADED);
+
+                        return null;
+                    });
+        }
 
         // Create and initialize output
         entryAlarmOutput = new EntryAlarmOutput(this);
@@ -145,6 +147,7 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
         addOutput(locationOutput, false);
         locationOutput.doInit();
     }
+
 
     @Override
     public void doStart() throws SensorHubException {

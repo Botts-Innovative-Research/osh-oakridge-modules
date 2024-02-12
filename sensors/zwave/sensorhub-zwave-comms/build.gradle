@@ -1,20 +1,30 @@
 description = 'Z-Wave Comms Service'
 ext.details = 'Communications Service for Z-Wave'
 
-version= '0.1.0'
+version= '1.0'
+
+
+def thisProjectDir = projectDir
+rootProject.allprojects {
+  repositories {
+    mavenCentral()
+//    maven { url ("file:///$thisProjectDir/libs")}
+    maven { url ("https://openhab.jfrog.io/ui/native/libs-release/org/openhab/addons/bundles/")}
+    maven { url ("https://openhab.jfrog.io/ui/native/libs-release/org/openhab/core/bundles/")}
+  }
+}
 
 dependencies {
   implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
   implementation 'org.sensorhub:sensorhub-service-swe:' + oshCoreVersion
 
-  implementation files('libs/org.openhab.core.thing-4.1.1.jar')
-  implementation files('libs/org.openhab.binding.zwave-4.1.1.jar')
-  implementation files('libs/org.openhab.core-4.1.1.jar')
-  implementation files('libs/org.openhab.core.config.core-4.1.1.jar')
+  embeddedImpl(fileTree(dir: 'libs'))
+  embeddedImpl(fileTree(dir: 'libs/org/openhab/binding/zwave/4.1.1'))
+  embeddedImpl(fileTree(dir: 'libs/org/openhab/core/4.1.1'))
+  embeddedImpl(fileTree(dir: 'libs/org/openhab/core/config/core/4.1.1'))
+  embeddedImpl(fileTree(dir: 'libs/org/openhab/core/thing/4.1.1'))
 
-  implementation files('libs/nrjavaserial-5.2.1.jar')
-  implementation files('libs/xstream-1.4.20.jar')
-  implementation files('libs/librxtxSerial.so')
+//  embeddedImpl 'org.openhab.addons.bundles:org.openhab.binding.zwave:4.1.1'
 
   implementation project(':sensorhub-comm-rxtx')
   embeddedImpl 'gnu.io:rxtx:2.2-pre1'
