@@ -1,0 +1,41 @@
+description = 'Z-Wave Comms Service'
+ext.details = 'Communications Service for Z-Wave'
+
+version= '1.0'
+
+
+repositories {
+  maven {
+    url "https://openhab.jfrog.io/artifactory/libs-release"
+  }
+}
+
+
+dependencies {
+  implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+  implementation 'org.sensorhub:sensorhub-service-swe:' + oshCoreVersion
+  implementation project(':sensorhub-comm-rxtx')
+  embeddedImpl 'gnu.io:rxtx:2.2-pre1'
+  implementation 'org.openhab.addons.bundles:org.openhab.binding.zwave:4.1.1'
+}
+
+
+// add info to OSGI manifest
+osgi {
+  manifest {
+    attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
+    attributes('Bundle-Activator': 'com.botts.sensorhub.impl.zwave.comms.ZwaveCommServiceActivator')
+  }
+}
+
+// add info to maven pom
+ext.pom >>= {
+  developers {
+    developer {
+      id 'cardy'
+      name 'Cardy'
+      organization 'Botts Innovative Research, Inc.'
+      organizationUrl 'http://www.botts-inc.com'
+    }
+  } 
+}

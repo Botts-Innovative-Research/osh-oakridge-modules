@@ -1,0 +1,45 @@
+description = 'WADWAZ-1 Window Door Sensor'
+ext.details = "Radio Frequency (Z-Wave) Controlled Wireless Door / Window Sensor"
+version = '1.0.0'
+
+repositories {
+    maven {
+        url "https://openhab.jfrog.io/artifactory/libs-release"
+    }
+}
+
+dependencies {
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    testImplementation('junit:junit:4.13.1')
+    implementation project(':sensorhub-comm-rxtx')
+    implementation project(':sensorhub-zwave-comms')
+
+}
+
+// exclude tests requiring connection to the sensor
+// these have to be run manually
+//      If tests are to be excluded list them here as follows
+//          exclude '**/TestNameClass.class'
+test {
+    useJUnit()
+}
+
+// add info to OSGi manifest
+osgi {
+    manifest {
+        attributes ('Bundle-Vendor': 'Botts Inc')
+        attributes ('Bundle-Activator': 'com.sample.impl.sensor.wadwaz1.Activator')
+    }
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'Cardy2'
+            name 'Cardy'
+            organization 'Botts Innovative Research'
+            organizationUrl 'http://www.botts-inc.com'
+        }
+    }
+}
