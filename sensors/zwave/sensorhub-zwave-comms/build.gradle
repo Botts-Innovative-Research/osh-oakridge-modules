@@ -4,31 +4,21 @@ ext.details = 'Communications Service for Z-Wave'
 version= '1.0'
 
 
-def thisProjectDir = projectDir
-rootProject.allprojects {
-  repositories {
-    mavenCentral()
-//    maven { url ("file:///$thisProjectDir/libs")}
-    maven { url ("https://openhab.jfrog.io/ui/native/libs-release/org/openhab/addons/bundles/")}
-    maven { url ("https://openhab.jfrog.io/ui/native/libs-release/org/openhab/core/bundles/")}
+repositories {
+  maven {
+    url "https://openhab.jfrog.io/artifactory/libs-release"
   }
 }
+
 
 dependencies {
   implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
   implementation 'org.sensorhub:sensorhub-service-swe:' + oshCoreVersion
-
-  embeddedImpl(fileTree(dir: 'libs'))
-  embeddedImpl(fileTree(dir: 'libs/org/openhab/binding/zwave/4.1.1'))
-  embeddedImpl(fileTree(dir: 'libs/org/openhab/core/4.1.1'))
-  embeddedImpl(fileTree(dir: 'libs/org/openhab/core/config/core/4.1.1'))
-  embeddedImpl(fileTree(dir: 'libs/org/openhab/core/thing/4.1.1'))
-
-//  embeddedImpl 'org.openhab.addons.bundles:org.openhab.binding.zwave:4.1.1'
-
   implementation project(':sensorhub-comm-rxtx')
   embeddedImpl 'gnu.io:rxtx:2.2-pre1'
+  implementation 'org.openhab.addons.bundles:org.openhab.binding.zwave:4.1.1'
 }
+
 
 // add info to OSGI manifest
 osgi {

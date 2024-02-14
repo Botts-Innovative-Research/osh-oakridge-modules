@@ -2,27 +2,17 @@ description = 'WADWAZ-1 Window Door Sensor'
 ext.details = "Radio Frequency (Z-Wave) Controlled Wireless Door / Window Sensor"
 version = '1.0.0'
 
+repositories {
+    maven {
+        url "https://openhab.jfrog.io/artifactory/libs-release"
+    }
+}
+
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     testImplementation('junit:junit:4.13.1')
-
-//    implementation files('libs/org.openhab.core.thing-4.1.1.jar')
-//    implementation files('libs/org.openhab.binding.zwave-4.1.1.jar')
-//    implementation files('libs/org.openhab.core-4.1.1.jar')
-//    implementation files('libs/org.openhab.core.config.core-4.1.1.jar')
-//
-//    implementation files('libs/nrjavaserial-5.2.1.jar')
-//    implementation files('libs/xstream-1.4.20.jar')
-//    implementation files('libs/librxtxSerial.so')
-
-
     implementation project(':sensorhub-comm-rxtx')
     implementation project(':sensorhub-zwave-comms')
-
-    embeddedImpl 'org.openhab.core.bundle:org.openhab.core:4.1.1'
-    embeddedImpl 'org.openhab.core.bundles:org.openhab.core.config.core:4.1.1'
-    embeddedImpl 'org.openhab.core.bundles:org.openhab.core.thing:4.1.1'
-    embeddedImpl 'org.openhab.addons.bundles:org.openhab.binding.zwave:4.1.1'
 
 }
 
