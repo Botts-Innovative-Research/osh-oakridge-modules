@@ -5,18 +5,26 @@ version= '1.0'
 
 
 repositories {
+  mavenCentral()
   maven {
     url "https://openhab.jfrog.io/artifactory/libs-release"
   }
 }
 
-
 dependencies {
   implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
   implementation 'org.sensorhub:sensorhub-service-swe:' + oshCoreVersion
-  implementation project(':sensorhub-comm-rxtx')
-  embeddedImpl 'gnu.io:rxtx:2.2-pre1'
+
+  implementation 'com.thoughtworks.xstream:xstream:1.4.20'
+  implementation 'com.neuronrobotics:nrjavaserial:5.2.1'
+
+
   implementation 'org.openhab.addons.bundles:org.openhab.binding.zwave:4.1.1'
+  implementation 'org.openhab.core.bundles:org.openhab.core:4.1.1'
+  implementation 'org.openhab.core.bundles:org.openhab.core.config.core:4.1.1'
+  implementation 'org.openhab.core.bundles:org.openhab.core.thing:4.1.1'
+
+//  implementation project(':sensorhub-comm-rxtx')
 }
 
 
@@ -32,10 +40,10 @@ osgi {
 ext.pom >>= {
   developers {
     developer {
-      id 'cardy'
+      id 'Cardy2'
       name 'Cardy'
       organization 'Botts Innovative Research, Inc.'
       organizationUrl 'http://www.botts-inc.com'
     }
-  } 
+  }
 }

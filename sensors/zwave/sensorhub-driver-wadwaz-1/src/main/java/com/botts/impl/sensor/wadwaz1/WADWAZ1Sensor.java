@@ -81,7 +81,7 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
         super.doInit();
 
         // Generate identifiers
-        generateUniqueID("[urn:osh:sensor:wadwaz-1]", config.serialNumber);
+        generateUniqueID("[urn:osh:sensor:wadwaz1]", config.serialNumber);
         generateXmlID("[WADWAZ-1]", config.serialNumber);
 
         initAsync = true;
@@ -106,7 +106,7 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
             CompletableFuture.runAsync(() -> {
                         try {
 
-                            moduleRegistry.initModule("[urn:osh:sensor:wadwaz-1]");
+                            moduleRegistry.initModule("[urn:osh:sensor:wadwaz1]");
 
                         } catch (SensorException e) {
 

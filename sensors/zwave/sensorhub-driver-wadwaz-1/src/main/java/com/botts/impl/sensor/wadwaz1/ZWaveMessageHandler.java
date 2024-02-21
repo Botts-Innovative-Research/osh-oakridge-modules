@@ -2,24 +2,22 @@ package com.botts.impl.sensor.wadwaz1;
 
 
 import com.botts.sensorhub.impl.zwave.comms.RxtxZWaveIoHandler;
-import org.checkerframework.checker.units.qual.C;
-import org.openhab.binding.zwave.handler.ZWaveControllerHandler;
-import org.openhab.binding.zwave.handler.ZWaveThingHandler;
-import org.openhab.binding.zwave.internal.protocol.*;
-import org.openhab.binding.zwave.internal.protocol.commandclass.*;
-import org.openhab.binding.zwave.internal.protocol.event.*;
+import org.openhab.binding.zwave.internal.protocol.ZWaveController;
+import org.openhab.binding.zwave.internal.protocol.ZWaveEventListener;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveBatteryCommandClass;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveWakeUpCommandClass;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveNodeStatusEvent;
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
 import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveCommandClassTransactionPayload;
-import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveTransactionMessageBuilder;
-import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.impl.comm.UARTConfig;
 
-
-import javax.validation.Payload;
-import java.lang.reflect.Array;
-import java.sql.SQLOutput;
-import java.util.*;
-import java.util.concurrent.TimeUnit;
+import java.util.Objects;
+import java.util.Timer;
 
 
 public class ZWaveMessageHandler {
@@ -36,7 +34,6 @@ public class ZWaveMessageHandler {
     String commandClassType;
     String commandClassValue;
     String message;
-    Timer motionTimer = new Timer(); // creating timer
 
 
     public ZWaveMessageHandler(EntryAlarmOutput entryAlarmOutput, TamperAlarmOutput tamperAlarmOutput,

@@ -13,11 +13,14 @@
 ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.wadwaz1;
 
+import com.botts.sensorhub.impl.zwave.comms.ZwaveCommServiceConfig;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.api.sensor.PositionConfig.LLALocation;
 import org.sensorhub.api.sensor.SensorConfig;
 import org.sensorhub.api.comm.CommProviderConfig;
+import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
+
 
 
 /**
@@ -42,7 +45,7 @@ public class WADWAZ1Config extends SensorConfig {
      */
     @DisplayInfo.Required
     @DisplayInfo(desc = "Serial number or unique identifier")
-    public String serialNumber = "sensor001";
+    public String serialNumber = "wadwaz1";
 
     @DisplayInfo(desc = "Communication settings to connect to data stream")
     public CommProviderConfig<?> commSettings;

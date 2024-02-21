@@ -6,6 +6,8 @@
 package com.botts.sensorhub.impl.zwave.comms;
 
 import org.sensorhub.api.config.DisplayInfo;
+import org.sensorhub.api.module.IModule;
+import org.sensorhub.api.module.IModuleProvider;
 import org.sensorhub.api.service.ServiceConfig;
 
 public class ZwaveCommServiceConfig extends ServiceConfig {
@@ -16,5 +18,6 @@ public class ZwaveCommServiceConfig extends ServiceConfig {
 
     @DisplayInfo(label = "Baud Rate", desc = "Port on which to receive cross domain messages")
     public int baudRate = 115200;
+
 
 }

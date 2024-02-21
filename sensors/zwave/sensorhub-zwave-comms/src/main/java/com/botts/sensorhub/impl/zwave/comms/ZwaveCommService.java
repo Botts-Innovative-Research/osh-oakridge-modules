@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -36,6 +37,10 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
     private final AtomicBoolean doWork = new AtomicBoolean(false);
 
     private final List<IMessageListener> messageListeners = new ArrayList<>();
+
+    UARTConfig uartConfig = new UARTConfig();
+    RxtxZWaveIoHandler ioHandler;
+    ZWaveController zController;
     Collection zWaveNodes;
 
     @Override
@@ -45,26 +50,23 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 
         logger = LoggerFactory.getLogger(ZwaveCommService.class);
 
-        ZwaveCommServiceConfig zwaveCommServiceConfig = getConfiguration();
+        uartConfig.baudRate = 115200;
+        uartConfig.portName = "COM5";
 
-            UARTConfig uartConfig = new UARTConfig();
+        ioHandler = new RxtxZWaveIoHandler(uartConfig);
+        ioHandler.start(msg -> zController.incomingPacket(msg));
+        zController = new ZWaveController(ioHandler);
 
-            uartConfig.portName = zwaveCommServiceConfig.portName;
-            uartConfig.baudRate = zwaveCommServiceConfig.baudRate;
-
-            RxtxZWaveIoHandler ioHandler = new RxtxZWaveIoHandler(uartConfig);
-            ZWaveController zController = new ZWaveController(ioHandler);
-            ioHandler.start(msg -> zController.incomingPacket(msg));
 
         workerThread = new Thread(this, this.getClass().getSimpleName());
 
         initialized = true;
 
+
         zController.addEventListener(new ZWaveEventListener() {
             public void ZWaveIncomingEvent(ZWaveEvent event) {
-
-
                 logger.info("EVENT: " + event);
+
                 if (event instanceof ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) {
                     logger.info("Node " + ((ZWaveCommandClassValueEvent) event).getNodeId() +
                             " ALARM TYPE" +
@@ -146,7 +148,9 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 
 
                     zWaveNodes = zController.getNodes();
+
                     logger.info(zWaveNodes.toString());
+//                    logger.info(zWaveNodes.forEach();
 
 //                    ArrayList nodeIDs = new ArrayList<Object>();
 
@@ -157,6 +161,13 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 //                    }
 
 //                    handleNodeList(zWaveNodes, nodeIDs);
+
+                    Runtime.getRuntime().addShutdownHook(new Thread() {
+                        public void run() {
+                            zController.shutdown();
+                            ioHandler.stop();
+                        }
+                    });
                 }
             }
         });
@@ -182,7 +193,7 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 //         }
 //
 //    }
-//    public void handleNodeList(Collection nodeList, ArrayList nodeIDs) {
+//    public void handleNodeList(Collection nodeList) {
 //        for (Iterator i = nodeList.iterator(); i.hasNext();) {
 //            Object nextNode = i.next();
 //
@@ -254,7 +265,19 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 
     @Override
     public void run() {
+//        zController.addEventListener(new ZWaveEventListener() {
+//            public void ZWaveIncomingEvent(ZWaveEvent event) {
+//                logger.info("EVENT: " + event);
+//
+//                zController.getNode(19).initialiseNode();
+//                zController.getNode(19).getNodeInitStage();
+//
+//                zController.identifyNode(19);
+//            }});
+    }
+//}
 
+//    }
 //        while (doWork.get()) {
 //
 //            DatagramPacket receivedPacket = new DatagramPacket(buffer.array(), maxMessageBufferSize);
@@ -294,35 +317,35 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 //                }
 //            }
 //        }
+//    }
+
+    public synchronized void registerListener(IMessageListener listener) {
+//        create a map
+//            Map <String, List<String>>
+
+        if (!messageListeners.contains(listener)) {
+
+            messageListeners.add(listener);
+
+            getLogger().info("Registered packet listener");
+
+        } else {
+
+            getLogger().warn("Attempt to register listener that is already registered");
+        }
     }
 
-//    public synchronized void registerListener(IMessageListener listener) {
-        //create a map
-            //Map <String, List<String>>
+    public synchronized void unregisterListener(IMessageListener listener) {
 
-//        if (!messageListeners.contains(listener)) {
-//
-//            messageListeners.add(listener);
-//
-//            getLogger().info("Registered packet listener");
-//
-//        } else {
-//
-//            getLogger().warn("Attempt to register listener that is already registered");
-//        }
-//    }
-//
-//    public synchronized void unregisterListener(IMessageListener listener) {
-//
-//        if (messageListeners.contains(listener) && messageListeners.remove(listener)) {
-//
-//            getLogger().info("Unregistered packet listener");
-//
-//        } else {
-//
-//            getLogger().warn("Attempt to unregister listener that is not registered");
-//        }
-//    }
+        if (messageListeners.contains(listener) && messageListeners.remove(listener)) {
+
+            getLogger().info("Unregistered packet listener");
+
+        } else {
+
+            getLogger().warn("Attempt to unregister listener that is not registered");
+        }
+    }
 //
 //    public synchronized void sendPacket(String id, String message) throws IOException {
 ////this is where we send configurations
@@ -353,6 +376,6 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 //                 IllegalBlockingModeException | IllegalArgumentException exception) {
 //
 //            getLogger().error("Exception occurred sending packet", exception);
-        }
+//        }
 //    }
-//}
+}
