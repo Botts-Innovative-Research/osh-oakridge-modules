@@ -18,6 +18,7 @@ import com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 
 
 import net.opengis.sensorml.v20.PhysicalSystem;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.event.IEventListener;
 import org.sensorhub.api.module.ModuleEvent;
@@ -32,6 +33,9 @@ import org.vast.sensorML.SMLHelper;
 import java.io.IOException;
 import java.io.BufferedInputStream;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
@@ -42,11 +46,15 @@ import java.util.concurrent.CompletionException;
  * @author Cardy
  * @since 11/15/23
  */
-public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
+public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implements IMessageListener {
 
     private static final Logger logger = LoggerFactory.getLogger(WADWAZ1Sensor.class);
 
     private ZwaveCommService commService;
+    private int configNodeId = 13;
+    private ZWaveEvent message;
+    private Map nodeMap;
+
     EntryAlarmOutput entryAlarmOutput;
     BatteryOutput batteryOutput;
     TamperAlarmOutput tamperAlarmOutput;
@@ -101,19 +109,11 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
         } else {
 
             moduleRegistry.waitForModule(commService.getLocalID(), ModuleEvent.ModuleState.STARTED)
-                    .thenRun(() -> commService.registerListener((IEventListener) this));
+                    .thenRun(() -> commService.registerListener(this));
+//                    .thenRun(() -> logger.info("Comm service started"));
 
             CompletableFuture.runAsync(() -> {
-                        try {
 
-                            moduleRegistry.initModule("[urn:osh:sensor:wadwaz1]");
-
-                        } catch (SensorException e) {
-
-                            throw new CompletionException(e);
-                        } catch (SensorHubException e) {
-                            throw new RuntimeException(e);
-                        }
                     })
                     .thenRun(() -> setState(ModuleEvent.ModuleState.INITIALIZED))
                     .exceptionally(err -> {
@@ -124,6 +124,27 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
 
                         return null;
                     });
+//            CompletableFuture.runAsync(() -> {
+//                        try {
+//
+//                            moduleRegistry.initModule(config.id);
+//
+//                        } catch (SensorException e) {
+//
+//                            throw new CompletionException(e);
+//                        } catch (SensorHubException e) {
+//                            throw new RuntimeException(e);
+//                        }
+//                    })
+//                    .thenRun(() -> setState(ModuleEvent.ModuleState.INITIALIZED))
+//                    .exceptionally(err -> {
+//
+//                        reportError(err.getMessage(), err.getCause());
+//
+//                        setState(ModuleEvent.ModuleState.LOADED);
+//
+//                        return null;
+//                    });
         }
 
         // Create and initialize output
@@ -152,16 +173,9 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
     @Override
     public void doStart() throws SensorHubException {
 
-//        ZWaveMessageHandler zWaveConnect = new ZWaveMessageHandler(entryAlarmOutput,
-//                tamperAlarmOutput, externalSwitchAlarmOutput, batteryOutput, locationOutput);
-//
-//        zWaveConnect.ZWaveConnect("COM5", 115200);
+//        locationOutput.setLocationOutput(config.getLocation());
 
-
-
-        locationOutput.setLocationOutput(config.getLocation());
-
-        }
+    }
 
 
     @Override
@@ -197,6 +211,27 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> {
             return commService.isStarted();
         }
     }
-}
 
+    @Override
+    public void onNewDataPacket(int id, ZWaveEvent message) {
+        if (id == configNodeId) {
+
+                this.message = message;
+
+                logger.info(String.valueOf(message.getClass()));
+                logger.info("Message class simple name: " + message.getClass().getSimpleName());
+
+//                if (nodeMap.containsKey("13")) {
+                    logger.info("This is the ID: " + id);
+                    logger.info("This is the message for " + configNodeId + " : " + message);
+
+//        for (Object o : message) {
+//            logger.info((String) o);
+        }
+
+//                }
+//
+//        }
+    }
+}
 
