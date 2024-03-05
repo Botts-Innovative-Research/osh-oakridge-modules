@@ -118,13 +118,22 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    public void onNewMessage(String alarmType, String alarmValue, Boolean isEntry) {
 
-        if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "255")) {
+    public void onNewMessage(int key, String value, Boolean isEntry) {
+
+        if (key == 32 && Objects.equals(value, "255")) {
             isEntry = true;
-        } else if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && (Objects.equals(alarmValue, "0"))){
+        } else if (key == 32 && Objects.equals(value, "0")){
             isEntry = false;
         }
+
+//    public void onNewMessage(String alarmType, String alarmValue, Boolean isEntry) {
+//
+//        if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "255")) {
+//            isEntry = true;
+//        } else if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && (Objects.equals(alarmValue, "0"))){
+//            isEntry = false;
+//        }
 
         boolean processSets = true;
 

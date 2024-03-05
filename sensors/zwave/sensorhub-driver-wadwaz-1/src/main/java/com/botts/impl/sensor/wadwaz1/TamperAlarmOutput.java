@@ -119,11 +119,16 @@ public class TamperAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    public void onNewMessage(String alarmType, String alarmValue, Boolean isTamperAlarm) {
+    public void onNewMessage(int key, String value, int event, Boolean isTamperAlarm) {
 
-        if (Objects.equals(alarmType, "BURGLAR") && Objects.equals(alarmValue, "255")) {
+        if (key == 7 && Objects.equals(value, "255") && event == 3) {
             isTamperAlarm = true;
         }
+//    public void onNewMessage(String alarmType, String alarmValue, Boolean isTamperAlarm) {
+//
+//        if (Objects.equals(alarmType, "BURGLAR") && Objects.equals(alarmValue, "255")) {
+//            isTamperAlarm = true;
+//        }
 
         boolean processSets = true;
 

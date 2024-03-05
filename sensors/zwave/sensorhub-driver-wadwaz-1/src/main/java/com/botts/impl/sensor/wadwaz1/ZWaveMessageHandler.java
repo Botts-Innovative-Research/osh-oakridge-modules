@@ -77,7 +77,7 @@ public class ZWaveMessageHandler {
                     alarmType = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmType().name();
                     alarmValue = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getValue().toString();
 
-                    tamperAlarmOutput.onNewMessage(alarmType, alarmValue, false);
+//                    tamperAlarmOutput.onNewMessage(alarmType, alarmValue, false);
 
                     System.out.println(alarmType);
                     System.out.println(alarmValue);
@@ -96,7 +96,7 @@ public class ZWaveMessageHandler {
 
                     handleCommandClassData(commandClassType, commandClassValue);
 
-                    entryAlarmOutput.onNewMessage(commandClassType, commandClassValue, false);
+//                    entryAlarmOutput.onNewMessage(commandClassType, commandClassValue, false);
 
 //                    System.out.println(commandClassType);
 //                    System.out.println(commandClassValue);

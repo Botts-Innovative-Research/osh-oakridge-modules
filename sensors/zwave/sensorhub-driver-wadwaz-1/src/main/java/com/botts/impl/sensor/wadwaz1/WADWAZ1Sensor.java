@@ -18,6 +18,8 @@ import com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 
 
 import net.opengis.sensorml.v20.PhysicalSystem;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.event.IEventListener;
@@ -39,6 +41,8 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
+import static org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass.CommandClass.getCommandClass;
+
 
 /**
  * Sensor driver providing sensor description, output registration, initialization and shutdown of driver and outputs.
@@ -53,15 +57,19 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
     private ZwaveCommService commService;
     private int configNodeId = 13;
     private ZWaveEvent message;
-    private Map nodeMap;
+    int key;
+    String value;
+    int event;
+    String alarmType;
+    String alarmValue;
+    String commandClassType;
+    String commandClassValue;
 
     EntryAlarmOutput entryAlarmOutput;
     BatteryOutput batteryOutput;
     TamperAlarmOutput tamperAlarmOutput;
     ExternalSwitchAlarmOutput externalSwitchAlarmOutput;
     LocationOutput locationOutput;
-    InputStream msgIn;
-
 
     @Override
     protected void updateSensorDescription() {
@@ -78,7 +86,7 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
                 SMLHelper smlWADWAZHelper = new SMLHelper();
                 smlWADWAZHelper.edit((PhysicalSystem) sensorDescription)
                         .addIdentifier(smlWADWAZHelper.identifiers.modelNumber("WADWAZ-1"))
-                        .addClassifier(smlWADWAZHelper.classifiers.sensorType(""));
+                        .addClassifier(smlWADWAZHelper.classifiers.sensorType("Window/Door Sensor"));
             }
         }
     }
@@ -93,10 +101,6 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
         generateXmlID("[WADWAZ-1]", config.serialNumber);
 
         initAsync = true;
-
-//        logger = LoggerFactory.getLogger(WADWAZ1Sensor.class);
-//        checkConfig();
-//        uniqueID = config.urnId;
 
         ModuleRegistry moduleRegistry = getParentHub().getModuleRegistry();
 
@@ -124,6 +128,7 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 
                         return null;
                     });
+
 //            CompletableFuture.runAsync(() -> {
 //                        try {
 //
@@ -218,20 +223,51 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 
                 this.message = message;
 
-                logger.info(String.valueOf(message.getClass()));
-                logger.info("Message class simple name: " + message.getClass().getSimpleName());
-
-//                if (nodeMap.containsKey("13")) {
                     logger.info("This is the ID: " + id);
                     logger.info("This is the message for " + configNodeId + " : " + message);
 
-//        for (Object o : message) {
-//            logger.info((String) o);
-        }
 
-//                }
+                    if (message instanceof ZWaveCommandClassValueEvent) {
+                        ((ZWaveCommandClassValueEvent) message).getCommandClass().getKey();
+                        ((ZWaveCommandClassValueEvent) message).getValue();
+
+                        key = ((ZWaveCommandClassValueEvent) message).getCommandClass().getKey();
+                        value = ((ZWaveCommandClassValueEvent) message).getValue().toString();
+
+                        logger.info(String.valueOf(key));
+                        logger.info(value);
+
+                    entryAlarmOutput.onNewMessage(key, value, false);
+
+
+                    } else if (message instanceof ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) {
+
+                        event = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmEvent();
+                        key = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmType().getKey();
+                        value = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getValue().toString();
+
+                        logger.info(String.valueOf(key));
+                        logger.info(value);
+                        logger.info(String.valueOf(event));
+
+                        tamperAlarmOutput.onNewMessage(key, value, event, false);
+
+                    }
+
+                    }
+
+//                System.out.println("Node " + ((ZWaveCommandClassValueEvent) message).getNodeId() +
+//                        " ALARM TYPE" + " -> " +
+//                        ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmType().name() + " Alarm: " +
+//                        ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getValue());
 //
-//        }
+//
+//                alarmType = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmType().name();
+//                alarmValue = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getValue().toString();
+//
+//                tamperAlarmOutput.onNewMessage(alarmType, alarmValue, false);
+//            }
+        }
     }
-}
+//}
 

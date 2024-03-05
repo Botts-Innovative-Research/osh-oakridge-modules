@@ -20,7 +20,9 @@ import org.sensorhub.impl.comm.UARTConfig;
 import org.sensorhub.impl.module.AbstractModule;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
@@ -36,16 +38,10 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 
     private final List<IMessageListener> messageListeners = new ArrayList<>();
 
-    public Map <Integer, List<String>> nodeMap;
-//    ArrayList<String> zWaveAlarmValueEvents = new ArrayList<String>();
-    List<String> zWaveAlarmValueEvents;
-
 
     UARTConfig uartConfig = new UARTConfig();
     RxtxZWaveIoHandler ioHandler;
     ZWaveController zController;
-    ZWaveEventListener zWaveEventListener;
-    Collection zWaveNodes;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -58,15 +54,15 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         uartConfig.portName = "COM5";
 
 
-        RxtxZWaveIoHandler ioHandlerB = new RxtxZWaveIoHandler(uartConfig);
-        logger.info("RXTX handler created");
-        ZWaveController zControllerB = new ZWaveController(ioHandlerB);
-        logger.info("Zcontroller created");
-        ioHandlerB.start(msg -> zControllerB.incomingPacket(msg));
+        ioHandler = new RxtxZWaveIoHandler(uartConfig);
 
-        logger.info("IO handler started");
-        ioHandler = ioHandlerB;
-        zController = zControllerB;
+//        if (ioHandler.os == null) {
+
+            ioHandler.start(msg -> zController.incomingPacket(msg));
+//        }
+
+        zController = new ZWaveController(ioHandler);
+
 
         workerThread = new Thread(this, this.getClass().getSimpleName());
 
