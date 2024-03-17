@@ -136,7 +136,13 @@ public class TemperatureOutput extends AbstractSensorOutput<WAPIRZ1Sensor> {
     }
 
 //    @Override
-    public void onNewMessage(String temperatureValue) {
+    public void onNewMessage(int key, String temperatureValue) {
+
+        String temperature = null;
+
+        if (key == 1) {
+            temperature = temperatureValue;
+        }
 
         boolean processSets = true;
 
@@ -173,7 +179,7 @@ public class TemperatureOutput extends AbstractSensorOutput<WAPIRZ1Sensor> {
 
 
             dataBlock.setDoubleValue(0, time);
-            dataBlock.setStringValue(1, temperatureValue);
+            dataBlock.setStringValue(1, temperature);
 
             latestRecord = dataBlock;
 

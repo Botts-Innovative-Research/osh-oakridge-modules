@@ -166,26 +166,20 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
 //        at end of timer calls onMessage isMotion = false
 
 
-Timer motionTimer = new Timer(); // creating timer
-
-
-
-//    public void motionEventB(String alarmType, String alarmValue) throws InterruptedException {
-//        isMotion = false;
-//
-//        if (Objects.equals(alarmType, "BURGLAR") && Objects.equals(alarmValue, "255")) {
-//
-//            onNewMessage(alarmType, alarmValue, true);
-//
-//            onNewMessage(alarmType, alarmValue, false);
+    public void onNewMessage(String key, String value, Boolean isMotion) {
+//key == 32
+//        if (key == 32 && Objects.equals(value, "255")){
+//            isMotion = true;
+//        } else if (key == 32 && Objects.equals(value, "0")){
+//            isMotion = false;
 //        }
-//    }
-
-    public void onNewMessage(String alarmType, String alarmValue, Boolean isMotion) {
-
-        if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "255")) {
+        if (Objects.equals(key, "BURGLAR") && Objects.equals(value, "255")) {
             isMotion = true;
-        } else if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "0")) {
+        } else if ((Objects.equals(key, "COMMAND_CLASS_BASIC") && Objects.equals(value, "255"))) {
+            isMotion = true;
+        } else if (Objects.equals(key, "BURGLAR") && Objects.equals(value, "0")){
+            isMotion = false;
+        } else if (Objects.equals(key, "COMMAND_CLASS_BASIC") && Objects.equals(value, "0")) {
             isMotion = false;
         }
 

@@ -31,13 +31,13 @@ import java.util.Objects;
  * @author cardy
  * @since 11/14/23
  */
-public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor>{
+public class VibrationAlarmOutput extends AbstractSensorOutput<ZW100Sensor>{
 
-    private static final String SENSOR_OUTPUT_NAME = "ZW100 Tamper Alarm";
+    private static final String SENSOR_OUTPUT_NAME = "ZW100 Vibration Alarm";
 
-    private static final Logger logger = LoggerFactory.getLogger(TamperAlarmOutput.class);
+    private static final Logger logger = LoggerFactory.getLogger(VibrationAlarmOutput.class);
 
-    private DataRecord tamperAlarmData;
+    private DataRecord vibrationAlarmData;
     private DataEncoding dataEncoding;
 
     private Boolean stopProcessing = false;
@@ -55,7 +55,7 @@ public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor>{
      *
      * @param parentSensor Sensor driver providing this output
      */
-    TamperAlarmOutput(ZW100Sensor parentSensor) {
+    VibrationAlarmOutput(ZW100Sensor parentSensor) {
 
         super(SENSOR_OUTPUT_NAME, parentSensor);
 
@@ -71,26 +71,26 @@ public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor>{
         logger.debug("Initializing Output");
 
         // Get an instance of SWE Factory suitable to build components
-        GeoPosHelper tamperAlarmHelper = new GeoPosHelper();
+        GeoPosHelper vibrationAlarmHelper = new GeoPosHelper();
 
-        String strTamperAlarmStatus = "Tamper Alarm Status";
+        String strVibrationAlarm = "Vibration Alarm";
 
-        tamperAlarmData = tamperAlarmHelper.createRecord()
+        vibrationAlarmData = vibrationAlarmHelper.createRecord()
                 .name(getName())
-                .label(strTamperAlarmStatus)
+                .label(strVibrationAlarm)
                 .definition("http://sensorml.com/ont/swe/property/Alarm")
-                .addField("Sampling Time", tamperAlarmHelper.createTime().asSamplingTimeIsoUTC())
-                .addField(strTamperAlarmStatus,
-                        tamperAlarmHelper.createCategory()
-                                .name("tamper-alarm-status")
-                                .label(strTamperAlarmStatus)
+                .addField("Sampling Time", vibrationAlarmHelper.createTime().asSamplingTimeIsoUTC())
+                .addField(strVibrationAlarm,
+                        vibrationAlarmHelper.createCategory()
+                                .name("vibration-alarm-status")
+                                .label(strVibrationAlarm)
                                 .definition("http://sensorml.com/ont/swe/property/Alarm")
-                                .description("Status of Tamper Alarm"))
+                                .description("Status of Vibration Alarm"))
 //                                .addAllowedValues("ON", "OFF"))
 
                 .build();
 
-        dataEncoding = tamperAlarmHelper.newTextEncoding(",", "\n");
+        dataEncoding = vibrationAlarmHelper.newTextEncoding(",", "\n");
 
         logger.debug("Initializing Output Complete");
     }
@@ -120,7 +120,7 @@ public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor>{
     @Override
     public DataComponent getRecordDescription() {
 
-        return tamperAlarmData;
+        return vibrationAlarmData;
     }
 
     @Override
@@ -145,11 +145,19 @@ public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor>{
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    public void onNewMessage(String alarmType, String alarmValue, int alarmEvent, Boolean isVibration) {
+//    public void onNewMessage(String alarmType, String alarmValue, int alarmEvent, Boolean isVibration) {
+//
+//        if (Objects.equals(alarmType, "BURGLAR") &&  alarmEvent == 3 && Objects.equals(alarmValue, "255")) {
+//            isVibration = true;
+//        } else if (Objects.equals(alarmType, "BURGLAR") && alarmEvent == 0){
+//            isVibration = false;
+//        }
 
-        if (Objects.equals(alarmType, "BURGLAR") &&  alarmEvent == 3 && Objects.equals(alarmValue, "255")) {
+    public void onNewMessage(int key, String value, int event, Boolean isVibration) {
+
+        if (key == 7 && Objects.equals(value, "255") && event == 3) {
             isVibration = true;
-        } else if (Objects.equals(alarmType, "BURGLAR") && alarmEvent == 0){
+        } else if (key == 7 && event == 0){
             isVibration = false;
         }
 
@@ -164,7 +172,7 @@ public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor>{
                 DataBlock dataBlock;
                 if (latestRecord == null) {
 
-                    dataBlock = tamperAlarmData.createDataBlock();
+                    dataBlock = vibrationAlarmData.createDataBlock();
 
                 } else {
 
@@ -196,7 +204,7 @@ public class TamperAlarmOutput extends AbstractSensorOutput<ZW100Sensor>{
 
                 latestRecordTime = System.currentTimeMillis();
 
-                eventHandler.publish(new DataEvent(latestRecordTime, TamperAlarmOutput.this, dataBlock));
+                eventHandler.publish(new DataEvent(latestRecordTime, VibrationAlarmOutput.this, dataBlock));
 
 //                synchronized (processingLock) {
 //

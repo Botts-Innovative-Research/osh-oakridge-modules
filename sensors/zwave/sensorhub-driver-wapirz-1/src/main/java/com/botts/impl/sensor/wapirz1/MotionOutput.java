@@ -156,15 +156,24 @@ public class MotionOutput extends AbstractSensorOutput<WAPIRZ1Sensor> {
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
+    public void onNewMessage(int key, String value, int event, Boolean isMotion) {
 
-    public void onNewMessage(String alarmType, String alarmValue, int v1AlarmCode, Boolean isMotion) {
-
-        if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "255")) {
+        if (key == 7 && Objects.equals(value, "255") && event == 2) {
             isMotion = true;
-        } else if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "0")) {
+        } else if (key == 7 && Objects.equals(value, "0") && event == 2){
             isMotion = false;
         }
 
+//    public void onNewMessage(String alarmType, String alarmValue, int v1AlarmCode, Boolean isMotion) {
+//
+//        if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "255")) {
+//            isMotion = true;
+//        } else if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "0")) {
+//            isMotion = false;
+//        }
+//        key = 7; value = 255-triggered/0-untriggered; event = 2; - shook it around
+//        key = 32; value = 255; isMotion = true;
+//        key = 32; value = 0; isMotion = false; - or is this resetting Tamper alarm?
 
         boolean processSets = true;
 

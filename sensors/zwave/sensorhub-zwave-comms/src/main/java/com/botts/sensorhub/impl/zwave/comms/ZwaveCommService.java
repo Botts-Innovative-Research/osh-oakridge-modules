@@ -7,6 +7,8 @@ package com.botts.sensorhub.impl.zwave.comms;
 
 import org.openhab.binding.zwave.internal.protocol.ZWaveController;
 import org.openhab.binding.zwave.internal.protocol.ZWaveEventListener;
+import org.openhab.binding.zwave.internal.protocol.ZWaveMessagePayloadTransaction;
+import org.openhab.binding.zwave.internal.protocol.ZWaveNode;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveMultiLevelSensorCommandClass;
@@ -53,177 +55,14 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         uartConfig.baudRate = 115200;
         uartConfig.portName = "COM5";
 
-
         ioHandler = new RxtxZWaveIoHandler(uartConfig);
-
-//        if (ioHandler.os == null) {
-
-            ioHandler.start(msg -> zController.incomingPacket(msg));
-//        }
-
+        ioHandler.start(msg -> zController.incomingPacket(msg));
         zController = new ZWaveController(ioHandler);
-
 
         workerThread = new Thread(this, this.getClass().getSimpleName());
 
         initialized = true;
-
-//
-//        zController.addEventListener(new ZWaveEventListener() {
-//            public void ZWaveIncomingEvent(ZWaveEvent event) {
-//                logger.info("EVENT: " + event);
-//
-//                if (event instanceof ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) {
-//                    logger.info("Node " + ((ZWaveCommandClassValueEvent) event).getNodeId() +
-//                            " ALARM TYPE" +
-//                            "-> " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmType().name() + " Alarm: " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getValue() + " Alarm Status: " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmStatus() + " V1 Alarm Code:" +
-//                            " " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getV1AlarmCode() + " V1 Alarm " +
-//                            "Level:" +
-//                            " " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getV1AlarmLevel() + " Alarm Event: " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmEvent() + " Declaring " +
-//                            "Class: " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmType().getDeclaringClass() + " Report Type Name: " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getReportType().name());
-//
-//
-//                    int alarmEvent = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmEvent();
-//                    String alarmType = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmType().name();
-//                    String alarmValue = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getValue().toString();
-////
-////                    tamperAlarmOutput.onNewMessage(alarmType, alarmValue, alarmEvent, false);
-////
-//                    logger.info("Alarm Event: " + alarmEvent);
-//                    logger.info("Alarm Type: " + alarmType);
-//                    logger.info("Alarm Value: " + alarmValue);
-//
-//
-//                } else if (event instanceof ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) {
-//                    logger.info("Node " + ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getNodeId() + " SENSOR TYPE-> " +
-//                            ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getSensorType().getLabel() + ": " +
-//                            ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getValue());
-//
-////                    multiSensorType =
-////                            ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getSensorType().getLabel();
-////
-////                    multiSensorValue =
-////                            ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getValue().toString();
-////
-////
-////                    handleMultiSensorData(multiSensorType, multiSensorValue);
-////
-////                    System.out.println("Multisensor Type: " + multiSensorType);
-////                    System.out.println("Multisensor Value: " + multiSensorValue);
-//
-//
-//                } else if (event instanceof ZWaveCommandClassValueEvent) {
-//                    logger.info("Node " + ((ZWaveCommandClassValueEvent) event).getNodeId() +
-//                            "COMMAND CLASS NAME-> " +
-//                            ((ZWaveCommandClassValueEvent) event).getCommandClass().name() + ": " +
-//                            ((ZWaveCommandClassValueEvent) event).getValue());
-//
-//
-//                    String commandClassType = ((ZWaveCommandClassValueEvent) event).getCommandClass().name();
-//                    String commandClassValue = ((ZWaveCommandClassValueEvent) event).getValue().toString();
-////
-////                    handleCommandClassData(commandClassType, commandClassValue);
-////
-////                    motionOutput.onNewMessage(commandClassType, commandClassValue, false);
-////
-//                    logger.info("Command Class Type: " + commandClassType);
-//                    logger.info("Command Class Value: " + commandClassValue);
-//
-//
-//                } else if (event instanceof ZWaveNodeStatusEvent) {
-//                    logger.info(">> Received Node Info");
-//                    int nodeId = event.getNodeId();
-//                    logger.info("- Node " + nodeId);
-//                    for (ZWaveCommandClass cmdClass : zController.getNode(nodeId).getCommandClasses(0))
-//                        logger.info(cmdClass.toString());
-//
-//
-//                } else if (event instanceof ZWaveInitializationStateEvent) {
-//                    logger.info(">> Node (Final)" + event.getNodeId() + " " + ((ZWaveInitializationStateEvent) event).getStage());
-//
-//                    logger.info(zController.getNodes().toString());
-//
-//
-//
-//                    zWaveNodes = zController.getNodes();
-//
-//                    logger.info(zWaveNodes.toString());
-////                    logger.info(zWaveNodes.forEach();
-//
-////                    ArrayList nodeIDs = new ArrayList<Object>();
-//
-////                    for(int i = 0; i<zWaveNodes.size(); i++) {
-////
-////                        nodeIDs.add(zController.getNode(i).getManufacturer());
-////                        logger.info(String.valueOf(nodeIDs));
-////                    }
-//
-////                    handleNodeList(zWaveNodes, nodeIDs);
-//
-//                    Runtime.getRuntime().addShutdownHook(new Thread() {
-//                        public void run() {
-//                            zController.shutdown();
-//                            ioHandler.stop();
-//                        }
-//                    });
-//                }
-//            }
-//        });
     }
-
-//    public void handleNodeCollection(ZWaveController zController, Collection nodeList) {
-//        ArrayList nodeIDs = new ArrayList<Object>();
-//
-//        for(int i = 0; i<nodeList.size(); i++) {
-//            nodeIDs.add(zController.getNode(i).getManufacturer());
-//            logger.info(String.valueOf(nodeIDs));
-//        }
-//
-//         for (Iterator ii = nodeList.iterator(); ii.hasNext();) {
-//            Object nextNode = ii.next();
-//            if (nextNode == null) {
-//                ii.remove();
-//         for (Iterator iii = nodeIDs.iterator(); iii.hasNext();) {
-//             Object nextID = iii.next();
-//             if (nextID == "7FFFFFFF") {
-//                 ii.remove();
-//             }
-//         }
-//
-//    }
-//    public void handleNodeList(Collection nodeList) {
-//        for (Iterator i = nodeList.iterator(); i.hasNext();) {
-//            Object nextNode = i.next();
-//
-//            if (nextNode == null) {
-//                i.remove();
-//                logger.info("Empty node has been removed");
-//
-//                for (Iterator ii = nodeIDs.iterator(); ii.hasNext();) {
-//                    Object nodeID = ii.next();
-//
-//                    if (nodeID == "7FFFFFFF") {
-//                        ii.remove();
-//                        logger.info("Unidentified node removed)");
-//                    }
-//                }
-//
-//                break;
-//            }
-//            logger.info("Available nodes are: ");
-//            for (Object n: nodeList) {
-//                logger.info(nodeList.toString());
-//            }
-//        }
-//    }
 
     @Override
     protected void doStart() throws SensorHubException {
@@ -287,7 +126,6 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 
     @Override
     public void run() {
-
         zController.addEventListener(new ZWaveEventListener() {
 
             public void ZWaveIncomingEvent(ZWaveEvent event) {
@@ -297,101 +135,6 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 
                 messageListeners.forEach(listener -> listener.onNewDataPacket(event.getNodeId(), event));
 
-//                if (event instanceof ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) {
-//
-//                    logger.info("Node " + ((ZWaveCommandClassValueEvent) event).getNodeId() +
-//                            " ALARM TYPE" +
-//                            "-> " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmType().name() + " Alarm: " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getValue() + " Alarm Status: " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmStatus() + " V1 Alarm Code:" +
-//                            " " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getV1AlarmCode() + " V1 Alarm " +
-//                            "Level:" +
-//                            " " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getV1AlarmLevel() + " Alarm Event: " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmEvent() + " Declaring " +
-//                            "Class: " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmType().getDeclaringClass() + " Report Type Name: " +
-//                            ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getReportType().name());
-//
-//
-//                    String alarmEvent = String.valueOf(((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmEvent());
-//                    String alarmType = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getAlarmType().name();
-//                    String alarmValue = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) event).getValue().toString();
-////
-//
-////                    zWaveAlarmValueEvents = (ArrayList<String>) List.of(alarmEvent, alarmType, alarmValue);
-//
-//                    zWaveAlarmValueEvents = new ArrayList<>(Arrays.asList(alarmEvent, alarmType, alarmValue));
-//                    logger.info(zWaveAlarmValueEvents.forEach(zWaveAlarmValueEvents););
-////                    zWaveAlarmValueEvents.add(alarmEvent);
-////                    zWaveAlarmValueEvents.add(alarmType);
-////                    zWaveAlarmValueEvents.add(alarmValue);
-//
-//
-////                    nodeMap.put(((ZWaveCommandClassValueEvent) event).getNodeId(), zWaveAlarmValueEvents);
-//
-////                    tamperAlarmOutput.onNewMessage(alarmType, alarmValue, alarmEvent, false);
-////
-//                    logger.info("Alarm Event: " + alarmEvent);
-//                    logger.info("Alarm Type: " + alarmType);
-//                    logger.info("Alarm Value: " + alarmValue);
-//
-//
-//                } else if (event instanceof ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) {
-//                        logger.info("Node " + ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getNodeId() + " SENSOR TYPE-> " +
-//                                ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getSensorType().getLabel() + ": " +
-//                                ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) event).getValue());
-//
-//
-//                    } else if (event instanceof ZWaveCommandClassValueEvent) {
-//                        logger.info("Node " + ((ZWaveCommandClassValueEvent) event).getNodeId() +
-//                                "COMMAND CLASS NAME-> " +
-//                                ((ZWaveCommandClassValueEvent) event).getCommandClass().name() + ": " +
-//                                ((ZWaveCommandClassValueEvent) event).getValue());
-//
-//
-//                        String commandClassType = ((ZWaveCommandClassValueEvent) event).getCommandClass().name();
-//                        String commandClassValue = ((ZWaveCommandClassValueEvent) event).getValue().toString();
-//                        //
-//                        //                    handleCommandClassData(commandClassType, commandClassValue);
-//                        //
-//                        //                    motionOutput.onNewMessage(commandClassType, commandClassValue, false);
-//                        //
-//                        logger.info("Command Class Type: " + commandClassType);
-//                        logger.info("Command Class Value: " + commandClassValue);
-//
-//
-//                    } else if (event instanceof ZWaveNodeStatusEvent) {
-//                        logger.info(">> Received Node Info");
-//                        int nodeId = event.getNodeId();
-//                        logger.info("- Node " + nodeId);
-//                        for (ZWaveCommandClass cmdClass : zController.getNode(nodeId).getCommandClasses(0))
-//                            logger.info(cmdClass.toString());
-//
-//
-//                    } else if (event instanceof ZWaveInitializationStateEvent) {
-//                        logger.info(">> Node (Final)" + event.getNodeId() + " " + ((ZWaveInitializationStateEvent) event).getStage());
-//
-//                        logger.info(zController.getNodes().toString());
-//
-//
-//                        zWaveNodes = zController.getNodes();
-//
-//                        logger.info(zWaveNodes.toString());
-//                        //                    logger.info(zWaveNodes.forEach();
-//
-//                        //                    ArrayList nodeIDs = new ArrayList<Object>();
-//
-//                        //                    for(int i = 0; i<zWaveNodes.size(); i++) {
-//                        //
-//                        //                        nodeIDs.add(zController.getNode(i).getManufacturer());
-//                        //                        logger.info(String.valueOf(nodeIDs));
-//                        //                    }
-//
-//                        //                    handleNodeList(zWaveNodes, nodeIDs);
-
                 Runtime.getRuntime().addShutdownHook(new Thread() {
                     public void run() {
                         zController.shutdown();
@@ -399,76 +142,11 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
                     }
                 });
             }
-//                }
-
-
-//                String id = String.valueOf(event.getNodeId());
-
-            //create node buckets aka a map
-            //if the id = NodeID then send nodeBucket
-
-//                ZWaveEvent message = event.toString();
-//                logger.info(String.valueOf(zWaveAlarmValueEvents));
-//                messageListeners.forEach(listener -> listener.onNewDataPacket(event.getNode, zWaveAlarmValueEvents));
-
-
-
-/* 1. Can create a map <String, List<String> > in which the key is the nodeID; the values are the return values of
-the eventListeners relevant to that specific node
-
- */
-//            }
-
-
         });
-
 }
 
-//    }
-//        while (doWork.get()) {
-//
-//            DatagramPacket receivedPacket = new DatagramPacket(buffer.array(), maxMessageBufferSize);
-//
-//            try {
-//                initialized = true;
-//            }
-//
-//                datagramSocket.receive(receivedPacket);
-//
-//                byte[] data = Arrays.copyOf(receivedPacket.getData(), receivedPacket.getLength());
-//
-//                JsonStreamParser jsonStreamParser = new JsonStreamParser(new String(data));
-//
-//                if (jsonStreamParser.hasNext()) {
-//
-//                    JsonObject jsonObject = jsonStreamParser.next().getAsJsonObject();
-//
-//                    String id = jsonObject.get("participantId").getAsString();
-//                    String message = jsonObject.get("data").getAsString();
-//
-//                    if (id != null && message != null) {
-//
-//                        messageListeners.forEach(listener -> listener.onNewDataPacket(id, message));
-//                    }
-//                }
-
-//                buffer.clear();
-
-//            } catch (IOException exception) {
-
-                // If exception occurs while still processing
-//                if (doWork.get()) {
-//
-                    // Log the error but move on
-//                    getLogger().error("Exception receiving latest packet", exception);
-//                }
-//            }
-//        }
-//    }
 
     public synchronized void registerListener(IMessageListener listener) {
-//        create a map
-//            Map <String, List<String>>
 
         if (!messageListeners.contains(listener)) {
 
@@ -493,36 +171,23 @@ the eventListeners relevant to that specific node
             getLogger().warn("Attempt to unregister listener that is not registered");
         }
     }
-//
+
+    public void sendConfigurations(ZWaveMessagePayloadTransaction transaction){
+        zController.sendTransaction(transaction);
+    }
+
+    public void configMessage(ZWaveMessagePayloadTransaction transaction, String configMessage){
+        configMessage = Objects.requireNonNull(zController.sendTransaction(transaction)).toString();
+        System.out.println(configMessage);
+    }
+
+    public ZWaveNode getZWaveNode(int nodeID){
+        return zController.getNode(nodeID);
+
+    }
+
 //    public synchronized void sendPacket(String id, String message) throws IOException {
-////this is where we send configurations
-//        StringWriter stringWriter = new StringWriter();
-//        JsonWriter jsonWriter = new JsonWriter(stringWriter);
-//
-//        jsonWriter.beginObject();
-//        jsonWriter.name("participantId").value(id);
-//        jsonWriter.name("data").value(message);
-//        jsonWriter.endObject();
-//        jsonWriter.close();
-//
-//        byte[] buffer = stringWriter.toString().getBytes();
-//
-//        DatagramPacket datagramPacket = new DatagramPacket(buffer, buffer.length, remoteAddress, config.remotePort);
-//
-//        try {
 
-//            if (datagramSocket.isClosed()) {
-//
-//                getLogger().error("Socket is closed");
-//                throw new IOException("Socket is closed");
-//            }
-//
-//            datagramSocket.send(datagramPacket);
+// this is where we send configurations
 
-//        } catch (SecurityException | PortUnreachableException |
-//                 IllegalBlockingModeException | IllegalArgumentException exception) {
-//
-//            getLogger().error("Exception occurred sending packet", exception);
-//        }
-//    }
 }

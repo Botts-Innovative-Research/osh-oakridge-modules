@@ -7,9 +7,6 @@ package com.botts.sensorhub.impl.zwave.comms;
 
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 
-import java.util.ArrayList;
-import java.util.Map;
-
 public interface IMessageListener {
 
     void onNewDataPacket(int id, ZWaveEvent message);

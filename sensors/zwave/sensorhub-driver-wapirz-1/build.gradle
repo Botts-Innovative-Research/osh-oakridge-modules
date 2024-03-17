@@ -1,24 +1,26 @@
-description = 'Linear/GoControl WAPIRZ-1 Motion Detector (with Temperature Device Handler)'
-ext.details = "Radio Frequency (Z-Wave) Motion Sensor"
+description = 'WAPIRZ-1 Motion Detector'
+ext.details = "Linear/GoControl WAPIRZ-1 Z-Wave Motion Detector (with Temperature Device Handler)"
 version = '1.0.0'
+
+
+repositories {
+    maven {
+        url "https://openhab.jfrog.io/artifactory/libs-release"
+    }
+}
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
-//    testImplementation('junit:junit:4.13.1')
-
-    implementation files('libs/org.openhab.core.thing-4.1.1.jar')
-    implementation files('libs/org.openhab.binding.zwave-4.1.1.jar')
-    implementation files('libs/org.openhab.core-4.1.1.jar')
-    implementation files('libs/org.openhab.core.config.core-4.1.1.jar')
-
-    implementation files('libs/nrjavaserial-5.2.1.jar')
-    implementation files('libs/xstream-1.4.20.jar')
-    implementation files('libs/librxtxSerial.so')
-
-
+    testImplementation('junit:junit:4.13.1')
     implementation project(':sensorhub-comm-rxtx')
-    embeddedImpl 'gnu.io:rxtx:2.2-pre1'
+    implementation project (':sensorhub-zwave-comms')
+
+    implementation 'org.openhab.addons.bundles:org.openhab.binding.zwave:4.1.1'
+    implementation 'org.openhab.core.bundles:org.openhab.core:4.1.1'
+    implementation 'org.openhab.core.bundles:org.openhab.core.config.core:4.1.1'
+    implementation 'org.openhab.core.bundles:org.openhab.core.thing:4.1.1'
 }
+
 
 // exclude tests requiring connection to the sensor
 // these have to be run manually
@@ -32,7 +34,7 @@ test {
 osgi {
     manifest {
         attributes ('Bundle-Vendor': 'Botts Inc')
-        attributes ('Bundle-Activator': 'com.sample.impl.sensor.wadwaz1.Activator')
+        attributes ('Bundle-Activator': 'com.sample.impl.sensor.wapirz1.WAPIRZ1Activator')
     }
 }
 

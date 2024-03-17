@@ -4,6 +4,7 @@ package com.botts.impl.sensor.wadwaz1;
 import com.botts.sensorhub.impl.zwave.comms.RxtxZWaveIoHandler;
 import org.openhab.binding.zwave.internal.protocol.ZWaveController;
 import org.openhab.binding.zwave.internal.protocol.ZWaveEventListener;
+import org.openhab.binding.zwave.internal.protocol.ZWaveMessagePayloadTransaction;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveBatteryCommandClass;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass;
@@ -150,6 +151,7 @@ public class ZWaveMessageHandler {
                             System.out.println(((ZWaveWakeUpCommandClass) zController.getNode(13).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP)).getInterval());
                             System.out.println(zController.sendTransaction(wakeUp));
                         }
+
 
 
                         ZWaveBatteryCommandClass battery =

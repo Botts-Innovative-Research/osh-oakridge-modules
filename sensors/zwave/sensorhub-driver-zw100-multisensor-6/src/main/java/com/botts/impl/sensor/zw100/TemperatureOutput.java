@@ -142,9 +142,7 @@ public class TemperatureOutput extends AbstractSensorOutput<ZW100Sensor> {
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-//    @Override
     public void onNewMessage(String sensorValue) {
-
 
         boolean processSets = true;
 
