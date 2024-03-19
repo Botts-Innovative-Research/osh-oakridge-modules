@@ -47,12 +47,10 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
     private static final Logger logger = LoggerFactory.getLogger(ZW100Sensor.class);
 
     private ZwaveCommService commService;
-    private final int configNodeId = 24;
+    private final int configNodeId = 26;
     private final int zControllerId = 1;
     private ZWaveEvent message;
-    int key;
-    String value;
-    int event;
+
     int alarmKey;
     String alarmValue;
     int alarmEvent;
@@ -64,6 +62,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
     String commandClassMessage;
 
     MotionOutput motionOutput;
+
     RelativeHumidityOutput relativeHumidityOutput;
 
     TemperatureOutput temperatureOutput;
@@ -252,7 +251,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
     // Sorts data based on message type and sends information to outputs
     @Override
     public void onNewDataPacket(int id, ZWaveEvent message) {
-        if (id == configNodeId) {
+            if (id == configNodeId) {
 
             this.message = message;
 
@@ -261,8 +260,8 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                 alarmValue = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getValue().toString();
                 alarmEvent = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmEvent();
 
+                motionOutput.onNewMessage(alarmKey, alarmValue, alarmEvent, false);
                 vibrationAlarmOutput.onNewMessage(alarmKey, alarmValue, alarmEvent, false);
-//                motionOutput.onNewMessage(alarmKey, alarmValue, false);
 
             } else if (message instanceof ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) {
 
@@ -280,14 +279,14 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
                 handleCommandClassData(commandClassType, commandClassValue);
 
-                motionOutput.onNewMessage(commandClassType, commandClassValue, false);
+//                motionOutput.onNewMessage(commandClassType, commandClassValue, false);
 
             } else if (message instanceof ZWaveInitializationStateEvent) {
 
                 // Using Node Advancer -> check command class before running config commands (determine which init
                 // stages pertain to specific commands?)
 
-                if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.GET_CONFIGURATION && commService.getZWaveNode(configNodeId) != null && commService.getZWaveNode(zControllerId) != null) {
+                if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.DONE && commService.getZWaveNode(configNodeId) != null && commService.getZWaveNode(zControllerId) != null) {
 //
                     //&& (commService.getZWaveNode(configNodeId).getNodeInitStage() == ZWaveNodeInitStage.DONE ) && (commService.getZWaveNode(zControllerId) != null)
 
@@ -313,19 +312,21 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 //                    commService.sendConfigurations(setConfigUnlock);
 //                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(252));
 
+                    //Which command would be sent when the motion sensor triggered.
+                    // 1 = send Basic Set CC.
+                    // 2 = send Sensor Binary Report CC.
+                    ZWaveConfigurationParameter motionCommand = new ZWaveConfigurationParameter(5,1,1);
+                    ZWaveCommandClassTransactionPayload motionSensorTriggeredCommand =
+                            zWaveConfigurationCommandClass.setConfigMessage(motionCommand);
+                    commService.sendConfigurations(motionSensorTriggeredCommand);
+//                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(5));
 
-                    //Get report every 240 seconds/ 4 min (on battery)
-                    ZWaveConfigurationParameter sensorReportInterval = new ZWaveConfigurationParameter(111, 240, 4);
-                    ZWaveCommandClassTransactionPayload setSensorReportInterval =
-                            zWaveConfigurationCommandClass.setConfigMessage(sensorReportInterval);
-                    commService.sendConfigurations(setSensorReportInterval);
-                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(111));
-
-                    //Set temperature unit to F
-                    ZWaveConfigurationParameter tempUnit = new ZWaveConfigurationParameter(64,2,1);
-                    ZWaveCommandClassTransactionPayload setTempUnit =
-                            zWaveConfigurationCommandClass.setConfigMessage(tempUnit);
-                    commService.sendConfigurations(setTempUnit);
+                    //The Multisensor will send BASIC SET CC(0x00) to the associated nodes if no motion is
+                    // triggered again in 10 seconds
+                    ZWaveConfigurationParameter motionSensorReset = new ZWaveConfigurationParameter(3,10,2);
+                    ZWaveCommandClassTransactionPayload configMotionReset =
+                            zWaveConfigurationCommandClass.setConfigMessage(motionSensorReset);
+                    commService.sendConfigurations(configMotionReset);
 
                     //Set motion sensor sensitivity
                     ZWaveConfigurationParameter motionSensorSensitivity = new ZWaveConfigurationParameter(4,5,1);
@@ -334,8 +335,20 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                     commService.sendConfigurations(setMotionSensitivity);
 //                    logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(4),0).toString());
 
-                    System.out.println("CONFIG " +
-                            "MESSAGE__________________________________________________________");
+                    //Get report every 240 seconds/ 4 min (on battery)
+                    ZWaveConfigurationParameter sensorReportInterval = new ZWaveConfigurationParameter(111, 240, 4);
+                    ZWaveCommandClassTransactionPayload setSensorReportInterval =
+                            zWaveConfigurationCommandClass.setConfigMessage(sensorReportInterval);
+                    commService.sendConfigurations(setSensorReportInterval);
+//                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(111));
+
+                    //Set temperature unit to F
+                    ZWaveConfigurationParameter tempUnit = new ZWaveConfigurationParameter(64,2,1);
+                    ZWaveCommandClassTransactionPayload setTempUnit =
+                            zWaveConfigurationCommandClass.setConfigMessage(tempUnit);
+                    commService.sendConfigurations(setTempUnit);
+
+
 //                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(111));
 //                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(5));
 //                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(64));
@@ -346,37 +359,20 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 //                    logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(4),0).toString());
 
 
-//                  Set wakeup time to 240s
-//                    ZWaveWakeUpCommandClass wakeupCommandClass =
-//                            (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId).getCommandClass
-//                                    (ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
-//
-//                        if (wakeupCommandClass != null) {
-//                                ZWaveCommandClassTransactionPayload wakeUp =
-//                                        wakeupCommandClass.setInterval(configNodeId, 240);
-//
-//                            commService.sendConfigurations(wakeUp);
-//                            commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
+                    //Set wakeup time to 240s
+                    ZWaveWakeUpCommandClass wakeupCommandClass =
+                            (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId).getCommandClass
+                                    (ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
+
+                        if (wakeupCommandClass != null) {
+                                ZWaveCommandClassTransactionPayload wakeUp =
+                                        wakeupCommandClass.setInterval(configNodeId, 240);
+
+                            commService.sendConfigurations(wakeUp);
+                            commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
 //                            logger.info("INTERVAL MESSAGE: _____" + commService.getZWaveNode(zControllerId).sendTransaction(wakeupCommandClass.getIntervalMessage(),0));
-//                            }
+                            }
 
-//                    Which command would be sent when the motion sensor triggered.
-//                    1 = send Basic Set CC.
-//                    2 = send Sensor Binary Report CC.
-//                    ZWaveConfigurationParameter motionCommand =
-//                            new ZWaveConfigurationParameter(5,1,1);
-//                    ZWaveCommandClassTransactionPayload configMotionCommand =
-//                            zWaveConfigurationCommandClass.setConfigMessage(motionCommand);
-//                    commService.sendConfigurations(configMotionCommand);
-//                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(5));
-
-                        //The Multisensor will send BASIC SET CC(0x00) to the associated nodes if no motion is
-                        // triggered again in 10 seconds
-//                        ZWaveConfigurationParameter motionSensorReset =
-//                                new ZWaveConfigurationParameter(3,10,2);
-//                        //Send Basic Set CC
-//                        ZWaveConfigurationParameter motionSensorTriggeredCommand =
-//                                new ZWaveConfigurationParameter(5,1,1);
 //                        //Enable selective reporting only when measurements reach a certain threshold or
 //                        // percentage set
 //                        ZWaveConfigurationParameter selectiveReporting =
@@ -401,11 +397,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 //                        ZWaveConfigurationParameter temperatureUnit =
 //                                new ZWaveConfigurationParameter(64,2,1);
 
-//
-//                        ZWaveCommandClassTransactionPayload configMotionReset =
-//                                zWaveConfigurationCommandClass.setConfigMessage(motionSensorReset);
-//                        ZWaveCommandClassTransactionPayload configMotionTriggeredCommand =
-//                                zWaveConfigurationCommandClass.setConfigMessage(motionSensorTriggeredCommand);
+
 //                        ZWaveCommandClassTransactionPayload configSelectiveReporting =
 //                                zWaveConfigurationCommandClass.setConfigMessage(selectiveReporting);
 //                        ZWaveCommandClassTransactionPayload configTempThreshold =
@@ -421,15 +413,13 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 //                        ZWaveCommandClassTransactionPayload configTempUnit =
 //                                zWaveConfigurationCommandClass.setConfigMessage(temperatureUnit);
 ////
-//                        zController.sendTransaction(configMotionReset);
-//                        zController.sendTransaction(configMotionTriggeredCommand);
-//                        zController.sendTransaction(configSelectiveReporting);
-//                        zController.sendTransaction(configTempThreshold);
-//                        zController.sendTransaction(configRelHumThreshold);
-//                        zController.sendTransaction(configLuminanceThreshold);
-//                        zController.sendTransaction(configBatteryThreshold);
-//                        zController.sendTransaction(configUvThreshold);
-//                        zController.sendTransaction(configTempUnit);
+//                         commService.sendConfigurations(configSelectiveReporting);
+//                         commService.sendConfigurations(configTempThreshold);
+//                         commService.sendConfigurations(configRelHumThreshold);
+//                         commService.sendConfigurations(configLuminanceThreshold);
+//                         commService.sendConfigurations(configBatteryThreshold);
+//                         commService.sendConfigurations(configUvThreshold);
+//                         commService.sendConfigurations(configTempUnit);
 
                     if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.DONE) {
                         logger.info(commService.getZWaveNode(configNodeId).getNodeInitStage().name());

@@ -120,6 +120,11 @@ public class BatteryOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
     }
 
     public void onNewMessage(String batteryLevel) {
+//        String battery = null;
+//
+//        if (key == 128 ){   //key 128 = "COMMAND_CLASS_BATTERY"
+//            battery = batteryLevel;
+//        }
 
         boolean processSets = true;
 

@@ -194,8 +194,6 @@ public class VibrationAlarmOutput extends AbstractSensorOutput<ZW100Sensor>{
 
                 double time = System.currentTimeMillis() / 1000.;
 
-                String status = "";
-
 
                 dataBlock.setDoubleValue(0, time);
                 dataBlock.setBooleanValue(1, isVibration);

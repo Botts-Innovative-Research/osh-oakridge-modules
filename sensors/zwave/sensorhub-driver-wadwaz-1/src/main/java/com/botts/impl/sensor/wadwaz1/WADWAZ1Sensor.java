@@ -44,6 +44,7 @@ import java.io.BufferedInputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -72,11 +73,13 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
     String alarmValue;
     String commandClassType;
     String commandClassValue;
+    String commandClassMessage;
+
 
     EntryAlarmOutput entryAlarmOutput;
     BatteryOutput batteryOutput;
     TamperAlarmOutput tamperAlarmOutput;
-    ExternalSwitchAlarmOutput externalSwitchAlarmOutput;
+//    ExternalSwitchAlarmOutput externalSwitchAlarmOutput;
     LocationOutput locationOutput;
 
     @Override
@@ -174,9 +177,9 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
         addOutput(batteryOutput, false);
         batteryOutput.doInit();
 
-        externalSwitchAlarmOutput = new ExternalSwitchAlarmOutput(this);
-        addOutput(externalSwitchAlarmOutput, false);
-        externalSwitchAlarmOutput.doInit();
+//        externalSwitchAlarmOutput = new ExternalSwitchAlarmOutput(this);
+//        addOutput(externalSwitchAlarmOutput, false);
+//        externalSwitchAlarmOutput.doInit();
 
         locationOutput = new LocationOutput(this);
         addOutput(locationOutput, false);
@@ -225,7 +228,7 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
             return commService.isStarted();
         }
     }
-
+//
     @Override
     public void onNewDataPacket(int id, ZWaveEvent message) {
         if (id == configNodeId) {
@@ -239,13 +242,9 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
                 key = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmType().getKey();
                 value = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getValue().toString();
 
-                logger.info(String.valueOf(key));
-                logger.info(value);
-                logger.info(String.valueOf(event));
-
-                System.out.println("wadwaz " + key);
-                System.out.println("wadwaz " + value);
-                System.out.println("wadwaz " + event);
+//                System.out.println("wadwaz " + key);
+//                System.out.println("wadwaz " + value);
+//                System.out.println("wadwaz " + event);
 
                 tamperAlarmOutput.onNewMessage(key, value, event, false);
 
@@ -255,59 +254,80 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 //                tamperAlarmOutput.onNewMessage(alarmType, alarmValue, false);
 
             } else if (message instanceof ZWaveCommandClassValueEvent) {
-//                        ((ZWaveCommandClassValueEvent) message).getCommandClass().getKey();
-//                        ((ZWaveCommandClassValueEvent) message).getValue();
 
                 key = ((ZWaveCommandClassValueEvent) message).getCommandClass().getKey();
                 value = ((ZWaveCommandClassValueEvent) message).getValue().toString();
-//
-                logger.info(String.valueOf(key));
-                logger.info(value);
+
+                commandClassType = ((ZWaveCommandClassValueEvent) message).getCommandClass().name();
+                commandClassValue = ((ZWaveCommandClassValueEvent) message).getValue().toString();
 
                 System.out.println("wadwaz " + key);
                 System.out.println("wadwaz " + value);
 
+                handleCommandClassData(commandClassType, commandClassValue);
 
                 entryAlarmOutput.onNewMessage(key, value, false);
 
-            } else if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.STATIC_VALUES && commService.getZWaveNode(configNodeId).getNodeInitStage() == ZWaveNodeInitStage.DONE && commService.getZWaveNode(zControllerId) != null && commService.getZWaveNode(configNodeId) != null) {
+            } else if (message instanceof ZWaveInitializationStateEvent) {
 
-                ZWaveNode wadwazNode = commService.getZWaveNode(configNodeId);
+                if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.STATIC_VALUES && commService.getZWaveNode(zControllerId) != null && commService.getZWaveNode(configNodeId) != null) {
+
+//                ZWaveNode wadwazNode = commService.getZWaveNode(configNodeId);
 //                ZWaveNode zController = commService.getZWaveNode(zControllerId);
 
-                ZWaveBatteryCommandClass zWaveBatteryCommandClass =
-                        (ZWaveBatteryCommandClass) wadwazNode.getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
+                    ZWaveBatteryCommandClass zWaveBatteryCommandClass =
+                            (ZWaveBatteryCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
 
-                commService.sendConfigurations(zWaveBatteryCommandClass.getValueMessage());
+                    commService.sendConfigurations(zWaveBatteryCommandClass.getValueMessage());
 
 
-                ZWaveAlarmCommandClass alarmCommandClass =
-                        (ZWaveAlarmCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_ALARM);
-                ZWaveCommandClassTransactionPayload sendReport =
-                        alarmCommandClass.getMessage(ZWaveAlarmCommandClass.AlarmType.BURGLAR, 0);
-                        commService.sendConfigurations(sendReport);
-                        System.out.println("GOT THE REPORT");
+//                ZWaveAlarmCommandClass alarmCommandClass =
+//                        (ZWaveAlarmCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_ALARM);
+//                ZWaveCommandClassTransactionPayload sendReport =
+//                        alarmCommandClass.getMessage(ZWaveAlarmCommandClass.AlarmType.BURGLAR, 0);
+//                        commService.sendConfigurations(sendReport);
+//                        System.out.println("GOT THE REPORT");
 
-                ZWaveWakeUpCommandClass wakeupCommandClass =
-                        (ZWaveWakeUpCommandClass) wadwazNode.getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
-                if (wakeupCommandClass != null) {
-                    ZWaveCommandClassTransactionPayload wakeUp =
-                            wakeupCommandClass.setInterval(13, 600);
+                    ZWaveWakeUpCommandClass wakeupCommandClass =
+                            (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
+                    if (wakeupCommandClass != null) {
+                        ZWaveCommandClassTransactionPayload wakeUp =
+                                wakeupCommandClass.setInterval(configNodeId, 600);
 
-                    //minInterval = 600; intervals must set in 200 second increments
-                    commService.sendConfigurations(wakeUp);
-                    commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
-                    System.out.println(((ZWaveWakeUpCommandClass) wadwazNode.getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP)).getInterval());
+                        //minInterval = 600; intervals must set in 200 second increments
+                        commService.sendConfigurations(wakeUp);
+                        commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
+//                    System.out.println(((ZWaveWakeUpCommandClass) wadwazNode.getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP)).getInterval());
+                    }
+
+                    ZWaveBatteryCommandClass battery =
+                            (ZWaveBatteryCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
+                    ZWaveCommandClassTransactionPayload batteryCheck = battery.getValueMessage();
+                    commService.sendConfigurations(batteryCheck);
+                    System.out.println("THIS IS THE BATTERY CHECK");
+
                 }
-
-                ZWaveBatteryCommandClass battery =
-                        (ZWaveBatteryCommandClass) wadwazNode.getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
-                ZWaveCommandClassTransactionPayload batteryCheck = battery.getValueMessage();
-                commService.sendConfigurations(batteryCheck);
-                System.out.println("THIS IS THE BATTERY CHECK");
-
             }
         }
     }
+
+    public void handleCommandClassData(String commandClassType, String commandClassValue){
+
+        //Command Class Types
+        if (Objects.equals(commandClassType, "COMMAND_CLASS_BATTERY")) {
+            commandClassMessage = commandClassValue;
+
+            batteryOutput.onNewMessage(commandClassMessage);
+        }
+//        else if ("COMMAND_CLASS_BASIC".equals(sensorType)) {
+//            commandClassMessage = sensorValue;
+//
+//            batteryOutput.onNewMessage(commandClassMessage);
+//        }
+//        else {
+//            System.out.println(message);
+//        }
+    }
 }
+
 

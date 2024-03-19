@@ -56,8 +56,20 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         uartConfig.portName = "COM5";
 
         ioHandler = new RxtxZWaveIoHandler(uartConfig);
-        ioHandler.start(msg -> zController.incomingPacket(msg));
-        zController = new ZWaveController(ioHandler);
+        try {
+            ioHandler.start(msg -> zController.incomingPacket(msg));
+        } catch (NullPointerException e) {
+            while (zController == null){
+                try {
+                    wait(2000);
+                    ioHandler.start(msg -> zController.incomingPacket(msg));
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        } finally {
+            zController = new ZWaveController(ioHandler);
+        }
 
         workerThread = new Thread(this, this.getClass().getSimpleName());
 

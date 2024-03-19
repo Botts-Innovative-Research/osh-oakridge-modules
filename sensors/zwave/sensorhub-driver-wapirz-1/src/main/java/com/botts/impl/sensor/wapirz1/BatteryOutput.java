@@ -119,12 +119,12 @@ public class BatteryOutput extends AbstractSensorOutput<WAPIRZ1Sensor> {
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    public void onNewMessage(int key, String batteryLevel) {
-        String battery = null;
-
-        if (key == 128) {
-            battery = batteryLevel;
-        }
+    public void onNewMessage(String batteryLevel) {
+//        String battery = null;
+//
+//        if (key == 128) {
+//            battery = batteryLevel;
+//        }
 
 
         boolean processSets = true;
@@ -158,7 +158,7 @@ public class BatteryOutput extends AbstractSensorOutput<WAPIRZ1Sensor> {
                 double time = System.currentTimeMillis() / 1000.;
 
                 dataBlock.setDoubleValue(0, time);
-                dataBlock.setStringValue(1, battery);
+                dataBlock.setStringValue(1, batteryLevel);
 
 
                 latestRecord = dataBlock;

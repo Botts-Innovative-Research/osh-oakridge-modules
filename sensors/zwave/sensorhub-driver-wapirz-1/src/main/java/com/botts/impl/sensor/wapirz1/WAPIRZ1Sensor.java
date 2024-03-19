@@ -17,6 +17,7 @@ import com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
 import org.openhab.binding.zwave.internal.protocol.ZWaveConfigurationParameter;
 import org.openhab.binding.zwave.internal.protocol.commandclass.*;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
@@ -34,6 +35,7 @@ import org.slf4j.LoggerFactory;
 import org.vast.sensorML.SMLHelper;
 
 import java.io.InputStream;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 
@@ -55,6 +57,9 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
     String value;
     int event;
     int v1AlarmCode;
+    String commandClassType;
+    String commandClassValue;
+    String commandClassMessage;
     MotionOutput motionOutput;
     TemperatureOutput temperatureOutput;
     BatteryOutput batteryOutput;
@@ -235,10 +240,23 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
                 tamperAlarmOutput.onNewMessage(key, value, event, v1AlarmCode, false);
                 motionOutput.onNewMessage(key, value, event, false);
 
+
+            } else if (message instanceof ZWaveCommandClassValueEvent){
+
+                commandClassType = ((ZWaveCommandClassValueEvent) message).getCommandClass().name();
+                commandClassValue = ((ZWaveCommandClassValueEvent) message).getValue().toString();
+
+                handleCommandClassData(commandClassType, commandClassValue);
+
             } else if (message instanceof ZWaveInitializationStateEvent) {
 
                 if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.STATIC_VALUES && commService.getZWaveNode(zControllerId) != null && commService.getZWaveNode(configNodeId) != null) {
 //                    commService.getZWaveNode(configNodeId) = zController.getNode(nodeID);
+
+                    ZWaveBatteryCommandClass zWaveBatteryCommandClass =
+                            (ZWaveBatteryCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
+
+                    commService.sendConfigurations(zWaveBatteryCommandClass.getValueMessage());
 
                     ZWaveConfigurationCommandClass zWaveConfigurationCommandClass =
                             (ZWaveConfigurationCommandClass) commService.getZWaveNode(configNodeId)
@@ -271,7 +289,14 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
             }
         }
     }
+    public void handleCommandClassData(String commandClassType, String commandClassValue){
 
+        //Command Class Types
+        if (Objects.equals(commandClassType, "COMMAND_CLASS_BATTERY")) {
+            commandClassMessage = commandClassValue;
+
+            batteryOutput.onNewMessage(commandClassMessage);
+        }
 //    public void handleCommandClassData(String sensorType, String sensorValue){
 //
 //            //Command Class Types
@@ -286,7 +311,7 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
 //                temperatureOutput.onNewMessage(message);
 //            }
 //        }
-//    }
+    }
 }
 
 

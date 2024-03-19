@@ -24,14 +24,12 @@ import org.slf4j.LoggerFactory;
 import org.vast.swe.helper.GeoPosHelper;
 
 import java.util.Objects;
-import java.util.Timer;
-import java.util.TimerTask;
 
 /**
  * Output specification and provider for {@link ZW100Sensor}.
  *
- * @author your_name
- * @since date
+ * @author cardy
+ * @since 11/14/23
  */
 public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
 
@@ -49,7 +47,6 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
     private final long[] timingHistogram = new long[MAX_NUM_TIMING_SAMPLES];
     private final Object histogramLock = new Object();
 
-    boolean isMotion = false;
     private Thread worker;
 
     /**
@@ -111,14 +108,14 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
     /**
      * Terminates processing data for output
      */
-//    public void doStop() {
-//
-//        synchronized (processingLock) {
-//
-//            stopProcessing = true;
-//        }
-//
-//    }
+    public void doStop() {
+
+        synchronized (processingLock) {
+
+            stopProcessing = true;
+        }
+
+    }
 
     /**
      * Check to validate data processing is still running
@@ -166,22 +163,26 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
 //        at end of timer calls onMessage isMotion = false
 
 
-    public void onNewMessage(String key, String value, Boolean isMotion) {
+    public void onNewMessage(int key, String value, int event, Boolean isMotion) {
 //key == 32
-//        if (key == 32 && Objects.equals(value, "255")){
-//            isMotion = true;
-//        } else if (key == 32 && Objects.equals(value, "0")){
-//            isMotion = false;
-//        }
-        if (Objects.equals(key, "BURGLAR") && Objects.equals(value, "255")) {
+        if (key == 32 && Objects.equals(value, "255")){
             isMotion = true;
-        } else if ((Objects.equals(key, "COMMAND_CLASS_BASIC") && Objects.equals(value, "255"))) {
-            isMotion = true;
-        } else if (Objects.equals(key, "BURGLAR") && Objects.equals(value, "0")){
+        } else if (key == 32 && Objects.equals(value, "0")){
             isMotion = false;
-        } else if (Objects.equals(key, "COMMAND_CLASS_BASIC") && Objects.equals(value, "0")) {
+        } else if (key == 7 && Objects.equals(value, "255") && event == 8){
+            isMotion = true;
+        } else if (key == 7 && Objects.equals(value, "0") && event == 8){
             isMotion = false;
         }
+//        if (Objects.equals(key, "BURGLAR") && Objects.equals(value, "255")) {
+//            isMotion = true;
+//        } else if ((Objects.equals(key, "COMMAND_CLASS_BASIC") && Objects.equals(value, "255"))) {
+//            isMotion = true;
+//        } else if (Objects.equals(key, "BURGLAR") && Objects.equals(value, "0")){
+//            isMotion = false;
+//        } else if (Objects.equals(key, "COMMAND_CLASS_BASIC") && Objects.equals(value, "0")) {
+//            isMotion = false;
+//        }
 
 
         boolean processSets = true;
@@ -214,7 +215,6 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
                     }
 
                     ++setCount;
-
 
                     double time = System.currentTimeMillis() / 1000.;
 
