@@ -169,7 +169,7 @@ public class LocationOutput extends AbstractSensorOutput<WAPIRZ1Sensor> {
 
 
                 dataBlock.setDoubleValue(0, time);
-                dataBlock.setDoubleValue(1, gpsLocation.lat);
+                dataBlock.setDoubleValue(1, 1);
 
                 latestRecord = dataBlock;
 

@@ -13,6 +13,7 @@
 ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.zw100;
 
+import com.botts.sensorhub.impl.zwave.comms.ZwaveCommServiceConfig;
 import org.sensorhub.api.comm.CommProviderConfig;
 import org.sensorhub.api.sensor.PositionConfig.LLALocation;
 import org.sensorhub.api.config.DisplayInfo;
@@ -48,5 +49,14 @@ public class ZW100Config extends SensorConfig {
 
     @Override
     public LLALocation getLocation(){return positionConfig.location;}
+
+//    @DisplayInfo(desc = "Node ID value")
+//    public int nodeID = 26;
+//
+//    @DisplayInfo(desc = "ZController ID value")
+//    public int controllerID = 1;
+//
+//    @DisplayInfo(desc = "ZW100 Configurations")
+//    ZwaveCommServiceConfig.ZW100SensorDriverConfigurations sensorDriverConfiguration;
 
 }

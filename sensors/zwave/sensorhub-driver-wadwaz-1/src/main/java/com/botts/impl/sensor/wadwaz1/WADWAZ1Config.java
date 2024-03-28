@@ -20,7 +20,7 @@ import org.sensorhub.api.sensor.PositionConfig.LLALocation;
 import org.sensorhub.api.sensor.SensorConfig;
 import org.sensorhub.api.comm.CommProviderConfig;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
-
+import org.sensorhub.api.sensor.SensorDriverConfig;
 
 
 /**
@@ -45,7 +45,7 @@ public class WADWAZ1Config extends SensorConfig {
      */
     @DisplayInfo.Required
     @DisplayInfo(desc = "Serial number or unique identifier")
-    public String serialNumber = "wadwaz1";
+    public String serialNumber = "sensor001";
 
     @DisplayInfo(desc = "Communication settings to connect to data stream")
     public CommProviderConfig<?> commSettings;
@@ -55,4 +55,17 @@ public class WADWAZ1Config extends SensorConfig {
 
     @Override
     public LLALocation getLocation(){return positionConfig.location;}
+
+//    public class WADWAZSensorDriverConfigurations extends SensorDriverConfig {
+//        @DisplayInfo(desc = "Node ID value")
+//        public int nodeID = 13;
+//        @DisplayInfo(desc = "ZController ID value")
+//        public int controllerID = 1;
+//        @DisplayInfo (desc = "Wake Up Interval of Sensor in Seconds; Min: 600")
+//        public int wakeUpTime = 600;
+//    }
+//
+//    @DisplayInfo(label = "WADWAZ Config")
+//    public WADWAZSensorDriverConfigurations wadwazSensorDriverConfigurations =
+//            new WADWAZSensorDriverConfigurations();
 }

@@ -13,12 +13,10 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.wadwaz1;
 
-import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
 import com.botts.sensorhub.impl.zwave.comms.IMessageListener;
-
-
+import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
+import com.botts.sensorhub.impl.zwave.comms.ZwaveCommServiceConfig;
 import net.opengis.sensorml.v20.PhysicalSystem;
-import org.openhab.binding.zwave.internal.protocol.ZWaveNode;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveBatteryCommandClass;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass;
@@ -29,27 +27,15 @@ import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStat
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
 import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveCommandClassTransactionPayload;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.event.IEventListener;
 import org.sensorhub.api.module.ModuleEvent;
-import org.sensorhub.api.sensor.SensorException;
-
 import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.sensorML.SMLHelper;
 
-import java.io.IOException;
-import java.io.BufferedInputStream;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-
-import static org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass.CommandClass.getCommandClass;
 
 
 /**
@@ -61,11 +47,15 @@ import static org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveComm
 public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implements IMessageListener {
 
     private static final Logger logger = LoggerFactory.getLogger(WADWAZ1Sensor.class);
+    public ZwaveCommService commService;
+    public ZwaveCommServiceConfig.WADWAZSensorDriverConfigurations sensorConfig = new ZwaveCommServiceConfig().wadwazSensorDriverConfigurations;
 
-    private ZwaveCommService commService;
-    private int configNodeId = 13;
-    private int zControllerId = 1;
-    private ZWaveEvent message;
+//    public  WADWAZ1Config.WADWAZSensorDriverConfigurations sensorConfig =
+//        new WADWAZ1Config().wadwazSensorDriverConfigurations;
+    public int configNodeId;
+    public int zControllerId;
+
+    public ZWaveEvent message;
     int key;
     String value;
     int event;
@@ -108,8 +98,8 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
         super.doInit();
 
         // Generate identifiers
-        generateUniqueID("urn:osh:sensor:wadwaz1", config.serialNumber);
-        generateXmlID("WADWAZ-1", config.serialNumber);
+        generateUniqueID("[urn:osh:sensor:wadwaz1]", config.serialNumber);
+        generateXmlID("[WADWAZ-1]", config.serialNumber);
 
         initAsync = true;
 
@@ -198,21 +188,6 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
     @Override
     public void doStop() throws SensorHubException {
 
-        if (commService != null) {
-
-            try {
-
-                commService.stop();
-
-            } catch (Exception e) {
-
-                logger.error("Uncaught exception attempting to stop comms module", e);
-
-            } finally {
-
-                commService = null;
-            }
-        }
 
 //        messageHandler.stopProcessing();
     }
@@ -231,6 +206,10 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 //
     @Override
     public void onNewDataPacket(int id, ZWaveEvent message) {
+
+        configNodeId = sensorConfig.nodeID;
+        zControllerId = sensorConfig.controllerID;
+
         if (id == configNodeId) {
 //            commService.getZWaveNode(configNodeId)
 
@@ -292,7 +271,7 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
                             (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
                     if (wakeupCommandClass != null) {
                         ZWaveCommandClassTransactionPayload wakeUp =
-                                wakeupCommandClass.setInterval(configNodeId, 600);
+                                wakeupCommandClass.setInterval(configNodeId, sensorConfig.wakeUpTime);
 
                         //minInterval = 600; intervals must set in 200 second increments
                         commService.sendConfigurations(wakeUp);

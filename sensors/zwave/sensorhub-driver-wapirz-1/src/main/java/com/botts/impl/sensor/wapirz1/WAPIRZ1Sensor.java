@@ -15,6 +15,7 @@ package com.botts.impl.sensor.wapirz1;
 
 import com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
+import com.botts.sensorhub.impl.zwave.comms.ZwaveCommServiceConfig;
 import org.openhab.binding.zwave.internal.protocol.ZWaveConfigurationParameter;
 import org.openhab.binding.zwave.internal.protocol.commandclass.*;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
@@ -50,8 +51,10 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
     private static final Logger logger = LoggerFactory.getLogger(WAPIRZ1Sensor.class);
 
     private ZwaveCommService commService;
-    private int configNodeId = 21;
-    private int zControllerId = 1;
+    public ZwaveCommServiceConfig.WAPIRZSensorDriverConfigurations sensorConfig =
+            new ZwaveCommServiceConfig().wapirzSensorDriverConfigurations;
+    private int configNodeId;
+    private int zControllerId;
     private ZWaveEvent message;
     int key;
     String value;
@@ -92,7 +95,7 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
         super.doInit();
 
         // Generate identifiers
-        generateUniqueID("[urn:osh:sensor:wapirz-1]", config.serialNumber);
+        generateUniqueID("[urn:osh:sensor:wapirz1]", config.serialNumber);
         generateXmlID("[WAPIRZ-1]", config.serialNumber);
 
         initAsync = true;
@@ -170,29 +173,13 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
     @Override
     public void doStart() throws SensorHubException {
 
-//        locationOutput.setLocationOutput(config.getLocation());
+        locationOutput.setLocationOutput(config.getLocation());
 
     }
 
 
     @Override
     public void doStop() throws SensorHubException {
-
-        if (commService != null) {
-
-            try {
-
-                commService.stop();
-
-            } catch (Exception e) {
-
-                logger.error("Uncaught exception attempting to stop comms module", e);
-
-            } finally {
-
-                commService = null;
-            }
-        }
 
 //        messageHandler.stopProcessing();
     }
@@ -211,6 +198,9 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
 
     @Override
     public void onNewDataPacket(int id, ZWaveEvent message) {
+        configNodeId = sensorConfig.nodeID;
+        zControllerId = sensorConfig.controllerID;
+
         if (id == configNodeId) {
 
             this.message = message;
@@ -263,7 +253,7 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
                                     .getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_CONFIGURATION);
 
 //                      Config_1_1
-                    ZWaveConfigurationParameter reTriggerWait = new ZWaveConfigurationParameter(1, 1, 1);
+                    ZWaveConfigurationParameter reTriggerWait = new ZWaveConfigurationParameter(1, sensorConfig.reTriggerWait, 1);
                     ZWaveCommandClassTransactionPayload configReTriggerWait =
                             zWaveConfigurationCommandClass.setConfigMessage(reTriggerWait);
                     commService.sendConfigurations(configReTriggerWait);
@@ -279,7 +269,7 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
 
                     if (wakeupCommandClass != null) {
                         ZWaveCommandClassTransactionPayload wakeUp =
-                                wakeupCommandClass.setInterval(17, 600);
+                                wakeupCommandClass.setInterval(17, sensorConfig.wakeUpTime);
 
                         commService.sendConfigurations(wakeUp);
                         commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());

@@ -15,6 +15,7 @@ package com.botts.impl.sensor.zw100;
 
 import com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
+import com.botts.sensorhub.impl.zwave.comms.ZwaveCommServiceConfig;
 import net.opengis.sensorml.v20.PhysicalSystem;
 import org.openhab.binding.zwave.internal.protocol.*;
 import org.openhab.binding.zwave.internal.protocol.commandclass.*;
@@ -25,6 +26,7 @@ import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitS
 import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveCommandClassTransactionPayload;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.module.ModuleEvent;
+import org.sensorhub.api.sensor.SensorConfig;
 import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 
@@ -45,11 +47,13 @@ import java.util.concurrent.CompletableFuture;
 public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IMessageListener {
 
     private static final Logger logger = LoggerFactory.getLogger(ZW100Sensor.class);
+    public ZwaveCommService commService;
+    public ZwaveCommServiceConfig.ZW100SensorDriverConfigurations sensorConfig = new ZwaveCommServiceConfig().zw100SensorDriverConfigurations;
 
-    private ZwaveCommService commService;
-    private final int configNodeId = 26;
-    private final int zControllerId = 1;
-    private ZWaveEvent message;
+    private int configNodeId;
+    private int zControllerId;
+
+    public ZWaveEvent message;
 
     int alarmKey;
     String alarmValue;
@@ -103,9 +107,10 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
         super.doInit();
 
+
         // Generate identifiers
-        generateUniqueID("urn:osh:sensor:zw100", config.serialNumber);
-        generateXmlID("ZW100", config.serialNumber);
+        generateUniqueID("[urn:osh:sensor:zw100]", config.serialNumber);
+        generateXmlID("[ZW100]", config.serialNumber);
 
         initAsync = true;
 
@@ -190,7 +195,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
         locationOutput = new LocationOutput(this);
         addOutput(locationOutput, false);
         locationOutput.doInit();
-
     }
 
     @Override
@@ -217,22 +221,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
     @Override
     public void doStop() throws SensorHubException {
 
-        if (commService != null) {
-
-            try {
-
-                commService.stop();
-
-            } catch (Exception e) {
-
-                logger.error("Uncaught exception attempting to stop comms module", e);
-
-            } finally {
-
-                commService = null;
-            }
-        }
-
 //        messageHandler.stopProcessing();
     }
 
@@ -251,7 +239,13 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
     // Sorts data based on message type and sends information to outputs
     @Override
     public void onNewDataPacket(int id, ZWaveEvent message) {
+
+        configNodeId = sensorConfig.nodeID;
+        zControllerId = sensorConfig.controllerID;
+
+
             if (id == configNodeId) {
+
 
             this.message = message;
 
@@ -323,27 +317,29 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
                     //The Multisensor will send BASIC SET CC(0x00) to the associated nodes if no motion is
                     // triggered again in 10 seconds
-                    ZWaveConfigurationParameter motionSensorReset = new ZWaveConfigurationParameter(3,10,2);
+                    ZWaveConfigurationParameter motionSensorReset = new ZWaveConfigurationParameter(3,sensorConfig.motionSensorReset,2);
                     ZWaveCommandClassTransactionPayload configMotionReset =
                             zWaveConfigurationCommandClass.setConfigMessage(motionSensorReset);
                     commService.sendConfigurations(configMotionReset);
 
                     //Set motion sensor sensitivity
-                    ZWaveConfigurationParameter motionSensorSensitivity = new ZWaveConfigurationParameter(4,5,1);
+                    ZWaveConfigurationParameter motionSensorSensitivity = new ZWaveConfigurationParameter(4,
+                            sensorConfig.motionSensitivity,1);
                     ZWaveCommandClassTransactionPayload setMotionSensitivity =
                             zWaveConfigurationCommandClass.setConfigMessage(motionSensorSensitivity);
                     commService.sendConfigurations(setMotionSensitivity);
 //                    logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(4),0).toString());
 
                     //Get report every 240 seconds/ 4 min (on battery)
-                    ZWaveConfigurationParameter sensorReportInterval = new ZWaveConfigurationParameter(111, 240, 4);
+                    ZWaveConfigurationParameter sensorReportInterval = new ZWaveConfigurationParameter(111,
+                            sensorConfig.sensorReport, 4);
                     ZWaveCommandClassTransactionPayload setSensorReportInterval =
                             zWaveConfigurationCommandClass.setConfigMessage(sensorReportInterval);
                     commService.sendConfigurations(setSensorReportInterval);
 //                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(111));
 
                     //Set temperature unit to F
-                    ZWaveConfigurationParameter tempUnit = new ZWaveConfigurationParameter(64,2,1);
+                    ZWaveConfigurationParameter tempUnit = new ZWaveConfigurationParameter(64,sensorConfig.temperatureUnit,1);
                     ZWaveCommandClassTransactionPayload setTempUnit =
                             zWaveConfigurationCommandClass.setConfigMessage(tempUnit);
                     commService.sendConfigurations(setTempUnit);
@@ -366,7 +362,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
                         if (wakeupCommandClass != null) {
                                 ZWaveCommandClassTransactionPayload wakeUp =
-                                        wakeupCommandClass.setInterval(configNodeId, 240);
+                                        wakeupCommandClass.setInterval(configNodeId, sensorConfig.wakeUpTime);
 
                             commService.sendConfigurations(wakeUp);
                             commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
