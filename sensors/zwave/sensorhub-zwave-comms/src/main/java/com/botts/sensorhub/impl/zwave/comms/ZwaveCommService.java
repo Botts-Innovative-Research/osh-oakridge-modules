@@ -50,32 +50,31 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 
         super.doInit();
 
-
         logger = LoggerFactory.getLogger(ZwaveCommService.class);
 
         uartConfig.baudRate = 115200;
         uartConfig.portName = "COM5";
 
-//        ioHandler = new RxtxZWaveIoHandler(uartConfig);
-//        ioHandler.start(msg -> zController.incomingPacket(msg));
-//        zController = new ZWaveController(ioHandler);
+        ioHandler = new RxtxZWaveIoHandler(uartConfig);
+        ioHandler.start(msg -> zController.incomingPacket(msg));
+        zController = new ZWaveController(ioHandler);
 
 
-        try {
-            ioHandler.start(msg -> zController.incomingPacket(msg));
-        } catch (NullPointerException e) {
-            while (zController == null){
-                try {
-                    wait(5000);
-                    ioHandler.start(msg -> zController.incomingPacket(msg));
-
-                } catch (InterruptedException ex) {
-                    throw new RuntimeException(ex);
-                }
-            }
-        } finally {
-            zController = new ZWaveController(ioHandler);
-        }
+//        try {
+//            ioHandler.start(msg -> zController.incomingPacket(msg));
+//        } catch (NullPointerException e) {
+//            while (zController == null){
+//                try {
+//                    wait(5000);
+//                    ioHandler.start(msg -> zController.incomingPacket(msg));
+//
+//                } catch (InterruptedException ex) {
+//                    throw new RuntimeException(ex);
+//                }
+//            }
+//        } finally {
+//            zController = new ZWaveController(ioHandler);
+//        }
 
         workerThread = new Thread(this, this.getClass().getSimpleName());
 

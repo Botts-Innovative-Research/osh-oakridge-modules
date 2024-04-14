@@ -164,7 +164,8 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
 
 
     public void onNewMessage(int key, String value, int event, Boolean isMotion) {
-//key == 32
+        //key == 32; COMMAND_CLASS_BASIC
+        //key == 7; BURGLAR
         if (key == 32 && Objects.equals(value, "255")){
             isMotion = true;
         } else if (key == 32 && Objects.equals(value, "0")){
