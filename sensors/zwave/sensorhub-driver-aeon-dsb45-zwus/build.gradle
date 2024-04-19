@@ -1,0 +1,49 @@
+description = 'Aeon Labs DSB45-ZWUS Water Sensor'
+ext.details = "Detects presence of water or absence of water with accuracy of as little as 0.03% of an inch"
+version = '1.0.0'
+
+repositories {
+    maven {
+        url "https://openhab.jfrog.io/artifactory/libs-release"
+    }
+}
+
+dependencies {
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    testImplementation('junit:junit:4.13.1')
+    implementation project(':sensorhub-comm-rxtx')
+    implementation project (':sensorhub-zwave-comms')
+
+    implementation 'org.openhab.addons.bundles:org.openhab.binding.zwave:4.1.1'
+    implementation 'org.openhab.core.bundles:org.openhab.core:4.1.1'
+    implementation 'org.openhab.core.bundles:org.openhab.core.config.core:4.1.1'
+    implementation 'org.openhab.core.bundles:org.openhab.core.thing:4.1.1'
+}
+
+// exclude tests requiring connection to the sensor
+// these have to be run manually
+//      If tests are to be excluded list them here as follows
+//          exclude '**/TestNameClass.class'
+test {
+    useJUnit()
+}
+
+// add info to OSGi manifest
+osgi {
+    manifest {
+        attributes ('Bundle-Vendor': 'Botts Inc')
+        attributes ('Bundle-Activator': 'com.botts.impl.sensor.drivername.Activator')
+    }
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'some id'
+            name 'Your name'
+            organization ''
+            organizationUrl ''
+        }
+    }
+}
