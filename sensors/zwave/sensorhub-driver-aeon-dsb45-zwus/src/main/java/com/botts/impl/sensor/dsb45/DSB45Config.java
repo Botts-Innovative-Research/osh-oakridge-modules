@@ -46,12 +46,44 @@ public class DSB45Config extends SensorConfig {
     // the OSH admin panel (this can also be done in the ZWaveCommServiceConfig)
 
     public class DSB45SensorDriverConfigurations extends SensorDriverConfig {
+
+        //reference: https://github.com/openhab/org.openhab.binding.zwave/blob/main/doc/aeon/dsb45_0_0.md
         @DisplayInfo(desc = "Node ID value")
-        public int nodeID = 5;
+        public int nodeID = 32;
         @DisplayInfo(desc = "ZController ID value")
         public int controllerID = 1;
-        @DisplayInfo (desc = "Wake Up Interval of Sensor in Seconds; Min: 600")
-        public int wakeUpTime = 600;
+
+        @DisplayInfo (desc = "Wake Up Interval of Sensor in Seconds")
+        public int wakeUpTime = 240;
+        @DisplayInfo(desc = "Toggle the sensor binary report value:" +
+                "default value is 0 (Open: 00, Close: FF)" +
+                "1 (Open: FF, Close: 00).")
+        public int sensorBinaryReport = 0;
+
+        @DisplayInfo(desc = "Enable wake up 10 minutes when the power is switched on:" +
+                "0 = disable," +
+                "1 = enable")
+        public int intervalWakeUpTime = 0;
+
+        @DisplayInfo (desc = "Toggle the basic set value when the Magnet switch is opened /closed:" +
+                "default value is 0 (Open: 00, Close: FF)" +
+                "1 (Open: FF, Close: 00)")
+        public int basicSet = 0;
+
+        @DisplayInfo(desc = "Reports that will be sent:" +
+                "0 Do not send anything" +
+                "1 Send battery report" +
+                "16 Send Sensor Binary report" +
+                "17 Send Sensor Binary and Battery reports")
+        public int sensorReport = 0;
+
+        @DisplayInfo(desc = "Value Description:" +
+                "0 Do not send anything" +
+                "1 Send Basic Set" +
+                "16 Send ALARM" +
+                "17 Send Basic Set and ALARM")
+        public int valueDescription = 0;
+
     }
 
     @DisplayInfo(label = "DSB45 Config")

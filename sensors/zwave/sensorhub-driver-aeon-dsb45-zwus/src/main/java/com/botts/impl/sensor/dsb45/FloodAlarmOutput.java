@@ -23,21 +23,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.swe.helper.GeoPosHelper;
 
+import java.util.Objects;
+
 /**
  * Output specification and provider for {@link DSB45Sensor}.
  *
  * @author your_name
  * @since date
  */
-public class Output extends AbstractSensorOutput<DSB45Sensor> {
+public class FloodAlarmOutput extends AbstractSensorOutput<DSB45Sensor> {
 
-    private static final String SENSOR_OUTPUT_NAME = "[NAME]";
+    private static final String SENSOR_OUTPUT_NAME = "[DSB45 Water Sensor]";
     private static final String SENSOR_OUTPUT_LABEL = "[LABEL]";
     private static final String SENSOR_OUTPUT_DESCRIPTION = "[DESCRIPTION]";
 
-    private static final Logger logger = LoggerFactory.getLogger(Output.class);
+    private static final Logger logger = LoggerFactory.getLogger(FloodAlarmOutput.class);
 
-    private DataRecord dataStruct;
+    private DataRecord floodData;
     private DataEncoding dataEncoding;
 
     private Boolean stopProcessing = false;
@@ -54,7 +56,7 @@ public class Output extends AbstractSensorOutput<DSB45Sensor> {
      *
      * @param parentSensor Sensor driver providing this output
      */
-    Output(DSB45Sensor parentSensor) {
+    FloodAlarmOutput(DSB45Sensor parentSensor) {
 
         super(SENSOR_OUTPUT_NAME, parentSensor);
 
@@ -70,22 +72,23 @@ public class Output extends AbstractSensorOutput<DSB45Sensor> {
         logger.debug("Initializing Output");
 
         // Get an instance of SWE Factory suitable to build components
-        GeoPosHelper sweFactory = new GeoPosHelper();
+        GeoPosHelper floodHelper = new GeoPosHelper();
 
         // TODO: Create data record description
-        dataStruct = sweFactory.createRecord()
-                .name(SENSOR_OUTPUT_NAME)
-                .label(SENSOR_OUTPUT_LABEL)
+        floodData = floodHelper.createRecord()
+                .name(getName())
+                .label("Flood Alarm")
                 .description(SENSOR_OUTPUT_DESCRIPTION)
-                .addField("sampleTime", sweFactory.createTime()
-                        .asSamplingTimeIsoUTC()
-                        .label("Sample Time")
-                        .description("Time of data collection"))
-                .addField("data", sweFactory.createText()
-                        .label("Example Data"))
+                .addField("sampleTime", floodHelper.createTime()
+                        .asSamplingTimeIsoUTC())
+                .addField("Flood Alarm", floodHelper.createBoolean()
+                        .name("flood-alarm")
+                        .label("Flood Alarm" + " Status")
+                        .definition("http://sensorml.com/ont/swe/property/Alarm")
+                        .description("Status of FLood Alarm"))
                 .build();
 
-        dataEncoding = sweFactory.newTextEncoding(",", "\n");
+        dataEncoding = floodHelper.newTextEncoding(",", "\n");
 
         logger.debug("Initializing Output Complete");
     }
@@ -108,7 +111,7 @@ public class Output extends AbstractSensorOutput<DSB45Sensor> {
     @Override
     public DataComponent getRecordDescription() {
 
-        return dataStruct;
+        return floodData;
     }
 
     @Override
@@ -133,14 +136,13 @@ public class Output extends AbstractSensorOutput<DSB45Sensor> {
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    public void onNewMessage(String outputValue) {
+    public void onNewMessage(int key, String value, Boolean isFlood) {
 
-        //TODO: Handle data received in the sensor class and handle the logic to sort that data being fed to outputs
-//        String battery = null;
-//
-//        if (key == 128 ){   //key 128 = "COMMAND_CLASS_BATTERY"
-//            battery = batteryLevel;
-//        }
+        if (key == 32 && Objects.equals(value, "255")) {
+            isFlood = true;
+        } else if (key == 32 && Objects.equals(value, "0")){
+            isFlood = false;
+        }
 
 
         boolean processSets = true;
@@ -154,7 +156,7 @@ public class Output extends AbstractSensorOutput<DSB45Sensor> {
                 DataBlock dataBlock;
                 if (latestRecord == null) {
 
-                    dataBlock = dataStruct.createDataBlock();
+                    dataBlock = floodData.createDataBlock();
 
                 } else {
 
@@ -178,13 +180,13 @@ public class Output extends AbstractSensorOutput<DSB45Sensor> {
 
                 // TODO: Populate data block
                 dataBlock.setDoubleValue(0, timestamp);
-                dataBlock.setStringValue(1, "Your data here");
+                dataBlock.setBooleanValue(1, isFlood);
 
                 latestRecord = dataBlock;
 
                 latestRecordTime = System.currentTimeMillis();
 
-                eventHandler.publish(new DataEvent(latestRecordTime, Output.this, dataBlock));
+                eventHandler.publish(new DataEvent(latestRecordTime, FloodAlarmOutput.this, dataBlock));
 
 //                synchronized (processingLock) {
 //

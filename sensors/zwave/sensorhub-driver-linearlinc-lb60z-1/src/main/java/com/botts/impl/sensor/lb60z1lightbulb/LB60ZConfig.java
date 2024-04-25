@@ -53,6 +53,10 @@ public class LB60ZConfig extends SensorConfig {
         public int controllerID = 1;
         @DisplayInfo (desc = "Wake Up Interval of Sensor in Seconds; Min: 600")
         public int wakeUpTime = 600;
+        @DisplayInfo(desc = "Dim Level Memory:" +
+                "when 0 (default), the bulb will be full brightness when turned on" +
+                "when 1, the bulb will turn on to the last dim level setting")
+        public int dimLevelMemory = 0;
     }
 
     @DisplayInfo(label = "LB60Z Config")

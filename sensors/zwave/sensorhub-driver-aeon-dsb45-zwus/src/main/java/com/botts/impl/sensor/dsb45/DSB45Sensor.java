@@ -16,10 +16,10 @@ package com.botts.impl.sensor.dsb45;
 import com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
 import net.opengis.sensorml.v20.PhysicalSystem;
+import org.openhab.binding.zwave.internal.protocol.ZWaveConfigurationParameter;
 import org.openhab.binding.zwave.internal.protocol.ZWaveNode;
-import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveBatteryCommandClass;
-import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass;
-import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveWakeUpCommandClass;
+import org.openhab.binding.zwave.internal.protocol.commandclass.*;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
@@ -32,6 +32,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.sensorML.SMLHelper;
 
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -63,10 +64,14 @@ public class DSB45Sensor extends AbstractSensorModule<DSB45Config> implements IM
     public int zControllerId;
 
     public ZWaveEvent message;
+    public int key;
+    public String value;
+    public int event;
 
-    //Initialize your outputs:
 
-    Output output;
+    //Initialize your output & control classes
+    FloodAlarmOutput floodAlarmOutput;
+    BatteryOutput batteryOutput;
 
     @Override
     protected void updateSensorDescription() {
@@ -152,9 +157,13 @@ public class DSB45Sensor extends AbstractSensorModule<DSB45Config> implements IM
 
         // Create and initialize outputs
 
-        output = new Output(this);
-        addOutput(output, false);
-        output.doInit();
+        floodAlarmOutput = new FloodAlarmOutput(this);
+        addOutput(floodAlarmOutput, false);
+        floodAlarmOutput.doInit();
+
+        batteryOutput = new BatteryOutput(this);
+        addOutput(batteryOutput, false);
+        batteryOutput.doInit();
 
 
         // TODO: Perform other initialization
@@ -191,8 +200,8 @@ public class DSB45Sensor extends AbstractSensorModule<DSB45Config> implements IM
     public void onNewDataPacket(int id, ZWaveEvent message) {
 
         // TODO: Configure the node ID in the ZWaveCommServiceConfig.java or sensor's config class
-//        configNodeId = sensorConfig.nodeID;
-//        zControllerId = sensorConfig.controllerID;
+        configNodeId = sensorConfig.nodeID;
+        zControllerId = sensorConfig.controllerID;
 
         if (id == configNodeId) {
 //            commService.getZWaveNode(configNodeId)
@@ -201,52 +210,103 @@ public class DSB45Sensor extends AbstractSensorModule<DSB45Config> implements IM
 
             // TODO: Assign variables to grab necessary values from different zwave classes and events
 
-//            if (message instanceof ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) {
-//                event = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmEvent();
-//                key = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmType().getKey();
-//                value = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getValue().toString();
+            if (message instanceof ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) {
+                event = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmEvent();
+                key = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmType().getKey();
+                value = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getValue().toString();
 
-//                System.out.println("sensor" + key);
-//                System.out.println("sensor" + value);
-//                System.out.println("sensor " + event);
-//
-            // TODO: Send this information to the output using the output.onNewMessage function
+                System.out.println("sensor" + key);
+                System.out.println("sensor" + value);
+                System.out.println("sensor " + event);
 
-//                output.onNewMessage(key, value, event, false);
+            } else if (message instanceof ZWaveCommandClassValueEvent) {
+
+                key = ((ZWaveCommandClassValueEvent) message).getCommandClass().getKey();
+                value = ((ZWaveCommandClassValueEvent) message).getValue().toString();
+
+
+                System.out.println("sensor " + key);
+                System.out.println("sensor " + value);
+
+                floodAlarmOutput.onNewMessage(key, value, false);
+                batteryOutput.onNewMessage(key, value);
+
 //            } else if ...
 
 
-        } else if (message instanceof ZWaveInitializationStateEvent) {
-//
-//            // TODO: Familiarize with initialization stages and send configurations once the node/device hits
-//             certain stage or hits ZWaveNodeInitStage.DONE
+            } else if (message instanceof ZWaveInitializationStateEvent) {
 
-            if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.STATIC_VALUES && commService.getZWaveNode(zControllerId) != null && commService.getZWaveNode(configNodeId) != null) {
+                if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.STATIC_VALUES && commService.getZWaveNode(zControllerId) != null && commService.getZWaveNode(configNodeId) != null) {
 //
-                ZWaveNode dsb45Node = commService.getZWaveNode(configNodeId);
-                ZWaveNode zController = commService.getZWaveNode(zControllerId);
-//
-                ZWaveBatteryCommandClass zWaveBatteryCommandClass =
-                        (ZWaveBatteryCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
-//
-                commService.sendConfigurations(zWaveBatteryCommandClass.getValueMessage());
 
-                ZWaveWakeUpCommandClass wakeupCommandClass =
-                        (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
-                if (wakeupCommandClass != null) {
-                    ZWaveCommandClassTransactionPayload wakeUp =
-                            wakeupCommandClass.setInterval(configNodeId, sensorConfig.wakeUpTime);
+                    ZWaveConfigurationCommandClass zWaveConfigurationCommandClass =
+                            (ZWaveConfigurationCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_CONFIGURATION);
 
-                    //minInterval = 600; intervals must set in 200 second increments
-                    commService.sendConfigurations(wakeUp);
-                    commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
+                    ZWaveConfigurationParameter sensorBinaryReport = new ZWaveConfigurationParameter(1,
+                            sensorConfig.sensorBinaryReport, 1);
+                    ZWaveCommandClassTransactionPayload configBinaryReport =
+                            zWaveConfigurationCommandClass.setConfigMessage(sensorBinaryReport);
+                    commService.sendConfigurations(configBinaryReport);
+
+                    ZWaveConfigurationParameter intervalWakeUpTime = new ZWaveConfigurationParameter(2,
+                            sensorConfig.intervalWakeUpTime, 1);
+                    ZWaveCommandClassTransactionPayload configIntervalWakeUpTime =
+                            zWaveConfigurationCommandClass.setConfigMessage(intervalWakeUpTime);
+                    commService.sendConfigurations(configIntervalWakeUpTime);
+
+                    ZWaveConfigurationParameter basicSetValue = new ZWaveConfigurationParameter(3,
+                            sensorConfig.basicSet, 1);
+                    ZWaveCommandClassTransactionPayload configBasicSetValue =
+                            zWaveConfigurationCommandClass.setConfigMessage(basicSetValue);
+                    commService.sendConfigurations(configBasicSetValue);
+
+                    ZWaveConfigurationParameter sensorReport = new ZWaveConfigurationParameter(121,
+                            sensorConfig.sensorReport, 4);
+                    ZWaveCommandClassTransactionPayload configSensorReport =
+                            zWaveConfigurationCommandClass.setConfigMessage(sensorReport);
+                    commService.sendConfigurations(configSensorReport);
+
+//                    ZWaveConfigurationParameter sensorBinaryReport = new ZWaveConfigurationParameter(1,
+//                            sensorConfig.sensorBinaryReport, 1);
+//                    ZWaveCommandClassTransactionPayload configBinaryReport =
+//                            zWaveConfigurationCommandClass.setConfigMessage(sensorBinaryReport);
+//                    commService.sendConfigurations(configBinaryReport);
+
+
+
+
+
+
+
+                    ZWaveBatteryCommandClass zWaveBatteryCommandClass =
+                            (ZWaveBatteryCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
+                    commService.sendConfigurations(zWaveBatteryCommandClass.getValueMessage());
+
+                    ZWaveWakeUpCommandClass wakeupCommandClass =
+                            (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
+                    if (wakeupCommandClass != null) {
+                        ZWaveCommandClassTransactionPayload wakeUp =
+                                wakeupCommandClass.setInterval(configNodeId, sensorConfig.wakeUpTime);
+
+                        //minInterval = 600; intervals must set in 200 second increments
+                        commService.sendConfigurations(wakeUp);
+                        commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
 //                    System.out.println(((ZWaveWakeUpCommandClass) dsb45Node.getCommandClass(ZWaveCommandClass
 //                    .CommandClass.COMMAND_CLASS_WAKE_UP)).getInterval());
-                }
+                    }
 
+                }
             }
         }
-    }
 
-    // TODO: Create apropriate handler functions to sort data
+//        public void handleCommandClassData(String commandClassType, String commandClassValue){
+//
+//            //Command Class Types
+//            if (Objects.equals(commandClassType, "COMMAND_CLASS_BATTERY")) {
+//                commandClassMessage = commandClassValue;
+//
+//                batteryOutput.onNewMessage(commandClassMessage);
+//            }
+        // TODO: Create apropriate handler functions to sort data
+    }
 }

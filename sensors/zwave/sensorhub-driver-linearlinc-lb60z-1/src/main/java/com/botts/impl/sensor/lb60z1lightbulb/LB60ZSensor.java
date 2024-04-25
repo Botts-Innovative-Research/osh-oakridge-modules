@@ -16,10 +16,12 @@ package com.botts.impl.sensor.lb60z1lightbulb;
 import com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
 import net.opengis.sensorml.v20.PhysicalSystem;
+import org.openhab.binding.zwave.internal.protocol.ZWaveConfigurationParameter;
 import org.openhab.binding.zwave.internal.protocol.commandclass.*;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveNodeStatusEvent;
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
 import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveCommandClassTransactionPayload;
 import org.sensorhub.api.common.SensorHubException;
@@ -213,45 +215,51 @@ public class LB60ZSensor extends AbstractSensorModule<LB60ZConfig> implements IM
                 lightbulbStatusOutput.onNewMessage(key, value);
 
 
-//            } else if (message instanceof ZWaveMultiLevelSwitchCommandClass.ZWaveStartStopEvent) {
-////                event = ((ZWaveMultiLevelSwitchCommandClass.ZWaveStartStopEvent) message).getType();
-////                key = ((ZWaveMultiLevelSwitchCommandClass.ZWaveStartStopEvent) message).getValue().;
+//            } else if (message instanceof ZWaveMultiLevelSwitchCommandClass.) {
+//                event = ((ZWaveMultiLevelSwitchCommandClass.ZWaveStartStopEvent) message).getType();
+//                key = ((ZWaveMultiLevelSwitchCommandClass.ZWaveStartStopEvent) message).getValue().;
 //                value = ((ZWaveMultiLevelSwitchCommandClass.ZWaveStartStopEvent) message).getValue().toString();
 //
 //                System.out.println("sensor" + key);
 //                System.out.println("sensor" + value);
 //                System.out.println("sensor " + event);
-//
-//
-//          } else if (message instanceof ZWaveNodeStatusEvent) {
-//                System.out.println(((ZWaveNodeStatusEvent) message).getState());
-//                System.out.println(((ZWaveNodeStatusEvent) message).getStage());
+
+
+          } else if (message instanceof ZWaveNodeStatusEvent) {
+                System.out.println(((ZWaveNodeStatusEvent) message).getState());
+                System.out.println(((ZWaveNodeStatusEvent) message).getStage());
 
           } else if (message instanceof ZWaveInitializationStateEvent) {
-
-            // TODO: Familiarize with initialization stages and send configurations once the node/device hits
-//                     certain stage or hits ZWaveNodeInitStage.DONE
 
                 if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.DYNAMIC_VALUES && commService.getZWaveNode(zControllerId) != null && commService.getZWaveNode(configNodeId) != null) {
     //
 //                    ZWaveNode lb60zNode = commService.getZWaveNode(configNodeId);
 //                    ZWaveNode zController = commService.getZWaveNode(zControllerId);
 
-                    ZWaveMultiLevelSwitchCommandClass zWaveMultiLevelSwitchCommandClass =
-                            (ZWaveMultiLevelSwitchCommandClass) commService.getZWaveNode(configNodeId).getCommandClass((ZWaveCommandClass.CommandClass.COMMAND_CLASS_SWITCH_MULTILEVEL));
-                    ZWaveCommandClassTransactionPayload status = zWaveMultiLevelSwitchCommandClass.getValueMessage();
+//                    ZWaveMultiLevelSwitchCommandClass zWaveMultiLevelSwitchCommandClass =
+//                            (ZWaveMultiLevelSwitchCommandClass) commService.getZWaveNode(configNodeId).getCommandClass((ZWaveCommandClass.CommandClass.COMMAND_CLASS_SWITCH_MULTILEVEL));
+//                    ZWaveCommandClassTransactionPayload status = zWaveMultiLevelSwitchCommandClass.getValueMessage();
+//
+                    //sets the dimmness of the lightbulb to the written value
+//                    commService.sendConfigurations(status);
+//
+//                    commService.sendConfigurations(zWaveMultiLevelSwitchCommandClass.setValueMessage(15));
 
-                    commService.sendConfigurations(status);
+                    ZWaveConfigurationCommandClass zWaveConfigurationCommandClass =
+                            (ZWaveConfigurationCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_CONFIGURATION);
 
-                    commService.sendConfigurations(zWaveMultiLevelSwitchCommandClass.setValueMessage(15));
+                    ZWaveConfigurationParameter dimMemory = new ZWaveConfigurationParameter(1,
+                            sensorConfig.dimLevelMemory, 1);
+                    ZWaveCommandClassTransactionPayload configDimMemory =
+                            zWaveConfigurationCommandClass.setConfigMessage(dimMemory);
+                    commService.sendConfigurations(configDimMemory);
 
+                    //If dimMemory = 1 then admin panel needs to change....
 
                     ZWavePowerLevelCommandClass zWavePowerLevelCommandClass=
                             (ZWavePowerLevelCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_POWERLEVEL);
                     ZWaveCommandClassTransactionPayload powerlevel = zWavePowerLevelCommandClass.getValueMessage();
                     commService.sendConfigurations(powerlevel);
-
-                    commService.sendConfigurations(zWavePowerLevelCommandClass.getValueMessage());
 
                     int powerLevel = zWavePowerLevelCommandClass.getLevel();
 
