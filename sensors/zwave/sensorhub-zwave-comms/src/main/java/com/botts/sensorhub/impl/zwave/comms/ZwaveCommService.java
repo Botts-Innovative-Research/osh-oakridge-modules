@@ -9,24 +9,20 @@ import org.openhab.binding.zwave.internal.protocol.ZWaveController;
 import org.openhab.binding.zwave.internal.protocol.ZWaveEventListener;
 import org.openhab.binding.zwave.internal.protocol.ZWaveMessagePayloadTransaction;
 import org.openhab.binding.zwave.internal.protocol.ZWaveNode;
-import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass;
-import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass;
-import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveMultiLevelSensorCommandClass;
-import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
-import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
-import org.openhab.binding.zwave.internal.protocol.event.ZWaveNodeStatusEvent;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.module.IModule;
+import org.sensorhub.api.sensor.ISensorDriver;
+import org.sensorhub.api.sensor.SensorConfig;
 import org.sensorhub.api.service.IServiceModule;
 import org.sensorhub.impl.comm.UARTConfig;
 import org.sensorhub.impl.module.AbstractModule;
+import org.sensorhub.impl.module.ModuleRegistry;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
+import java.sql.Driver;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Stream;
 
 
 public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> implements IServiceModule<ZwaveCommServiceConfig>,
@@ -39,7 +35,9 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
     private final AtomicBoolean doWork = new AtomicBoolean(false);
 
     private final List<IMessageListener> messageListeners = new ArrayList<>();
+    public List<String> commSubscribers = new ArrayList<>();
 
+    public ZwaveCommServiceConfig.AdminPanelNodeList moduleList = new ZwaveCommServiceConfig().adminPanelNodeList;
 
     UARTConfig uartConfig = new UARTConfig();
     RxtxZWaveIoHandler ioHandler;
@@ -143,6 +141,7 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 
     @Override
     public void run() {
+        //adds an event listener and sends the incoming events to the subscribed messageListeners
         zController.addEventListener(new ZWaveEventListener() {
 
             public void ZWaveIncomingEvent(ZWaveEvent event) {
@@ -151,6 +150,7 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
                 event.getNodeId();
 
                 messageListeners.forEach(listener -> listener.onNewDataPacket(event.getNodeId(), event));
+                moduleList.setCommSubscribers(commSubscribers);
 
                 Runtime.getRuntime().addShutdownHook(new Thread() {
                     public void run() {
@@ -164,10 +164,11 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 
 
     public synchronized void registerListener(IMessageListener listener) {
-
+        // registers drivers to the comm service
         if (!messageListeners.contains(listener)) {
 
             messageListeners.add(listener);
+
 
             getLogger().info("Registered packet listener");
 
@@ -190,21 +191,27 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
     }
 
     public void sendConfigurations(ZWaveMessagePayloadTransaction transaction){
+        //method to implement zController inherent method of sendTransaction()
         zController.sendTransaction(transaction);
     }
 
-    public void configMessage(ZWaveMessagePayloadTransaction transaction, String configMessage){
-        configMessage = Objects.requireNonNull(zController.sendTransaction(transaction)).toString();
-        System.out.println(configMessage);
-    }
 
     public ZWaveNode getZWaveNode(int nodeID){
+        //method to implement zController inherent method of getNode()
         return zController.getNode(nodeID);
-
     }
 
-//    public synchronized void sendPacket(String id, String message) throws IOException {
+    // Write a method that identifies other drivers that are using it
+    // Create variable driverList to hold list of subscribed drivers
+    //  1. If sensorDriver.commService = moduleRegistry.getModuleByType(this)
+        //  then driverList.add(sensorDriver)
 
-// this is where we send configurations
 
+//    public ZwaveCommServiceConfig.AdminPanelNodeList getModuleList() {
+//        return (ZwaveCommServiceConfig.AdminPanelNodeList) commSubscribers;
+//    }
+
+    public synchronized void registerDriver(String module) {
+            commSubscribers.add(module);
+    }
 }

@@ -5,12 +5,16 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.sensorhub.impl.zwave.comms;
 
+import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.module.IModule;
-import org.sensorhub.api.module.IModuleProvider;
+import org.sensorhub.api.module.ModuleConfig;
 import org.sensorhub.api.sensor.*;
 import org.sensorhub.api.service.ServiceConfig;
-import org.sensorhub.impl.sensor.SensorSystemConfig;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Consumer;
 
 public class ZwaveCommServiceConfig extends ServiceConfig {
 
@@ -28,25 +32,75 @@ public class ZwaveCommServiceConfig extends ServiceConfig {
     @DisplayInfo(desc = "ZController ID value")
     public int controllerID = 1;
 
-        public class ZW100SensorDriverConfigurations extends SensorDriverConfig {
-            @DisplayInfo(desc = "Node ID value")
-            public int nodeID = 26;
-            @DisplayInfo(desc = "ZController ID value")
-            public int controllerID = 1;
-            @DisplayInfo (desc = "Sensitivity of Motion Sensor; Min: 1 - Max: 5")
-            public int motionSensitivity = 5;
 
-            @DisplayInfo (desc = "Motion Sensor Reset Timeout in Seconds")
-            public int motionSensorReset = 10;
+        public class AdminPanelNodeList {
 
-            @DisplayInfo (desc = "Sensor Report Interval in Seconds; Min: 240 on battery")
-            public int sensorReport = 240;
+//            @DisplayInfo
+//            public List<IModule> commSubscribers = new ArrayList<>();
+//
+//            public void setCommSubscribers(List<IModule> commSubscribers) {
+//                this.commSubscribers = commSubscribers;
+//                commSubscribers.forEach(IModule::getName);
 
-            @DisplayInfo (desc = "Temperature Unit; 1 = Celcius, 2 = Farenheit")
-            public int temperatureUnit = 2;
 
-            @DisplayInfo (desc = "Wake Up Interval of Sensor in Seconds")
-            public int wakeUpTime = 240;
+
+            public void setCommSubscribers(List<String> commSubscribers) {
+                this.commSubscribers = commSubscribers;
+
+//                commSubscribers.forEach(IModule::getName);
+//                commSubscribers.forEach(IModule -> {
+//                    try {
+//                        IModule.init();
+//                    } catch (SensorHubException e) {
+//                        throw new RuntimeException(e);
+//                    }
+//                });
+            }
+            @DisplayInfo
+            public List<String> commSubscribers = new ArrayList<>();
+
+        }
+        @DisplayInfo(desc = "Sensor Drivers Subscribed to ZWaveCommService")
+        public AdminPanelNodeList adminPanelNodeList = new AdminPanelNodeList(){
+            @Override
+            public void setCommSubscribers(List<String> commSubscribers) {
+                super.setCommSubscribers(commSubscribers);
+            }
+        };
+
+    public class ZW100SensorDriverConfigurations extends SensorDriverConfig {
+        @DisplayInfo(desc = "Node ID value")
+        public int nodeID = 26;
+        @DisplayInfo(desc = "ZController ID value")
+        public int controllerID = 1;
+        @DisplayInfo (desc = "Wake Up Interval of Sensor in Seconds")
+        public int wakeUpTime = 240;
+        @DisplayInfo (desc = "Which command would be sent when the motion sensor triggered." +
+                "1 = send Basic Set CC." +
+                "2 = send Sensor Binary Report CC.")
+        public int motionCommand = 1;
+        @DisplayInfo (desc = "Sensitivity of Motion Sensor; Min: 1 - Max: 5")
+        public int motionSensitivity = 5;
+        @DisplayInfo (desc = "Motion Sensor Reset Timeout in Seconds")
+        public int motionSensorReset = 10;
+        @DisplayInfo (desc = "Sensor Report Interval in Seconds; Min: 240 on battery")
+        public int sensorReport = 240;
+        @DisplayInfo (desc = "Temperature Unit; 1 = Celcius, 2 = Farenheit")
+        public int temperatureUnit = 2;
+        @DisplayInfo (desc = "Enable selective reporting only when measurements reach a certain threshold or percentage set")
+        public int selectiveReporting = 1;
+        @DisplayInfo (desc = "Temperature Threshold: value contains one decimal point, e.g. if the value is set to " +
+                "20, the threshold value =2.0°F")
+        public int temperatureThreshold = 2;
+        @DisplayInfo (desc = "Humidity Threshold: Unit in %")
+        public int humidityThreshold = 2;
+        @DisplayInfo (desc = "Luminance Threshold")
+        public int luminanceThreshold = 2;
+        @DisplayInfo (desc = "Battery Threshold: The unit is %")
+        public int batteryThreshold = 2;
+        @DisplayInfo (desc = "UV Threshold")
+        public int UVThreshold = 2;
+
     }
 
     @DisplayInfo(label = "ZW100 Config")
