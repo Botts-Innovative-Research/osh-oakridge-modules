@@ -13,11 +13,13 @@
 ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.wapirz1;
 
+import com.botts.sensorhub.impl.zwave.comms.ZwaveCommServiceConfig;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.api.sensor.PositionConfig.LLALocation;
 import org.sensorhub.api.sensor.SensorConfig;
 import org.sensorhub.api.comm.CommProviderConfig;
+import org.sensorhub.api.sensor.SensorDriverConfig;
 
 
 /**
@@ -52,4 +54,21 @@ public class WAPIRZ1Config extends SensorConfig {
 
     @Override
     public LLALocation getLocation(){return positionConfig.location;}
+
+    public class WAPIRZSensorDriverConfigurations extends SensorDriverConfig {
+        @DisplayInfo(desc = "Node ID value")
+        public int nodeID = 21;
+        @DisplayInfo(desc = "ZController ID value")
+        public int controllerID = 1;
+        @DisplayInfo(desc = "After motion is detected sensor cannot be re-triggered by motion again for " +
+                "determined times; time in min")
+        public int reTriggerWait = 1;
+        @DisplayInfo(desc = "Wake Up Interval of Sensor in Seconds; Min: 600")
+        public int wakeUpTime = 600;
+
+    }
+    @DisplayInfo(label = "WAPIRZ Config")
+    public WAPIRZSensorDriverConfigurations wapirzSensorDriverConfigurations =
+            new WAPIRZSensorDriverConfigurations();
 }
+

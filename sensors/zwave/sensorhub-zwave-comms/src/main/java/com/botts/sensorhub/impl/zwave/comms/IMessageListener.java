@@ -10,4 +10,5 @@ import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 public interface IMessageListener {
 
     void onNewDataPacket(int id, ZWaveEvent message);
+
 }

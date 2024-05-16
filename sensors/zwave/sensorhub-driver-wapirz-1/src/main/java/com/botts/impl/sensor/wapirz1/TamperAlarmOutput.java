@@ -141,22 +141,7 @@ public class TamperAlarmOutput extends AbstractSensorOutput<WAPIRZ1Sensor> {
 
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
-    public void onNewMessage(int key, String value, int event, int v1AlarmCode, Boolean isTamperAlarm) {
-
-        if (key == 7 && Objects.equals(value, "255") && event == 3) {
-            isTamperAlarm = true;
-        } else if (key == 7 && Objects.equals(value, "0") && v1AlarmCode == 0) {
-            isTamperAlarm = false;
-        }
-
-//    public void onNewMessage(String alarmType, String alarmValue, int alarmEvent, int v1AlarmCode,
-//                             Boolean isTamperAlarm ) {
-//
-//        if (Objects.equals(alarmType, "BURGLAR") && (alarmEvent == 3) && (Objects.equals(alarmValue, "255"))) {
-//            isTamperAlarm  = true;
-//        } else if (Objects.equals(alarmType, "BURGLAR") && (v1AlarmCode == 0) && (Objects.equals(alarmValue, "0"))){
-//            isTamperAlarm  = false;
-//        }
+    public void onNewMessage(boolean isTamperAlarm) {
 
         boolean processSets = true;
 

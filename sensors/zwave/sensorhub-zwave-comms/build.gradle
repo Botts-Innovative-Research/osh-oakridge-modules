@@ -23,12 +23,9 @@ dependencies {
   implementation 'org.openhab.core.bundles:org.openhab.core:4.1.1'
   implementation 'org.openhab.core.bundles:org.openhab.core.config.core:4.1.1'
   implementation 'org.openhab.core.bundles:org.openhab.core.thing:4.1.1'
+  implementation 'org.openhab.core.bundles:org.openhab.core.io.transport.serial:4.1.1'
 
   implementation fileTree(dir: 'libs', include: ['*.jar'])
-//  implementation file ('../libs/org.openhab.binding.zwave-4.1.1.jar')
-//  implementation 'org.openhab.core.bundles:org.openhab.core:4.1.1'
-//  implementation 'org.openhab.core.bundles:org.openhab.core.config.core:4.1.1'
-//  implementation 'org.openhab.core.bundles:org.openhab.core.thing:4.1.1'
 
 //  implementation project(':sensorhub-comm-rxtx')
 }

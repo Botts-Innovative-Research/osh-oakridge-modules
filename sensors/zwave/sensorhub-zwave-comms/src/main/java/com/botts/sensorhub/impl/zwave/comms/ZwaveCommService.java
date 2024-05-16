@@ -5,11 +5,15 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.sensorhub.impl.zwave.comms;
 
-import org.openhab.binding.zwave.internal.protocol.ZWaveController;
-import org.openhab.binding.zwave.internal.protocol.ZWaveEventListener;
-import org.openhab.binding.zwave.internal.protocol.ZWaveMessagePayloadTransaction;
-import org.openhab.binding.zwave.internal.protocol.ZWaveNode;
+import com.google.common.collect.Lists;
+import org.openhab.binding.zwave.internal.protocol.*;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveMultiInstanceCommandClass;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveSecurityCommandClass;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
+import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
+import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeSerializer;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.module.IModule;
 import org.sensorhub.api.sensor.ISensorDriver;
@@ -35,9 +39,6 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
     private final AtomicBoolean doWork = new AtomicBoolean(false);
 
     private final List<IMessageListener> messageListeners = new ArrayList<>();
-    public List<String> commSubscribers = new ArrayList<>();
-
-    public ZwaveCommServiceConfig.AdminPanelNodeList moduleList = new ZwaveCommServiceConfig().adminPanelNodeList;
 
     UARTConfig uartConfig = new UARTConfig();
     RxtxZWaveIoHandler ioHandler;
@@ -51,7 +52,7 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         logger = LoggerFactory.getLogger(ZwaveCommService.class);
 
         uartConfig.baudRate = 115200;
-        uartConfig.portName = "COM5";
+        uartConfig.portName = "COM7";
 
         ioHandler = new RxtxZWaveIoHandler(uartConfig);
         ioHandler.start(msg -> zController.incomingPacket(msg));
@@ -147,10 +148,13 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
             public void ZWaveIncomingEvent(ZWaveEvent event) {
                 logger.info("EVENT: " + event);
 
+                //
                 event.getNodeId();
 
+                Collection<ZWaveNode> nodeList = zController.getNodes();
+                config.adminPanelNodeList.setCommSubscribers(nodeList);
+
                 messageListeners.forEach(listener -> listener.onNewDataPacket(event.getNodeId(), event));
-                moduleList.setCommSubscribers(commSubscribers);
 
                 Runtime.getRuntime().addShutdownHook(new Thread() {
                     public void run() {
@@ -190,6 +194,74 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         }
     }
 
+
+    public ZWaveNode createZWaveNode(ZWaveController zController, int configNodeId) {
+        boolean serializedOk = false;
+        ZWaveNode node = null;
+
+        ZWaveNodeSerializer nodeSerializer = new ZWaveNodeSerializer();
+        node = nodeSerializer.deserializeNode(zController.getHomeId(), configNodeId);
+
+        if (node != null) {
+            if (node.getManufacturer() != Integer.MAX_VALUE && node.getHomeId() == zController.getHomeId() && node.getNodeId() == configNodeId) {
+                serializedOk = true;
+                logger.debug("NODE {}: Restore from config: Ok.", configNodeId);
+                node.setRestoredFromConfigfile(zController);
+                Iterator var4 = node.getCommandClasses(0).iterator();
+
+                while(var4.hasNext()) {
+                    ZWaveCommandClass commandClass = (ZWaveCommandClass)var4.next();
+                    commandClass.initialise(node, zController, (ZWaveEndpoint)null);
+                    if (commandClass instanceof ZWaveEventListener) {
+                        zController.addEventListener((ZWaveEventListener)commandClass);
+                    }
+
+                    if (commandClass instanceof ZWaveMultiInstanceCommandClass) {
+                        for(int endpointNumber = 1; endpointNumber < node.getEndpointCount(); ++endpointNumber) {
+                            ZWaveEndpoint endPoint = node.getEndpoint(endpointNumber);
+                            Iterator var8 = endPoint.getCommandClasses().iterator();
+
+                            while(var8.hasNext()) {
+                                ZWaveCommandClass endpointCommandClass = (ZWaveCommandClass)var8.next();
+                                endpointCommandClass.initialise(node, zController, endPoint);
+                                if (endpointCommandClass instanceof ZWaveEventListener) {
+                                    zController.addEventListener((ZWaveEventListener)endpointCommandClass);
+                                }
+                            }
+                        }
+                    }
+//
+//                    if (commandClass instanceof ZWaveSecurityCommandClass) {
+//                        ((ZWaveSecurityCommandClass)commandClass).setNetworkKey(zController.networkSecurityKey);
+//                    }
+                }
+            } else {
+                logger.warn("NODE {}: Restore from config: Error. Data invalid, ignoring config.", configNodeId);
+                node = null;
+            }
+        }
+
+        if (node == null) {
+            node = new ZWaveNode(zController.getHomeId(), configNodeId, zController);
+        }
+
+        if (configNodeId == zController.getOwnNodeId()) {
+            node.setDeviceId(zController.getDeviceId());
+            node.setDeviceType(zController.getDeviceType());
+            node.setManufacturer(zController.getManufactureId());
+        }
+
+        if (!zController.getNodes().contains(node)) {
+            zController.getNodes().add(node);
+            if (serializedOk) {
+                ZWaveEvent zEvent = new ZWaveInitializationStateEvent(node.getNodeId(), ZWaveNodeInitStage.DISCOVERY_COMPLETE);
+                zController.notifyEventListeners(zEvent);
+            }
+        }
+        return node;
+    }
+
+
     public void sendConfigurations(ZWaveMessagePayloadTransaction transaction){
         //method to implement zController inherent method of sendTransaction()
         zController.sendTransaction(transaction);
@@ -199,6 +271,10 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
     public ZWaveNode getZWaveNode(int nodeID){
         //method to implement zController inherent method of getNode()
         return zController.getNode(nodeID);
+    }
+
+    public ZWaveController getzController() {
+        return zController;
     }
 
     // Write a method that identifies other drivers that are using it
@@ -211,7 +287,7 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 //        return (ZwaveCommServiceConfig.AdminPanelNodeList) commSubscribers;
 //    }
 
-    public synchronized void registerDriver(String module) {
-            commSubscribers.add(module);
-    }
+//    public synchronized void registerDriver(String module) {
+//            commSubscribers.add(module);
+//    }
 }

@@ -56,16 +56,16 @@ public class WADWAZ1Config extends SensorConfig {
     @Override
     public LLALocation getLocation(){return positionConfig.location;}
 
-//    public class WADWAZSensorDriverConfigurations extends SensorDriverConfig {
-//        @DisplayInfo(desc = "Node ID value")
-//        public int nodeID = 13;
-//        @DisplayInfo(desc = "ZController ID value")
-//        public int controllerID = 1;
-//        @DisplayInfo (desc = "Wake Up Interval of Sensor in Seconds; Min: 600")
-//        public int wakeUpTime = 600;
-//    }
-//
-//    @DisplayInfo(label = "WADWAZ Config")
-//    public WADWAZSensorDriverConfigurations wadwazSensorDriverConfigurations =
-//            new WADWAZSensorDriverConfigurations();
+    public class WADWAZSensorDriverConfigurations extends SensorDriverConfig {
+        @DisplayInfo(desc = "Node ID value")
+        public int nodeID;
+        @DisplayInfo(desc = "ZController ID value")
+        public int controllerID = 1;
+        @DisplayInfo (desc = "Wake Up Interval of Sensor in Seconds; Min: 600")
+        public int wakeUpTime = 600;
+    }
+
+    @DisplayInfo(label = "WADWAZ Config")
+    public WADWAZSensorDriverConfigurations wadwazSensorDriverConfigurations =
+            new WADWAZSensorDriverConfigurations();
 }

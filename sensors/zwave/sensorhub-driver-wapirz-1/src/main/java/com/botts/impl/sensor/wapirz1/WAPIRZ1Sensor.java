@@ -16,12 +16,15 @@ package com.botts.impl.sensor.wapirz1;
 import com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommServiceConfig;
-import org.openhab.binding.zwave.internal.protocol.ZWaveConfigurationParameter;
+import org.openhab.binding.zwave.handler.ZWaveThingHandler;
+import org.openhab.binding.zwave.internal.protocol.*;
 import org.openhab.binding.zwave.internal.protocol.commandclass.*;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
+import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStageAdvancer;
+import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeSerializer;
 import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveCommandClassTransactionPayload;
 import org.sensorhub.api.comm.ICommProvider;
 
@@ -36,8 +39,10 @@ import org.slf4j.LoggerFactory;
 import org.vast.sensorML.SMLHelper;
 
 import java.io.InputStream;
+import java.util.Iterator;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 
 /**
@@ -51,11 +56,16 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
     private static final Logger logger = LoggerFactory.getLogger(WAPIRZ1Sensor.class);
 
     private ZwaveCommService commService;
-    public ZwaveCommServiceConfig.WAPIRZSensorDriverConfigurations sensorConfig =
-            new ZwaveCommServiceConfig().wapirzSensorDriverConfigurations;
+    public WAPIRZ1Config.WAPIRZSensorDriverConfigurations sensorConfig =
+            new WAPIRZ1Config().wapirzSensorDriverConfigurations;
     private int configNodeId;
     private int zControllerId;
-    private ZWaveEvent message;
+    public ZWaveEvent message;
+    public ZWaveController zController;
+    public ZWaveNode node;
+
+    Thread thread = new Thread();
+
     int key;
     String value;
     int event;
@@ -63,6 +73,8 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
     String commandClassType;
     String commandClassValue;
     String commandClassMessage;
+    boolean isMotion;
+    boolean isTamperAlarm;
     MotionOutput motionOutput;
     TemperatureOutput temperatureOutput;
     BatteryOutput batteryOutput;
@@ -116,7 +128,23 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
 
             CompletableFuture.runAsync(() -> {
 
+                        zController = commService.getzController();
+                        configNodeId = sensorConfig.nodeID;
+
+//                        zController.reinitialiseNode(configNodeId);
+
+//
+//                       ZWaveNode configNode = zController.getNode(configNodeId);
+//                       ZWaveNodeInitStage initZ = configNode.getNodeInitStage();
+
+                       zController.getNodes();
+
+
+
+//                        zController.requestSoftReset();
+
                     })
+
                     .thenRun(() -> setState(ModuleEvent.ModuleState.INITIALIZED))
                     .exceptionally(err -> {
 
@@ -168,6 +196,8 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
         locationOutput = new LocationOutput(this);
         addOutput(locationOutput, false);
         locationOutput.doInit();
+
+
     }
 
     @Override
@@ -175,6 +205,11 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
 
         locationOutput.setLocationOutput(config.getLocation());
 
+
+        ZWaveNode configNode = zController.getNode(configNodeId);
+        logger.info(configNode.toString());
+        ZWaveNodeInitStage initStage = configNode.getNodeInitStage();
+        logger.info(initStage.toString());
     }
 
 
@@ -227,11 +262,9 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
                 logger.info(value);
                 logger.info(String.valueOf(event));
 
-                tamperAlarmOutput.onNewMessage(key, value, event, v1AlarmCode, false);
-                motionOutput.onNewMessage(key, value, event, false);
+                handleAlarmData(key, value, event, v1AlarmCode);
 
-
-            } else if (message instanceof ZWaveCommandClassValueEvent){
+            } else if (message instanceof ZWaveCommandClassValueEvent) {
 
                 commandClassType = ((ZWaveCommandClassValueEvent) message).getCommandClass().name();
                 commandClassValue = ((ZWaveCommandClassValueEvent) message).getValue().toString();
@@ -240,68 +273,99 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
 
             } else if (message instanceof ZWaveInitializationStateEvent) {
 
-                if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.STATIC_VALUES && commService.getZWaveNode(zControllerId) != null && commService.getZWaveNode(configNodeId) != null) {
+
+//                if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.EMPTYNODE) {
+//
+//                        if (zController.getNode(configNodeId) == null) {
+//                            node = new ZWaveNode(zController.getHomeId(), configNodeId, zController);
+//
+//                        } else if (zController.getNode(configNodeId) != null && (zController.getNode(configNodeId).getNodeInitStage() == ZWaveNodeInitStage.EMPTYNODE)) {
+//                            zController.getNode(configNodeId).initialiseNode(ZWaveNodeInitStage.IDENTIFY_NODE);
+//                            node = commService.createZWaveNode(zController, configNodeId);
+//                        }
+//                        node.initialiseNode();
+
+//                    ZWaveNodeInitStageAdvancer stageAdvancer = new ZWaveNodeInitStageAdvancer(node,zController);
+//                    stageAdvancer.startInitialisation();
+//                }
+
+                    if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.STATIC_END && commService.getZWaveNode(zControllerId) != null && commService.getZWaveNode(configNodeId) != null) {
 //                    commService.getZWaveNode(configNodeId) = zController.getNode(nodeID);
 
-                    ZWaveBatteryCommandClass zWaveBatteryCommandClass =
-                            (ZWaveBatteryCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
+                        ZWaveBatteryCommandClass zWaveBatteryCommandClass =
+                                (ZWaveBatteryCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
 
-                    commService.sendConfigurations(zWaveBatteryCommandClass.getValueMessage());
+                        commService.sendConfigurations(zWaveBatteryCommandClass.getValueMessage());
 
-                    ZWaveConfigurationCommandClass zWaveConfigurationCommandClass =
-                            (ZWaveConfigurationCommandClass) commService.getZWaveNode(configNodeId)
-                                    .getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_CONFIGURATION);
+                        ZWaveConfigurationCommandClass zWaveConfigurationCommandClass =
+                                (ZWaveConfigurationCommandClass) commService.getZWaveNode(configNodeId)
+                                        .getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_CONFIGURATION);
 
 //                      Config_1_1
-                    ZWaveConfigurationParameter reTriggerWait = new ZWaveConfigurationParameter(1, sensorConfig.reTriggerWait, 1);
-                    ZWaveCommandClassTransactionPayload configReTriggerWait =
-                            zWaveConfigurationCommandClass.setConfigMessage(reTriggerWait);
-                    commService.sendConfigurations(configReTriggerWait);
-                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage
-                            (1));
+                        ZWaveConfigurationParameter reTriggerWait = new ZWaveConfigurationParameter(1, sensorConfig.reTriggerWait, 1);
+                        ZWaveCommandClassTransactionPayload configReTriggerWait =
+                                zWaveConfigurationCommandClass.setConfigMessage(reTriggerWait);
+                        commService.sendConfigurations(configReTriggerWait);
+                        commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage
+                                (1));
 
 
 //                      Set wakeup time to minimum interval of  600s
-                    ZWaveWakeUpCommandClass wakeupCommandClass =
-                            (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId)
-                                    .getCommandClass
-                                            (ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
+                        ZWaveWakeUpCommandClass wakeupCommandClass =
+                                (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId)
+                                        .getCommandClass
+                                                (ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
 
-                    if (wakeupCommandClass != null) {
-                        ZWaveCommandClassTransactionPayload wakeUp =
-                                wakeupCommandClass.setInterval(17, sensorConfig.wakeUpTime);
+                        if (wakeupCommandClass != null) {
+                            ZWaveCommandClassTransactionPayload wakeUp =
+                                    wakeupCommandClass.setInterval(17, sensorConfig.wakeUpTime);
 
-                        commService.sendConfigurations(wakeUp);
-                        commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
+                            commService.sendConfigurations(wakeUp);
+                            commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
+                        }
                     }
-
-                }
             }
         }
     }
-    public void handleCommandClassData(String commandClassType, String commandClassValue){
+
+    public void handleAlarmData(int key, String value, int event, int v1AlarmCode) {
+        //key == 32; COMMAND_CLASS_BASIC
+        //key == 7; BURGLAR
+
+        if (key == 7 && Objects.equals(value, "255") && event == 2) {
+            isMotion = true;
+        } else if (key == 7 && Objects.equals(value, "0") && event == 2) {
+            isMotion = false;
+        }
+        motionOutput.onNewMessage(isMotion);
+
+//        key = 7; value = 255-triggered/0-untriggered; event = 2; - shook it around
+//        key = 32; value = 255; isMotion = true;
+//        key = 32; value = 0; isMotion = false; - or is this resetting Tamper alarm?
+
+        if (key == 7 && Objects.equals(value, "255") && event == 3) {
+            isTamperAlarm = true;
+        } else if (key == 7 && Objects.equals(value, "0") && v1AlarmCode == 0) {
+            isTamperAlarm = false;
+        }
+        tamperAlarmOutput.onNewMessage(isTamperAlarm);
+    }
+
+    public void handleCommandClassData(String commandClassType, String commandClassValue) {
 
         //Command Class Types
         if (Objects.equals(commandClassType, "COMMAND_CLASS_BATTERY")) {
             commandClassMessage = commandClassValue;
-
-            batteryOutput.onNewMessage(commandClassMessage);
         }
-//    public void handleCommandClassData(String sensorType, String sensorValue){
-//
-//            //Command Class Types
-//            if (Objects.equals(sensorType, "COMMAND_CLASS_BATTERY")) {
-//                message = sensorValue;
-//
-//                batteryOutput.onNewMessage(message);
-//
-//            } else if (Objects.equals(sensorType, "COMMAND_CLASS_SENSOR_MULTILEVEL")) {
-//                message = sensorValue;
-//
-//                temperatureOutput.onNewMessage(message);
-//            }
-//        }
+        batteryOutput.onNewMessage(commandClassMessage);
+
+        if (Objects.equals(commandClassType, "COMMAND_CLASS_BASIC") && commandClassValue == "0") {
+            isMotion = false;
+        }
+        motionOutput.onNewMessage(isMotion);
     }
+
 }
+
 
 

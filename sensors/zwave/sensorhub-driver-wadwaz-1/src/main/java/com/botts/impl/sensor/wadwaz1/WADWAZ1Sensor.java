@@ -17,6 +17,8 @@ import com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommServiceConfig;
 import net.opengis.sensorml.v20.PhysicalSystem;
+import org.openhab.binding.zwave.internal.protocol.ZWaveController;
+import org.openhab.binding.zwave.internal.protocol.ZWaveNode;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveBatteryCommandClass;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass;
@@ -48,14 +50,13 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 
     private static final Logger logger = LoggerFactory.getLogger(WADWAZ1Sensor.class);
     public ZwaveCommService commService;
-    public ZwaveCommServiceConfig.WADWAZSensorDriverConfigurations sensorConfig = new ZwaveCommServiceConfig().wadwazSensorDriverConfigurations;
-
-//    public  WADWAZ1Config.WADWAZSensorDriverConfigurations sensorConfig =
-//        new WADWAZ1Config().wadwazSensorDriverConfigurations;
+    public  WADWAZ1Config.WADWAZSensorDriverConfigurations sensorConfig =
+        new WADWAZ1Config().wadwazSensorDriverConfigurations;
     public int configNodeId;
     public int zControllerId;
 
     public ZWaveEvent message;
+    public ZWaveController zController;
     int key;
     String value;
     int event;
@@ -118,8 +119,11 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 //                    .thenRun(() -> logger.info("Comm service started"));
 
             CompletableFuture.runAsync(() -> {
-
+                        zController = commService.getzController();
+                        configNodeId = sensorConfig.nodeID;
+//                        zController.reinitialiseNode(configNodeId);
                     })
+
                     .thenRun(() -> setState(ModuleEvent.ModuleState.INITIALIZED))
                     .exceptionally(err -> {
 
@@ -181,7 +185,10 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
     public void doStart() throws SensorHubException {
 
 //        locationOutput.setLocationOutput(config.getLocation());
-
+        ZWaveNode configNode = zController.getNode(configNodeId);
+        ZWaveNodeInitStage initStage = configNode.getNodeInitStage();
+        logger.info(configNode.toString());
+        logger.info(initStage.toString());
     }
 
 
@@ -245,7 +252,7 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 
                 handleCommandClassData(commandClassType, commandClassValue);
 
-                entryAlarmOutput.onNewMessage(key, value, false);
+                entryAlarmOutput.onNewMessage(key, value);
 
             } else if (message instanceof ZWaveInitializationStateEvent) {
 

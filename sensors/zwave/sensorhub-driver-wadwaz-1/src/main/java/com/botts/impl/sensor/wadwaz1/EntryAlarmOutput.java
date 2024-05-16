@@ -47,7 +47,7 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
     private final long[] timingHistogram = new long[MAX_NUM_TIMING_SAMPLES];
     private final Object histogramLock = new Object();
 
-    boolean isEntry = false;
+    boolean isEntry;
 
     /**
      * Constructor
@@ -119,21 +119,13 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
     }
 
 
-    public void onNewMessage(int key, String value, Boolean isEntry) {
+    public void onNewMessage(int key, String value) {
 
         if (key == 32 && Objects.equals(value, "255")) {
             isEntry = true;
         } else if (key == 32 && Objects.equals(value, "0")){
             isEntry = false;
         }
-
-//    public void onNewMessage(String alarmType, String alarmValue, Boolean isEntry) {
-//
-//        if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && Objects.equals(alarmValue, "255")) {
-//            isEntry = true;
-//        } else if (Objects.equals(alarmType, "COMMAND_CLASS_BASIC") && (Objects.equals(alarmValue, "0"))){
-//            isEntry = false;
-//        }
 
         boolean processSets = true;
 

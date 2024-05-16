@@ -5,6 +5,8 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.sensorhub.impl.zwave.comms;
 
+import org.checkerframework.checker.units.qual.A;
+import org.openhab.binding.zwave.internal.protocol.ZWaveNode;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.module.IModule;
@@ -12,14 +14,14 @@ import org.sensorhub.api.module.ModuleConfig;
 import org.sensorhub.api.sensor.*;
 import org.sensorhub.api.service.ServiceConfig;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.util.function.Consumer;
 
 public class ZwaveCommServiceConfig extends ServiceConfig {
 
+
     @DisplayInfo(label = "Port", desc = "USB Port name/number connected to zwave controller")
-    public String portName = "COM5";
+    public String portName = "COM7";
 
     @DisplayInfo(label = "Baud Rate", desc = "Baud rate")
     public int baudRate = 115200;
@@ -33,40 +35,27 @@ public class ZwaveCommServiceConfig extends ServiceConfig {
     public int controllerID = 1;
 
 
-        public class AdminPanelNodeList {
+    public class AdminPanelNodeList {
 
-//            @DisplayInfo
-//            public List<IModule> commSubscribers = new ArrayList<>();
-//
-//            public void setCommSubscribers(List<IModule> commSubscribers) {
-//                this.commSubscribers = commSubscribers;
-//                commSubscribers.forEach(IModule::getName);
+        public void setCommSubscribers(Collection<ZWaveNode> nodeList) {
 
+            List<String> strNodeList = new ArrayList<>();
+            Iterator iterator = nodeList.iterator();
 
-
-            public void setCommSubscribers(List<String> commSubscribers) {
-                this.commSubscribers = commSubscribers;
-
-//                commSubscribers.forEach(IModule::getName);
-//                commSubscribers.forEach(IModule -> {
-//                    try {
-//                        IModule.init();
-//                    } catch (SensorHubException e) {
-//                        throw new RuntimeException(e);
-//                    }
-//                });
+            while (iterator.hasNext()){
+                strNodeList.add(iterator.next().toString());
             }
+
+            this.commSubscribers = strNodeList;
+            }
+
             @DisplayInfo
             public List<String> commSubscribers = new ArrayList<>();
-
         }
+
         @DisplayInfo(desc = "Sensor Drivers Subscribed to ZWaveCommService")
-        public AdminPanelNodeList adminPanelNodeList = new AdminPanelNodeList(){
-            @Override
-            public void setCommSubscribers(List<String> commSubscribers) {
-                super.setCommSubscribers(commSubscribers);
-            }
-        };
+        public AdminPanelNodeList adminPanelNodeList = new AdminPanelNodeList();
+
 
     public class ZW100SensorDriverConfigurations extends SensorDriverConfig {
         @DisplayInfo(desc = "Node ID value")

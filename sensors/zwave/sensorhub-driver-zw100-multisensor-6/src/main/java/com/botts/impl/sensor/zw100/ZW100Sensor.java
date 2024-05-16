@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory;
 import org.vast.sensorML.SMLHelper;
 
 
+import java.util.Collection;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
@@ -48,16 +49,13 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
     private static final Logger logger = LoggerFactory.getLogger(ZW100Sensor.class);
     public ZwaveCommService commService;
-   //For configuration in comm service use this:
-//    public ZwaveCommServiceConfig.ZW100SensorDriverConfigurations sensorConfig = new ZwaveCommServiceConfig().zw100SensorDriverConfigurations;
-    //For configurations in sensor driver use this:
     public ZW100Config.ZW100SensorDriverConfigurations sensorConfig =
             new ZW100Config().zw100SensorDriverConfigurations;
-
     private int configNodeId;
     private int zControllerId;
 
     public ZWaveEvent message;
+    public ZWaveController zController;
 
     int alarmKey;
     String alarmValue;
@@ -68,6 +66,8 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
     String commandClassType;
     String commandClassValue;
     String commandClassMessage;
+    Boolean isVibration;
+    Boolean isMotion;
 
     MotionOutput motionOutput;
 
@@ -131,13 +131,28 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
             moduleRegistry.waitForModule(commService.getLocalID(), ModuleEvent.ModuleState.STARTED)
                     .thenRun(() -> commService.registerListener(this));
 
-            commService.registerDriver(this.getName());
+//            commService.registerDriver(this.getName());
 
 //                    .thenRun(() -> logger.info("Comm service started"));
 
             CompletableFuture.runAsync(() -> {
 
+                        zController = commService.getzController();
+                        zController.getNodes();
+
+                        configNodeId = sensorConfig.nodeID;
+//                        zController.reinitialiseNode(configNodeId);
+
+
+//                        try {
+//                            if (zController.getNode(configNodeId) != null) {
+//                                zController.getNode(configNodeId).initialiseNode();
+//                            }
+//                        } catch (Exception e){
+//                            logger.info("Node not initialized");
+//                        }
                     })
+
                     .thenRun(() -> setState(ModuleEvent.ModuleState.INITIALIZED))
                     .exceptionally(err -> {
 
@@ -202,29 +217,16 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
         locationOutput = new LocationOutput(this);
         addOutput(locationOutput, false);
         locationOutput.doInit();
+
     }
 
     @Override
     public void doStart() throws SensorHubException {
-        //heal node to restart initialization in order to send configurations
-//        commService.getZWaveNode(configNodeId).healNode();
-//        commService.getZWaveNode(configNodeId).initialiseNode();
 
-        ZWaveNode zw100Node = commService.getZWaveNode(configNodeId);
-
-        zw100Node.initialiseNode();
-//
-//     if (commService.getZWaveNode(configNodeId).getNodeInitStage() != ZWaveNodeInitStage.IDENTIFY_NODE) {
-//         commService.getZWaveNode(configNodeId).setNodeStage(ZWaveNodeInitStage.IDENTIFY_NODE);
-//     } else if (commService.getZWaveNode(configNodeId).getNodeInitStage() == ZWaveNodeInitStage.DONE) {
-//        commService.getZWaveNode(configNodeId).healNode();
-
-//     }
-
-//        commService.getZWaveNode(configNodeId).getNodeState()????
-
-//        locationOutput.setLocationOutput(config.getLocation());
-
+        ZWaveNode configNode = zController.getNode(configNodeId);
+        ZWaveNodeInitStage initStage = configNode.getNodeInitStage();
+        logger.info(configNode.toString());
+        logger.info(initStage.toString());
     }
 
 
@@ -264,8 +266,8 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                 alarmValue = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getValue().toString();
                 alarmEvent = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmEvent();
 
-                motionOutput.onNewMessage(alarmKey, alarmValue, alarmEvent, false);
-                vibrationAlarmOutput.onNewMessage(alarmKey, alarmValue, alarmEvent, false);
+                handleAlarmData(alarmKey, alarmValue, alarmEvent);
+
 
             } else if (message instanceof ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) {
 
@@ -426,6 +428,33 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
         }
     }
 
+    public void handleAlarmData(int key, String value, int event){
+        //key == 32; COMMAND_CLASS_BASIC
+        //key == 7; BURGLAR
+
+        if (key == 7 && Objects.equals(value, "255") && event == 3) {
+            isVibration = true;
+        } else if (key == 7 && Objects.equals(value, "255") && event == 0){
+            isVibration = false;
+        }
+
+        vibrationAlarmOutput.onNewMessage(isVibration);
+
+        if (key == 32 && Objects.equals(value, "255")){
+            isMotion = true;
+        } else if (key == 32 && Objects.equals(value, "0")){
+            isMotion = false;
+        } else if (key == 7 && Objects.equals(value, "255") && event == 8){
+            isMotion = true;
+        } else if (key == 7 && Objects.equals(value, "255") && event == 0){
+            isMotion = false;
+        } else if (key == 7 && Objects.equals(value, "0") && event == 8){
+            isMotion = false;
+        }
+
+        motionOutput.onNewMessage(isMotion);
+
+    }
     // Sorts multi-sensor data based on sensorType (as opposed to CC key)
     public void handleMultiSensorData(String sensorType, String sensorValue) {
 

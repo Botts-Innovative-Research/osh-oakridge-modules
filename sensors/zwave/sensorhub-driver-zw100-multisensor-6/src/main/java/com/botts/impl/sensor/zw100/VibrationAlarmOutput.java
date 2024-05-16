@@ -153,13 +153,7 @@ public class VibrationAlarmOutput extends AbstractSensorOutput<ZW100Sensor>{
 //            isVibration = false;
 //        }
 
-    public void onNewMessage(int key, String value, int event, Boolean isVibration) {
-        // key 7 = BURGLAR
-        if (key == 7 && Objects.equals(value, "255") && event == 3) {
-            isVibration = true;
-        } else if (key == 7 && event == 0){
-            isVibration = false;
-        }
+    public void onNewMessage(boolean isVibration) {
 
         boolean processSets = true;
 

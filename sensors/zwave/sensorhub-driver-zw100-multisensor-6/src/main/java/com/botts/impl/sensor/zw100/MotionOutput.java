@@ -163,18 +163,10 @@ public class MotionOutput extends AbstractSensorOutput<ZW100Sensor> {
 //        at end of timer calls onMessage isMotion = false
 
 
-    public void onNewMessage(int key, String value, int event, Boolean isMotion) {
+    public void onNewMessage(Boolean isMotion) {
         //key == 32; COMMAND_CLASS_BASIC
         //key == 7; BURGLAR
-        if (key == 32 && Objects.equals(value, "255")){
-            isMotion = true;
-        } else if (key == 32 && Objects.equals(value, "0")){
-            isMotion = false;
-        } else if (key == 7 && Objects.equals(value, "255") && event == 8){
-            isMotion = true;
-        } else if (key == 7 && Objects.equals(value, "0") && event == 8){
-            isMotion = false;
-        }
+
 //        if (Objects.equals(key, "BURGLAR") && Objects.equals(value, "255")) {
 //            isMotion = true;
 //        } else if ((Objects.equals(key, "COMMAND_CLASS_BASIC") && Objects.equals(value, "255"))) {
