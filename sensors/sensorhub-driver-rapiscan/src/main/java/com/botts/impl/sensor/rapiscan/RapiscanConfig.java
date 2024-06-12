@@ -50,6 +50,11 @@ public class RapiscanConfig extends SensorConfig {
     @DisplayInfo(desc="RPM Location")
     public PositionConfig positionConfig = new PositionConfig();
 
+    @DisplayInfo(desc="Gamma Count")
+    public int gammaCount;
+    @DisplayInfo(desc="Neutron Count")
+    public int neutronCount;
+
     @Override
     public LLALocation getLocation(){return positionConfig.location;}
 

@@ -10,6 +10,7 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
+import org.vast.swe.SWEBuilders;
 
 import java.util.List;
 
@@ -28,23 +29,43 @@ public class GammaOutput extends AbstractSensorOutput<RapiscanSensor> {
 
     protected void init() {
         RADHelper radHelper = new RADHelper();
-
-        dataStruct = radHelper.createRecord()
-                .name(getName())
+        SWEBuilders.DataRecordBuilder recordBuilder;
+        recordBuilder = radHelper.createRecord()
+                .name(name)
                 .label("Gamma Scan")
                 .definition(RADHelper.getRadUri("gamma-scan"))
                 .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-                .addField("Gamma1", radHelper.createGammaGrossCount())
-                .addField("Gamma2", radHelper.createGammaGrossCount())
-                .addField("Gamma3", radHelper.createGammaGrossCount())
-                .addField("Gamma4", radHelper.createGammaGrossCount())
-                .addField("Alarm State",
-                        radHelper.createCategory()
-                                .name("Alarm")
-                                .label("Alarm")
-                                .definition(RADHelper.getRadUri("alarm"))
-                                .addAllowedValues("Alarm", "Background", "Scan", "Fault - Gamma High", "Fault - Gamma Low"))
-                .build();
+                .addField("Alarm State", radHelper.createCategory()
+                        .name("Alarm")
+                        .label("Alarm")
+                        .definition(RADHelper.getRadUri("alarm"))
+                        .addAllowedValues("Alarm", "Background", "Scan", "Fault - Gamma High", "Fault - Gamma Low"));
+
+        for(int i=1; i<parent.gammaCount+1; i++){
+            recordBuilder.addField("GammaGrossCount "+ i , radHelper.createCount().name("GammaGrossCount")
+                    .label("Gamma Gross Count "+ i)
+                    .definition(radHelper.getRadUri("gamma-gross-count")));
+        }
+        dataStruct = recordBuilder.build();
+
+//        dataStruct = radHelper.createRecord()
+//                .name(getName())
+//                .label("Gamma Scan")
+//                .definition(RADHelper.getRadUri("gamma-scan"))
+//                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
+//
+////                .addField("Gamma1", radHelper.createGammaGrossCount())
+////                .addField("Gamma2", radHelper.createGammaGrossCount())
+////                .addField("Gamma3", radHelper.createGammaGrossCount())
+////                .addField("Gamma4", radHelper.createGammaGrossCount())
+//                .addField("Alarm State",
+//                        radHelper.createCategory()
+//                                .name("Alarm")
+//                                .label("Alarm")
+//                                .definition(RADHelper.getRadUri("alarm"))
+//                                .addAllowedValues("Alarm", "Background", "Scan", "Fault - Gamma High", "Fault - Gamma Low"))
+//
+//                .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
 
@@ -63,18 +84,16 @@ public class GammaOutput extends AbstractSensorOutput<RapiscanSensor> {
         }
 
         dataBlock.setLongValue(0,timeStamp/1000);
-        dataBlock.setIntValue(1, Integer.parseInt(csvString[1]));
-        dataBlock.setIntValue(2, Integer.parseInt(csvString[2]));
-        dataBlock.setIntValue(3, Integer.parseInt(csvString[3]));
-        dataBlock.setIntValue(4, Integer.parseInt(csvString[4]));
-        dataBlock.setStringValue(5, alarmState);
+        dataBlock.setStringValue(1, alarmState);
+        for(int i=2; i< parent.gammaCount+2; i++){
+            dataBlock.setIntValue(i, Integer.parseInt(csvString[i-1]));
+        }
+//        dataBlock.setIntValue(1, Integer.parseInt(csvString[1]));
+//        dataBlock.setIntValue(2, Integer.parseInt(csvString[2]));
+//        dataBlock.setIntValue(3, Integer.parseInt(csvString[3]));
+//        dataBlock.setIntValue(4, Integer.parseInt(csvString[4]));
 
         eventHandler.publish(new DataEvent(timeStamp, GammaOutput.this, dataBlock));
-
-
-
-
-
 
     }
 

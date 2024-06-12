@@ -58,6 +58,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     InputStream msgIn;
 
     Timer t;
+    int neutronCount;
+    int gammaCount;
 
     @Override
     public void doInit() throws SensorHubException {
@@ -67,6 +69,9 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         // Generate identifiers
         generateUniqueID("urn:osh:sensor:rapiscan", config.serialNumber);
         generateXmlID("Rapiscan", config.serialNumber);
+
+        neutronCount = config.neutronCount;
+        gammaCount = config.gammaCount;
 
         gammaOutput = new GammaOutput(this);
         addOutput(gammaOutput, false);
@@ -91,8 +96,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         speedOutput = new SpeedOutput(this);
         addOutput(speedOutput, false);
         speedOutput.init();
-
-
 
     }
 
