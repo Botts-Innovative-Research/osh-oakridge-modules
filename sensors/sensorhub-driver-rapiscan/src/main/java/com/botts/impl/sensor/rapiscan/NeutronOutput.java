@@ -9,10 +9,9 @@ import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vast.data.TextEncodingImpl;
+import org.vast.data.*;
 import org.vast.swe.SWEBuilders;
 
-import java.util.List;
 
 public class NeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
     private static final String SENSOR_OUTPUT_NAME = "Neutron Scan";
@@ -21,8 +20,6 @@ public class NeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
-    protected DataBlock dataBlock;
-
 
     public NeutronOutput(RapiscanSensor parentSensor){
         super(SENSOR_OUTPUT_NAME, parentSensor);
@@ -30,51 +27,76 @@ public class NeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
 
     protected void init() {
         RADHelper radHelper = new RADHelper();
-        SWEBuilders.DataRecordBuilder recordBuilder;
-        recordBuilder = radHelper.createRecord()
+
+//        DataRecord neutronRecord = radHelper.createRecord()
+//                .addField("LaneID", radHelper.createLaneId())
+//                .addField("AlarmState", radHelper.createCategory()
+//                        .name("Alarm")
+//                        .label("Alarm")
+//                        .definition(RADHelper.getRadUri("alarm"))
+//                        .addAllowedValues("Alarm", "Background", "Scan", "Fault - Neutron High"))
+//                .addField("NeutronGrossCount1", radHelper.createCount()
+//                        .name("NeutronGrossCount")
+//                        .label("Neutron Gross Count 1")
+//                        .definition(radHelper.getRadUri("neutron-gross-count")))
+//                .addField("NeutronGrossCount2", radHelper.createCount()
+//                        .name("NeutronGrossCount")
+//                        .label("Neutron Gross Count 2")
+//                        .definition(radHelper.getRadUri("neutron-gross-count")))
+//                .addField("NeutronGrossCount3", radHelper.createCount()
+//                        .name("NeutronGrossCount")
+//                        .label("Neutron Gross Count 3")
+//                        .definition(radHelper.getRadUri("neutron-gross-count")))
+//                .addField("NeutronGrossCount4", radHelper.createCount()
+//                        .name("NeutronGrossCount")
+//                        .label("Neutron Gross Count 4")
+//                        .definition(radHelper.getRadUri("neutron-gross-count")))
+//
+//                .build();
+
+//        for(int i=1; i<parent.neutronCount+1; i++){
+//            neutronRecord.addField("NeutronGrossCount "+ i, radHelper.createCount().name("NeutronGrossCount")
+//                    .label("Neutron Gross Count "+i)
+//                    .definition(radHelper.getRadUri("neutron-gross-count")).build());
+//        }
+
+        DataRecord recordBuilder = radHelper.createRecord()
                 .name(name)
                 .label("Neutron Scan")
+                .updatable(true)
                 .definition(RADHelper.getRadUri("neutron-scan"))
-                .addField("SamplingTime", radHelper.createPrecisionTimeStamp())
+                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
+                .addField("LaneID", radHelper.createLaneId())
                 .addField("AlarmState", radHelper.createCategory()
                         .name("Alarm")
                         .label("Alarm")
                         .definition(RADHelper.getRadUri("alarm"))
-                        .addAllowedValues("Alarm", "Background", "Scan", "Fault - Neutron High"));
-
-        for(int i=1; i<parent.neutronCount+1; i++){
-            recordBuilder.addField("NeutronGrossCount "+ i, radHelper.createCount().name("NeutronGrossCount")
-                    .label("Neutron Gross Count "+i)
-                    .definition(radHelper.getRadUri("neutron-gross-count")));
-        }
-
-        dataStruct = recordBuilder.build();
-
-
-//        dataStruct = radHelper.createRecord()
-//                .name(getName())
-//                .label("Neutron Scan")
-//                .definition(RADHelper.getRadUri("neutron-scan"))
-//                .addField("SamplingTime", radHelper.createPrecisionTimeStamp())
-////                .addField("Neutron1", radHelper.createNeutronGrossCount())
-////                .addField("Neutron2", radHelper.createNeutronGrossCount())
-////                .addField("Neutron3", radHelper.createNeutronGrossCount())
-////                .addField("Neutron4", radHelper.createNeutronGrossCount())
-//                .addField("AlarmState",
-//                        radHelper.createCategory()
-//                                .name("Alarm")
-//                                .label("Alarm")
-//                                .definition(RADHelper.getRadUri("alarm"))
-//                                .addAllowedValues("Alarm", "Background", "Scan", "Fault - Neutron High"))
-//                .build();
-
-        dataEncoding = new TextEncodingImpl(",", "\n");
-
-
+                        .addAllowedValues("Alarm", "Background", "Scan", "Fault - Neutron High"))
+                .addField("NeutronGrossCount1", radHelper.createCount()
+                        .name("NeutronGrossCount")
+                        .label("Neutron Gross Count 1")
+                        .definition(radHelper.getRadUri("neutron-gross-count")))
+                .addField("NeutronGrossCount2", radHelper.createCount()
+                        .name("NeutronGrossCount")
+                        .label("Neutron Gross Count 2")
+                        .definition(radHelper.getRadUri("neutron-gross-count")))
+                .addField("NeutronGrossCount3", radHelper.createCount()
+                        .name("NeutronGrossCount")
+                        .label("Neutron Gross Count 3")
+                        .definition(radHelper.getRadUri("neutron-gross-count")))
+                .addField("NeutronGrossCount4", radHelper.createCount()
+                        .name("NeutronGrossCount")
+                        .label("Neutron Gross Count 4")
+                        .definition(radHelper.getRadUri("neutron-gross-count")))
+//                .addField("Neutron Scan", neutronRecord)
+                .build();
+        dataEncoding = radHelper.newTextEncoding(",", "\n");
+        dataStruct =recordBuilder;
     }
 
     public void onNewMessage(String[] csvString, long timeStamp, String alarmState){
 
+        DataBlock dataBlock;
         if (latestRecord == null) {
 
             dataBlock = dataStruct.createDataBlock();
@@ -84,17 +106,21 @@ public class NeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
             dataBlock = latestRecord.renew();
         }
 
-        dataBlock.setLongValue(0,timeStamp/1000);
-        dataBlock.setStringValue(1, alarmState);
-        for(int i=2; i< parent.neutronCount+2; i++){
-            dataBlock.setIntValue(i, Integer.parseInt(csvString[i-1]));
-        }
-//        dataBlock.setIntValue(1, Integer.parseInt(csvString[1]));
-//        dataBlock.setIntValue(2, Integer.parseInt(csvString[2]));
-//        dataBlock.setIntValue(3, Integer.parseInt(csvString[3]));
-//        dataBlock.setIntValue(4, Integer.parseInt(csvString[4]));
+        int index =0;
 
+        dataBlock.setLongValue(index++,timeStamp/1000);
+        dataBlock.setIntValue(index++, parent.laneId);
+        dataBlock.setStringValue(index++, alarmState);
 
+        dataBlock.setIntValue(index++, Integer.parseInt(csvString[1]));
+        dataBlock.setIntValue(index++, Integer.parseInt(csvString[2]));
+        dataBlock.setIntValue(index++, Integer.parseInt(csvString[3]));
+        dataBlock.setIntValue(index++, Integer.parseInt(csvString[4]));
+//        for(int i=1; i< csvString.length; i++){
+//            dataBlock.setIntValue(index++, Integer.parseInt(csvString[i]));
+//        }
+
+        latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(timeStamp, NeutronOutput.this, dataBlock));
 
     }

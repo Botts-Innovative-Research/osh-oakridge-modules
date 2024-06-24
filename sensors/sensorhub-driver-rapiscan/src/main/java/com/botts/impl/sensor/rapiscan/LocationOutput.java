@@ -41,7 +41,7 @@ public class LocationOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
     }
 
-    public void setLocationOuput(LLALocation gpsLocation) {
+    public void setLocationOutput(LLALocation gpsLocation) {
 
             if (latestRecord == null) {
 
@@ -55,10 +55,12 @@ public class LocationOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
             latestRecordTime = System.currentTimeMillis() / 1000;
 
-            dataBlock.setLongValue(0, latestRecordTime);
-            dataBlock.setDoubleValue(1, gpsLocation.lat);
-            dataBlock.setDoubleValue(2, gpsLocation.lon);
-            dataBlock.setDoubleValue(3, gpsLocation.alt);
+            int index = 0;
+            dataBlock.setLongValue(index++, latestRecordTime);
+
+            dataBlock.setDoubleValue(index++, gpsLocation.lat);
+            dataBlock.setDoubleValue(index++, gpsLocation.lon);
+            dataBlock.setDoubleValue(index++, gpsLocation.alt);
 
             eventHandler.publish(new DataEvent(latestRecordTime, LocationOutput.this, dataBlock));
     }

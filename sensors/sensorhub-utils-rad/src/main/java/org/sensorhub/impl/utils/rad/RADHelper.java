@@ -9,12 +9,8 @@ import net.opengis.swe.v20.*;
 import net.opengis.swe.v20.Boolean;
 import org.vast.swe.SWEBuilders;
 import org.vast.swe.helper.GeoPosHelper;
-import org.vast.swe.helper.RasterHelper;
-import org.vast.swe.SWEConstants;
-import org.vast.swe.SWEHelper;
 
 import java.io.StringReader;
-import java.lang.reflect.Array;
 
 
 public class RADHelper extends GeoPosHelper {
@@ -55,6 +51,25 @@ public class RADHelper extends GeoPosHelper {
                 .description("time stamp: when the message was received")
                 .build();
     }
+
+    public Quantity createSpeedTimeStamp() {
+        return createQuantity()
+                .name("speed-time")
+                .label("Speed Time")
+                .definition(getRadUri("speed-time"))
+                .description("time it takes to cover 1 foot of distance")
+                .uomCode("s")
+                .build();
+    }
+
+    public Time createBackgroundTime() {
+        return createTime()
+                .name("background-time")
+                .name("Background Time")
+                .definition(getRadUri("background-time"))
+                //range 20-120seconds
+                .build();
+    }
     public Time createOccupancyStartTime(){
         return createTime()
                 .asPhenomenonTimeIsoUTC()
@@ -85,30 +100,215 @@ public class RADHelper extends GeoPosHelper {
     }
 
 
-
     public Quantity createNeutronBackground(){
         return createQuantity()
-                .name("NeutronBackground")
-                .label("Neutron Background")
-                .definition(getRadUri("neutron-background"))
+                .name("NeutronBackgroundCount")
+                .label("Neutron Background Count")
+                .definition(getRadUri("neutron-background-count"))
+                .description("neutron count to start occupancy")
                 .build();
     }
 
-    public Quantity createSpeed(){
+    public Quantity createNSigma(){
+        return createQuantity()
+                .name("NSigma")
+                .label("NSigma")
+                .definition(getRadUri("n-sigma"))
+                .description("formula determines the number of counts above background that will trigger a radiation alarm")
+                .build();
+    }
+    public Quantity createZmaxValue(){
+        return createQuantity()
+                .name("zmax-value")
+                .label("Zmax Value")
+                .definition(getRadUri("zmax-value"))
+                .description("max z-value")
+                .build();
+    }
+
+    public Quantity createAlphaValue(){
+        return createQuantity()
+                .name("alpha-value")
+                .label("Alpha Value")
+                .definition(getRadUri("alpha-value"))
+                .description("value used in calculations")
+                .build();
+    }
+    public Quantity createOccupancyHoldin(){
+        return createQuantity()
+                .name("occupancy-holdin")
+                .label("Occupancy Holdin")
+                .definition(getRadUri("occupancy-holdin"))
+                .description("number of 200ms time intervals to hold in after occupancy signal indicates the system is vacant")
+                .build();
+    }
+    public Quantity createIntervals(){
+        return createQuantity()
+                .name("Intervals")
+                .label("Intervals")
+                .definition(getRadUri("intervals"))
+                .description("the number of time intervals to be considered")
+                .build();
+    }
+
+    public Quantity createSequentialIntervals(){
+        return createQuantity()
+                .name("sequential-intervals")
+                .label("Sequential Intervals")
+                .definition(getRadUri("sequential-intervals"))
+                .build();
+    }
+
+    public Quantity createMaxIntervals(){
+        return createQuantity()
+                .name("Maximum Intervals")
+                .label("Maximum Intervals")
+                .definition(getRadUri("maximum-intervals"))
+                .build();
+    }
+    public Text createPlaceholder(){
+        return createText()
+                .name("Placeholder")
+                .label("Placeholder")
+                .definition(getRadUri("placeholder"))
+                .build();
+    }
+    public Quantity createBackgroundNSigma(){
+        return createQuantity()
+                .name("Background NSigma")
+                .label("Background NSigma")
+                .definition(getRadUri("background-nsigma"))
+                .description("sets a sigma value for a \"throw-through alarm")
+//                .description("is used to set alarm thresholds for detecting anomalies in radiation levels")
+                .build();
+    }
+
+    public Quantity createHighBackgroundFault(){
+        return createQuantity()
+                .name("High Background Fault")
+                .label("High Background Fault")
+                .definition(getRadUri("high-background-fault"))
+                .description("threshold value measured in counts per second(cps) within a radiation detection system that will trigger a fault")
+//                .uomCode("cps")
+                .build();
+    }
+    public Quantity createLowBackgroundFault(){
+        return createQuantity()
+                .name("Low Background Fault")
+                .label("Low Background Fault")
+                .definition(getRadUri("low-background-fault"))
+                .description("threshold value measured in counts per second(cps) within a radiation detection system that will trigger a fault")
+//                .uomCode("cps")
+                .build();
+    }
+    public Quantity createDetectors(){
+        return createQuantity()
+                .name("detectors-on-line")
+                .label("Detectors on line")
+                .definition(getRadUri("detectors-on-line"))
+                .description("radiation detectors that are actively operating and connected to the monitoring system")
+                .build();
+    }
+    public Quantity createUpperControlDiscriminator(){
+        return createQuantity()
+                .name("control-upper-level-discriminator")
+                .label("Control Upper Level Discriminator")
+                .definition(getRadUri("control-upper-level-discriminator"))
+                .description("threshold setting in radiation detector that defines the max energy level for detecting radiation")
+                .build();
+    }
+    public Quantity createLowerControlDiscriminator(){
+        return createQuantity()
+                .name("control-lower-level-discriminator")
+                .label("Control Lower Level Discriminator")
+                .definition(getRadUri("control-lower-level-discriminator"))
+                .description("threshold setting in radiation detector that defines the minimum energy level for detecting radiation")
+                .build();
+    }
+    public Quantity createAuxiliaryUpperDiscriminator(){
+        return createQuantity()
+                .name("auxiliary-upper-level-discriminator")
+                .label("Auxiliary Upper Level Discriminator")
+                .definition(getRadUri("auxiliary-level-upper-discriminator"))
+                .description("threshold setting that defines an upper limit for the energy of detected radiation events")
+                .build();
+    }
+
+    public Quantity createAuxiliaryLowerDiscriminator(){
+        return createQuantity()
+                .name("auxiliary-lower-level-discriminator")
+                .label("Auxiliary Lower Level Discriminator")
+                .definition(getRadUri("auxiliary-level-lower-discriminator"))
+                .description("threshold setting that defines an lower limit for the energy of detected radiation events")
+                .build();
+    }
+    public Quantity createRelayOutput(){
+        return createQuantity()
+                .name("relay-output")
+                .label("Relay Output")
+                .definition(getRadUri("relay-output"))
+                .description("electrical output signal that can activate or control other devices based on detection of radiation")
+                .build();
+    }
+    public Quantity createAlgorithm(){
+        return createQuantity()
+                .name("Algorithm")
+                .label("Algorithm")
+                .definition(getRadUri("algorithm"))
+                .description("permits the operator to select which detectors will be included in the alarm calculations")
+                .build();
+    }
+
+    public Text createSoftwareVersion(){
+        return createText()
+                .name("software-version")
+                .label("Software version")
+                .definition(getRadUri("software-version"))
+                .addAllowedValues("A", "T")
+                .build();
+    }
+    public Quantity createFirmwareVersion(){
+        return createQuantity()
+                .name("firmware-version")
+                .label("Firmware version")
+                .definition(getRadUri("firmware-version"))
+                .build();
+    }
+
+    public Text createLaneId(){
+        return createText()
+                .label("Lane ID")
+                .definition(RADHelper.getRadUri("LaneID"))
+                .description("identifies the lane for each rpm system")
+                .build();
+    }
+
+
+    public Quantity createSpeedMph(){
         return createQuantity()
                 .name("Speed")
                 .label("Speed")
                 .definition(getRadUri("speed-mph"))
                 .uomCode("mph")
+                //max 99
+                .build();
+    }
+    public Quantity createSpeedKph(){
+        return createQuantity()
+                .name("Speed")
+                .label("Speed")
+                .definition(getRadUri("speed-kph"))
+                .uomCode("kph")
+                //max 999
                 .build();
     }
 
     public Count createOccupancyCount(){
         return createCount()
                 .name("occupancy-count")
-                .label("Occupancy Count")
-                .definition(getRadUri("occupancy-count"))
-                .description("Occupancy count number reset daily")
+                .label("Pillar Occupancy Count")
+                .definition(getRadUri("pillar-occupancy-count"))
+                .description("incremented count every time the pillar clears the occupancy, resets daily and on power cycle")
                 .build();
     }
 
@@ -197,6 +397,131 @@ public class RADHelper extends GeoPosHelper {
                         .dataType(DataType.DOUBLE)
                         .build())
                 .build();
+    }
+
+    public DataRecord newGammaOutput(int gammaCount){
+        SWEBuilders.DataRecordBuilder recordBuilder;
+        DataRecord datarec;
+
+        recordBuilder = this.createRecord()
+                .name("Gamma Scan")
+                .label("Gamma Scan")
+                .definition(RADHelper.getRadUri("gamma-scan"))
+                .addField("Sampling Time", createPrecisionTimeStamp())
+                .addField("Alarm State", createCategory()
+                                .name("Alarm")
+                                .label("Alarm")
+                                .definition(RADHelper.getRadUri("alarm"))
+                                .addAllowedValues("Alarm", "Background", "Scan", "Fault - Gamma High", "Fault - Gamma Low"));
+
+
+        for(int i=1; i<gammaCount+1; i++){
+            recordBuilder.addField("GammaGrossCount "+ i , createCount().name("GammaGrossCount")
+                    .label("Gamma Gross Count "+ i)
+                    .definition(getRadUri("gamma-gross-count")));
+        }
+        datarec = recordBuilder.build();
+
+        return datarec;
+    }
+//    public DataRecord newLocationOutput(){
+//        SWEBuilders.DataRecordBuilder recordBuilder;
+//        DataRecord datarec;
+//
+//        recordBuilder = this.createRecord()
+//                .name("Location")
+//                .label("Location")
+//                .definition(RADHelper.getRadUri("location-output"))
+//                .addField("Sampling Time", createPrecisionTimeStamp())
+//                .addField("Sensor Location", createLocationVectorLLA());
+//
+//        datarec = recordBuilder.build();
+//
+//        return datarec;
+//    }
+//    public DataRecord newSpeedOutput(){
+//        SWEBuilders.DataRecordBuilder recordBuilder;
+//        DataRecord datarec;
+//
+//        recordBuilder = this.createRecord()
+//                .name("Speed")
+//                .label("Speed")
+//                .definition(RADHelper.getRadUri("speed"))
+//                .addField("Timestamp",createPrecisionTimeStamp())
+//                .addField("Speed", createSpeed());
+//
+//        datarec = recordBuilder.build();
+//
+//        return datarec;
+//    }
+//    public DataRecord newTamperOutput(){
+//        SWEBuilders.DataRecordBuilder recordBuilder;
+//        DataRecord datarec;
+//
+//        recordBuilder = this.createRecord()
+//                .name("Tamper")
+//                .label("Tamper")
+//                .definition(RADHelper.getRadUri("tamper"))
+//                .addField("Timestamp", createPrecisionTimeStamp())
+//                .addField("TamperState", createTamperStatus());
+//        datarec = recordBuilder.build();
+//
+//        return datarec;
+//    }
+//    public DataRecord newOccupancyOutput(){
+//        SWEBuilders.DataRecordBuilder recordBuilder;
+//        DataRecord datarec;
+//
+//        recordBuilder = this.createRecord()
+//                .name("Occupancy")
+//                .label("Occupancy")
+//                .definition(RADHelper.getRadUri("occupancy"))
+//                .addField("Timestamp", createPrecisionTimeStamp())
+//                .addField("OccupancyCount", createOccupancyCount())
+//                .addField("StartTime", createOccupancyStartTime())
+//                .addField("EndTime", createOccupancyEndTime())
+//                .addField("NeutronBackground", createNeutronBackground())
+//                .addField("GammaAlarm", createBoolean()
+//                                .name("gamma-alarm")
+//                                .label("Gamma Alarm")
+//                                .definition(RADHelper.getRadUri("gamma-alarm")))
+//                .addField("NeutronAlarm", createBoolean()
+//                                .name("neutron-alarm")
+//                                .label("Neutron Alarm")
+//                                .definition(RADHelper.getRadUri("neutron-alarm")));
+//
+//        datarec = recordBuilder.build();
+//
+//        return datarec;
+//    }
+
+
+    public DataRecord newNeutronOutput(int neutronCount){
+        SWEBuilders.DataRecordBuilder recordBuilder;
+        DataRecord datarec;
+
+        recordBuilder = this.createRecord()
+                .name("Neutron Scan")
+                .label("Neutron Scan")
+                .definition(RADHelper.getRadUri("neutron-scan"))
+                .addField("SamplingTime", createPrecisionTimeStamp())
+                .addField("AlarmState", createCategory()
+                                .name("Alarm")
+                                .label("Alarm")
+                                .definition(RADHelper.getRadUri("alarm"))
+                                .addAllowedValues("Alarm", "Background", "Scan", "Fault - Neutron High"));
+
+
+        for(int i=1; i<neutronCount+1; i++){
+            recordBuilder.addField("NeutronGrossCount "+ i, createCount().name("NeutronGrossCount")
+                    .label("Neutron Gross Count "+i)
+                    .definition(getRadUri("neutron-gross-count")));
+        }
+
+
+        datarec = recordBuilder.build();
+
+        return datarec;
     }
 
     public Count createGammaGrossCount(){

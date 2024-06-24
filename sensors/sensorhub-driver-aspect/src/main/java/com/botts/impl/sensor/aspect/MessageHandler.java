@@ -67,12 +67,14 @@ public class MessageHandler implements Runnable {
                 double timestamp = System.currentTimeMillis() / 1000d;
 
                 gammaOutput.setData(monitorRegisters, timestamp);
+
                 neutronOutput.setData(monitorRegisters, timestamp);
                 speedOutput.setData(monitorRegisters, timestamp);
 
                 if (checkOccupancyRecord(monitorRegisters, timestamp)) {
                     occupancyOutput.setData(monitorRegisters, timestamp, startTime, endTime, gammaAlarm, neutronAlarm);
                 }
+                System.out.println("monitor registers: "+ monitorRegisters);
                 sleep(500);
             }
         } catch (Exception e) {
@@ -92,15 +94,15 @@ public class MessageHandler implements Runnable {
     private boolean checkOccupancyRecord(MonitorRegisters monitorRegisters, double timestamp) {
         // Initialize the occupancy count
         if (occupancyCount == -1) {
-            occupancyCount = monitorRegisters.getNumberOfObject();
+            occupancyCount = monitorRegisters.getObjectCounter();
             return false;
         }
 
         // If the occupancy count has changed, then we need to set the start time
-        if (occupancyCount != monitorRegisters.getNumberOfObject()) {
+        if (occupancyCount != monitorRegisters.getObjectCounter()) {
             startTime = timestamp;
             endTime = 0;
-            occupancyCount = monitorRegisters.getNumberOfObject();
+            occupancyCount = monitorRegisters.getObjectCounter();
             gammaAlarm = false;
             neutronAlarm = false;
             return false;

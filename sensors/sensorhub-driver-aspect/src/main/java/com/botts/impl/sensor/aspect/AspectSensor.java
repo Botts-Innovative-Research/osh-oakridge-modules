@@ -37,6 +37,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     OccupancyOutput occupancyOutput;
     SpeedOutput speedOutput;
     SensorLocationOutput sensorLocationOutput;
+    public int laneID;
 
     @Override
     public void doInit() throws SensorHubException {
@@ -45,6 +46,8 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         // Generate identifiers
         generateUniqueID("urn:osh:sensor:aspect:", config.serialNumber);
         generateXmlID("Aspect", config.serialNumber);
+
+        laneID = config.laneId;
 
         // Initialize outputs
         gammaOutput = new GammaOutput(this);

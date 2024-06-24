@@ -14,9 +14,10 @@
 package com.botts.impl.sensor.rapiscan;
 
 
+//import com.botts.impl.sensor.rapiscan.helpers.RapiscanActionList;
+//import com.botts.impl.sensor.rapiscan.helpers.RapiscanPreset;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.sensor.PositionConfig.LLALocation;
 import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
@@ -25,6 +26,7 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -43,23 +45,30 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     ICommProvider<?> commProvider;
 
+//    ArrayList<ICommProvider> commProviderList= new ArrayList<>();
+//    ArrayList<MessageHandler>messageHandlerList = new ArrayList<>();
+//    static ArrayList<InputStream> bufferedInputStreamsList = new ArrayList<InputStream>();
+
     GammaOutput gammaOutput;
-
     NeutronOutput neutronOutput;
-
     OccupancyOutput occupancyOutput;
-
     LocationOutput locationOutput;
-
     TamperOutput tamperOutput;
-
     SpeedOutput speedOutput;
-
+    GammaSetUp1Output gammaSetUp1Output;
+    GammaSetUp2Output gammaSetUp2Output;
+    GammaSetup3Output gammaSetup3Output;
+    NeutronSetupOutput neutronSetupOutput;
     InputStream msgIn;
 
     Timer t;
-    int neutronCount;
-    int gammaCount;
+
+    //configs
+//    int neutronCount;
+//    int gammaCount;
+    int laneId;
+//    RapiscanLayerConfig rapiscanLayerConfig;
+
 
     @Override
     public void doInit() throws SensorHubException {
@@ -67,12 +76,18 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         super.doInit();
 
         // Generate identifiers
-        generateUniqueID("urn:osh:sensor:rapiscan", config.serialNumber);
-        generateXmlID("Rapiscan", config.serialNumber);
+        generateUniqueID("urn:osh:sensor:rapiscan", String.valueOf(config.laneId));
+        generateXmlID("Rapiscan", String.valueOf(config.laneId));
 
-        neutronCount = config.neutronCount;
-        gammaCount = config.gammaCount;
+//        rapiscanLayerConfig = config.rapiscanLayerConfigs;
+//        neutronCount = config.neutronCount;
+//        gammaCount = config.gammaCount;
+        laneId = config.laneId;
 
+        createOutputs();
+    }
+
+    public void createOutputs(){
         gammaOutput = new GammaOutput(this);
         addOutput(gammaOutput, false);
         gammaOutput.init();
@@ -97,12 +112,28 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         addOutput(speedOutput, false);
         speedOutput.init();
 
+        gammaSetUp1Output = new GammaSetUp1Output(this);
+        addOutput(gammaSetUp1Output, false);
+        gammaSetUp1Output.init();
+
+        gammaSetUp2Output = new GammaSetUp2Output(this);
+        addOutput(gammaSetUp2Output, false);
+        gammaSetUp2Output.init();
+
+        gammaSetup3Output = new GammaSetup3Output(this);
+        addOutput(gammaSetup3Output, false);
+        gammaSetup3Output.init();
+
+        neutronSetupOutput = new NeutronSetupOutput(this);
+        addOutput(neutronSetupOutput, false);
+        neutronSetupOutput.init();
+
     }
 
     @Override
     protected void doStart() throws SensorHubException {
 
-//        locationOutput.setLocationOuput(config.getLocation());
+//        locationOutput.setLocationOutput(config.getLocation());
         setLocationRepeatTimer();
 
         // init comm provider
@@ -117,35 +148,51 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                 var moduleReg = getParentHub().getModuleRegistry();
 
                 commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
-
                 commProvider.start();
 
+//                commProviderList.add(commProvider);
+
             } catch (Exception e) {
-
                 commProvider = null;
-
-                throw e;
+                throw new SensorException("error during  start of Sensor: {}", e);
             }
-        }
 
-        // connect to data stream
-        try {
 
-            msgIn = new BufferedInputStream(commProvider.getInputStream());
+//         connect to data stream
+            try {
+//                for (ICommProvider<?> commProvider : commProviderList) {
+                    msgIn = new BufferedInputStream(commProvider.getInputStream());
+                    messageHandler = new MessageHandler(msgIn, gammaOutput, neutronOutput, occupancyOutput, tamperOutput, speedOutput, gammaSetUp1Output, gammaSetUp2Output, gammaSetup3Output, neutronSetupOutput);
 
-            messageHandler = new MessageHandler(msgIn, gammaOutput, neutronOutput, occupancyOutput, tamperOutput, speedOutput);
+//                    bufferedInputStreamsList.add(msgIn);
+//                    messageHandlerList.add(messageHandler);
+//                }
 
 //            csvMsgRead.readMessages(msgIn, gammaOutput, neutronOutput, occupancyOutput);
 
-        } catch (IOException e) {
+            } catch (IOException e) {
 
-            throw new SensorException("Error while initializing communications ", e);
+                throw new SensorException("Error while initializing communications ", e);
+            }
         }
     }
 
     @Override
     public void doStop() throws SensorHubException {
 
+//        if(!commProviderList.isEmpty()){
+//            try {
+//                t.cancel();
+//                t.purge();
+//                for(ICommProvider<?> commProvider: commProviderList){
+//                    commProvider.stop();
+//                }
+//            } catch (Exception e) {
+//                logger.error("Uncaught exception attempting to stop comms module", e);
+//            } finally {
+//                commProviderList.clear();
+//            }
+//        }
         if (commProvider != null) {
 
             try {
@@ -163,7 +210,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
             }
         }
 
-        messageHandler.stopProcessing();
+//        messageHandlerList.forEach(MessageHandler::stopProcessing);
+
     }
 
     @Override
@@ -176,6 +224,12 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
             return commProvider.isStarted();
         }
+//        for(ICommProvider<?> commProvider: commProviderList){
+//            if(commProvider.isStarted()){
+//                return true;
+//            }
+//        }
+//        return false;
     }
 
     void setLocationRepeatTimer(){
@@ -183,11 +237,12 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         TimerTask tt = new TimerTask() {
             @Override
             public void run() {
-                locationOutput.setLocationOuput(config.getLocation());
+                locationOutput.setLocationOutput(config.getLocation());
                 System.out.println("location updated");
             }
         };
         t.scheduleAtFixedRate(tt,500,10000);
 
     }
+
 }

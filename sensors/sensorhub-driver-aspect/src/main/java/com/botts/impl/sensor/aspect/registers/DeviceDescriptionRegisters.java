@@ -35,6 +35,7 @@ public class DeviceDescriptionRegisters {
         monitorRegistersIdentifier = response.getRegisterValue(2);
         monitorRegistersBaseAddress = response.getRegisterValue(3);
         monitorRegistersNumberOfRegisters = response.getRegisterValue(4);
+        System.out.println(toString());
     }
 
     public String toString() {

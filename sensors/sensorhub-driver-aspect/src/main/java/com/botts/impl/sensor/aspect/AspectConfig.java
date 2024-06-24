@@ -39,6 +39,9 @@ public class AspectConfig extends SensorConfig {
     @DisplayInfo(desc = "RPM Location")
     public PositionConfig positionConfig = new PositionConfig();
 
+    @DisplayInfo(desc="Lane ID")
+    public int laneId;
+
     @Override
     public LLALocation getLocation() {
         return positionConfig.location;

@@ -10,6 +10,7 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
+import org.vast.swe.SWEBuilders;
 
 public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
@@ -28,15 +29,18 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
     protected void init(){
         RADHelper radHelper = new RADHelper();
 
-        dataStruct = radHelper.createRecord()
+        DataRecord recordBuilder = radHelper.createRecord()
                 .name(getName())
                 .label("Occupancy")
+                .updatable(true)
                 .definition(RADHelper.getRadUri("occupancy"))
-                .addField("Timestamp", radHelper.createPrecisionTimeStamp())
-                .addField("OccupancyCount", radHelper.createOccupancyCount())
+                .description("System occupancy count since midnight each day")
+                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
+                .addField("LaneID", radHelper.createLaneId())
+                .addField("PillarOccupancyCount", radHelper.createOccupancyCount())
                 .addField("StartTime", radHelper.createOccupancyStartTime())
                 .addField("EndTime", radHelper.createOccupancyEndTime())
-                .addField("NeutronBackground", radHelper.createNeutronBackground())
+                .addField("NeutronBackgroundCount", radHelper.createNeutronBackground())
                 .addField("GammaAlarm",
                         radHelper.createBoolean()
                                 .name("gamma-alarm")
@@ -49,6 +53,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
                                 .definition(RADHelper.getRadUri("neutron-alarm")))
                 .build();
 
+        dataStruct =recordBuilder;
         dataEncoding = new TextEncodingImpl(",", "\n");
 
     }
@@ -62,15 +67,19 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
             dataBlock = latestRecord.renew();
         }
+        int index =0;
 
-        dataBlock.setLongValue(0, System.currentTimeMillis()/1000);
-        dataBlock.setIntValue(1, Integer.parseInt(csvString[1]));
-        dataBlock.setLongValue(2, startTime/1000);
-        dataBlock.setLongValue(3, endTime/1000);
-        dataBlock.setDoubleValue(4, Double.parseDouble(csvString[2])/1000);
-        dataBlock.setBooleanValue(5, isGammaAlarm);
-        dataBlock.setBooleanValue(6, isNeutronAlarm);
+        dataBlock.setLongValue(index++, System.currentTimeMillis()/1000);
+        dataBlock.setIntValue(index++, parent.laneId);
+        dataBlock.setIntValue(index++, Integer.parseInt(csvString[1])); //occupancy count
+        dataBlock.setLongValue(index++, startTime/1000);
+        dataBlock.setLongValue(index++, endTime/1000);
+        dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[2])/1000); //neutron background count
+        dataBlock.setBooleanValue(index++, isGammaAlarm);
+        dataBlock.setBooleanValue(index++, isNeutronAlarm);
 
+        dataBlock.updateAtomCount();
+        latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));
 
     }

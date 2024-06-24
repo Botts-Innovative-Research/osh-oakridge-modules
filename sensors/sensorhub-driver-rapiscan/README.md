@@ -1,50 +1,60 @@
 # [NAME]
 
-Sensor adapter for [NAME].
+Sensor adapter for Rapiscan Driver
 
 ## Configuration
 
-Configuring the sensor requires:
-Select ```Sensors``` from the left hand accordion control and right click for context sensitive menu in accordion control
-- **Module Name:** A name for the instance of the driver
-- **Serial Number:** The platforms serial number, or a unique identifier
-- **Auto Start:** Check the box to start this module when OSH node is launched
+http://localhost:8282/sensorhub/admin
+user: admin
+pw: oscas
 
-Storage:
-Select ```Storage``` from the left hand accordion control and right click for context sensitive menu in accordion control
-Use a ```Real-Time Stream Storage Module``` providing the sensor module as the 
-- **Data Source ID:** Select the identifier for the storage module create in configuring sensor step,
-use looking glass to select it from list of know sensor modules 
-- **Auto Start:** Check the box to start this module when OSH node is launched
-- **Process Events:** Check the box if you want events to be stored as new records.
-                 
-And then configure the 
-- **Storage Config** using a ```Perst Record Storage``` instance providing the 
-  - **Storage Path** as the location where the OSH records are to be stored.
+right click in the sensors box and add a system
+- Add a UniqueId for the system
+- click apply changes
+- right click "New Sensor System' and in the dropdown window click 'Add Submodule'
+- Click 'Rapiscan Sensor Driver'
 
-SOS Service:
-Select ```Services``` from the left hand accordion control, then Offerings, then the **+**
-symbol to add a new offering.
-Provide the following:
-- **Name:** A name for the offering
-- **Description:** A description of the offering
-- **StorageId:** Select the identifier for the storage module create in previous step,
- use looking glass to select it from list of know storage modules
-- **SensorId:** Select the identifier for the storage module create in configuring sensor step,
-                 use looking glass to select it from list of know sensor modules
-- **Enable:** Check the box to enable this offering
+## Configuring the Rapiscan Sensor Driver
+- Under the General configuration
+  - Update the following fields to coordinate to each lane
+      - Gamma Count:  (Number of Gamma Detectors)
+      - Neutron Count: (Number of Neutron Detectors)
+      - Lane Id: (Lane Id)
 
-## Sample Requests
+- Under the Communication Provider
+  - Click "Add"
+  - In the pop-up window click 'TCP Comm Provider' OR 'UDP Comm Provider'
+    **- TCP Comm Provider Configuration**
+      - Update the following fields
+          - Remote Host:
+          - User/PW: (if applicable)
+          - Remote Port:
+    - **UDP Comm Provider Configuration**
+      - Update the following fields
+        - Remote Host:
+        - Remote Port:
+        - Local Port:
 
-The following are a list of example requests and their respective responses.  
-The **IP ADDRESS** and **PORT** will need to be specified and point to the instance
-of the OpenSensorHub node serving the data.
+- Under the Position
+  - Add location
+  - Add orientation
 
-### [Observed Property] Request
-- **HTTP**
-   - http://[IP ADDRESS]:[PORT]/sensorhub/sos?service=SOS&version=2.0&request=GetResult&offering=[URN]&observedProperty=[OBSERVED_PROPERTY]&temporalFilter=phenomenonTime,[START_TIME]/[END_TIME]&replaySpeed=1&responseFormat=application/json
+-Click Apply Changes
+- Then Right CLick 'New Sensor System' and start the driver
+- After you start the System then you can add more Lanes!!!!
+- 
+** Repeat this for each Lane and ensure to update it to get 
 
-Response:
-```
 
-```
+
+# Adding A System DataBase
+- Under the DataBases click the 'New System Driver DataBase'
+- in the General Config
+  - Add the System UIDs by clicking the green plus, the systems uids will be provided in a dropdown menu
+- DataBaseConfig
+  - Click Add 'H2 Historical Obs Database'
+    - Add a storage path 'rapiscan.db'
+  
+
+- Start the System DataBase
+- Restart the System in Sensors

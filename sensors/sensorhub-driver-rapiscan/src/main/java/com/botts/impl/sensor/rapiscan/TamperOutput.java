@@ -10,6 +10,9 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
+import org.vast.swe.SWEBuilders;
+
+import javax.xml.crypto.Data;
 
 public class TamperOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
@@ -28,14 +31,32 @@ public class TamperOutput  extends AbstractSensorOutput<RapiscanSensor> {
     protected void init(){
         RADHelper radHelper = new RADHelper();
 
-        dataStruct = radHelper.createRecord()
+//        DataRecord tamperRecord = radHelper.createRecord()
+//                .addField("LaneID", radHelper.createLaneId())
+//                .addField("TamperState", radHelper.createTamperStatus())
+//                .build();
+//
+//        SWEBuilders.DataArrayBuilder arrayBuilder = radHelper.createArray()
+//                .withVariableSize("numTamperRecords")
+//                .withElement("Tamper", tamperRecord);
+
+        DataRecord recordBuilder = radHelper.createRecord()
                 .name(getName())
                 .label("Tamper")
+                .updatable(true)
                 .definition(RADHelper.getRadUri("tamper"))
-                .addField("Timestamp", radHelper.createPrecisionTimeStamp())
+                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
+                .addField("LaneID", radHelper.createLaneId())
                 .addField("TamperState", radHelper.createTamperStatus())
+//                .addField("Tamper", tamperRecord)
+//                .addField("numTamperRecords", radHelper.createCount()
+//                        .label("numTamperRecords")
+//                        .id("numTamperRecords")
+//                        .value(parent.rapiscanLayerConfig.presets.size()))
+//                .addField("Tamper Records", arrayBuilder)
                 .build();
 
+        dataStruct =recordBuilder;
         dataEncoding = new TextEncodingImpl(",", "\n");
 
     }
@@ -50,10 +71,14 @@ public class TamperOutput  extends AbstractSensorOutput<RapiscanSensor> {
             dataBlock = latestRecord.renew();
         }
 
-        dataBlock.setLongValue(0, System.currentTimeMillis()/1000);
-        dataBlock.setBooleanValue(1, tamperState);
+        int index = 0;
 
+        dataBlock.setLongValue(index++, System.currentTimeMillis()/1000);
+        dataBlock.setIntValue(index++, parent.laneId);
+        dataBlock.setBooleanValue(index++, tamperState);
 
+        dataBlock.updateAtomCount();
+        latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), TamperOutput.this, dataBlock));
 
     }

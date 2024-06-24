@@ -10,6 +10,7 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
+import org.vast.swe.SWEBuilders;
 
 public class SpeedOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
@@ -28,19 +29,24 @@ public class SpeedOutput  extends AbstractSensorOutput<RapiscanSensor> {
     protected void init(){
         RADHelper radHelper = new RADHelper();
 
-        dataStruct = radHelper.createRecord()
+        DataRecord recordBuilder = radHelper.createRecord()
                 .name(getName())
                 .label("Speed")
+                .updatable(true)
                 .definition(RADHelper.getRadUri("speed"))
-                .addField("Timestamp", radHelper.createPrecisionTimeStamp())
-                .addField("Speed", radHelper.createSpeed())
+                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
+                .addField("LaneID", radHelper.createLaneId())
+                .addField("speed-time", radHelper.createSpeedTimeStamp())
+                .addField("speed-mph", radHelper.createSpeedMph())
+                .addField("speed-kph", radHelper.createSpeedKph())
                 .build();
 
+        dataStruct =recordBuilder;
         dataEncoding = new TextEncodingImpl(",", "\n");
 
     }
 
-    public void onNewMessage( String[] csvString){
+    public void onNewMessage(String[] csvString){
         if (latestRecord == null) {
 
             dataBlock = dataStruct.createDataBlock();
@@ -50,10 +56,15 @@ public class SpeedOutput  extends AbstractSensorOutput<RapiscanSensor> {
             dataBlock = latestRecord.renew();
         }
 
-        dataBlock.setLongValue(0, System.currentTimeMillis()/1000);
-        dataBlock.setDoubleValue(1, Double.parseDouble(csvString[1]));
+        int index = 0;
 
+        dataBlock.setLongValue(index++,System.currentTimeMillis()/1000);
+        dataBlock.setIntValue(index++, parent.laneId);
+        dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[1]));
+        dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[2]));
+        dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[3]));
 
+        latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), SpeedOutput.this, dataBlock));
 
     }
@@ -62,12 +73,10 @@ public class SpeedOutput  extends AbstractSensorOutput<RapiscanSensor> {
     public DataComponent getRecordDescription() {
         return dataStruct;
     }
-
     @Override
     public DataEncoding getRecommendedEncoding() {
         return dataEncoding;
     }
-
     @Override
     public double getAverageSamplingPeriod() {
         return 0;

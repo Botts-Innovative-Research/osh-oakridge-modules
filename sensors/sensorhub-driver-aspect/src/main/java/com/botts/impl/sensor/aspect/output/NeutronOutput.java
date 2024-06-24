@@ -35,6 +35,9 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
                 .label(getName())
                 .definition(RADHelper.getRadUri("neutron-scan"))
                 .addField("SamplingTime", radHelper.createPrecisionTimeStamp())
+                .addField("LaneID", radHelper.createText()
+                        .label("Lane ID")
+                        .definition(RADHelper.getRadUri("LaneID")))
                 .addField("NeutronGrossCount", radHelper.createNeutronGrossCount())
                 .addField("NeutronBackground", radHelper.createQuantity()
                         .name("NeutronBackground")
@@ -74,10 +77,11 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
         ++setCount;
 
         dataBlock.setDoubleValue(0, timeStamp);
-        dataBlock.setIntValue(1, monitorRegisters.getNeutronChannelCount());
-        dataBlock.setFloatValue(2, monitorRegisters.getNeutronChannelBackground());
-        dataBlock.setFloatValue(3, monitorRegisters.getNeutronChannelVariance());
-        dataBlock.setStringValue(4, monitorRegisters.getNeutronAlarmState());
+        dataBlock.setIntValue(1, parent.laneID);
+        dataBlock.setIntValue(2, monitorRegisters.getNeutronChannelCount());
+        dataBlock.setFloatValue(3, monitorRegisters.getNeutronChannelBackground());
+        dataBlock.setFloatValue(4, monitorRegisters.getNeutronChannelVariance());
+        dataBlock.setStringValue(5, monitorRegisters.getNeutronAlarmState());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

@@ -20,6 +20,9 @@ import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.api.sensor.SensorConfig;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Configuration settings for the [NAME] driver exposed via the OpenSensorHub Admin panel.
  *
@@ -44,16 +47,24 @@ public class RapiscanConfig extends SensorConfig {
     @DisplayInfo(desc = "Serial number or unique identifier")
     public String serialNumber = "sensor001";
 
+//    @DisplayInfo.Required
+//    @DisplayInfo(desc = "switching config layers")
+//    public RapiscanLayerConfig rapiscanLayerConfigs = new RapiscanLayerConfig();
+
     @DisplayInfo(desc = "Communication settings to connect to RS-350 data stream")
     public CommProviderConfig<?> commSettings;
 
     @DisplayInfo(desc="RPM Location")
     public PositionConfig positionConfig = new PositionConfig();
 
-    @DisplayInfo(desc="Gamma Count")
-    public int gammaCount;
-    @DisplayInfo(desc="Neutron Count")
-    public int neutronCount;
+//    @DisplayInfo(desc="Gamma Count")
+//    public int gammaCount;
+//
+//    @DisplayInfo(desc="Neutron Count")
+//    public int neutronCount;
+
+    @DisplayInfo(desc="Lane ID")
+    public int laneId;
 
     @Override
     public LLALocation getLocation(){return positionConfig.location;}

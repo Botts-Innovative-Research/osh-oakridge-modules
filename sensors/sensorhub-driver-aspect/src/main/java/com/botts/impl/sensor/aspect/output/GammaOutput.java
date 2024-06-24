@@ -35,6 +35,9 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
                 .label(getName())
                 .definition(RADHelper.getRadUri("gamma-scan"))
                 .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
+                .addField("Lane ID", radHelper.createText()
+                        .definition(RADHelper.getRadUri("LaneID"))
+                        .label("LaneID"))
                 .addField("GammaGrossCount", radHelper.createGammaGrossCount())
                 .addField("GammaBackground", radHelper.createQuantity()
                         .name("GammaBackground")
@@ -74,10 +77,11 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
         ++setCount;
 
         dataBlock.setDoubleValue(0, timeStamp);
-        dataBlock.setIntValue(1, monitorRegisters.getGammaChannelCount());
-        dataBlock.setFloatValue(2, monitorRegisters.getGammaChannelBackground());
-        dataBlock.setFloatValue(3, monitorRegisters.getGammaChannelVariance());
-        dataBlock.setStringValue(4, monitorRegisters.getGammaAlarmState());
+        dataBlock.setIntValue(1, parent.laneID);
+        dataBlock.setIntValue(2, monitorRegisters.getGammaChannelCount());
+        dataBlock.setFloatValue(3, monitorRegisters.getGammaChannelBackground());
+        dataBlock.setFloatValue(4, monitorRegisters.getGammaChannelVariance());
+        dataBlock.setStringValue(5, monitorRegisters.getGammaAlarmState());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

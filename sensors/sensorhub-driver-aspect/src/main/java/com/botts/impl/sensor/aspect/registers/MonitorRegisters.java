@@ -7,6 +7,7 @@ import com.ghgande.j2mod.modbus.io.ModbusTCPTransaction;
 import com.ghgande.j2mod.modbus.msg.ReadMultipleRegistersRequest;
 import com.ghgande.j2mod.modbus.msg.ReadMultipleRegistersResponse;
 import com.ghgande.j2mod.modbus.net.TCPMasterConnection;
+import com.ghgande.j2mod.modbus.procimg.Register;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -26,8 +27,8 @@ public class MonitorRegisters {
     private int neutronChannelCount;
     private float neutronChannelBackground;
     private float neutronChannelVariance;
-    private int numberOfObject;
-    private int numberOfWheelPair;
+    private int objectCount;
+    private int objectMark;
     private int objectSpeed;
     private int outputSignals;
 
@@ -57,8 +58,8 @@ public class MonitorRegisters {
         neutronChannelCount = convertRegistersToInteger(response.getRegisterValue(11), response.getRegisterValue(12));
         neutronChannelBackground = convertRegistersToFloat(response.getRegisterValue(13), response.getRegisterValue(14));
         neutronChannelVariance = convertRegistersToFloat(response.getRegisterValue(15), response.getRegisterValue(16));
-        numberOfObject = response.getRegisterValue(17);
-        numberOfWheelPair = response.getRegisterValue(18);
+        objectCount = response.getRegisterValue(17);
+        objectMark = response.getRegisterValue(18);
         objectSpeed = response.getRegisterValue(19);
         outputSignals = response.getRegisterValue(20);
     }
@@ -75,8 +76,8 @@ public class MonitorRegisters {
                 ", neutronChannelCount=" + getNeutronChannelCount() +
                 ", neutronChannelBackground=" + getNeutronChannelBackground() +
                 ", neutronChannelVariance=" + getNeutronChannelVariance() +
-                ", numberOfObject=" + getNumberOfObject() +
-                ", numberOfWheelPair=" + getNumberOfWheelPair() +
+                ", numberOfObject=" + getObjectCounter() +
+                ", numberOfObjectMark=" + getObjectMark() +
                 ", objectSpeed=" + getObjectSpeed() +
                 ", outputSignals=0x" + Integer.toHexString(getOutputSignals()) +
                 '}';
@@ -144,12 +145,12 @@ public class MonitorRegisters {
         return neutronChannelVariance;
     }
 
-    public int getNumberOfObject() {
-        return numberOfObject;
+    public int getObjectCounter() {
+        return objectCount;
     }
 
-    public int getNumberOfWheelPair() {
-        return numberOfWheelPair;
+    public int getObjectMark() {
+        return objectMark;
     }
 
     public int getObjectSpeed() {

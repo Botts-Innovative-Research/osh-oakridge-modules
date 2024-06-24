@@ -10,9 +10,6 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
-import org.vast.swe.SWEBuilders;
-
-import java.util.List;
 
 public class GammaOutput extends AbstractSensorOutput<RapiscanSensor> {
     private static final String SENSOR_OUTPUT_NAME = "Gamma Scan";
@@ -21,59 +18,80 @@ public class GammaOutput extends AbstractSensorOutput<RapiscanSensor> {
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
-    protected DataBlock dataBlock;
+
 
     GammaOutput(RapiscanSensor parentSensor){
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
     protected void init() {
+        dataStruct = createDataRecord();
+        dataEncoding = new TextEncodingImpl(",", "\n");
+    }
+    DataRecord createDataRecord(){
+        dataEncoding = new TextEncodingImpl(",", "\n");
         RADHelper radHelper = new RADHelper();
-        SWEBuilders.DataRecordBuilder recordBuilder;
-        recordBuilder = radHelper.createRecord()
-                .name(name)
-                .label("Gamma Scan")
-                .definition(RADHelper.getRadUri("gamma-scan"))
-                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-                .addField("Alarm State", radHelper.createCategory()
+
+        DataRecord gammaRecord = radHelper.createRecord()
+                .addField("LaneID", radHelper.createLaneId())
+                .addField("AlarmState", radHelper.createCategory()
                         .name("Alarm")
                         .label("Alarm")
                         .definition(RADHelper.getRadUri("alarm"))
-                        .addAllowedValues("Alarm", "Background", "Scan", "Fault - Gamma High", "Fault - Gamma Low"));
+                        .addAllowedValues("Alarm", "Background", "Scan", "Fault - Gamma High", "Fault - Gamma Low"))
+                .addField("GammaGrossCount1", radHelper.createCount().name("GammaGrossCount")
+                        .label("Gamma Gross Count 1")
+                        .definition(radHelper.getRadUri("gamma-gross-count")))
+                .addField("GammaGrossCount2", radHelper.createCount().name("GammaGrossCount")
+                        .label("Gamma Gross Count 2")
+                        .definition(radHelper.getRadUri("gamma-gross-count")))
+                .addField("GammaGrossCount3", radHelper.createCount().name("GammaGrossCount")
+                        .label("Gamma Gross Count 3")
+                        .definition(radHelper.getRadUri("gamma-gross-count")))
+                .addField("GammaGrossCount4", radHelper.createCount().name("GammaGrossCount")
+                        .label("Gamma Gross Count 4")
+                        .definition(radHelper.getRadUri("gamma-gross-count")))
+                .build();
 
-        for(int i=1; i<parent.gammaCount+1; i++){
-            recordBuilder.addField("GammaGrossCount "+ i , radHelper.createCount().name("GammaGrossCount")
-                    .label("Gamma Gross Count "+ i)
-                    .definition(radHelper.getRadUri("gamma-gross-count")));
-        }
-        dataStruct = recordBuilder.build();
 
-//        dataStruct = radHelper.createRecord()
-//                .name(getName())
-//                .label("Gamma Scan")
-//                .definition(RADHelper.getRadUri("gamma-scan"))
-//                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-//
-////                .addField("Gamma1", radHelper.createGammaGrossCount())
-////                .addField("Gamma2", radHelper.createGammaGrossCount())
-////                .addField("Gamma3", radHelper.createGammaGrossCount())
-////                .addField("Gamma4", radHelper.createGammaGrossCount())
-//                .addField("Alarm State",
-//                        radHelper.createCategory()
-//                                .name("Alarm")
-//                                .label("Alarm")
-//                                .definition(RADHelper.getRadUri("alarm"))
-//                                .addAllowedValues("Alarm", "Background", "Scan", "Fault - Gamma High", "Fault - Gamma Low"))
-//
-//                .build();
+//        for(int i=1; i < parent.gammaCount+1; i++){
+//            gammaRecord.addField("GammaGrossCount "+ i, radHelper.createCount().name("GammaGrossCount")
+//                    .label("Gamma Gross Count "+ i)
+//                    .definition(radHelper.getRadUri("gamma-gross-count")).build());
+//        }
 
-        dataEncoding = new TextEncodingImpl(",", "\n");
+        DataRecord recordBuilder = radHelper.createRecord()
+                .name(name)
+                .label("Gamma Scan")
+                .updatable(true)
+                .definition(RADHelper.getRadUri("gamma-scan"))
+                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
+                .addField("LaneID", radHelper.createLaneId())
+                .addField("AlarmState", radHelper.createCategory()
+                        .name("Alarm")
+                        .label("Alarm")
+                        .definition(RADHelper.getRadUri("alarm"))
+                        .addAllowedValues("Alarm", "Background", "Scan", "Fault - Gamma High", "Fault - Gamma Low"))
+                .addField("GammaGrossCount1", radHelper.createCount().name("GammaGrossCount")
+                        .label("Gamma Gross Count 1")
+                        .definition(radHelper.getRadUri("gamma-gross-count")))
+                .addField("GammaGrossCount2", radHelper.createCount().name("GammaGrossCount")
+                        .label("Gamma Gross Count 2")
+                        .definition(radHelper.getRadUri("gamma-gross-count")))
+                .addField("GammaGrossCount3", radHelper.createCount().name("GammaGrossCount")
+                        .label("Gamma Gross Count 3")
+                        .definition(radHelper.getRadUri("gamma-gross-count")))
+                .addField("GammaGrossCount4", radHelper.createCount().name("GammaGrossCount")
+                        .label("Gamma Gross Count 4")
+                        .definition(radHelper.getRadUri("gamma-gross-count")))
+                .build();
 
+        return recordBuilder;
 
     }
-
     public void onNewMessage(String[] csvString, long timeStamp, String alarmState){
 
+        DataBlock dataBlock;
         if (latestRecord == null) {
 
             dataBlock = dataStruct.createDataBlock();
@@ -83,16 +101,22 @@ public class GammaOutput extends AbstractSensorOutput<RapiscanSensor> {
             dataBlock = latestRecord.renew();
         }
 
-        dataBlock.setLongValue(0,timeStamp/1000);
-        dataBlock.setStringValue(1, alarmState);
-        for(int i=2; i< parent.gammaCount+2; i++){
-            dataBlock.setIntValue(i, Integer.parseInt(csvString[i-1]));
-        }
-//        dataBlock.setIntValue(1, Integer.parseInt(csvString[1]));
-//        dataBlock.setIntValue(2, Integer.parseInt(csvString[2]));
-//        dataBlock.setIntValue(3, Integer.parseInt(csvString[3]));
-//        dataBlock.setIntValue(4, Integer.parseInt(csvString[4]));
+        int index =0;
 
+        dataBlock.setLongValue(index++,timeStamp/1000);
+        dataBlock.setIntValue(index++, parent.laneId);
+        dataBlock.setStringValue(index++, alarmState);
+
+        dataBlock.setIntValue(index++, Integer.parseInt(csvString[1]));
+        dataBlock.setIntValue(index++, Integer.parseInt(csvString[2]));
+        dataBlock.setIntValue(index++, Integer.parseInt(csvString[3]));
+        dataBlock.setIntValue(index++, Integer.parseInt(csvString[4]));
+
+//        for(int i=1; i< csvString.length; i++){
+//            dataBlock.setIntValue(index++, Integer.parseInt(csvString[i]));
+//        }
+
+        latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(timeStamp, GammaOutput.this, dataBlock));
 
     }

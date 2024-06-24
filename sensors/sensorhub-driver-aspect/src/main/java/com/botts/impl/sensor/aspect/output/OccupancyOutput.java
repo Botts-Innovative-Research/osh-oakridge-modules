@@ -35,6 +35,9 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
                 .label(getName())
                 .definition(RADHelper.getRadUri("occupancy"))
                 .addField("Timestamp", radHelper.createPrecisionTimeStamp())
+                .addField("LaneID", radHelper.createText()
+                        .label("Lane ID")
+                        .definition(RADHelper.getRadUri("LaneID")))
                 .addField("OccupancyCount", radHelper.createOccupancyCount())
                 .addField("StartTime", radHelper.createOccupancyStartTime())
                 .addField("EndTime", radHelper.createOccupancyEndTime())
@@ -73,11 +76,12 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
         ++setCount;
 
         dataBlock.setDoubleValue(0, timeStamp);
-        dataBlock.setIntValue(1, monitorRegisters.getNumberOfObject());
-        dataBlock.setDoubleValue(2, startTime);
-        dataBlock.setDoubleValue(3, endTime);
-        dataBlock.setBooleanValue(4, gammaAlarm);
-        dataBlock.setBooleanValue(5, neutronAlarm);
+        dataBlock.setIntValue(1, parent.laneID);
+        dataBlock.setIntValue(2, monitorRegisters.getObjectCounter());
+        dataBlock.setDoubleValue(3, startTime);
+        dataBlock.setDoubleValue(4, endTime);
+        dataBlock.setBooleanValue(5, gammaAlarm);
+        dataBlock.setBooleanValue(6, neutronAlarm);
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

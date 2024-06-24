@@ -5,6 +5,7 @@ version = '1.0.0'
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     implementation project(':sensorhub-utils-rad')
+
     testImplementation('junit:junit:4.13')
     implementation group: 'com.opencsv', name: 'opencsv', version: '4.1'
 

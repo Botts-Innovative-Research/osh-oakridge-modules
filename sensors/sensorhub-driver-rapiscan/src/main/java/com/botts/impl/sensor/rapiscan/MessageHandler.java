@@ -1,5 +1,6 @@
 package com.botts.impl.sensor.rapiscan;
 
+//import com.botts.impl.sensor.rapiscan.helpers.RapiscanPreset;
 import com.opencsv.CSVReader;
 
 import java.io.BufferedReader;
@@ -27,6 +28,11 @@ public class MessageHandler {
     TamperOutput tamperOutput;
     SpeedOutput speedOutput;
 
+    GammaSetUp1Output gammaSetUp1Output;
+    GammaSetUp2Output gammaSetUp2Output;
+    GammaSetup3Output gammaSetup3Output;
+    NeutronSetupOutput neutronSetupOutput;
+
 
     final static String ALARM = "Alarm";
     final static String BACKGROUND = "Background";
@@ -50,10 +56,10 @@ public class MessageHandler {
                         reader = new CSVReader(new StringReader(msgLine));
                         csvList = reader.readAll();
                         csvLine = csvList.get(0);
-
-
+//                        System.out.println(csvLine[0]);
                         getMainCharDefinition(csvLine[0], csvLine);
                         System.out.println(msgLine);
+//                        System.out.println(this);
 
                         msgLine = bufferedReader.readLine();
 
@@ -70,13 +76,17 @@ public class MessageHandler {
     });
 
 
-    public MessageHandler(InputStream msgIn, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, TamperOutput tamperOutput, SpeedOutput speedOutput) {
+    public MessageHandler(InputStream msgIn, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, TamperOutput tamperOutput, SpeedOutput speedOutput, GammaSetUp1Output gammaSetUp1Output, GammaSetUp2Output gammaSetUp2Output, GammaSetup3Output gammaSetup3Output, NeutronSetupOutput neutronSetupOutput) {
         this.msgIn = msgIn;
         this.gammaOutput = gammaOutput;
         this.neutronOutput = neutronOutput;
         this.occupancyOutput = occupancyOutput;
         this.tamperOutput = tamperOutput;
         this.speedOutput = speedOutput;
+        this.gammaSetUp1Output = gammaSetUp1Output;
+        this.gammaSetUp2Output = gammaSetUp2Output;
+        this.gammaSetup3Output = gammaSetup3Output;
+        this.neutronSetupOutput = neutronSetupOutput;
 
         this.messageReader.start();
     }
@@ -116,6 +126,7 @@ public class MessageHandler {
                     currentOccupancy = true;
                 }
                 gammaOutput.onNewMessage(csvLine, System.currentTimeMillis(), ALARM);
+
                 isGammaAlarm = true;
                 break;
 
@@ -123,9 +134,9 @@ public class MessageHandler {
                 if (!currentOccupancy){
                     occupancyStartTime = System.currentTimeMillis();
                     currentOccupancy = true;
-
                 }
                 gammaOutput.onNewMessage(csvLine, System.currentTimeMillis(), SCAN);
+
                 break;
 
             case "NA":
@@ -141,9 +152,9 @@ public class MessageHandler {
                 if (!currentOccupancy){
                     occupancyStartTime = System.currentTimeMillis();
                     currentOccupancy = true;
-
                 }
                 neutronOutput.onNewMessage(csvLine, System.currentTimeMillis(), SCAN);
+
                 break;
 
             case "GX":
@@ -164,27 +175,36 @@ public class MessageHandler {
             case "SP":
                 speedOutput.onNewMessage(csvLine);
                 break;
+
             case "SG1":
+                gammaSetUp1Output.onNewMessage(csvLine);
 //                setupData1("Setup Gamma 1");
 //                setSetup1();
                 break;
             case "SG2":
+                gammaSetUp2Output.onNewMessage(csvLine);
 //                setupData2("Setup Gamma 2");
 //                setSetup2();
                 break;
             case "SG3":
+                gammaSetup3Output.onNewMessage(csvLine);
 //                setupData3("Setup Gamma 3");
 //                setSetup3();
                 break;
             case "SN1":
+                neutronSetupOutput.onNewMessage(csvLine);
+                System.out.println("SN1 no output");
 //                setupData4("Setup Neutron 1");
 //                setSetup4();
                 break;
             case "SN2":
+                System.out.println("SN2 no output");
 //                setupData5("Setup Neutron 2");
 //                setSetup5();
                 break;
         }
+
+
     }
 
 }
