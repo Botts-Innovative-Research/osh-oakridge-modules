@@ -31,15 +31,6 @@ public class TamperOutput  extends AbstractSensorOutput<RapiscanSensor> {
     protected void init(){
         RADHelper radHelper = new RADHelper();
 
-//        DataRecord tamperRecord = radHelper.createRecord()
-//                .addField("LaneID", radHelper.createLaneId())
-//                .addField("TamperState", radHelper.createTamperStatus())
-//                .build();
-//
-//        SWEBuilders.DataArrayBuilder arrayBuilder = radHelper.createArray()
-//                .withVariableSize("numTamperRecords")
-//                .withElement("Tamper", tamperRecord);
-
         DataRecord recordBuilder = radHelper.createRecord()
                 .name(getName())
                 .label("Tamper")
@@ -48,12 +39,6 @@ public class TamperOutput  extends AbstractSensorOutput<RapiscanSensor> {
                 .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
                 .addField("LaneID", radHelper.createLaneId())
                 .addField("TamperState", radHelper.createTamperStatus())
-//                .addField("Tamper", tamperRecord)
-//                .addField("numTamperRecords", radHelper.createCount()
-//                        .label("numTamperRecords")
-//                        .id("numTamperRecords")
-//                        .value(parent.rapiscanLayerConfig.presets.size()))
-//                .addField("Tamper Records", arrayBuilder)
                 .build();
 
         dataStruct =recordBuilder;

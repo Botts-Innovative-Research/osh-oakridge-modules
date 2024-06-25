@@ -1,5 +1,6 @@
 package com.botts.impl.sensor.aspect.registers;
 
+import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.aspect.enums.ChannelStatus;
 import com.botts.impl.sensor.aspect.enums.Inputs;
 import com.ghgande.j2mod.modbus.ModbusException;
@@ -8,11 +9,15 @@ import com.ghgande.j2mod.modbus.msg.ReadMultipleRegistersRequest;
 import com.ghgande.j2mod.modbus.msg.ReadMultipleRegistersResponse;
 import com.ghgande.j2mod.modbus.net.TCPMasterConnection;
 import com.ghgande.j2mod.modbus.procimg.Register;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import javax.sound.midi.SysexMessage;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 public class MonitorRegisters {
+    private static final Logger log = LoggerFactory.getLogger(MonitorRegisters.class);
     private final TCPMasterConnection tcpMasterConnection;
     private final int ref;
     private final int count;
@@ -32,6 +37,14 @@ public class MonitorRegisters {
     private int objectSpeed;
     private int outputSignals;
 
+//    private int version;
+//    private int devNum;
+//    private int backgroundTimer;
+//    private int occupancyTimer;
+//    private int alarmTimer;
+//    private int videoTimer;
+
+
     public MonitorRegisters(TCPMasterConnection tcpMasterConnection, int ref, int count) {
         this.tcpMasterConnection = tcpMasterConnection;
         this.ref = ref;
@@ -39,29 +52,68 @@ public class MonitorRegisters {
     }
 
     public void readRegisters(int unitID) throws ModbusException {
-        ReadMultipleRegistersRequest readMultipleRegistersRequest = new ReadMultipleRegistersRequest(ref, count);
-        readMultipleRegistersRequest.setUnitID(unitID);
+        try{
+            if(!tcpMasterConnection.isConnected()){
+                throw new IllegalStateException("TCP connection was not established!");
+            }
 
-        ModbusTCPTransaction modbusTCPTransaction = new ModbusTCPTransaction(tcpMasterConnection);
-        modbusTCPTransaction.setRequest(readMultipleRegistersRequest);
-        modbusTCPTransaction.execute();
+            ReadMultipleRegistersRequest readMultipleRegistersRequest = new ReadMultipleRegistersRequest(ref, count);
+            readMultipleRegistersRequest.setUnitID(unitID);
 
-        ReadMultipleRegistersResponse response = (ReadMultipleRegistersResponse) modbusTCPTransaction.getResponse();
+            ModbusTCPTransaction modbusTCPTransaction = new ModbusTCPTransaction(tcpMasterConnection);
+            modbusTCPTransaction.setRequest(readMultipleRegistersRequest);
+            modbusTCPTransaction.execute();
+
+            ReadMultipleRegistersResponse response = (ReadMultipleRegistersResponse) modbusTCPTransaction.getResponse();
+            Register[] registers = response.getRegisters();
+
+//            System.out.println("Register Values:\n");
+//            for(int i =0; i< registers.length; i++){
+//                System.out.println(registers[i].getValue());
+//            }
+//            timeElapsed = convertRegistersToInteger(registers[0], registers[1]);
+//            inputSignals= registers[2].getValue();
+//            gammaChannelStatus = registers[3].getValue();
+//            gammaChannelCount = convertRegistersToInteger(registers[4], registers[5]);
+//            gammaChannelBackground = convertRegistersToFloat(registers[6], registers[7]);
+//            gammaChannelVariance = convertRegistersToFloat(registers[8], registers[9]);
+//            neutronChannelStatus = registers[10].getValue();
+//            neutronChannelCount = convertRegistersToInteger(registers[11], registers[12]);
+//            neutronChannelBackground = convertRegistersToFloat(registers[13], registers[14]);
+//            neutronChannelVariance = convertRegistersToFloat(registers[15], registers[16]);
+//            objectCount = registers[17].getValue();
+//            objectMark = registers[18].getValue();
+//            objectSpeed = registers[19].getValue();
+//            outputSignals = registers[20].getValue();
 
         timeElapsed = convertRegistersToInteger(response.getRegisterValue(0), response.getRegisterValue(1));
         inputSignals = response.getRegisterValue(2);
         gammaChannelStatus = response.getRegisterValue(3);
         gammaChannelCount = convertRegistersToInteger(response.getRegisterValue(4), response.getRegisterValue(5));
         gammaChannelBackground = convertRegistersToFloat(response.getRegisterValue(6), response.getRegisterValue(7));
-        gammaChannelVariance = convertRegistersToFloat(response.getRegisterValue(8), response.getRegisterValue(9));
+        gammaChannelVariance = convertRegistersToFloat(response.getRegisterValue(8), response.getRegisterValue(9)); //this value is wrong
         neutronChannelStatus = response.getRegisterValue(10);
         neutronChannelCount = convertRegistersToInteger(response.getRegisterValue(11), response.getRegisterValue(12));
         neutronChannelBackground = convertRegistersToFloat(response.getRegisterValue(13), response.getRegisterValue(14));
-        neutronChannelVariance = convertRegistersToFloat(response.getRegisterValue(15), response.getRegisterValue(16));
+        neutronChannelVariance = convertRegistersToFloat(response.getRegisterValue(15), response.getRegisterValue(16)); //this value is wrong
         objectCount = response.getRegisterValue(17);
         objectMark = response.getRegisterValue(18);
         objectSpeed = response.getRegisterValue(19);
         outputSignals = response.getRegisterValue(20);
+
+            log.debug("Registers read successfully: ", this.toString());
+        }catch(ModbusException e){
+            log.debug("Error reading Modbus Registers: ", e);
+        }catch(Exception e){
+            log.debug("Error: ",e);
+        }
+//        version = response.getRegisterValue(21);
+//        devNum = response.getRegisterValue(22);
+//        backgroundTimer= response.getRegisterValue(43);
+//        occupancyTimer =response.getRegisterValue(44);
+//        alarmTimer = response.getRegisterValue(45);
+//        videoTimer= response.getRegisterValue(46);
+
     }
 
     public String toString() {
@@ -83,12 +135,27 @@ public class MonitorRegisters {
                 '}';
     }
 
+    private int convertRegistersToInteger(Register lowRegister, Register highRegister) {
+        ByteBuffer bb = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
+        bb.putShort((short) lowRegister.getValue());
+        bb.putShort((short) highRegister.getValue());
+        bb.flip();
+        return bb.getInt();
+    }
+
+    private float convertRegistersToFloat(Register lowRegister, Register highRegister) {
+        ByteBuffer bb = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
+        bb.putShort((short) lowRegister.getValue());
+        bb.putShort((short) highRegister.getValue());
+        bb.flip();
+        return bb.getFloat();
+    }
+
     /**
      * Converts the two registers into a single 32-bit integer.
      */
     private int convertRegistersToInteger(int lowRegister, int highRegister) {
-        ByteBuffer bb = ByteBuffer.allocate(4);
-        bb.order(ByteOrder.LITTLE_ENDIAN);
+        ByteBuffer bb = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
         bb.putShort((short) lowRegister);
         bb.putShort((short) highRegister);
         return bb.getInt(0);
@@ -98,8 +165,7 @@ public class MonitorRegisters {
      * Converts the two registers into a single 32-bit float.
      */
     private float convertRegistersToFloat(int lowRegister, int highRegister) {
-        ByteBuffer bb = ByteBuffer.allocate(4);
-        bb.order(ByteOrder.LITTLE_ENDIAN);
+            ByteBuffer bb = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
         bb.putShort((short) lowRegister);
         bb.putShort((short) highRegister);
         return bb.getFloat(0);

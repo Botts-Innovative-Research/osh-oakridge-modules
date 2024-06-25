@@ -32,27 +32,26 @@ public class GammaOutput extends AbstractSensorOutput<RapiscanSensor> {
         dataEncoding = new TextEncodingImpl(",", "\n");
         RADHelper radHelper = new RADHelper();
 
-        DataRecord gammaRecord = radHelper.createRecord()
-                .addField("LaneID", radHelper.createLaneId())
-                .addField("AlarmState", radHelper.createCategory()
-                        .name("Alarm")
-                        .label("Alarm")
-                        .definition(RADHelper.getRadUri("alarm"))
-                        .addAllowedValues("Alarm", "Background", "Scan", "Fault - Gamma High", "Fault - Gamma Low"))
-                .addField("GammaGrossCount1", radHelper.createCount().name("GammaGrossCount")
-                        .label("Gamma Gross Count 1")
-                        .definition(radHelper.getRadUri("gamma-gross-count")))
-                .addField("GammaGrossCount2", radHelper.createCount().name("GammaGrossCount")
-                        .label("Gamma Gross Count 2")
-                        .definition(radHelper.getRadUri("gamma-gross-count")))
-                .addField("GammaGrossCount3", radHelper.createCount().name("GammaGrossCount")
-                        .label("Gamma Gross Count 3")
-                        .definition(radHelper.getRadUri("gamma-gross-count")))
-                .addField("GammaGrossCount4", radHelper.createCount().name("GammaGrossCount")
-                        .label("Gamma Gross Count 4")
-                        .definition(radHelper.getRadUri("gamma-gross-count")))
-                .build();
-
+//        DataRecord gammaRecord = radHelper.createRecord()
+//                .addField("LaneID", radHelper.createLaneId())
+//                .addField("AlarmState", radHelper.createCategory()
+//                        .name("Alarm")
+//                        .label("Alarm")
+//                        .definition(RADHelper.getRadUri("alarm"))
+//                        .addAllowedValues("Alarm", "Background", "Scan", "Fault - Gamma High", "Fault - Gamma Low"))
+//                .addField("GammaGrossCount1", radHelper.createCount().name("GammaGrossCount")
+//                        .label("Gamma Gross Count 1")
+//                        .definition(radHelper.getRadUri("gamma-gross-count")))
+//                .addField("GammaGrossCount2", radHelper.createCount().name("GammaGrossCount")
+//                        .label("Gamma Gross Count 2")
+//                        .definition(radHelper.getRadUri("gamma-gross-count")))
+//                .addField("GammaGrossCount3", radHelper.createCount().name("GammaGrossCount")
+//                        .label("Gamma Gross Count 3")
+//                        .definition(radHelper.getRadUri("gamma-gross-count")))
+//                .addField("GammaGrossCount4", radHelper.createCount().name("GammaGrossCount")
+//                        .label("Gamma Gross Count 4")
+//                        .definition(radHelper.getRadUri("gamma-gross-count")))
+//                .build();
 
 //        for(int i=1; i < parent.gammaCount+1; i++){
 //            gammaRecord.addField("GammaGrossCount "+ i, radHelper.createCount().name("GammaGrossCount")

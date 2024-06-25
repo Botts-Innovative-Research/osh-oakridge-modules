@@ -23,4 +23,10 @@ public class ModbusTCPConfig implements ICommConfig {
     @ValueRange(max = 65535)
     @Required
     public int remotePort = 502;
+
+
+//    @DisplayInfo(desc = "Unit ID")
+//    @Required
+//    public int unitID = 1;
+
 }

@@ -212,7 +212,7 @@ public class RADHelper extends GeoPosHelper {
     public Quantity createUpperControlDiscriminator(){
         return createQuantity()
                 .name("control-upper-level-discriminator")
-                .label("Control Upper Level Discriminator")
+                .label("Upper Level Discriminator ULD")
                 .definition(getRadUri("control-upper-level-discriminator"))
                 .description("threshold setting in radiation detector that defines the max energy level for detecting radiation")
                 .build();
@@ -220,7 +220,7 @@ public class RADHelper extends GeoPosHelper {
     public Quantity createLowerControlDiscriminator(){
         return createQuantity()
                 .name("control-lower-level-discriminator")
-                .label("Control Lower Level Discriminator")
+                .label("Lower Level Discriminator LLD")
                 .definition(getRadUri("control-lower-level-discriminator"))
                 .description("threshold setting in radiation detector that defines the minimum energy level for detecting radiation")
                 .build();
