@@ -42,6 +42,9 @@ public class AspectConfig extends SensorConfig {
     @DisplayInfo(desc="Lane ID")
     public int laneId;
 
+//    @DisplayInfo(desc="Lane Name")
+//    public String laneName;
+
     @Override
     public LLALocation getLocation() {
         return positionConfig.location;

@@ -38,6 +38,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     SpeedOutput speedOutput;
     SensorLocationOutput sensorLocationOutput;
     public int laneID;
+//    String laneName;
 
     @Override
     public void doInit() throws SensorHubException {
@@ -48,6 +49,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         generateXmlID("Aspect", config.serialNumber);
 
         laneID = config.laneId;
+//        laneName= config.laneName;
 
         // Initialize outputs
         gammaOutput = new GammaOutput(this);

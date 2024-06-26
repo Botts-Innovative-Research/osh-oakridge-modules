@@ -8,6 +8,7 @@ import com.ghgande.j2mod.modbus.io.ModbusTCPTransaction;
 import com.ghgande.j2mod.modbus.msg.ReadMultipleRegistersRequest;
 import com.ghgande.j2mod.modbus.msg.ReadMultipleRegistersResponse;
 import com.ghgande.j2mod.modbus.net.TCPMasterConnection;
+import com.ghgande.j2mod.modbus.procimg.InputRegister;
 import com.ghgande.j2mod.modbus.procimg.Register;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +33,8 @@ public class MonitorRegisters {
     private int neutronChannelCount;
     private float neutronChannelBackground;
     private float neutronChannelVariance;
+    private float neutronVarianceBackground;
+    private float gammaVarianceBackground;
     private int objectCount;
     private int objectMark;
     private int objectSpeed;
@@ -91,11 +94,13 @@ public class MonitorRegisters {
         gammaChannelStatus = response.getRegisterValue(3);
         gammaChannelCount = convertRegistersToInteger(response.getRegisterValue(4), response.getRegisterValue(5));
         gammaChannelBackground = convertRegistersToFloat(response.getRegisterValue(6), response.getRegisterValue(7));
-        gammaChannelVariance = convertRegistersToFloat(response.getRegisterValue(8), response.getRegisterValue(9)); //this value is wrong
+        gammaChannelVariance = convertRegistersToFloat(response.getRegisterValue(8), response.getRegisterValue(9));
+        gammaVarianceBackground = gammaChannelVariance/gammaChannelBackground;
         neutronChannelStatus = response.getRegisterValue(10);
         neutronChannelCount = convertRegistersToInteger(response.getRegisterValue(11), response.getRegisterValue(12));
         neutronChannelBackground = convertRegistersToFloat(response.getRegisterValue(13), response.getRegisterValue(14));
-        neutronChannelVariance = convertRegistersToFloat(response.getRegisterValue(15), response.getRegisterValue(16)); //this value is wrong
+        neutronChannelVariance = convertRegistersToFloat(response.getRegisterValue(15), response.getRegisterValue(16));
+        neutronVarianceBackground = neutronChannelVariance/neutronChannelBackground;
         objectCount = response.getRegisterValue(17);
         objectMark = response.getRegisterValue(18);
         objectSpeed = response.getRegisterValue(19);
@@ -124,31 +129,17 @@ public class MonitorRegisters {
                 ", gammaChannelCount=" + getGammaChannelCount() +
                 ", gammaChannelBackground=" + getGammaChannelBackground() +
                 ", gammaChannelVariance=" + getGammaChannelVariance() +
+                ", gammaChannelVariance/Background=" + getGammaVarianceBackground() +
                 ", neutronChannelStatus=" + getNeutronChannelStatus() +
                 ", neutronChannelCount=" + getNeutronChannelCount() +
                 ", neutronChannelBackground=" + getNeutronChannelBackground() +
                 ", neutronChannelVariance=" + getNeutronChannelVariance() +
-                ", numberOfObject=" + getObjectCounter() +
-                ", numberOfObjectMark=" + getObjectMark() +
-                ", objectSpeed=" + getObjectSpeed() +
+                ", neutronChannelVariance/Background=" + getNeutronVarianceBackground() +
+                ", objectNumber=" + getObjectCounter() +
+                ", wheelsNumber=" + getObjectMark() +
+                ", velocity=" + getObjectSpeed() +
                 ", outputSignals=0x" + Integer.toHexString(getOutputSignals()) +
                 '}';
-    }
-
-    private int convertRegistersToInteger(Register lowRegister, Register highRegister) {
-        ByteBuffer bb = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
-        bb.putShort((short) lowRegister.getValue());
-        bb.putShort((short) highRegister.getValue());
-        bb.flip();
-        return bb.getInt();
-    }
-
-    private float convertRegistersToFloat(Register lowRegister, Register highRegister) {
-        ByteBuffer bb = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
-        bb.putShort((short) lowRegister.getValue());
-        bb.putShort((short) highRegister.getValue());
-        bb.flip();
-        return bb.getFloat();
     }
 
     /**
@@ -158,6 +149,7 @@ public class MonitorRegisters {
         ByteBuffer bb = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
         bb.putShort((short) lowRegister);
         bb.putShort((short) highRegister);
+//        bb.flip();
         return bb.getInt(0);
     }
 
@@ -165,11 +157,14 @@ public class MonitorRegisters {
      * Converts the two registers into a single 32-bit float.
      */
     private float convertRegistersToFloat(int lowRegister, int highRegister) {
-            ByteBuffer bb = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
+        ByteBuffer bb = ByteBuffer.allocate(4);
+        bb.order(ByteOrder.LITTLE_ENDIAN);
         bb.putShort((short) lowRegister);
         bb.putShort((short) highRegister);
+//        bb.flip();
         return bb.getFloat(0);
     }
+
 
     public int getTimeElapsed() {
         return timeElapsed;
@@ -191,7 +186,7 @@ public class MonitorRegisters {
         return gammaChannelBackground;
     }
 
-    public float getGammaChannelVariance() {
+    public double getGammaChannelVariance() {
         return gammaChannelVariance;
     }
 
@@ -209,6 +204,12 @@ public class MonitorRegisters {
 
     public float getNeutronChannelVariance() {
         return neutronChannelVariance;
+    }
+    public float getGammaVarianceBackground() {
+        return gammaVarianceBackground;
+    }
+    public float getNeutronVarianceBackground() {
+        return neutronVarianceBackground;
     }
 
     public int getObjectCounter() {

@@ -49,6 +49,11 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
                         .name("neutron-alarm")
                         .label("Neutron Alarm")
                         .definition(RADHelper.getRadUri("neutron-alarm")))
+
+                .addField("WheelNumbers", radHelper.createQuantity()
+                        .name("object-mark")
+                        .label("Wheel Numbers")
+                        .definition(RADHelper.getRadUri("object-mark")))
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");

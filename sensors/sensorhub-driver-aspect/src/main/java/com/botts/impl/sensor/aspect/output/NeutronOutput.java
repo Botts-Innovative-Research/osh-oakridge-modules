@@ -43,10 +43,14 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
                         .name("NeutronBackground")
                         .label("Neutron Background")
                         .definition(RADHelper.getRadUri("neutron-background")))
-                .addField("NeutronVariance", radHelper.createCount()
+                .addField("NeutronVariance", radHelper.createQuantity()
                         .name("NeutronVariance")
                         .label("Neutron Variance")
                         .definition(RADHelper.getRadUri("neutron-variance")))
+                .addField("NeutronVariance/NeutronBackground", radHelper.createQuantity()
+                        .name("Variance/Background")
+                        .label("Variance/Background")
+                        .definition(RADHelper.getRadUri("neutron-variance-background")))
                 .addField("AlarmState", radHelper.createCategory()
                         .name("AlarmState")
                         .label("Alarm State")
@@ -81,7 +85,8 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
         dataBlock.setIntValue(2, monitorRegisters.getNeutronChannelCount());
         dataBlock.setFloatValue(3, monitorRegisters.getNeutronChannelBackground());
         dataBlock.setFloatValue(4, monitorRegisters.getNeutronChannelVariance());
-        dataBlock.setStringValue(5, monitorRegisters.getNeutronAlarmState());
+        dataBlock.setDoubleValue(5, monitorRegisters.getNeutronVarianceBackground());
+        dataBlock.setStringValue(6, monitorRegisters.getNeutronAlarmState());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();
