@@ -66,7 +66,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     //configs
 //    int neutronCount;
 //    int gammaCount;
-    int laneId;
+    String laneName;
 //    RapiscanLayerConfig rapiscanLayerConfig;
 
 
@@ -76,13 +76,17 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         super.doInit();
 
         // Generate identifiers
-        generateUniqueID("urn:osh:sensor:rapiscan", String.valueOf(config.laneId));
-        generateXmlID("Rapiscan", String.valueOf(config.laneId));
+        generateUniqueID("urn:osh:sensor:rapiscan", String.valueOf(config.laneName));
+        generateXmlID("Rapiscan", String.valueOf(config.laneName));
 
 //        rapiscanLayerConfig = config.rapiscanLayerConfigs;
 //        neutronCount = config.neutronCount;
 //        gammaCount = config.gammaCount;
-        laneId = config.laneId;
+        laneName = config.laneName;
+
+        if(config.isSupplementalAlgorithm){
+            //do EML stuff
+        }
 
         createOutputs();
     }

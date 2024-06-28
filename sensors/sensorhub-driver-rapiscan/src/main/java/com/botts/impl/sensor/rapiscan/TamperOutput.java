@@ -37,7 +37,7 @@ public class TamperOutput  extends AbstractSensorOutput<RapiscanSensor> {
                 .updatable(true)
                 .definition(RADHelper.getRadUri("tamper"))
                 .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-                .addField("LaneID", radHelper.createLaneId())
+                .addField("LaneName", radHelper.createLaneId())
                 .addField("TamperState", radHelper.createTamperStatus())
                 .build();
 
@@ -59,7 +59,7 @@ public class TamperOutput  extends AbstractSensorOutput<RapiscanSensor> {
         int index = 0;
 
         dataBlock.setLongValue(index++, System.currentTimeMillis()/1000);
-        dataBlock.setIntValue(index++, parent.laneId);
+        dataBlock.setStringValue(index++, parent.laneName);
         dataBlock.setBooleanValue(index++, tamperState);
 
         dataBlock.updateAtomCount();

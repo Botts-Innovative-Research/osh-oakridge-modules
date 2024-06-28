@@ -36,7 +36,7 @@ public class GammaSetUp2Output extends AbstractSensorOutput<RapiscanSensor> {
                 .label("Setup Gamma 2")
                 .definition(RADHelper.getRadUri("setup-gamma-2"))
                 .addField("TimeStamp", radHelper.createPrecisionTimeStamp())
-                .addField("LaneID", radHelper.createLaneId())
+                .addField("LaneName", radHelper.createLaneId())
                 .addField("detectors-on-line", radHelper.createDetectors())
                 .addField("control-lower-level-discriminator", radHelper.createLowerControlDiscriminator())
                 .addField("control-upper-level-discriminator", radHelper.createUpperControlDiscriminator())
@@ -60,7 +60,7 @@ public class GammaSetUp2Output extends AbstractSensorOutput<RapiscanSensor> {
         }
         int index =0;
         dataBlock.setLongValue(index++,System.currentTimeMillis()/1000);
-        dataBlock.setIntValue(index++, parent.laneId);
+        dataBlock.setStringValue(index++, parent.laneName);
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[1])); //detectors
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[2])); //low discrim
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[3])); //high discrim

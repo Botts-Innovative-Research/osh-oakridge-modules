@@ -10,9 +10,10 @@
 
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
-******************************* END LICENSE BLOCK ***************************/
+ ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.rapiscan;
 
+import com.google.gson.annotations.SerializedName;
 import org.sensorhub.api.comm.CommProviderConfig;
 import org.sensorhub.api.sensor.PositionConfig.LLALocation;
 import org.sensorhub.api.sensor.PositionConfig.EulerOrientation;
@@ -63,8 +64,12 @@ public class RapiscanConfig extends SensorConfig {
 //    @DisplayInfo(desc="Neutron Count")
 //    public int neutronCount;
 
-    @DisplayInfo(desc="Lane ID")
-    public int laneId;
+    @DisplayInfo(desc="Lane Name")
+    public String laneName;
+
+    @DisplayInfo(label="Supplemental Algorithm", desc="Check if the lane is EML VM250. For all lanes not designated to be EML lanes do NOT check this box.")
+    @SerializedName(value="supplementalAlgorithm", alternate={"emlEnabled"})
+    public boolean isSupplementalAlgorithm = false;
 
     @Override
     public LLALocation getLocation(){return positionConfig.location;}

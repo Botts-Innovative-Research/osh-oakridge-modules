@@ -65,7 +65,7 @@ public class GammaOutput extends AbstractSensorOutput<RapiscanSensor> {
                 .updatable(true)
                 .definition(RADHelper.getRadUri("gamma-scan"))
                 .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-                .addField("LaneID", radHelper.createLaneId())
+                .addField("LaneName", radHelper.createLaneId())
                 .addField("AlarmState", radHelper.createCategory()
                         .name("Alarm")
                         .label("Alarm")
@@ -103,7 +103,7 @@ public class GammaOutput extends AbstractSensorOutput<RapiscanSensor> {
         int index =0;
 
         dataBlock.setLongValue(index++,timeStamp/1000);
-        dataBlock.setIntValue(index++, parent.laneId);
+        dataBlock.setStringValue(index++, parent.laneName);
         dataBlock.setStringValue(index++, alarmState);
 
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[1]));

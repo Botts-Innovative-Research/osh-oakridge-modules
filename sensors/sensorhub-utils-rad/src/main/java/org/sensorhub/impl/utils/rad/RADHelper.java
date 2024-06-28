@@ -277,8 +277,8 @@ public class RADHelper extends GeoPosHelper {
 
     public Text createLaneId(){
         return createText()
-                .label("Lane ID")
-                .definition(RADHelper.getRadUri("LaneID"))
+                .label("Lane Name")
+                .definition(RADHelper.getRadUri("LaneName"))
                 .description("identifies the lane for each rpm system")
                 .build();
     }

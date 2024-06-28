@@ -35,7 +35,7 @@ public class SpeedOutput  extends AbstractSensorOutput<RapiscanSensor> {
                 .updatable(true)
                 .definition(RADHelper.getRadUri("speed"))
                 .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-                .addField("LaneID", radHelper.createLaneId())
+                .addField("LaneName", radHelper.createLaneId())
                 .addField("speed-time", radHelper.createSpeedTimeStamp())
                 .addField("speed-mph", radHelper.createSpeedMph())
                 .addField("speed-kph", radHelper.createSpeedKph())
@@ -59,7 +59,7 @@ public class SpeedOutput  extends AbstractSensorOutput<RapiscanSensor> {
         int index = 0;
 
         dataBlock.setLongValue(index++,System.currentTimeMillis()/1000);
-        dataBlock.setIntValue(index++, parent.laneId);
+        dataBlock.setStringValue(index++, parent.laneName);
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[1]));
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[2]));
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[3]));

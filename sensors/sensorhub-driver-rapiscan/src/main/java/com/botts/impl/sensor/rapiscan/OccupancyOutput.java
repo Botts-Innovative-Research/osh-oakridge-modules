@@ -36,7 +36,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
                 .definition(RADHelper.getRadUri("occupancy"))
                 .description("System occupancy count since midnight each day")
                 .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-                .addField("LaneID", radHelper.createLaneId())
+                .addField("LaneName", radHelper.createLaneId())
                 .addField("PillarOccupancyCount", radHelper.createOccupancyCount())
                 .addField("StartTime", radHelper.createOccupancyStartTime())
                 .addField("EndTime", radHelper.createOccupancyEndTime())
@@ -70,7 +70,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
         int index =0;
 
         dataBlock.setLongValue(index++, System.currentTimeMillis()/1000);
-        dataBlock.setIntValue(index++, parent.laneId);
+        dataBlock.setStringValue(index++, parent.laneName);
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[1])); //occupancy count
         dataBlock.setLongValue(index++, startTime/1000);
         dataBlock.setLongValue(index++, endTime/1000);
