@@ -64,7 +64,7 @@ public class GammaSetup3Output extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[2])); //high discrim
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[3])); //background time
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[4])); //background nsgima
-        dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[5])); //version of firmware
+        dataBlock.setStringValue(index++, csvString[5]); //version of firmware
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), GammaSetup3Output.this, dataBlock));

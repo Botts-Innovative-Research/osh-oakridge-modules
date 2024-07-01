@@ -26,7 +26,6 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -55,8 +54,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     LocationOutput locationOutput;
     TamperOutput tamperOutput;
     SpeedOutput speedOutput;
-    GammaSetUp1Output gammaSetUp1Output;
-    GammaSetUp2Output gammaSetUp2Output;
+    GammaSetup1Output gammaSetUp1Output;
+    GammaSetup2Output gammaSetUp2Output;
     GammaSetup3Output gammaSetup3Output;
     NeutronSetupOutput neutronSetupOutput;
     InputStream msgIn;
@@ -86,9 +85,23 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
         if(config.isSupplementalAlgorithm){
             //do EML stuff
+            calculateThreshold();
+            startEMLService();
+            createEMLOutputs();
+            //calculate the thresholds if this is true for eml service
         }
 
         createOutputs();
+    }
+
+    public void calculateThreshold(){
+
+    }
+    public void startEMLService(){
+
+    }
+    public void createEMLOutputs(){
+
     }
 
     public void createOutputs(){
@@ -116,11 +129,11 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         addOutput(speedOutput, false);
         speedOutput.init();
 
-        gammaSetUp1Output = new GammaSetUp1Output(this);
+        gammaSetUp1Output = new GammaSetup1Output(this);
         addOutput(gammaSetUp1Output, false);
         gammaSetUp1Output.init();
 
-        gammaSetUp2Output = new GammaSetUp2Output(this);
+        gammaSetUp2Output = new GammaSetup2Output(this);
         addOutput(gammaSetUp2Output, false);
         gammaSetUp2Output.init();
 

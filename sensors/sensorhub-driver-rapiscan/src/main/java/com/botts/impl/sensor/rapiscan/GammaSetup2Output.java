@@ -11,16 +11,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
-public class GammaSetUp2Output extends AbstractSensorOutput<RapiscanSensor> {
+public class GammaSetup2Output extends AbstractSensorOutput<RapiscanSensor> {
     private static final String SENSOR_OUTPUT_NAME = "Gamma Setup 2";
 
-    private static final Logger logger = LoggerFactory.getLogger(GammaSetUp2Output.class);
+    private static final Logger logger = LoggerFactory.getLogger(GammaSetup2Output.class);
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
 
-    protected GammaSetUp2Output(RapiscanSensor parentSensor) {
+    protected GammaSetup2Output(RapiscanSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
@@ -61,15 +61,15 @@ public class GammaSetUp2Output extends AbstractSensorOutput<RapiscanSensor> {
         int index =0;
         dataBlock.setLongValue(index++,System.currentTimeMillis()/1000);
         dataBlock.setStringValue(index++, parent.laneName);
-        dataBlock.setIntValue(index++, Integer.parseInt(csvString[1])); //detectors
+        dataBlock.setStringValue(index++, csvString[1]); //detectors
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[2])); //low discrim
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[3])); //high discrim
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[4])); //relay out
-        dataBlock.setIntValue(index++, Integer.parseInt(csvString[5])); //algoritm
+        dataBlock.setStringValue(index++, csvString[5]); //algorithm
         dataBlock.setStringValue(index++, csvString[6]); //version software
 
         latestRecord = dataBlock;
-        eventHandler.publish(new DataEvent(System.currentTimeMillis(), GammaSetUp2Output.this, dataBlock));
+        eventHandler.publish(new DataEvent(System.currentTimeMillis(), GammaSetup2Output.this, dataBlock));
 
     }
     @Override

@@ -11,17 +11,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
-public class GammaSetUp1Output extends AbstractSensorOutput<RapiscanSensor> {
+public class GammaSetup1Output extends AbstractSensorOutput<RapiscanSensor> {
 
     private static final String SENSOR_OUTPUT_NAME = "Gamma Setup 1";
 
-    private static final Logger logger = LoggerFactory.getLogger(GammaSetUp1Output.class);
+    private static final Logger logger = LoggerFactory.getLogger(GammaSetup1Output.class);
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
 
-    protected GammaSetUp1Output(RapiscanSensor parentSensor) {
+    protected GammaSetup1Output(RapiscanSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
@@ -29,6 +29,7 @@ public class GammaSetUp1Output extends AbstractSensorOutput<RapiscanSensor> {
         dataStruct = createDataRecord();
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
+
     DataRecord createDataRecord(){
         RADHelper radHelper = new RADHelper();
 
@@ -68,7 +69,7 @@ public class GammaSetUp1Output extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setStringValue(index++, csvString[6]); //placeholder
 
         latestRecord = dataBlock;
-        eventHandler.publish(new DataEvent(System.currentTimeMillis(), GammaSetUp1Output.this, dataBlock));
+        eventHandler.publish(new DataEvent(System.currentTimeMillis(), GammaSetup1Output.this, dataBlock));
 
     }
     @Override

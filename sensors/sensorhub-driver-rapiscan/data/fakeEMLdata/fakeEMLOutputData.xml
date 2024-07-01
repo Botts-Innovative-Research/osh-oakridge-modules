@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Created with Liquid Technologies Online Tools 1.0 (https://www.liquid-technologies.com) -->
+<results xsi:noNamespaceSchemaLocation="schema.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <ERNIEContextualInfo>
+        <versionID>string</versionID>
+        <modelID>string</modelID>
+        <thresholds>
+            <primary>-9973999999999.77</primary>
+        </thresholds>
+    </ERNIEContextualInfo>
+    <ScanContextualInfo>
+        <portID>string</portID>
+        <laneID>18</laneID>
+        <dateTime>string</dateTime>
+        <segmentId>string</segmentId>
+        <RPMResult>string</RPMResult>
+        <RPMgammaAlert>false</RPMgammaAlert>
+        <RPMneutronAlert>0</RPMneutronAlert>
+        <RPMScanError>0</RPMScanError>
+    </ScanContextualInfo>
+    <ERNIEAnalysis>
+        <result>string</result>
+        <investigateProbability>-9404399999999.77</investigateProbability>
+        <releaseProbability>-38009999999999.8</releaseProbability>
+        <gammaAlert>0</gammaAlert>
+        <neutronAlert>false</neutronAlert>
+        <sources>
+            <sourceType>string</sourceType>
+            <classifierUsed>string</classifierUsed>
+            <xLocation1>182670.234905804</xLocation1>
+            <xLocation2>2988970.2349058</xLocation2>
+            <yLocation>-8713399999999.76</yLocation>
+            <zLocation>4045150.2349058</zLocation>
+            <probabilityNonEmitting>32972800000000.2</probabilityNonEmitting>
+            <probabilityNORM>44271600000000.2</probabilityNORM>
+            <probabilityThreat>40553700000000.2</probabilityThreat>
+        </sources>
+        <sources>
+            <sourceType>string</sourceType>
+            <classifierUsed>string</classifierUsed>
+            <xLocation1>3998480.2349058</xLocation1>
+            <xLocation2>-4953329.7650942</xLocation2>
+            <yLocation>39714900000000.2</yLocation>
+            <zLocation>-2356849.7650942</zLocation>
+            <probabilityNonEmitting>28484500000000.2</probabilityNonEmitting>
+            <probabilityNORM>15800000000.2349</probabilityNORM>
+            <probabilityThreat>39605800000000.2</probabilityThreat>
+        </sources>
+        <overallSource>
+            <sourceType>string</sourceType>
+            <classifierUsed>string</classifierUsed>
+            <xLocation1>-3576769.7650942</xLocation1>
+            <xLocation2>2041070.2349058</xLocation2>
+            <yLocation>-22927799999999.8</yLocation>
+            <zLocation>1670560.2349058</zLocation>
+            <probabilityNonEmitting>-39421699999999.8</probabilityNonEmitting>
+            <probabilityNORM>-47698399999999.8</probabilityNORM>
+            <probabilityThreat>43997800000000.2</probabilityThreat>
+        </overallSource>
+        <vehicleClass>3541</vehicleClass>
+        <vehicleLength>-3378269.7650942</vehicleLength>
+        <message>string</message>
+        <yellowLightMessage>string</yellowLightMessage>
+    </ERNIEAnalysis>
+</results>
+

@@ -28,8 +28,8 @@ public class MessageHandler {
     TamperOutput tamperOutput;
     SpeedOutput speedOutput;
 
-    GammaSetUp1Output gammaSetUp1Output;
-    GammaSetUp2Output gammaSetUp2Output;
+    GammaSetup1Output gammaSetup1Output;
+    GammaSetup2Output gammaSetup2Output;
     GammaSetup3Output gammaSetup3Output;
     NeutronSetupOutput neutronSetupOutput;
 
@@ -76,15 +76,15 @@ public class MessageHandler {
     });
 
 
-    public MessageHandler(InputStream msgIn, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, TamperOutput tamperOutput, SpeedOutput speedOutput, GammaSetUp1Output gammaSetUp1Output, GammaSetUp2Output gammaSetUp2Output, GammaSetup3Output gammaSetup3Output, NeutronSetupOutput neutronSetupOutput) {
+    public MessageHandler(InputStream msgIn, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, TamperOutput tamperOutput, SpeedOutput speedOutput, GammaSetup1Output gammaSetup1Output, GammaSetup2Output gammaSetup2Output, GammaSetup3Output gammaSetup3Output, NeutronSetupOutput neutronSetupOutput) {
         this.msgIn = msgIn;
         this.gammaOutput = gammaOutput;
         this.neutronOutput = neutronOutput;
         this.occupancyOutput = occupancyOutput;
         this.tamperOutput = tamperOutput;
         this.speedOutput = speedOutput;
-        this.gammaSetUp1Output = gammaSetUp1Output;
-        this.gammaSetUp2Output = gammaSetUp2Output;
+        this.gammaSetup1Output = gammaSetup1Output;
+        this.gammaSetup2Output = gammaSetup2Output;
         this.gammaSetup3Output = gammaSetup3Output;
         this.neutronSetupOutput = neutronSetupOutput;
 
@@ -177,34 +177,32 @@ public class MessageHandler {
                 break;
 
             case "SG1":
-                gammaSetUp1Output.onNewMessage(csvLine);
-//                setupData1("Setup Gamma 1");
-//                setSetup1();
+                gammaSetup1Output.onNewMessage(csvLine);
                 break;
             case "SG2":
-                gammaSetUp2Output.onNewMessage(csvLine);
-//                setupData2("Setup Gamma 2");
-//                setSetup2();
+                gammaSetup2Output.onNewMessage(csvLine);
                 break;
             case "SG3":
                 gammaSetup3Output.onNewMessage(csvLine);
-//                setupData3("Setup Gamma 3");
-//                setSetup3();
                 break;
             case "SN1":
                 neutronSetupOutput.onNewMessage(csvLine);
-                System.out.println("SN1 no output");
-//                setupData4("Setup Neutron 1");
-//                setSetup4();
                 break;
             case "SN2":
                 System.out.println("SN2 no output");
-//                setupData5("Setup Neutron 2");
-//                setSetup5();
                 break;
         }
 
-
     }
+
+    public GammaOutput getGammaOutput() { return this.gammaOutput; }
+    public NeutronOutput getNeutronOutput() { return this.neutronOutput; }
+    public OccupancyOutput getOccupancyOutput() { return this.occupancyOutput; }
+    public TamperOutput getTamperOutput() { return this.tamperOutput; }
+    public SpeedOutput getSpeedOutput() { return this.speedOutput; }
+    public GammaSetup1Output getGammaSetUp1Output() { return this.gammaSetup1Output; }
+    public GammaSetup2Output getGammaSetUp2Output() { return this.gammaSetup2Output; }
+    public GammaSetup3Output getGammaSetUp3Output() { return this.gammaSetup3Output; }
+    public NeutronSetupOutput getNeutronSetupOutput() { return this.neutronSetupOutput; }
 
 }

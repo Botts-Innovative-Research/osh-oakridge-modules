@@ -267,8 +267,8 @@ public class RADHelper extends GeoPosHelper {
                 .addAllowedValues("A", "T")
                 .build();
     }
-    public Quantity createFirmwareVersion(){
-        return createQuantity()
+    public Text createFirmwareVersion(){
+        return createText()
                 .name("firmware-version")
                 .label("Firmware version")
                 .definition(getRadUri("firmware-version"))
