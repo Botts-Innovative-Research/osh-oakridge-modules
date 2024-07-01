@@ -1,6 +1,5 @@
 package com.botts.impl.sensor.rapiscan.emlServices;
 
-import com.botts.impl.sensor.rapiscan.GammaOutput;
 import com.botts.impl.sensor.rapiscan.NeutronOutput;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import net.opengis.swe.v20.*;
@@ -14,22 +13,16 @@ import org.vast.data.TextEncodingImpl;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
-import org.xml.sax.XMLReader;
 
-import javax.xml.crypto.Data;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.stream.XMLEventReader;
-import javax.xml.stream.XMLInputFactory;
-import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
-import javax.xml.stream.events.StartElement;
-import javax.xml.stream.events.XMLEvent;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
+import java.io.File;
 import java.io.IOException;
+import java.io.StringReader;
 import java.lang.Boolean;
 
 public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
@@ -70,16 +63,16 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
     String message;
     String yellowLightMessage;
 
-    protected EMLOutput(RapiscanSensor parentSensor) {
+    public EMLOutput(RapiscanSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
-    protected void init(){
+    public void init(){
         dataStruct = createDataRecord();
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
     DataRecord createDataRecord(){
         RADHelper radHelper = new RADHelper();
-        DataRecord recordBuilder = radHelper.createRecord()
+        return radHelper.createRecord()
                 .name("ERNIEAnalysis")
                 .label("ERNIE Analysis")
                 .definition(RADHelper.getRadUri("ERNIEAnalysis"))
@@ -114,7 +107,7 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
                 .addField("sourceCount", radHelper.createCount()
                         .id("sourceCountId"))
                 .addField("sources", radHelper.createArray()
-                        .label("Sources")
+                        .label("sources")
                         .withVariableSize("sourceCountId")
                         .withElement("source", radHelper.createRecord()
                                 .addField("sourceType", radHelper.createText())
@@ -128,21 +121,17 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
                                 .addField("probabilityThreat", radHelper.createQuantity())
                         )
                         .build())
-                //make sure overall source is only once or none...
-                .addField("overallSource", radHelper.createArray()
+                .addField("overallSource", radHelper.createRecord()
                         .label("Overall Source")
-                        .withVariableSize("")
-                        .withElement("source", radHelper.createRecord()
-                                .addField("sourceType", radHelper.createText())
-                                .addField("classifierUsed", radHelper.createText())
-                                .addField("xLocation1", radHelper.createQuantity())
-                                .addField("xLocation2", radHelper.createQuantity())
-                                .addField("yLocation", radHelper.createQuantity())
-                                .addField("zLocation", radHelper.createQuantity())
-                                .addField("probabilityNonEmitting", radHelper.createQuantity())
-                                .addField("probabilityNORM", radHelper.createQuantity())
-                                .addField("probabilityThreat", radHelper.createQuantity())
-                        )
+                        .addField("sourceType", radHelper.createText())
+                        .addField("classifierUsed", radHelper.createText())
+                        .addField("xLocation1", radHelper.createQuantity())
+                        .addField("xLocation2", radHelper.createQuantity())
+                        .addField("yLocation", radHelper.createQuantity())
+                        .addField("zLocation", radHelper.createQuantity())
+                        .addField("probabilityNonEmitting", radHelper.createQuantity())
+                        .addField("probabilityNORM", radHelper.createQuantity())
+                        .addField("probabilityThreat", radHelper.createQuantity())
                         .build())
                 .addField("vehicleClass", radHelper.createQuantity()
                         .name("vehicle-class")
@@ -168,7 +157,6 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
                         .build())
 
                 .build();
-        return  recordBuilder;
 
     }
 
@@ -180,13 +168,16 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
         //TODO: parse xml reader for the values
 
         int index = 0;
-        dataBlock.setDoubleValue(index++, System.currentTimeMillis()/1000);
+        dataBlock.setDoubleValue(index++, System.currentTimeMillis()/1000d);
         dataBlock.setStringValue(index++, getResult());
         dataBlock.setDoubleValue(index++, getInvestigateProbability());
         dataBlock.setDoubleValue(index++, getReleaseProbability());
         dataBlock.setBooleanValue(index++, isGammaAlert() );
         dataBlock.setBooleanValue(index++, isNeutronAlert());
 
+
+        //datablock parallel
+        dataBlock.setIntValue(index++, 2);
         var sourceArray = ((DataArrayImpl) dataStruct.getComponent("sources"));
         sourceArray.updateSize();
         dataBlock.setStringValue(index++, getSourceType());
@@ -199,8 +190,6 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setDoubleValue(index++, getProbabilityNORM());
         dataBlock.setDoubleValue(index++, getProbabilityThreat());
 
-//        var overallSourceArray = ((DataArrayImpl) dataStruct.getComponent("overallSource"));
-//        overallSourceArray.updateSize();
         dataBlock.setStringValue(index++, getOverallSourceType());
         dataBlock.setStringValue(index++, getOverallClassifierUsed());
         dataBlock.setDoubleValue(index++, getOverallXLocation1());
@@ -221,10 +210,10 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
     }
 
     //credit to https://mkyong.com/java/how-to-read-xml-file-in-java-dom-parser/
-    public void parser(XMLStreamReader reader) throws ParserConfigurationException, IOException, SAXException {
+    public void parser() throws ParserConfigurationException, IOException, SAXException {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         DocumentBuilder builder = factory.newDocumentBuilder();
-        Document document = builder.parse("fakeEMLOutputData.xml");
+        Document document = builder.parse(new File("fakeEMLOutputData.xml"));
 
         document.getDocumentElement().normalize();
         NodeList ernieList = document.getElementsByTagName("ERNIEAnalysis");
@@ -238,7 +227,7 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
 
         NodeList sourceList = ernieElement.getElementsByTagName("sources");
         for(int i=0; i<sourceList.getLength(); i++){
-            Element source = (Element) sourceList.item(0);
+            Element source = (Element) sourceList.item(i);
 
             sourceType = source.getElementsByTagName("sourceType").item(0).getTextContent();
             classifierUsed = source.getElementsByTagName("classifierUsed").item(0).getTextContent();
@@ -253,22 +242,26 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
         }
 
         //overall source
-        Element overallSource=(Element) ernieElement.getElementsByTagName("overallSource");
-        overallSourceType = overallSource.getElementsByTagName("sourceType").item(0).getTextContent();
-        overallClassifierUsed = overallSource.getElementsByTagName("classifierUsed").item(0).getTextContent();
-        overallXLocation1 = Double.parseDouble(overallSource.getElementsByTagName("xLocation1").item(0).getTextContent());
-        overallXLocation2 = Double.parseDouble(overallSource.getElementsByTagName("xLocation2").item(0).getTextContent());
-        overallYLocation = Double.parseDouble(overallSource.getElementsByTagName("yLocation").item(0).getTextContent());
-        overallZLocation = Double.parseDouble(overallSource.getElementsByTagName("zLocation").item(0).getTextContent());
-        overallProbabilityNonEmitting = Double.parseDouble(overallSource.getElementsByTagName("probabilityNonEmitting").item(0).getTextContent());
-        overallProbabilityNORM = Double.parseDouble(overallSource.getElementsByTagName("probabilityNORM").item(0).getTextContent());
-        overallProbabilityThreat = Double.parseDouble(overallSource.getElementsByTagName("probabilityThreat").item(0).getTextContent());
+        NodeList overallSourceList = ernieElement.getElementsByTagName("overallSource");
+        for(int i=0; i< overallSourceList.getLength(); i++){
+            Element overallSource = (Element) overallSourceList.item(i);
+            overallSourceType = overallSource.getElementsByTagName("sourceType").item(0).getTextContent();
+            overallClassifierUsed = overallSource.getElementsByTagName("classifierUsed").item(0).getTextContent();
+            overallXLocation1 = Double.parseDouble(overallSource.getElementsByTagName("xLocation1").item(0).getTextContent());
+            overallXLocation2 = Double.parseDouble(overallSource.getElementsByTagName("xLocation2").item(0).getTextContent());
+            overallYLocation = Double.parseDouble(overallSource.getElementsByTagName("yLocation").item(0).getTextContent());
+            overallZLocation = Double.parseDouble(overallSource.getElementsByTagName("zLocation").item(0).getTextContent());
+            overallProbabilityNonEmitting = Double.parseDouble(overallSource.getElementsByTagName("probabilityNonEmitting").item(0).getTextContent());
+            overallProbabilityNORM = Double.parseDouble(overallSource.getElementsByTagName("probabilityNORM").item(0).getTextContent());
+            overallProbabilityThreat = Double.parseDouble(overallSource.getElementsByTagName("probabilityThreat").item(0).getTextContent());
+        }
 
-        vehicleClass = Integer.parseInt(overallSource.getElementsByTagName("vehicleClass").item(0).getTextContent());
-        vehicleLength = Double.parseDouble(overallSource.getElementsByTagName("vehicleLength").item(0).getTextContent());
-        message = overallSource.getElementsByTagName("message").item(0).getTextContent();
-        yellowLightMessage = overallSource.getElementsByTagName("yellowLightMessage").item(0).getTextContent();
 
+        vehicleClass = Integer.parseInt(ernieElement.getElementsByTagName("vehicleClass").item(0).getTextContent());
+        vehicleLength = Double.parseDouble(ernieElement.getElementsByTagName("vehicleLength").item(0).getTextContent());
+        message = ernieElement.getElementsByTagName("message").item(0).getTextContent();
+        yellowLightMessage = ernieElement.getElementsByTagName("yellowLightMessage").item(0).getTextContent();
+        setData();
     }
 
 

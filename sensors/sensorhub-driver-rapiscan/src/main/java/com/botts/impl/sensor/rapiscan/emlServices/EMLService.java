@@ -1,22 +1,21 @@
 package com.botts.impl.sensor.rapiscan.emlServices;
 
 import com.botts.impl.sensor.rapiscan.MessageHandler;
-import org.vast.sensorML.SMLHelper;
 import org.xml.sax.SAXException;
-import org.xml.sax.XMLReader;
 
 import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.stream.XMLStreamReader;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 public class EMLService {
 
-    EMLService(EMLOutput output, MessageHandler messageHandler) throws ParserConfigurationException, IOException, SAXException {
+    public EMLService(EMLOutput output, MessageHandler messageHandler) throws ParserConfigurationException, IOException, SAXException {
         doInit();
 
-        XMLStreamReader streamReader = null;
-        XMLReader reader;
-        output.parser(streamReader);
+//        XMLStreamReader streamReader = null;
+//        XMLReader reader;
+        output.parser();
         output.setData();
     }
 
