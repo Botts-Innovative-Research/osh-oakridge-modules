@@ -17,13 +17,16 @@ package com.botts.impl.sensor.rapiscan;
 //import com.botts.impl.sensor.rapiscan.helpers.RapiscanActionList;
 //import com.botts.impl.sensor.rapiscan.helpers.RapiscanPreset;
 import com.botts.impl.sensor.rapiscan.emlServices.EMLOutput;
+import com.botts.impl.sensor.rapiscan.emlServices.EMLService;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.xml.sax.SAXException;
 
+import javax.xml.parsers.ParserConfigurationException;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -49,6 +52,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 //    ArrayList<MessageHandler>messageHandlerList = new ArrayList<>();
 //    static ArrayList<InputStream> bufferedInputStreamsList = new ArrayList<InputStream>();
 
+    EMLOutput emlOutput;
     GammaOutput gammaOutput;
     NeutronOutput neutronOutput;
     OccupancyOutput occupancyOutput;
@@ -59,7 +63,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     GammaSetup2Output gammaSetUp2Output;
     GammaSetup3Output gammaSetup3Output;
     NeutronSetupOutput neutronSetupOutput;
-    EMLOutput emlOutput;
     InputStream msgIn;
 
     Timer t;
@@ -83,14 +86,25 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 //        rapiscanLayerConfig = config.rapiscanLayerConfigs;
 //        neutronCount = config.neutronCount;
 //        gammaCount = config.gammaCount;
+
+
         laneName = config.laneName;
 
         if(config.isSupplementalAlgorithm){
             //do EML stuff
-            calculateThreshold();
-            startEMLService();
-            createEMLOutputs();
             //calculate the thresholds if this is true for eml service
+            calculateThreshold();
+            try {
+                createEMLOutputs();
+                startEMLService();
+            } catch (ParserConfigurationException e) {
+                throw new RuntimeException(e);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            } catch (SAXException e) {
+                throw new RuntimeException(e);
+            }
+
         }
 
         createOutputs();
@@ -99,7 +113,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     public void calculateThreshold(){
 
     }
-    public void startEMLService(){
+    public void startEMLService() throws ParserConfigurationException, IOException, SAXException {
+        EMLService emlService = new EMLService(emlOutput, messageHandler);
 
     }
     public void createEMLOutputs(){
@@ -266,8 +281,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     }
 
-    public MessageHandler getMessageHandler() {
-        return this.messageHandler;
+    public MessageHandler getMessageHandler(){
+        return messageHandler;
     }
-
 }
