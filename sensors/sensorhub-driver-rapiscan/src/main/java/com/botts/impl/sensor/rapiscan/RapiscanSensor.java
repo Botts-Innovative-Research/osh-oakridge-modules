@@ -80,8 +80,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         super.doInit();
 
         // Generate identifiers
-        generateUniqueID("urn:osh:sensor:rapiscan", String.valueOf(config.laneName));
-        generateXmlID("Rapiscan", String.valueOf(config.laneName));
+        generateUniqueID("urn:osh:sensor:rapiscan:", String.valueOf(config.serialNumber));
+        generateXmlID("Rapiscan", String.valueOf(config.serialNumber));
 
 //        rapiscanLayerConfig = config.rapiscanLayerConfigs;
 //        neutronCount = config.neutronCount;

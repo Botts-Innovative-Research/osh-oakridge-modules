@@ -46,7 +46,7 @@ public class RapiscanConfig extends SensorConfig {
      */
     @DisplayInfo.Required
     @DisplayInfo(desc = "Serial number or unique identifier")
-    public String serialNumber = "sensor001";
+    public String serialNumber = "rpm001";
 
 //    @DisplayInfo.Required
 //    @DisplayInfo(desc = "switching config layers")

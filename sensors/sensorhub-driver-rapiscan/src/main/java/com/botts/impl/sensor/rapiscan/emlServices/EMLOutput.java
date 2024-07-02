@@ -189,7 +189,7 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
 //        var sourceArray = ((DataBlockParallel) this.dataStruct.getComponent("sources").getData());
         var sourceArray = ((DataArrayImpl) this.dataStruct.getComponent("sources"));
         sourceArray.updateSize();
-        dataBlock.updateAtomCount();
+        //dataBlock.updateAtomCount();
 
         for(int j=0; j<sourceListSize; j++) {
             dataBlock.setStringValue(index++, getSourceType());

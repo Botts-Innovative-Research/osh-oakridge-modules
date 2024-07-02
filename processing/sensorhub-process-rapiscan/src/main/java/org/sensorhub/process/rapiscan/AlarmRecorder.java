@@ -1,5 +1,6 @@
 package org.sensorhub.process.rapiscan;
 
+import com.botts.impl.sensor.rapiscan.GammaOutput;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.data.IObsData;
@@ -40,13 +41,17 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         RADHelper radHelper = new RADHelper();
 
         inputData.add("occupancy", occupancyInput = radHelper.createRecord()
+                .name("Occupancy")
                 .label("Occupancy")
+                .updatable(true)
                 .definition(RADHelper.getRadUri("occupancy"))
-                .addField("Timestamp", radHelper.createPrecisionTimeStamp())
-                .addField("OccupancyCount", radHelper.createOccupancyCount())
+                .description("System occupancy count since midnight each day")
+                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
+                .addField("LaneName", radHelper.createLaneId())
+                .addField("PillarOccupancyCount", radHelper.createOccupancyCount())
                 .addField("StartTime", radHelper.createOccupancyStartTime())
                 .addField("EndTime", radHelper.createOccupancyEndTime())
-                .addField("NeutronBackground", radHelper.createNeutronBackground())
+                .addField("NeutronBackgroundCount", radHelper.createNeutronBackground())
                 .addField("GammaAlarm",
                         radHelper.createBoolean()
                                 .name("gamma-alarm")
@@ -60,36 +65,58 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
                 .build());
 
         outputData.add("neutronEntry", neutronEntry = radHelper.createRecord()
-                        .label("Neutron Scan")
-                        .definition(RADHelper.getRadUri("neutron-scan"))
-                        .addField("SamplingTime", radHelper.createPrecisionTimeStamp())
-                        .addField("Neutron1", radHelper.createNeutronGrossCount())
-                        .addField("Neutron2", radHelper.createNeutronGrossCount())
-                        .addField("Neutron3", radHelper.createNeutronGrossCount())
-                        .addField("Neutron4", radHelper.createNeutronGrossCount())
-                        .addField("AlarmState",
-                                radHelper.createCategory()
-                                        .name("Alarm")
-                                        .label("Alarm")
-                                        .definition(RADHelper.getRadUri("alarm"))
-                                        .addAllowedValues("Alarm", "Background", "Scan", "Fault - Neutron High"))
-                        .build());
+                .label("Neutron Scan")
+                .updatable(true)
+                .definition(RADHelper.getRadUri("neutron-scan"))
+                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
+                .addField("LaneName", radHelper.createLaneId())
+                .addField("AlarmState", radHelper.createCategory()
+                        .name("Alarm")
+                        .label("Alarm")
+                        .definition(RADHelper.getRadUri("alarm"))
+                        .addAllowedValues("Alarm", "Background", "Scan", "Fault - Neutron High"))
+                .addField("NeutronGrossCount1", radHelper.createCount()
+                        .name("NeutronGrossCount")
+                        .label("Neutron Gross Count 1")
+                        .definition(radHelper.getRadUri("neutron-gross-count")))
+                .addField("NeutronGrossCount2", radHelper.createCount()
+                        .name("NeutronGrossCount")
+                        .label("Neutron Gross Count 2")
+                        .definition(radHelper.getRadUri("neutron-gross-count")))
+                .addField("NeutronGrossCount3", radHelper.createCount()
+                        .name("NeutronGrossCount")
+                        .label("Neutron Gross Count 3")
+                        .definition(radHelper.getRadUri("neutron-gross-count")))
+                .addField("NeutronGrossCount4", radHelper.createCount()
+                        .name("NeutronGrossCount")
+                        .label("Neutron Gross Count 4")
+                        .definition(radHelper.getRadUri("neutron-gross-count")))
+                .build());
 
         outputData.add("gammaEntry", gammaEntry = radHelper.createRecord()
-                        .label("Gamma Scan")
-                        .definition(RADHelper.getRadUri("gamma-scan"))
-                        .addField("SamplingTime", radHelper.createPrecisionTimeStamp())
-                        .addField("Gamma1", radHelper.createGammaGrossCount())
-                        .addField("Gamma2", radHelper.createGammaGrossCount())
-                        .addField("Gamma3", radHelper.createGammaGrossCount())
-                        .addField("Gamma4", radHelper.createGammaGrossCount())
-                        .addField("AlarmState",
-                                radHelper.createCategory()
-                                        .name("Alarm")
-                                        .label("Alarm")
-                                        .definition(RADHelper.getRadUri("alarm"))
-                                        .addAllowedValues("Alarm", "Background", "Scan", "Fault - Gamma High", "Fault - Gamma Low"))
-                        .build());
+                .label("Gamma Scan")
+                .updatable(true)
+                .definition(RADHelper.getRadUri("gamma-scan"))
+                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
+                .addField("LaneName", radHelper.createLaneId())
+                .addField("AlarmState", radHelper.createCategory()
+                        .name("Alarm")
+                        .label("Alarm")
+                        .definition(RADHelper.getRadUri("alarm"))
+                        .addAllowedValues("Alarm", "Background", "Scan", "Fault - Gamma High", "Fault - Gamma Low"))
+                .addField("GammaGrossCount1", radHelper.createCount().name("GammaGrossCount")
+                        .label("Gamma Gross Count 1")
+                        .definition(radHelper.getRadUri("gamma-gross-count")))
+                .addField("GammaGrossCount2", radHelper.createCount().name("GammaGrossCount")
+                        .label("Gamma Gross Count 2")
+                        .definition(radHelper.getRadUri("gamma-gross-count")))
+                .addField("GammaGrossCount3", radHelper.createCount().name("GammaGrossCount")
+                        .label("Gamma Gross Count 3")
+                        .definition(radHelper.getRadUri("gamma-gross-count")))
+                .addField("GammaGrossCount4", radHelper.createCount().name("GammaGrossCount")
+                        .label("Gamma Gross Count 4")
+                        .definition(radHelper.getRadUri("gamma-gross-count")))
+                .build());
 
         VideoCamHelper vidHelper = new VideoCamHelper();
         outputData.add("video1", video1 = vidHelper.newVideoOutputMJPEG("video1", 640, 480).getElementType());
