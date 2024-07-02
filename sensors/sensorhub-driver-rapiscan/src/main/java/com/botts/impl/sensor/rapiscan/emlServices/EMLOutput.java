@@ -27,9 +27,7 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 import javax.xml.stream.events.StartElement;
 import javax.xml.stream.events.XMLEvent;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
+import java.io.*;
 import java.lang.Boolean;
 
 public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
@@ -70,10 +68,10 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
     String message;
     String yellowLightMessage;
 
-    protected EMLOutput(RapiscanSensor parentSensor) {
+    public EMLOutput(RapiscanSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
-    protected void init(){
+    public void init(){
         dataStruct = createDataRecord();
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
@@ -224,7 +222,13 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
     public void parser(XMLStreamReader reader) throws ParserConfigurationException, IOException, SAXException {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         DocumentBuilder builder = factory.newDocumentBuilder();
-        Document document = builder.parse("fakeEMLOutputData.xml");
+
+        ///////////////////////////////////////////////////////////////////////////
+        EMLService emlService = new EMLService(this, this.parentSensor.getMessageHandler());
+        String emlResults = emlService.getXMLResults(0, "example scan data");
+        InputStream targetStream = new ByteArrayInputStream(emlResults.getBytes());
+        Document document = builder.parse(new BufferedInputStream(targetStream));
+        ///////////////////////////////////////////////////////////////////////////
 
         document.getDocumentElement().normalize();
         NodeList ernieList = document.getElementsByTagName("ERNIEAnalysis");

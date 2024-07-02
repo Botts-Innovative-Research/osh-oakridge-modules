@@ -16,6 +16,7 @@ package com.botts.impl.sensor.rapiscan;
 
 //import com.botts.impl.sensor.rapiscan.helpers.RapiscanActionList;
 //import com.botts.impl.sensor.rapiscan.helpers.RapiscanPreset;
+import com.botts.impl.sensor.rapiscan.emlServices.EMLOutput;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.sensor.SensorException;
@@ -58,6 +59,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     GammaSetup2Output gammaSetUp2Output;
     GammaSetup3Output gammaSetup3Output;
     NeutronSetupOutput neutronSetupOutput;
+    EMLOutput emlOutput;
     InputStream msgIn;
 
     Timer t;
@@ -101,7 +103,9 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     }
     public void createEMLOutputs(){
-
+        emlOutput = new EMLOutput(this);
+        addOutput(emlOutput, false);
+        emlOutput.init();
     }
 
     public void createOutputs(){
@@ -260,6 +264,10 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         };
         t.scheduleAtFixedRate(tt,500,10000);
 
+    }
+
+    public MessageHandler getMessageHandler() {
+        return this.messageHandler;
     }
 
 }

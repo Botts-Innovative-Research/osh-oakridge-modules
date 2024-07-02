@@ -78,7 +78,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setBooleanValue(index++, isGammaAlarm);
         dataBlock.setBooleanValue(index++, isNeutronAlarm);
 
-        dataBlock.updateAtomCount();
+        //dataBlock.updateAtomCount();
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));
 
