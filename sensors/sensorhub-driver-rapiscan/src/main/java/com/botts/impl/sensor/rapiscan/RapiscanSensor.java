@@ -86,6 +86,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 //        rapiscanLayerConfig = config.rapiscanLayerConfigs;
 //        neutronCount = config.neutronCount;
 //        gammaCount = config.gammaCount;
+
+
         laneName = config.laneName;
 
         if(config.isSupplementalAlgorithm){
@@ -103,7 +105,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                 throw new RuntimeException(e);
             }
 
-
         }
 
         createOutputs();
@@ -120,7 +121,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         emlOutput = new EMLOutput(this);
         addOutput(emlOutput, false);
         emlOutput.init();
-
     }
 
     public void createOutputs(){
@@ -281,4 +281,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     }
 
+    public MessageHandler getMessageHandler(){
+        return messageHandler;
+    }
 }

@@ -8,7 +8,9 @@ import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.vast.data.AbstractDataBlock;
 import org.vast.data.DataArrayImpl;
+import org.vast.data.DataBlockParallel;
 import org.vast.data.TextEncodingImpl;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -20,9 +22,7 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.stream.XMLStreamReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.StringReader;
+import java.io.*;
 import java.lang.Boolean;
 
 public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
@@ -58,6 +58,7 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
     double probabilityNORM;
     double probabilityThreat;
 
+    int sourceListSize;
     int vehicleClass;
     double vehicleLength;
     String message;
@@ -162,33 +163,58 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
 
     public void setData(){
         dataStruct = createDataRecord();
-        DataBlock dataBlock = dataStruct.createDataBlock();
+        DataBlock dataBlock;
+        if (latestRecord == null) {
+
+            dataBlock = dataStruct.createDataBlock();
+
+        } else {
+
+            dataBlock = latestRecord.renew();
+        }
         dataStruct.setData(dataBlock);
 
         //TODO: parse xml reader for the values
 
-        int index = 0;
+        int index =0;
         dataBlock.setDoubleValue(index++, System.currentTimeMillis()/1000d);
         dataBlock.setStringValue(index++, getResult());
         dataBlock.setDoubleValue(index++, getInvestigateProbability());
         dataBlock.setDoubleValue(index++, getReleaseProbability());
         dataBlock.setBooleanValue(index++, isGammaAlert() );
         dataBlock.setBooleanValue(index++, isNeutronAlert());
+        dataBlock.setIntValue(index++, sourceListSize);
 
 
-        //datablock parallel
-        dataBlock.setIntValue(index++, 2);
-        var sourceArray = ((DataArrayImpl) dataStruct.getComponent("sources"));
+//        var sourceArray = ((DataBlockParallel) this.dataStruct.getComponent("sources").getData());
+        var sourceArray = ((DataArrayImpl) this.dataStruct.getComponent("sources"));
         sourceArray.updateSize();
-        dataBlock.setStringValue(index++, getSourceType());
-        dataBlock.setStringValue(index++, getClassifierUsed());
-        dataBlock.setDoubleValue(index++, getxLocation1());
-        dataBlock.setDoubleValue(index++, getxLocation2());
-        dataBlock.setDoubleValue(index++, getyLocation());
-        dataBlock.setDoubleValue(index++, getzLocation());
-        dataBlock.setDoubleValue(index++, getProbabilityNonEmitting());
-        dataBlock.setDoubleValue(index++, getProbabilityNORM());
-        dataBlock.setDoubleValue(index++, getProbabilityThreat());
+        dataBlock.updateAtomCount();
+
+        for(int j=0; j<sourceListSize; j++) {
+            dataBlock.setStringValue(index++, getSourceType());
+            dataBlock.setStringValue(index++, getClassifierUsed());
+            dataBlock.setDoubleValue(index++, getxLocation1());
+            dataBlock.setDoubleValue(index++, getxLocation2());
+            dataBlock.setDoubleValue(index++, getyLocation());
+            dataBlock.setDoubleValue(index++, getzLocation());
+            dataBlock.setDoubleValue(index++, getProbabilityNonEmitting());
+            dataBlock.setDoubleValue(index++, getProbabilityNORM());
+            dataBlock.setDoubleValue(index++, getProbabilityThreat());
+
+        }
+//            dataBlock.setStringValue(index++, getSourceType());
+//            dataBlock.setStringValue(index++, getClassifierUsed());
+//            dataBlock.setDoubleValue(index++, getxLocation1());
+//            dataBlock.setDoubleValue(index++, getxLocation2());
+//            dataBlock.setDoubleValue(index++, getyLocation());
+//            dataBlock.setDoubleValue(index++, getzLocation());
+//            dataBlock.setDoubleValue(index++, getProbabilityNonEmitting());
+//            dataBlock.setDoubleValue(index++, getProbabilityNORM());
+//            dataBlock.setDoubleValue(index++, getProbabilityThreat());
+
+//            dataBlock.updateAtomCount();
+//        }
 
         dataBlock.setStringValue(index++, getOverallSourceType());
         dataBlock.setStringValue(index++, getOverallClassifierUsed());
@@ -206,15 +232,22 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setStringValue(index++, getYellowLightMessage());
 
         latestRecord = dataBlock;
+
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), EMLOutput.this, dataBlock));
     }
 
+
     //credit to https://mkyong.com/java/how-to-read-xml-file-in-java-dom-parser/
-    public void parser() throws ParserConfigurationException, IOException, SAXException {
+    public void parser(String emlResults) throws ParserConfigurationException, IOException, SAXException {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         DocumentBuilder builder = factory.newDocumentBuilder();
-        Document document = builder.parse(new File("fakeEMLOutputData.xml"));
 
+//        Document document = builder.parse(new File("fakeEMLOutputData.xml"));
+
+//        EMLService emlService = new EMLService(this, this.parentSensor.getMessageHandler());
+//        String emlResults = emlService.getXMLResults(0, "example scan data");
+        InputStream targetStream = new ByteArrayInputStream(emlResults.getBytes());
+        Document document = builder.parse(new BufferedInputStream(targetStream));
         document.getDocumentElement().normalize();
         NodeList ernieList = document.getElementsByTagName("ERNIEAnalysis");
         Element ernieElement = (Element) ernieList.item(0);
@@ -226,9 +259,9 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
         neutronAlert = Boolean.parseBoolean(ernieElement.getElementsByTagName("neutronAlert").item(0).getTextContent());
 
         NodeList sourceList = ernieElement.getElementsByTagName("sources");
-        for(int i=0; i<sourceList.getLength(); i++){
+        sourceListSize = sourceList.getLength();
+        for(int i=0; i<sourceListSize; i++){
             Element source = (Element) sourceList.item(i);
-
             sourceType = source.getElementsByTagName("sourceType").item(0).getTextContent();
             classifierUsed = source.getElementsByTagName("classifierUsed").item(0).getTextContent();
             xLocation1 = Double.parseDouble(source.getElementsByTagName("xLocation1").item(0).getTextContent());
@@ -261,7 +294,6 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
         vehicleLength = Double.parseDouble(ernieElement.getElementsByTagName("vehicleLength").item(0).getTextContent());
         message = ernieElement.getElementsByTagName("message").item(0).getTextContent();
         yellowLightMessage = ernieElement.getElementsByTagName("yellowLightMessage").item(0).getTextContent();
-        setData();
     }
 
 
