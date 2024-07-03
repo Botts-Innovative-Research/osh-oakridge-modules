@@ -16,10 +16,14 @@ public class EMLHelper {
 
     }
 
+    /**
+     * Calculation of gamma threshold for VM250 RPM Gamma Alarm
+     * @return
+     */
     public double getGammaThreshold() {
 
         // Get NSigma value from gamma setup 1 data record
-        float nSigmaData = messageHandler.getGammaSetUp1Output().getLatestRecord().getFloatValue(6);
+        float nSigma = messageHandler.getGammaSetUp1Output().getLatestRecord().getFloatValue(6);
         // Get Algorithm value from gamma setup 2 data record
         String algorithmData = messageHandler.getGammaSetUp2Output().getLatestRecord().getStringValue(6);
         // Algorithm EnumSet includes algorithm type (example: 1010 = SUM, VERTICAL)
@@ -41,12 +45,12 @@ public class EMLHelper {
             }
         }
 
-        double averageGB = Arrays.stream(gammaCounts).average().orElse(Double.NaN);
+//        double averageGB = Arrays.stream(gammaCounts).average().orElse(Double.NaN);
+        int sumGB = Arrays.stream(gammaCounts).sum();
+        double sqrtSumGB = Math.sqrt(sumGB);
 
-        // TODO: Implement algorithm
-        double threshold = 0;
-
-        return threshold;
+        // Return equation for threshold calculation
+        return sumGB + (nSigma * sqrtSumGB);
     }
 
 }
