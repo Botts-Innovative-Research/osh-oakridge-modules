@@ -6,7 +6,6 @@ dependencies {
   implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     implementation project(':sensorhub-utils-rad')
     implementation project(':sensorhub-driver-videocam')
-    implementation project(':sensorhub-driver-rapiscan')
 }
   
 // add info to OSGi manifest

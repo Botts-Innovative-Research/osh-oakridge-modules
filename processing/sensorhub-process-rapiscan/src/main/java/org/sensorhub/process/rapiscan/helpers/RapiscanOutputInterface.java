@@ -59,7 +59,7 @@ public class RapiscanOutputInterface implements IStreamingDataInterface {
     };
 
 
-    protected RapiscanOutputInterface(RapiscanProcessImpl parentProcess, AbstractSWEIdentifiable outputDescriptor) throws ProcessingException
+    protected RapiscanOutputInterface(RapiscanProcessModule parentProcess, AbstractSWEIdentifiable outputDescriptor) throws ProcessingException
     {
         this.parentProcess = parentProcess;
         this.outputDef = SMLHelper.getIOComponent(outputDescriptor);

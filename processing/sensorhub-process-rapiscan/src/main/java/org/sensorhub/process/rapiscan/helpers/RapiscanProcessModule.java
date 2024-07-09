@@ -21,19 +21,17 @@ import java.io.*;
 import java.util.Map;
 import java.util.UUID;
 
-public class RapiscanProcessImpl extends AbstractProcessModule<RapiscanProcessConfig> {
-
-    protected static final int MAX_ERRORS = 10;
+// Based on SMLProcessImpl
+public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcessConfig> {
 
     protected SMLUtils smlUtils;
-    // TODO make abstract Process Implementation to have wrapperProcess
     protected AggregateProcessImpl wrapperProcess;
     protected int errorCount = 0;
     protected boolean useThreads = true;
     String processUniqueID;
 
 
-    public RapiscanProcessImpl()
+    public RapiscanProcessModule()
     {
         wrapperProcess = new AggregateProcessImpl();
 
@@ -75,8 +73,6 @@ public class RapiscanProcessImpl extends AbstractProcessModule<RapiscanProcessCo
 
         AlarmRecorder process = new AlarmRecorder();
 
-        processHelper.addOutputList(process.getOutputList());
-
         String rapiscanUID = null;
 
         var module = getParentHub().getModuleRegistry().getModuleById(config.rapiscanDriverID);
@@ -88,19 +84,23 @@ public class RapiscanProcessImpl extends AbstractProcessModule<RapiscanProcessCo
         assert rapiscanUID != null;
         processHelper.addDataSource("source0", rapiscanUID);
 
-        process.getParameterList().getComponent(0).getData().setStringValue(config.databaseModuleID);
+        process.getParameterList().getComponent(AlarmRecorder.DATABASE_INPUT_PARAM).getData().setStringValue(config.databaseModuleID);
+        process.getParameterList().getComponent(AlarmRecorder.DRIVER_INPUT).getData().setStringValue(config.rapiscanDriverID);
+
+        process.setParentHub(getParentHub());
+        process.notifyParamChange();
+
+        processHelper.addOutputList(process.getOutputList());
 
         processHelper.addProcess("process0", process);
 
-        processHelper.addConnection("components/source0/outputs/Occupancy/"
-                ,"components/process0/inputs/occupancy");
+        processHelper.addConnection("components/source0/outputs/" + AlarmRecorder.OCCUPANCY_NAME
+                ,"components/process0/inputs/" + AlarmRecorder.OCCUPANCY_NAME);
 
-        processHelper.addConnection("components/process0/outputs/neutronEntry",
-                "outputs/neutronEntry");
-        processHelper.addConnection("components/process0/outputs/gammaEntry",
-                "outputs/gammaEntry");
-        processHelper.addConnection("components/process0/outputs/video1",
-                "outputs/video1");
+        for(AbstractSWEIdentifiable output : process.getOutputList()) {
+            DataComponent component = (DataComponent) output;
+            processHelper.addConnection("components/process0/outputs/" + component.getName(), "outputs/" + component.getName());
+        }
 
         try {
             ByteArrayOutputStream os = new ByteArrayOutputStream();

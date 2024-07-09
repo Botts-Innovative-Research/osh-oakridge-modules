@@ -18,7 +18,7 @@ import org.sensorhub.api.module.IModule;
 import org.sensorhub.api.module.ModuleConfig;
 import org.sensorhub.impl.processing.AbstractProcessProvider;
 import org.sensorhub.process.rapiscan.helpers.RapiscanProcessConfig;
-import org.sensorhub.process.rapiscan.helpers.RapiscanProcessImpl;
+import org.sensorhub.process.rapiscan.helpers.RapiscanProcessModule;
 
 public class ProcessDescriptors extends AbstractProcessProvider
 {
@@ -44,7 +44,7 @@ public class ProcessDescriptors extends AbstractProcessProvider
     @Override
     public Class<? extends IModule<?>> getModuleClass()
     {
-        return RapiscanProcessImpl.class;
+        return RapiscanProcessModule.class;
     }
 
 
