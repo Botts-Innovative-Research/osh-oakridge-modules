@@ -21,7 +21,7 @@ public class EMLHelper {
      * @return
      */
     public double getGammaThreshold() {
-
+        // TODO: Have as occupancy output
         // Get NSigma value from gamma setup 1 data record
         float nSigma = messageHandler.getGammaSetUp1Output().getLatestRecord().getFloatValue(6);
         // Get Algorithm value from gamma setup 2 data record
