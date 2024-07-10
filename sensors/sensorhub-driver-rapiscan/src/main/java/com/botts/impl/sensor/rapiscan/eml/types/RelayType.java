@@ -1,4 +1,4 @@
-package com.botts.impl.sensor.rapiscan.emlServices.types;
+package com.botts.impl.sensor.rapiscan.eml.types;
 
 public enum RelayType {
 

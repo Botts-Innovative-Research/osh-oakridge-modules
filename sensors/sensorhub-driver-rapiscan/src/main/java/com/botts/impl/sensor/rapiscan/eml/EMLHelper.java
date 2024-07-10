@@ -1,7 +1,7 @@
-package com.botts.impl.sensor.rapiscan.emlServices;
+package com.botts.impl.sensor.rapiscan.eml;
 
 import com.botts.impl.sensor.rapiscan.MessageHandler;
-import com.botts.impl.sensor.rapiscan.emlServices.types.AlgorithmType;
+import com.botts.impl.sensor.rapiscan.eml.types.AlgorithmType;
 
 import java.util.Arrays;
 import java.util.EnumSet;

@@ -1,4 +1,4 @@
-package com.botts.impl.sensor.rapiscan.emlServices;
+package com.botts.impl.sensor.rapiscan.eml;
 
 import com.botts.impl.sensor.rapiscan.NeutronOutput;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
@@ -8,14 +8,11 @@ import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vast.data.AbstractDataBlock;
 import org.vast.data.DataArrayImpl;
-import org.vast.data.DataBlockParallel;
 import org.vast.data.TextEncodingImpl;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
-import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 
 //TODO: Maybe use JAXB? socom/sensors/sensorhub-driver-tak
@@ -23,7 +20,6 @@ import org.xml.sax.SAXException;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.stream.XMLStreamReader;
 import java.io.*;
 import java.lang.Boolean;
 

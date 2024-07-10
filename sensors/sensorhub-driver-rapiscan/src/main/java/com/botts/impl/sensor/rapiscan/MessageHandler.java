@@ -56,7 +56,6 @@ public class MessageHandler {
                         reader = new CSVReader(new StringReader(msgLine));
                         csvList = reader.readAll();
                         csvLine = csvList.get(0);
-//                        System.out.println(csvLine[0]);
                         getMainCharDefinition(csvLine[0], csvLine);
                         System.out.println(msgLine);
 //                        System.out.println(this);

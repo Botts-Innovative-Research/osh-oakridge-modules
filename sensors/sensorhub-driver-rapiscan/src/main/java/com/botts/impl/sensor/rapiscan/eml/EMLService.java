@@ -1,11 +1,9 @@
-package com.botts.impl.sensor.rapiscan.emlServices;
+package com.botts.impl.sensor.rapiscan.eml;
 
 import com.botts.impl.sensor.rapiscan.MessageHandler;
 import org.xml.sax.SAXException;
-import org.xml.sax.XMLReader;
 
 import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.stream.XMLStreamReader;
 import java.io.IOException;
 
 

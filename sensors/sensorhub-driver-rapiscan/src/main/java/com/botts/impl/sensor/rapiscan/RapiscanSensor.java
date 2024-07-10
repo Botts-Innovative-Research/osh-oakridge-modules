@@ -16,8 +16,8 @@ package com.botts.impl.sensor.rapiscan;
 
 //import com.botts.impl.sensor.rapiscan.helpers.RapiscanActionList;
 //import com.botts.impl.sensor.rapiscan.helpers.RapiscanPreset;
-import com.botts.impl.sensor.rapiscan.emlServices.EMLOutput;
-import com.botts.impl.sensor.rapiscan.emlServices.EMLService;
+import com.botts.impl.sensor.rapiscan.eml.EMLOutput;
+import com.botts.impl.sensor.rapiscan.eml.EMLService;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.sensor.SensorException;
