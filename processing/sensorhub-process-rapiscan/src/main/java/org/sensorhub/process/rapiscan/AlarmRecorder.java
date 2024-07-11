@@ -33,7 +33,7 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
     Text driverInputParam;
     String inputDriverID;
     public static final String DRIVER_INPUT = "driverInput";
-    // TODO: Replace these with RADConstants once those are setup for rapiscan driver
+    // TODO: Possibly replace occupancy name with string from RADHelper
     public static final String OCCUPANCY_NAME = "occupancy";
     private final String gammaAlarmName;
     private final String neutronAlarmName;
