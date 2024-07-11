@@ -25,7 +25,8 @@ import java.lang.Boolean;
 
 public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
 
-    private static final String SENSOR_OUTPUT_NAME = "EML Ernie Analysis";
+    private static final String SENSOR_OUTPUT_NAME = "ERNIEAnalysis";
+    private static final String SENSOR_OUTPUT_LABEL = "EML ERNIE Analysis";
 
     private static final Logger logger = LoggerFactory.getLogger(NeutronOutput.class);
 
@@ -71,11 +72,14 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
     }
     DataRecord createDataRecord(){
         RADHelper radHelper = new RADHelper();
+
+        var samplingTime = radHelper.createPrecisionTimeStamp();
+
         return radHelper.createRecord()
-                .name("ERNIEAnalysis")
-                .label("ERNIE Analysis")
+                .name(getName())
+                .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("ERNIEAnalysis"))
-                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
+                .addField(samplingTime.getName(), samplingTime)
                 .addField("result", radHelper.createText()
                         .name("result")
                         .label("Result")

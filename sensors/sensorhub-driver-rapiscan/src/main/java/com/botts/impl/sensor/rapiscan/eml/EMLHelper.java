@@ -2,17 +2,17 @@ package com.botts.impl.sensor.rapiscan.eml;
 
 import com.botts.impl.sensor.rapiscan.MessageHandler;
 import com.botts.impl.sensor.rapiscan.eml.types.AlgorithmType;
+import net.opengis.swe.v20.Count;
+import net.opengis.swe.v20.Quantity;
+import net.opengis.swe.v20.Text;
+import org.sensorhub.impl.utils.rad.RADHelper;
 
 import java.util.Arrays;
 import java.util.EnumSet;
 
-public class EMLHelper {
+public class EMLHelper extends RADHelper {
 
-    MessageHandler messageHandler;
-
-    public EMLHelper(MessageHandler messageHandler) {
-        this.messageHandler = messageHandler;
-
+    public EMLHelper() {
 
     }
 
@@ -20,7 +20,7 @@ public class EMLHelper {
      * Calculation of gamma threshold for VM250 RPM Gamma Alarm
      * @return
      */
-    public double getGammaThreshold() {
+    public double getGammaThreshold(MessageHandler messageHandler) {
         // TODO: Have as occupancy output
         // Get NSigma value from gamma setup 1 data record
         float nSigma = messageHandler.getGammaSetUp1Output().getLatestRecord().getFloatValue(6);
@@ -53,6 +53,14 @@ public class EMLHelper {
         return sumGB + (nSigma * sqrtSumGB);
     }
 
-
+    //TODO ???
+    // Helper functions for EMLOutput
+    public Text createResult() {
+        return createText()
+                .name("result")
+                .label("Result")
+                .definition(RADHelper.getRadUri("result"))
+                .build();
+    }
 
 }
