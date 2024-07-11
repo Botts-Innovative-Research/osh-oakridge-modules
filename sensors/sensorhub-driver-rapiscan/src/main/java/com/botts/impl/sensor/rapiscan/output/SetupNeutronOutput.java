@@ -1,5 +1,6 @@
-package com.botts.impl.sensor.rapiscan;
+package com.botts.impl.sensor.rapiscan.output;
 
+import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -11,40 +12,46 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
-public class NeutronSetupOutput extends AbstractSensorOutput<RapiscanSensor> {
-    private static final String SENSOR_OUTPUT_NAME = "Neutron Setup 1";
+public class SetupNeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
 
-    private static final Logger logger = LoggerFactory.getLogger(NeutronSetupOutput.class);
+    public static final String SENSOR_OUTPUT_NAME = "setupNeutron1";
+    public static final String SENSOR_OUTPUT_LABEL = "Setup Neutron 1";
+
+    private static final Logger logger = LoggerFactory.getLogger(SetupNeutronOutput.class);
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
 
-    protected NeutronSetupOutput(RapiscanSensor parentSensor) {
+    public SetupNeutronOutput(RapiscanSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
-    protected void init(){
-        dataStruct = createDataRecord();
-        dataEncoding = new TextEncodingImpl(",", "\n");
-    }
-    DataRecord createDataRecord(){
+    public void init(){
         RADHelper radHelper = new RADHelper();
 
-        DataRecord recordBuilder = radHelper.createRecord()
+        var samplingTime = radHelper.createPrecisionTimeStamp();
+        var laneID = radHelper.createLaneID();
+        var highBGFault = radHelper.createHighBackgroundFault();
+        var maxIntervals = radHelper.createMaxIntervals();
+        var alphaValue = radHelper.createAlphaValue();
+        var zMaxValue = radHelper.createZMaxValue();
+        var sequentialIntervals = radHelper.createSequentialIntervals();
+
+        dataStruct = radHelper.createRecord()
                 .name(getName())
-                .label("Setup Neutron 1")
+                .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("setup-neutron-1"))
-                .addField("TimeStamp", radHelper.createPrecisionTimeStamp())
-                .addField("LaneName", radHelper.createLaneId())
-                .addField("high-background-fault", radHelper.createHighBackgroundFault())
-                .addField("maximum-intervals", radHelper.createMaxIntervals())
-                .addField("alpha-value", radHelper.createAlphaValue())
-                .addField("zmax-value", radHelper.createZmaxValue())
-                .addField("sequential-intervals", radHelper.createSequentialIntervals())
+                .addField(samplingTime.getName(), samplingTime)
+                .addField(laneID.getName(), laneID)
+                .addField(highBGFault.getName(), highBGFault)
+                .addField(maxIntervals.getName(), maxIntervals)
+                .addField(alphaValue.getName(), alphaValue)
+                .addField(zMaxValue.getName(), zMaxValue)
+                .addField(sequentialIntervals.getName(), sequentialIntervals)
                 .build();
 
-        return recordBuilder;
+        dataEncoding = new TextEncodingImpl(",", "\n");
     }
 
     public void onNewMessage(String[] csvString){
@@ -58,7 +65,7 @@ public class NeutronSetupOutput extends AbstractSensorOutput<RapiscanSensor> {
         }
         int index =0;
         dataBlock.setLongValue(index++,System.currentTimeMillis()/1000);
-        dataBlock.setStringValue(index++, parent.laneName);
+        dataBlock.setStringValue(index++, parent.laneID);
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[1])); //high bg
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[2])); //max intervals
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[3])); //alpha val
@@ -66,7 +73,7 @@ public class NeutronSetupOutput extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[5])); //sequential intervals
 
         latestRecord = dataBlock;
-        eventHandler.publish(new DataEvent(System.currentTimeMillis(), NeutronSetupOutput.this, dataBlock));
+        eventHandler.publish(new DataEvent(System.currentTimeMillis(), SetupNeutronOutput.this, dataBlock));
 
     }
     @Override

@@ -1,5 +1,6 @@
-package com.botts.impl.sensor.rapiscan;
+package com.botts.impl.sensor.rapiscan.output;
 
+import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -11,41 +12,45 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
-public class GammaSetup3Output extends AbstractSensorOutput<RapiscanSensor> {
-    private static final String SENSOR_OUTPUT_NAME = "Gamma Setup 3";
+public class SetupGamma3Output extends AbstractSensorOutput<RapiscanSensor> {
 
-    private static final Logger logger = LoggerFactory.getLogger(GammaSetup3Output.class);
+    public static final String SENSOR_OUTPUT_NAME = "setupGamma3";
+    public static final String SENSOR_OUTPUT_LABEL = "Setup Gamma 3";
+
+    private static final Logger logger = LoggerFactory.getLogger(SetupGamma3Output.class);
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
 
-    protected GammaSetup3Output(RapiscanSensor parentSensor) {
+    public SetupGamma3Output(RapiscanSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
-    protected void init(){
-        dataStruct = createDataRecord();
-        dataEncoding = new TextEncodingImpl(",", "\n");
-    }
-    DataRecord createDataRecord(){
+    public void init(){
         RADHelper radHelper = new RADHelper();
 
-        DataRecord recordBuilder = radHelper.createRecord()
+        var samplingTime = radHelper.createPrecisionTimeStamp();
+        var laneID = radHelper.createLaneID();
+        var auxLLD = radHelper.createAuxiliaryLowerDiscriminator();
+        var auxULD = radHelper.createAuxiliaryUpperDiscriminator();
+        var backgroundTime = radHelper.createBackgroundTime();
+        var backgroundNSigma = radHelper.createBackgroundNSigma();
+        var firmwareVersion = radHelper.createFirmwareVersion();
+
+        dataStruct = radHelper.createRecord()
                 .name(getName())
-                .label("Setup Gamma 3")
+                .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("setup-gamma-3"))
-                .addField("TimeStamp", radHelper.createPrecisionTimeStamp())
-                .addField("LaneName", radHelper.createLaneId())
-                .addField("auxiliary-lower-level-discriminator", radHelper.createAuxiliaryLowerDiscriminator())
-                .addField("auxiliary-upper-level-discriminator", radHelper.createAuxiliaryUpperDiscriminator())
-                .addField("background-time", radHelper.createBackgroundTime())
-                .addField("background-nsigma", radHelper.createBackgroundNSigma())
-                .addField("version-firmware", radHelper.createFirmwareVersion())
+                .addField(samplingTime.getName(), samplingTime)
+                .addField(laneID.getName(), laneID)
+                .addField(auxLLD.getName(), auxLLD)
+                .addField(auxULD.getName(), auxULD)
+                .addField(backgroundTime.getName(), backgroundTime)
+                .addField(backgroundNSigma.getName(), backgroundNSigma)
+                .addField(firmwareVersion.getName(), firmwareVersion)
                 .build();
-
-
-        return recordBuilder;
+        dataEncoding = new TextEncodingImpl(",", "\n");
     }
 
     public void onNewMessage(String[] csvString){
@@ -59,7 +64,7 @@ public class GammaSetup3Output extends AbstractSensorOutput<RapiscanSensor> {
         }
         int index =0;
         dataBlock.setLongValue(index++,System.currentTimeMillis()/1000);
-        dataBlock.setStringValue(index++, parent.laneName);
+        dataBlock.setStringValue(index++, parent.laneID);
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[1])); //low discrim
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[2])); //high discrim
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[3])); //background time
@@ -67,7 +72,7 @@ public class GammaSetup3Output extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setStringValue(index++, csvString[5]); //version of firmware
 
         latestRecord = dataBlock;
-        eventHandler.publish(new DataEvent(System.currentTimeMillis(), GammaSetup3Output.this, dataBlock));
+        eventHandler.publish(new DataEvent(System.currentTimeMillis(), SetupGamma3Output.this, dataBlock));
 
     }
     @Override

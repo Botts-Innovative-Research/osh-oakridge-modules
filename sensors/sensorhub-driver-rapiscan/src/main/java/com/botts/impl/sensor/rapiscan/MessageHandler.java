@@ -1,6 +1,7 @@
 package com.botts.impl.sensor.rapiscan;
 
 //import com.botts.impl.sensor.rapiscan.helpers.RapiscanPreset;
+import com.botts.impl.sensor.rapiscan.output.*;
 import com.opencsv.CSVReader;
 
 import java.io.BufferedReader;
@@ -28,10 +29,10 @@ public class MessageHandler {
     TamperOutput tamperOutput;
     SpeedOutput speedOutput;
 
-    GammaSetup1Output gammaSetup1Output;
-    GammaSetup2Output gammaSetup2Output;
-    GammaSetup3Output gammaSetup3Output;
-    NeutronSetupOutput neutronSetupOutput;
+    SetupGamma1Output setupGamma1Output;
+    SetupGamma2Output setupGamma2Output;
+    SetupGamma3Output setupGamma3Output;
+    SetupNeutronOutput setupNeutronOutput;
 
 
     final static String ALARM = "Alarm";
@@ -75,17 +76,17 @@ public class MessageHandler {
     });
 
 
-    public MessageHandler(InputStream msgIn, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, TamperOutput tamperOutput, SpeedOutput speedOutput, GammaSetup1Output gammaSetup1Output, GammaSetup2Output gammaSetup2Output, GammaSetup3Output gammaSetup3Output, NeutronSetupOutput neutronSetupOutput) {
+    public MessageHandler(InputStream msgIn, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, TamperOutput tamperOutput, SpeedOutput speedOutput, SetupGamma1Output setupGamma1Output, SetupGamma2Output setupGamma2Output, SetupGamma3Output setupGamma3Output, SetupNeutronOutput setupNeutronOutput) {
         this.msgIn = msgIn;
         this.gammaOutput = gammaOutput;
         this.neutronOutput = neutronOutput;
         this.occupancyOutput = occupancyOutput;
         this.tamperOutput = tamperOutput;
         this.speedOutput = speedOutput;
-        this.gammaSetup1Output = gammaSetup1Output;
-        this.gammaSetup2Output = gammaSetup2Output;
-        this.gammaSetup3Output = gammaSetup3Output;
-        this.neutronSetupOutput = neutronSetupOutput;
+        this.setupGamma1Output = setupGamma1Output;
+        this.setupGamma2Output = setupGamma2Output;
+        this.setupGamma3Output = setupGamma3Output;
+        this.setupNeutronOutput = setupNeutronOutput;
 
         this.messageReader.start();
     }
@@ -176,16 +177,16 @@ public class MessageHandler {
                 break;
 
             case "SG1":
-                gammaSetup1Output.onNewMessage(csvLine);
+                setupGamma1Output.onNewMessage(csvLine);
                 break;
             case "SG2":
-                gammaSetup2Output.onNewMessage(csvLine);
+                setupGamma2Output.onNewMessage(csvLine);
                 break;
             case "SG3":
-                gammaSetup3Output.onNewMessage(csvLine);
+                setupGamma3Output.onNewMessage(csvLine);
                 break;
             case "SN1":
-                neutronSetupOutput.onNewMessage(csvLine);
+                setupNeutronOutput.onNewMessage(csvLine);
                 break;
             case "SN2":
                 System.out.println("SN2 no output");
@@ -199,9 +200,9 @@ public class MessageHandler {
     public OccupancyOutput getOccupancyOutput() { return this.occupancyOutput; }
     public TamperOutput getTamperOutput() { return this.tamperOutput; }
     public SpeedOutput getSpeedOutput() { return this.speedOutput; }
-    public GammaSetup1Output getGammaSetUp1Output() { return this.gammaSetup1Output; }
-    public GammaSetup2Output getGammaSetUp2Output() { return this.gammaSetup2Output; }
-    public GammaSetup3Output getGammaSetUp3Output() { return this.gammaSetup3Output; }
-    public NeutronSetupOutput getNeutronSetupOutput() { return this.neutronSetupOutput; }
+    public SetupGamma1Output getGammaSetUp1Output() { return this.setupGamma1Output; }
+    public SetupGamma2Output getGammaSetUp2Output() { return this.setupGamma2Output; }
+    public SetupGamma3Output getGammaSetUp3Output() { return this.setupGamma3Output; }
+    public SetupNeutronOutput getNeutronSetupOutput() { return this.setupNeutronOutput; }
 
 }

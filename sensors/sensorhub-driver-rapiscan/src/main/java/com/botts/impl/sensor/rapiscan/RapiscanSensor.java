@@ -13,11 +13,9 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.rapiscan;
 
-
-//import com.botts.impl.sensor.rapiscan.helpers.RapiscanActionList;
-//import com.botts.impl.sensor.rapiscan.helpers.RapiscanPreset;
 import com.botts.impl.sensor.rapiscan.eml.EMLOutput;
 import com.botts.impl.sensor.rapiscan.eml.EMLService;
+import com.botts.impl.sensor.rapiscan.output.*;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.sensor.SensorException;
@@ -47,11 +45,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     private static final Logger logger = LoggerFactory.getLogger(RapiscanSensor.class);
 
     ICommProvider<?> commProvider;
-
-//    ArrayList<ICommProvider> commProviderList= new ArrayList<>();
-//    ArrayList<MessageHandler>messageHandlerList = new ArrayList<>();
-//    static ArrayList<InputStream> bufferedInputStreamsList = new ArrayList<InputStream>();
-
     EMLOutput emlOutput;
     GammaOutput gammaOutput;
     NeutronOutput neutronOutput;
@@ -59,19 +52,14 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     LocationOutput locationOutput;
     TamperOutput tamperOutput;
     SpeedOutput speedOutput;
-    GammaSetup1Output gammaSetUp1Output;
-    GammaSetup2Output gammaSetUp2Output;
-    GammaSetup3Output gammaSetup3Output;
-    NeutronSetupOutput neutronSetupOutput;
+    SetupGamma1Output setUpGamma1Output;
+    SetupGamma2Output setUpGamma2Output;
+    SetupGamma3Output setupGamma3Output;
+    SetupNeutronOutput setupNeutronOutput;
     InputStream msgIn;
 
     Timer t;
-
-    //configs
-//    int neutronCount;
-//    int gammaCount;
-    String laneName;
-//    RapiscanLayerConfig rapiscanLayerConfig;
+    public String laneID;
 
 
     @Override
@@ -80,20 +68,16 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         super.doInit();
 
         // Generate identifiers
-        generateUniqueID("urn:osh:sensor:rapiscan:", String.valueOf(config.serialNumber));
-        generateXmlID("Rapiscan", String.valueOf(config.serialNumber));
+        generateUniqueID("urn:osh:sensor:rapiscan:", config.serialNumber);
+        generateXmlID("Rapiscan", config.serialNumber);
 
-//        rapiscanLayerConfig = config.rapiscanLayerConfigs;
-//        neutronCount = config.neutronCount;
-//        gammaCount = config.gammaCount;
+        laneID = config.laneID;
 
-
-        laneName = config.laneName;
-
+        // TODO: EML integration
         if(config.isSupplementalAlgorithm){
             //do EML stuff
             //calculate the thresholds if this is true for eml service
-            calculateThreshold();
+//            calculateThreshold();
             try {
                 createEMLOutputs();
                 startEMLService();
@@ -110,13 +94,10 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         createOutputs();
     }
 
-    public void calculateThreshold(){
-
-    }
     public void startEMLService() throws ParserConfigurationException, IOException, SAXException {
         EMLService emlService = new EMLService(emlOutput, messageHandler);
-
     }
+
     public void createEMLOutputs(){
         emlOutput = new EMLOutput(this);
         addOutput(emlOutput, false);
@@ -148,21 +129,21 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         addOutput(speedOutput, false);
         speedOutput.init();
 
-        gammaSetUp1Output = new GammaSetup1Output(this);
-        addOutput(gammaSetUp1Output, false);
-        gammaSetUp1Output.init();
+        setUpGamma1Output = new SetupGamma1Output(this);
+        addOutput(setUpGamma1Output, false);
+        setUpGamma1Output.init();
 
-        gammaSetUp2Output = new GammaSetup2Output(this);
-        addOutput(gammaSetUp2Output, false);
-        gammaSetUp2Output.init();
+        setUpGamma2Output = new SetupGamma2Output(this);
+        addOutput(setUpGamma2Output, false);
+        setUpGamma2Output.init();
 
-        gammaSetup3Output = new GammaSetup3Output(this);
-        addOutput(gammaSetup3Output, false);
-        gammaSetup3Output.init();
+        setupGamma3Output = new SetupGamma3Output(this);
+        addOutput(setupGamma3Output, false);
+        setupGamma3Output.init();
 
-        neutronSetupOutput = new NeutronSetupOutput(this);
-        addOutput(neutronSetupOutput, false);
-        neutronSetupOutput.init();
+        setupNeutronOutput = new SetupNeutronOutput(this);
+        addOutput(setupNeutronOutput, false);
+        setupNeutronOutput.init();
 
     }
 
@@ -198,7 +179,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
             try {
 //                for (ICommProvider<?> commProvider : commProviderList) {
                     msgIn = new BufferedInputStream(commProvider.getInputStream());
-                    messageHandler = new MessageHandler(msgIn, gammaOutput, neutronOutput, occupancyOutput, tamperOutput, speedOutput, gammaSetUp1Output, gammaSetUp2Output, gammaSetup3Output, neutronSetupOutput);
+                    messageHandler = new MessageHandler(msgIn, gammaOutput, neutronOutput, occupancyOutput, tamperOutput, speedOutput, setUpGamma1Output, setUpGamma2Output, setupGamma3Output, setupNeutronOutput);
 
 //                    bufferedInputStreamsList.add(msgIn);
 //                    messageHandlerList.add(messageHandler);

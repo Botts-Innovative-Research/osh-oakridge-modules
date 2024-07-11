@@ -1,5 +1,6 @@
-package com.botts.impl.sensor.rapiscan;
+package com.botts.impl.sensor.rapiscan.output;
 
+import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -10,11 +11,11 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
-import org.vast.swe.SWEBuilders;
 
 public class SpeedOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
-    private static final String SENSOR_OUTPUT_NAME = "Speed";
+    public static final String SENSOR_OUTPUT_NAME = "speed";
+    public static final String SENSOR_OUTPUT_LABEL = "Speed";
 
     private static final Logger logger = LoggerFactory.getLogger(SpeedOutput.class);
 
@@ -26,24 +27,28 @@ public class SpeedOutput  extends AbstractSensorOutput<RapiscanSensor> {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
-    protected void init(){
+    public void init(){
         RADHelper radHelper = new RADHelper();
 
-        DataRecord recordBuilder = radHelper.createRecord()
+        var samplingTime = radHelper.createPrecisionTimeStamp();
+        var laneID = radHelper.createLaneID();
+        var speedTime = radHelper.createSpeedTimeStamp();
+        var speedMPH = radHelper.createSpeedMph();
+        var speedKPH = radHelper.createSpeedKph();
+
+        dataStruct = radHelper.createRecord()
                 .name(getName())
-                .label("Speed")
+                .label(SENSOR_OUTPUT_LABEL)
                 .updatable(true)
                 .definition(RADHelper.getRadUri("speed"))
-                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-                .addField("LaneName", radHelper.createLaneId())
-                .addField("speed-time", radHelper.createSpeedTimeStamp())
-                .addField("speed-mph", radHelper.createSpeedMph())
-                .addField("speed-kph", radHelper.createSpeedKph())
+                .addField(samplingTime.getName(), samplingTime)
+                .addField(laneID.getName(), laneID)
+                .addField(speedTime.getName(), speedTime)
+                .addField(speedMPH.getName(), speedMPH)
+                .addField(speedKPH.getName(), speedKPH)
                 .build();
 
-        dataStruct =recordBuilder;
         dataEncoding = new TextEncodingImpl(",", "\n");
-
     }
 
     public void onNewMessage(String[] csvString){
@@ -59,7 +64,7 @@ public class SpeedOutput  extends AbstractSensorOutput<RapiscanSensor> {
         int index = 0;
 
         dataBlock.setLongValue(index++,System.currentTimeMillis()/1000);
-        dataBlock.setStringValue(index++, parent.laneName);
+        dataBlock.setStringValue(index++, parent.laneID);
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[1]));
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[2]));
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[3]));

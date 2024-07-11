@@ -1,6 +1,6 @@
 package com.botts.impl.sensor.rapiscan.eml;
 
-import com.botts.impl.sensor.rapiscan.NeutronOutput;
+import com.botts.impl.sensor.rapiscan.output.NeutronOutput;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.data.DataEvent;

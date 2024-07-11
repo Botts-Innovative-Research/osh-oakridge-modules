@@ -1,5 +1,6 @@
-package com.botts.impl.sensor.rapiscan;
+package com.botts.impl.sensor.rapiscan.output;
 
+import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -11,42 +12,48 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
-public class GammaSetup1Output extends AbstractSensorOutput<RapiscanSensor> {
+public class SetupGamma1Output extends AbstractSensorOutput<RapiscanSensor> {
 
-    private static final String SENSOR_OUTPUT_NAME = "Gamma Setup 1";
+    private static final String SENSOR_OUTPUT_NAME = "setupGamma1";
+    private static final String SENSOR_OUTPUT_LABEL = "Setup Gamma 1";
 
-    private static final Logger logger = LoggerFactory.getLogger(GammaSetup1Output.class);
+    private static final Logger logger = LoggerFactory.getLogger(SetupGamma1Output.class);
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
 
-    protected GammaSetup1Output(RapiscanSensor parentSensor) {
+    public SetupGamma1Output(RapiscanSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
-    protected void init(){
-        dataStruct = createDataRecord();
-        dataEncoding = new TextEncodingImpl(",", "\n");
-    }
-
-    DataRecord createDataRecord(){
+    public void init(){
         RADHelper radHelper = new RADHelper();
 
-        DataRecord recordBuilder = radHelper.createRecord()
+        var samplingTime = radHelper.createPrecisionTimeStamp();
+        var laneID = radHelper.createLaneID();
+        var highBGFault = radHelper.createHighBackgroundFault();
+        var lowBGFault = radHelper.createLowBackgroundFault();
+        var intervals = radHelper.createIntervals();
+        var holdin = radHelper.createOccupancyHoldin();
+        var nSigma = radHelper.createNSigma();
+        var placeholder = radHelper.createPlaceholder();
+
+        dataStruct = radHelper.createRecord()
                 .name(getName())
-                .label("Setup Gamma 1")
+                .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("setup-gamma-1"))
-                .addField("TimeStamp", radHelper.createPrecisionTimeStamp())
-                .addField("LaneName", radHelper.createLaneId())
-                .addField("high-background-fault", radHelper.createHighBackgroundFault())
-                .addField("low-background-fault", radHelper.createLowBackgroundFault())
-                .addField("Intervals", radHelper.createIntervals())
-                .addField("occupancy-holdin", radHelper.createOccupancyHoldin())
-                .addField("NSigma", radHelper.createNSigma())
-                .addField("placeholder", radHelper.createPlaceholder())
+                .addField(samplingTime.getName(), samplingTime)
+                .addField(laneID.getName(), laneID)
+                .addField(highBGFault.getName(), highBGFault)
+                .addField(lowBGFault.getName(), lowBGFault)
+                .addField(intervals.getName(), intervals)
+                .addField(holdin.getName(), holdin)
+                .addField(nSigma.getName(), nSigma)
+                .addField(placeholder.getName(), placeholder)
                 .build();
-        return recordBuilder;
+
+        dataEncoding = new TextEncodingImpl(",", "\n");
     }
 
     public void onNewMessage(String[] csvString){
@@ -60,7 +67,7 @@ public class GammaSetup1Output extends AbstractSensorOutput<RapiscanSensor> {
         }
         int index =0;
         dataBlock.setLongValue(index++,System.currentTimeMillis()/1000);
-        dataBlock.setStringValue(index++, parent.laneName);
+        dataBlock.setStringValue(index++, parent.laneID);
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[1])); //high bg
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[2])); // low bg
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[3])); //intervals
@@ -69,7 +76,7 @@ public class GammaSetup1Output extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setStringValue(index++, csvString[6]); //placeholder
 
         latestRecord = dataBlock;
-        eventHandler.publish(new DataEvent(System.currentTimeMillis(), GammaSetup1Output.this, dataBlock));
+        eventHandler.publish(new DataEvent(System.currentTimeMillis(), SetupGamma1Output.this, dataBlock));
 
     }
     @Override

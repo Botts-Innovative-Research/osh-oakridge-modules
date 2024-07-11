@@ -1,5 +1,6 @@
-package com.botts.impl.sensor.rapiscan;
+package com.botts.impl.sensor.rapiscan.output;
 
+import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -14,7 +15,8 @@ import org.vast.data.TextEncodingImpl;
 
 
 public class LocationOutput  extends AbstractSensorOutput<RapiscanSensor> {
-    private static final String SENSOR_OUTPUT_NAME = "Location";
+    private static final String SENSOR_OUTPUT_NAME = "location";
+    public static final String SENSOR_OUTPUT_LABEL = "Location";
 
     private static final Logger logger = LoggerFactory.getLogger(LocationOutput.class);
 
@@ -22,19 +24,22 @@ public class LocationOutput  extends AbstractSensorOutput<RapiscanSensor> {
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
 
-    LocationOutput(RapiscanSensor rapiscanSensor){
+    public LocationOutput(RapiscanSensor rapiscanSensor){
         super(SENSOR_OUTPUT_NAME, rapiscanSensor);
     }
 
-    protected void init() {
+    public void init() {
         RADHelper radHelper = new RADHelper();
+
+        var samplingTime = radHelper.createPrecisionTimeStamp();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
-                .label("Location")
+                .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("location-output"))
-                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-                .addField("Sensor Location", radHelper.createLocationVectorLLA())
+                .addField(samplingTime.getName(), samplingTime)
+                .addField("sensorLocation", radHelper.createLocationVectorLLA()
+                        .label("Sensor Location"))
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");

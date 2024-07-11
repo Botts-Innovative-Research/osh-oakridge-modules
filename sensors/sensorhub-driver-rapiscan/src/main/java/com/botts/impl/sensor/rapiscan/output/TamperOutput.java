@@ -1,5 +1,6 @@
-package com.botts.impl.sensor.rapiscan;
+package com.botts.impl.sensor.rapiscan.output;
 
+import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -10,13 +11,11 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
-import org.vast.swe.SWEBuilders;
-
-import javax.xml.crypto.Data;
 
 public class TamperOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
-    private static final String SENSOR_OUTPUT_NAME = "Tamper";
+    public static final String SENSOR_OUTPUT_NAME = "tamper";
+    public static final String SENSOR_OUTPUT_LABEL = "Tamper";
 
     private static final Logger logger = LoggerFactory.getLogger(TamperOutput.class);
 
@@ -28,22 +27,24 @@ public class TamperOutput  extends AbstractSensorOutput<RapiscanSensor> {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
-    protected void init(){
+    public void init(){
         RADHelper radHelper = new RADHelper();
 
-        DataRecord recordBuilder = radHelper.createRecord()
+        var samplingTime = radHelper.createPrecisionTimeStamp();
+        var laneID = radHelper.createLaneID();
+        var tamperState = radHelper.createTamperStatus();
+
+        dataStruct = radHelper.createRecord()
                 .name(getName())
-                .label("Tamper")
+                .label(SENSOR_OUTPUT_LABEL)
                 .updatable(true)
                 .definition(RADHelper.getRadUri("tamper"))
-                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-                .addField("LaneName", radHelper.createLaneId())
-                .addField("TamperState", radHelper.createTamperStatus())
+                .addField(samplingTime.getName(), samplingTime)
+                .addField(laneID.getName(), laneID)
+                .addField(tamperState.getName(), tamperState)
                 .build();
 
-        dataStruct =recordBuilder;
         dataEncoding = new TextEncodingImpl(",", "\n");
-
     }
 
     public void onNewMessage(boolean tamperState){
@@ -59,7 +60,7 @@ public class TamperOutput  extends AbstractSensorOutput<RapiscanSensor> {
         int index = 0;
 
         dataBlock.setLongValue(index++, System.currentTimeMillis()/1000);
-        dataBlock.setStringValue(index++, parent.laneName);
+        dataBlock.setStringValue(index++, parent.laneID);
         dataBlock.setBooleanValue(index++, tamperState);
 
         //dataBlock.updateAtomCount();
