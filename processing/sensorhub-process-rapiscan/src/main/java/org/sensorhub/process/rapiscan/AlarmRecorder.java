@@ -34,17 +34,23 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
     String inputDriverID;
     public static final String DRIVER_INPUT = "driverInput";
     // TODO: Replace these with RADConstants once those are setup for rapiscan driver
-    public static final String OCCUPANCY_NAME = "Occupancy";
-    private static final String GAMMA_ALARM_NAME = "GammaAlarm";
-    private static final String NEUTRON_ALARM_NAME = "NeutronAlarm";
-    private static final String START_TIME_NAME = "StartTime";
-    private static final String END_TIME_NAME = "EndTime";
+    public static final String OCCUPANCY_NAME = "occupancy";
+    private final String gammaAlarmName;
+    private final String neutronAlarmName;
+    private final String startTimeName;
+    private final String endTimeName;
     private final RADHelper fac;
 
     public AlarmRecorder() {
         super(INFO);
 
         fac = new RADHelper();
+
+
+        gammaAlarmName = fac.createGammaAlarm().getName();
+        neutronAlarmName = fac.createNeutronAlarm().getName();
+        startTimeName = fac.createOccupancyStartTime().getName();
+        endTimeName = fac.createOccupancyEndTime().getName();
 
         paramData.add(DRIVER_INPUT, driverInputParam = fac.createText()
                 .label("Rapiscan Driver Input")
@@ -135,8 +141,8 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
     private boolean isTriggered() {
         DataComponent occupancyInput = inputData.getComponent(OCCUPANCY_NAME);
 
-        DataComponent gammaAlarm = occupancyInput.getComponent(GAMMA_ALARM_NAME);
-        DataComponent neutronAlarm = occupancyInput.getComponent(NEUTRON_ALARM_NAME);
+        DataComponent gammaAlarm = occupancyInput.getComponent(gammaAlarmName);
+        DataComponent neutronAlarm = occupancyInput.getComponent(neutronAlarmName);
 
         if(gammaAlarm.getData().getBooleanValue() || neutronAlarm.getData().getBooleanValue()) {
             return true;
@@ -147,8 +153,8 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
     private List<IObsData> getPastData(String outputName) {
         DataComponent occupancyInput = inputData.getComponent(OCCUPANCY_NAME);
 
-        DataComponent startTime = occupancyInput.getComponent(START_TIME_NAME);
-        DataComponent endTime = occupancyInput.getComponent(END_TIME_NAME);
+        DataComponent startTime = occupancyInput.getComponent(startTimeName);
+        DataComponent endTime = occupancyInput.getComponent(endTimeName);
 
         long startFromUTC = startTime.getData().getLongValue();
         long endFromUTC = endTime.getData().getLongValue();

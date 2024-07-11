@@ -12,6 +12,7 @@ import org.sensorhub.api.event.IEventListener;
 import org.sensorhub.api.processing.IProcessModule;
 import org.sensorhub.api.processing.ProcessingException;
 import org.sensorhub.impl.event.BasicEventHandler;
+import org.sensorhub.process.rapiscan.RapiscanProcessModule;
 import org.vast.process.DataQueue;
 import org.vast.process.ProcessException;
 import org.vast.sensorML.SMLHelper;
@@ -59,7 +60,7 @@ public class RapiscanOutputInterface implements IStreamingDataInterface {
     };
 
 
-    protected RapiscanOutputInterface(RapiscanProcessModule parentProcess, AbstractSWEIdentifiable outputDescriptor) throws ProcessingException
+    public RapiscanOutputInterface(RapiscanProcessModule parentProcess, AbstractSWEIdentifiable outputDescriptor) throws ProcessingException
     {
         this.parentProcess = parentProcess;
         this.outputDef = SMLHelper.getIOComponent(outputDescriptor);

@@ -1,4 +1,4 @@
-package org.sensorhub.process.rapiscan.helpers;
+package org.sensorhub.process.rapiscan;
 
 import net.opengis.OgcPropertyList;
 import net.opengis.swe.v20.AbstractSWEIdentifiable;
@@ -10,7 +10,8 @@ import org.sensorhub.api.processing.ProcessingException;
 import org.sensorhub.api.sensor.ISensorModule;
 import org.sensorhub.api.utils.OshAsserts;
 import org.sensorhub.impl.processing.AbstractProcessModule;
-import org.sensorhub.process.rapiscan.AlarmRecorder;
+import org.sensorhub.process.rapiscan.helpers.ProcessHelper;
+import org.sensorhub.process.rapiscan.helpers.RapiscanOutputInterface;
 import org.vast.process.ProcessException;
 import org.vast.sensorML.AggregateProcessImpl;
 import org.vast.sensorML.SMLException;
@@ -69,7 +70,7 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
 
     public AggregateProcessImpl buildProcess() throws ProcessException, SensorHubException {
         ProcessHelper processHelper = new ProcessHelper();
-        processHelper.aggregateProcess.setUniqueIdentifier(processUniqueID);
+        processHelper.getAggregateProcess().setUniqueIdentifier(processUniqueID);
 
         AlarmRecorder process = new AlarmRecorder();
 
@@ -104,7 +105,7 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
 
         try {
             ByteArrayOutputStream os = new ByteArrayOutputStream();
-            smlUtils.writeProcess(os, processHelper.aggregateProcess, true);
+            smlUtils.writeProcess(os, processHelper.getAggregateProcess(), true);
             InputStream is = new ByteArrayInputStream(os.toByteArray());
             return (AggregateProcessImpl) smlUtils.readProcess(is);
         } catch (IOException e) {

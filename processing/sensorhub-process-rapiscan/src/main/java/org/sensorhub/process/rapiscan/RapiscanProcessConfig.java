@@ -1,4 +1,4 @@
-package org.sensorhub.process.rapiscan.helpers;
+package org.sensorhub.process.rapiscan;
 
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.database.IDatabase;

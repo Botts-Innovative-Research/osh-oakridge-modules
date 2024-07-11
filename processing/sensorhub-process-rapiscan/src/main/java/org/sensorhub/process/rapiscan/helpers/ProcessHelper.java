@@ -15,6 +15,7 @@ import java.io.OutputStream;
 import java.util.UUID;
 
 public class ProcessHelper extends SMLUtils {
+
     AggregateProcessImpl aggregateProcess;
     ReferenceImpl controlType;
     ReferenceImpl sourceType;
@@ -131,5 +132,14 @@ public class ProcessHelper extends SMLUtils {
      */
     public void addConnection(String source, String destination) {
         aggregateProcess.addConnection(new LinkImpl(source, destination));
+    }
+
+    /**
+     * The instance of this class' aggregate process
+     *
+     * @return Aggregate Process of process helper
+     */
+    public AggregateProcessImpl getAggregateProcess() {
+        return aggregateProcess;
     }
 }
