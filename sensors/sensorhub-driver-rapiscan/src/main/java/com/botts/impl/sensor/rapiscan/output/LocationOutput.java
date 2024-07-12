@@ -16,7 +16,7 @@ import org.vast.data.TextEncodingImpl;
 
 public class LocationOutput  extends AbstractSensorOutput<RapiscanSensor> {
     private static final String SENSOR_OUTPUT_NAME = "location";
-    public static final String SENSOR_OUTPUT_LABEL = "Location";
+    private static final String SENSOR_OUTPUT_LABEL = "Location";
 
     private static final Logger logger = LoggerFactory.getLogger(LocationOutput.class);
 

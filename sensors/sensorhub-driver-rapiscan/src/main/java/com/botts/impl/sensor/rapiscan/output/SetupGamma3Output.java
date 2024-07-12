@@ -14,8 +14,8 @@ import org.vast.data.TextEncodingImpl;
 
 public class SetupGamma3Output extends AbstractSensorOutput<RapiscanSensor> {
 
-    public static final String SENSOR_OUTPUT_NAME = "setupGamma3";
-    public static final String SENSOR_OUTPUT_LABEL = "Setup Gamma 3";
+    private static final String SENSOR_OUTPUT_NAME = "setupGamma3";
+    private static final String SENSOR_OUTPUT_LABEL = "Setup Gamma 3";
 
     private static final Logger logger = LoggerFactory.getLogger(SetupGamma3Output.class);
 

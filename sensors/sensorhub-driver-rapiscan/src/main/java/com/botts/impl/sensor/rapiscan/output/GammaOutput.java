@@ -14,8 +14,8 @@ import org.vast.data.TextEncodingImpl;
 
 public class GammaOutput extends AbstractSensorOutput<RapiscanSensor> {
 
-    public static final String SENSOR_OUTPUT_NAME = "gammaScan";
-    public static final String SENSOR_OUTPUT_LABEL = "Gamma Scan";
+    private static final String SENSOR_OUTPUT_NAME = "gammaScan";
+    private static final String SENSOR_OUTPUT_LABEL = "Gamma Scan";
 
     private static final Logger logger = LoggerFactory.getLogger(GammaOutput.class);
 

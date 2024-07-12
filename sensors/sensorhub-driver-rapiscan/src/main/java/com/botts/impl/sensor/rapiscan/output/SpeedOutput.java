@@ -14,8 +14,8 @@ import org.vast.data.TextEncodingImpl;
 
 public class SpeedOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
-    public static final String SENSOR_OUTPUT_NAME = "speed";
-    public static final String SENSOR_OUTPUT_LABEL = "Speed";
+    private static final String SENSOR_OUTPUT_NAME = "speed";
+    private static final String SENSOR_OUTPUT_LABEL = "Speed";
 
     private static final Logger logger = LoggerFactory.getLogger(SpeedOutput.class);
 

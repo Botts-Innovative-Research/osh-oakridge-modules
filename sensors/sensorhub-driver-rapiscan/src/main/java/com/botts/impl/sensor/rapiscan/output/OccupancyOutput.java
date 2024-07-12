@@ -14,8 +14,8 @@ import org.vast.data.TextEncodingImpl;
 
 public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
-    public static final String SENSOR_OUTPUT_NAME = "occupancy";
-    public static final String SENSOR_OUTPUT_LABEL = "Occupancy";
+    private static final String SENSOR_OUTPUT_NAME = "occupancy";
+    private static final String SENSOR_OUTPUT_LABEL = "Occupancy";
 
     private static final Logger logger = LoggerFactory.getLogger(OccupancyOutput.class);
 

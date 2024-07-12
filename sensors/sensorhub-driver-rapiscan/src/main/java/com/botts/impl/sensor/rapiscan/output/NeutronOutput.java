@@ -14,8 +14,8 @@ import org.slf4j.LoggerFactory;
 
 public class NeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
 
-    public static final String SENSOR_OUTPUT_NAME = "neutronScan";
-    public static final String SENSOR_OUTPUT_LABEL = "Neutron Scan";
+    private static final String SENSOR_OUTPUT_NAME = "neutronScan";
+    private static final String SENSOR_OUTPUT_LABEL = "Neutron Scan";
 
     private static final Logger logger = LoggerFactory.getLogger(NeutronOutput.class);
 

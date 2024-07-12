@@ -133,6 +133,16 @@ public class RADHelper extends GeoPosHelper {
                 .description("formula determines the number of counts above background that will trigger a radiation alarm")
                 .build();
     }
+
+    public Quantity createThreshold() {
+        return createQuantity()
+                .name("threshold")
+                .label("Threshold")
+                .definition(getRadUri("threshold"))
+                .description("Calculated threshold for an alarm")
+                .build();
+    }
+
     public Quantity createZMaxValue(){
         return createQuantity()
                 .name("zMaxValue")
