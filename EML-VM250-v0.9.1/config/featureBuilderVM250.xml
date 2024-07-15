@@ -1,0 +1,462 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<featureBuilder xmlns="http://ernie.llnl.gov/tools"
+    xmlns:ernie="http://ernie.llnl.gov"
+    xmlns:ernie-vm250="http://ernie.llnl.gov/vm250"
+    xmlns:util="http://utility.llnl.gov"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://ernie.llnl.gov http://ernie.llnl.gov/schema/ernie.xsd
+                        http://ernie.llnl.gov/vm250 http://ernie.llnl.gov/vm250/schema/ernie-vm250.xsd
+                        http://ernie.llnl.gov/tools http://ernie.llnl.gov/tools/schema/ernie-tools.xsd">
+  <imports>
+    <!-- Pull in the large resources -->
+    <ernie-vm250:analysis extern="vm250Analysis.xml" id="vm250Analysis"/>
+    <ernie-vm250:recordDatabase extern="vm250RecordDatabase.xml" id="vm250RecordDatabase"/>
+    <ernie-vm250:recordManipulator extern="vm250RecordManipulator.xml" id="vm250RecordManipulator"/>
+  </imports>
+  <defines>
+    <util:integer id="records">10000</util:integer>
+    <util:integer id="SOCrecords">100000</util:integer>
+
+    <featureDatabase id="vm250FeatureDatabase">
+      <connection>jdbc:h2:test-vm250;DATABASE_TO_UPPER=FALSE</connection>
+    </featureDatabase>
+
+    <manipulationGenerator id="source.training.NORM">
+      <!-- <sourceList extern="vm250/training-norm-extracted.txt" /> -->
+      <sourceList extern="vm250/training-norm.txt" />
+      <where>1</where>
+      <distributed>1</distributed>
+      <label>NORM</label>
+      <disableAnisotropy/>
+      <conditions>
+        <minimumGrossSNR limit="7"/>
+      </conditions>
+      <intensity>4000 20000</intensity>
+    </manipulationGenerator>
+
+    <manipulationGenerator id="source.training.Fissile">
+      <sourceList extern="vm250/training-fissile.txt" />
+      <where>1</where>
+      <label>Fissile</label>
+      <anywhereProbability>0.2</anywhereProbability>
+      <conditions>
+        <minimumInjectedSNR limit="8"/>
+      </conditions>
+      <intensity>2000 80000</intensity>
+    </manipulationGenerator>
+
+    <manipulationGenerator id="source.test.Fissile">
+      <sourceList extern="vm250/testing-fissile.txt" />
+      <where>1</where>
+      <label>Fissile</label>
+      <anywhereProbability>0.2</anywhereProbability>
+      <conditions>
+        <minimumInjectedSNR limit="8"/>
+        <maximumInjectedSNR limit="80"/>
+      </conditions>
+      <intensity>1 1</intensity>
+    </manipulationGenerator>
+
+    <manipulationGenerator id="source.training.Medical">
+      <sourceList extern="vm250/training-medical.txt" />
+      <where>2</where>
+      <label>Medical</label>
+      <passengerSideProbability>0.5</passengerSideProbability>
+      <conditions>
+        <minimumInjectedSNR limit="8"/>
+      </conditions>
+      <intensity>450 30000</intensity>
+    </manipulationGenerator>
+
+    <manipulationGenerator id="source.test.Medical">
+      <sourceList extern="vm250/testing-medical.txt" />
+      <where>2</where>
+      <label>Medical</label>
+      <passengerSideProbability>0.5</passengerSideProbability>
+      <conditions>
+        <minimumInjectedSNR limit="8"/>
+        <maximumInjectedSNR limit="80"/>
+      </conditions>
+      <intensity>1 1</intensity>
+    </manipulationGenerator>
+
+    <manipulationGenerator id="source.training.Industrial">
+      <sourceList extern="vm250/training-industrial.txt" />
+      <where>1</where>
+      <label>Industrial</label>
+      <anywhereProbability>0.2</anywhereProbability>
+      <conditions>
+        <minimumInjectedSNR limit="8"/>
+      </conditions>
+      <intensity>500 30000</intensity>
+    </manipulationGenerator>
+
+    <manipulationGenerator id="source.test.Industrial">
+      <sourceList extern="vm250/testing-industrial.txt" />
+      <where>1</where>
+      <label>Industrial</label>
+      <anywhereProbability>0.2</anywhereProbability>
+      <conditions>
+        <minimumInjectedSNR limit="10"/>
+        <maximumInjectedSNR limit="100"/>
+      </conditions>
+      <intensity>1 1</intensity>
+    </manipulationGenerator>
+
+    <manipulationGenerator id="source.training.Contamination">
+      <sourceList extern="vm250/training-contamination.txt" />
+      <where>1</where>
+      <label>Contamination</label>
+      <maxDistributedLength>1.2</maxDistributedLength>
+      <anywhereProbability>0.2</anywhereProbability>
+      <distributedProbability>0.1</distributedProbability>
+      <conditions>
+        <minimumInjectedSNR limit="8"/>
+      </conditions>
+      <intensity>200 10000</intensity>
+    </manipulationGenerator>
+
+  </defines>
+  <analysis ref_id="vm250Analysis"/>
+  <featureDatabase ref_id="vm250FeatureDatabase"/>
+  <recordDatabase ref_id="vm250RecordDatabase"/>
+  <recordManipulator ref_id="vm250RecordManipulator"/>
+
+  <!--
+  <recordWriters>
+    <ernie-vm250:dailyFileWriter dirname="dailyFiles"/>
+  </recordWriters>
+  -->
+
+  <fold>
+    <name>training.nonemitting</name>
+    <foldId>1 10</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionRelease/>
+      <sourceNonEmitting/>
+    </classification>
+    <laneWidthLimits>4 6</laneWidthLimits>
+  </fold>
+  <fold>
+    <name>training.norm</name>
+    <foldId>1 10</foldId>
+    <recordIds extern="nonemittingTrainingWithPayload.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionRelease/>
+      <sourceNORM/>
+    </classification>
+    <laneWidthLimits>4 6</laneWidthLimits>
+    <source1 ref_id="source.training.NORM"/>
+  </fold>
+  <fold>
+    <name>training.medical</name>
+    <foldId>1 10</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceMedical/>
+    </classification>
+    <laneWidthLimits>4 6</laneWidthLimits>
+    <source1 ref_id="source.training.Medical"/>
+  </fold>
+  <fold>
+    <name>training.industrial</name>
+    <foldId>1 10</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceIndustrial/>
+    </classification>
+    <laneWidthLimits>4 6</laneWidthLimits>
+    <source1 ref_id="source.training.Industrial"/>
+  </fold>
+  <fold>
+    <name>training.fissile</name>
+    <foldId>1 10</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceFissile/>
+    </classification>
+    <laneWidthLimits>4 6</laneWidthLimits>
+    <source1 ref_id="source.training.Fissile"/>
+  </fold>
+  <fold>
+    <name>training.contamination</name>
+    <foldId>1 10</foldId>
+    <recordIds extern="nonemittingTraining.txt" step="20"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceContamination/>
+    </classification>
+    <laneWidthLimits>4 6</laneWidthLimits>
+    <source1 ref_id="source.training.Contamination"/>
+    <!--
+    <source1>
+      <sourceList extern="vm250/training-contamination-extracted.txt" />
+      <where>1</where>
+      <distributed>1</distributed>
+      <label>Contaminant</label>
+      <anywhereProbability>0.2</anywhereProbability>
+      <conditions>
+        <minimumInjectedSNR limit="10"/>
+      </conditions>
+      <intensity>3000 75000</intensity>
+    </source1>
+    -->
+  </fold>
+  <!--
+  <fold>
+    <name>training.am241</name>
+    <foldId>1 10</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceIndustrial/>
+    </classification>
+    <source1>
+      <sourceId>40000 40058</sourceId>
+      <where>1</where>
+      <label>Industrial</label>
+      <maxDistributedLength>8e+00</maxDistributedLength>
+      <anywhereProbability>0.2</anywhereProbability>
+      <distributedProbability>1e+00</distributedProbability>
+      <conditions>
+        <minimumInjectedSNR limit="10"/>
+      </conditions>
+      <intensity>0.5 10</intensity>
+    </source1>
+  </fold>
+  -->
+  <!--
+  <fold>
+    <name>training.realnorm</name>
+    <foldId>16 16</foldId>
+    <recordIds extern="NORMids.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionRelease/>
+      <sourceNORM/>
+    </classification>
+  </fold>
+  -->
+  <!--
+  <fold>
+    <name>training.real_contamination</name>
+    <foldId>15 15</foldId>
+    <recordIds extern="CONTAMids.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceContamination/>
+    </classification>
+  </fold>
+  -->
+  <fold>
+    <name>test.medical</name>
+    <foldId>32 32</foldId>
+    <recordIds extern="nonemittingTesting.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceMedical/>
+    </classification>
+    <source1 ref_id="source.test.Medical"/>
+  </fold>
+  <fold>
+    <name>test.industrial</name>
+    <foldId>33 33</foldId>
+    <recordIds extern="nonemittingTesting.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceIndustrial/>
+    </classification>
+    <source1 ref_id="source.test.Industrial"/>
+  </fold>
+  <fold>
+    <name>test.fissile</name>
+    <foldId>34 34</foldId>
+    <recordIds extern="nonemittingTesting.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceFissile/>
+    </classification>
+    <source1 ref_id="source.test.Fissile"/>
+    <serializeResults/>
+  </fold>
+  <fold>
+    <name>test.stream-of-commerce</name>
+    <foldId>20 20</foldId>
+    <recordIds extern="fold20.txt" shuffle="true"/>
+    <requestedRecords ref_id="SOCrecords"/>
+    <classification/>
+    <writeIrregularRecords/>
+  </fold>
+  <fold>
+    <name>training.semisupervised</name>
+    <foldId>11 11</foldId>
+    <recordIds extern="fold11.txt" shuffle="true"/>
+    <requestedRecords ref_id="SOCrecords"/>
+    <classification/>
+    <laneWidthLimits>4 6</laneWidthLimits>
+  </fold>
+
+  <!-- multi-source training folds -->
+  <fold>
+    <name>training.mixed_norm_norm</name>
+    <foldId>101 110</foldId>
+    <recordIds extern="nonemittingTrainingWithPayload.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionRelease/>
+      <sourceNORM/>
+      <sourceNORM/>
+    </classification>
+    <source1 ref_id="source.training.NORM"/>
+    <source2 ref_id="source.training.NORM"/>
+    <minimumDistance>2</minimumDistance>
+  </fold>
+  <fold>
+    <name>training.mixed_norm_medical</name>
+    <foldId>101 110</foldId>
+    <recordIds extern="nonemittingTrainingWithPayload.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceNORM/>
+      <sourceMedical/>
+    </classification>
+    <source1 ref_id="source.training.NORM"/>
+    <source2 ref_id="source.training.Medical"/>
+  </fold>
+  <fold>
+    <name>training.mixed_norm_industrial</name>
+    <foldId>101 110</foldId>
+    <recordIds extern="nonemittingTrainingWithPayload.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceNORM/>
+      <sourceIndustrial/>
+    </classification>
+    <source1 ref_id="source.training.NORM"/>
+    <source2 ref_id="source.training.Industrial"/>
+  </fold>
+  <fold>
+    <name>training.mixed_norm_fissile</name>
+    <foldId>101 110</foldId>
+    <recordIds extern="nonemittingTrainingWithPayload.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceNORM/>
+      <sourceFissile/>
+    </classification>
+    <source1 ref_id="source.training.NORM"/>
+    <source2 ref_id="source.training.Fissile"/>
+  </fold>
+  <fold>
+    <name>training.mixed_medical_medical</name>
+    <foldId>101 110</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceMedical/>
+    </classification>
+    <source1 ref_id="source.training.Medical"/>
+    <source2 ref_id="source.training.Medical"/>
+    <minimumDistance>2</minimumDistance>
+  </fold>
+  <fold>
+    <name>training.mixed_medical_industrial</name>
+    <foldId>101 110</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceMedical/>
+      <sourceIndustrial/>
+    </classification>
+    <source1 ref_id="source.training.Medical"/>
+    <source2 ref_id="source.training.Industrial"/>
+    <minimumDistance>2</minimumDistance>
+  </fold>
+  <fold>
+    <name>training.mixed_medical_fissile</name>
+    <foldId>101 110</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceMedical/>
+      <sourceFissile/>
+    </classification>
+    <source1 ref_id="source.training.Medical"/>
+    <source2 ref_id="source.training.Fissile"/>
+    <minimumDistance>2</minimumDistance>
+  </fold>
+  <fold>
+    <name>training.mixed_industrial_fissile</name>
+    <foldId>101 110</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceIndustrial/>
+      <sourceFissile/>
+    </classification>
+    <source1 ref_id="source.training.Industrial"/>
+    <source2 ref_id="source.training.Fissile"/>
+    <minimumDistance>2</minimumDistance>
+  </fold>
+
+  <!-- multi-source test folds -->
+  <fold>
+    <name>test.mixed_emitting_medical</name>
+    <foldId>42 42</foldId>
+    <recordIds extern="emittingTesting.txt" rewind="true"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceNORM/>
+      <sourceMedical/>
+    </classification>
+    <source1 ref_id="source.test.Medical"/>
+  </fold>
+  <fold>
+    <name>test.mixed_emitting_industrial</name>
+    <foldId>43 43</foldId>
+    <recordIds extern="emittingTesting.txt" rewind="true"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceNORM/>
+      <sourceIndustrial/>
+    </classification>
+    <source1 ref_id="source.test.Industrial"/>
+  </fold>
+  <fold>
+    <name>test.mixed_emitting_fissile</name>
+    <foldId>44 44</foldId>
+    <recordIds extern="emittingTesting.txt" rewind="true"/>
+    <requestedRecords ref_id="records"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceNORM/>
+      <sourceFissile/>
+    </classification>
+    <source1 ref_id="source.test.Fissile"/>
+  </fold>
+
+</featureBuilder>

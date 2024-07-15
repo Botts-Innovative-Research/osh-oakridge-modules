@@ -1,0 +1,31 @@
+<ivy-module version="2.0" xmlns:e="http://ant.apache.org/ivy/extra">
+  <info organisation="gov.llnl.ernie" module="ernie"/>
+
+  <configurations>
+    <conf name="deps" description="dependencies binary jars"/>
+    <conf name="test" description="test jars"/>
+    <conf name="coverage" description="coverage jars"/>
+  </configurations>
+  <dependencies>
+    <dependency org="com.beust" name="jcommander" rev="1.78" conf="test->default"/>
+    <dependency org="org.testng" name="testng" rev="7.0.0" conf="test->default"/>
+    <dependency org="org.jacoco" name="org.jacoco.ant" rev="0.8.5" conf="coverage->default">
+      <artifact name="org.jacoco.ant" e:classifier="nodeps"/>
+    </dependency>
+    <dependency org="javax.xml.bind" name="jaxb-api" rev="2.3.1"  conf="deps->default"/>
+    <dependency org="com.sun.xml.bind" name="jaxb-core" rev="2.3.0.1"  conf="deps->default"/>
+    <dependency org="com.sun.xml.bind" name="jaxb-impl" rev="2.3.1"  conf="deps->default"/>
+    <dependency org="javax.activation" name="javax.activation-api" rev="1.2.0"  conf="deps->default"/>
+    <dependency org="org.jfree" name="jcommon" rev="1.0.17"  conf="deps->default"/>
+    <dependency org="org.jfree" name="jfreechart" rev="1.0.14"  conf="deps->default"/>
+    <dependency org="net.sf.jopt-simple" name="jopt-simple" rev="5.0.3"  conf="deps->default"/>
+    <dependency org="commons-logging" name="commons-logging" rev="1.2"  conf="deps->default"/>
+    <dependency org="org.apache.pdfbox" name="fontbox" rev="2.0.2"  conf="deps->default"/>
+    <dependency org="org.apache.pdfbox" name="pdfbox" rev="2.0.5"  conf="deps->default"/>
+    <dependency org="com.microsoft.sqlserver" name="mssql-jdbc" rev="8.2.0.jre11"  conf="deps->default"/>
+    <dependency org="com.beust" name="jcommander" rev="1.72" conf="deps->default"/>
+    <dependency org="org.xerial" name="sqlite-jdbc" rev="3.23.1" conf="deps->default"/>
+    <dependency org="org.testng" name="testng" rev="7.0.0" conf="deps->default"/>
+    <dependency org="com.h2database" name="h2" rev="1.4.200" conf="deps->default"/>
+  </dependencies>
+</ivy-module>

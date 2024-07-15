@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package gov.llnl.ernie.raven;
+
+option java_package = "gov.llnl.ernie.raven";
+option java_outer_classname = "ControlProtos";
+
+message ErrorResponse
+{
+    string message = 1;
+}
+
+message ConfigureRequest
+{
+    int32 lanes = 1; // How many lanes 
+}
+
+message ConfigureResponse
+{
+    repeated int32 port = 1; // A list of ports for each lanes
+}
+
+message StatusRequest
+{
+}
+
+message StatusResponse
+{
+  string version = 1;
+  int32 control_port = 2;
+  int32 log_port = 3;
+  repeated LaneStatus lane_status = 4;   
+}
+
+message LaneStatus
+{
+  int32 port = 1;
+  int32 messages = 2;
+  int32 last_scan_id = 3;
+}
+
+
+message TerminateRequest
+{
+}
+
+message TerminateResponse
+{
+}

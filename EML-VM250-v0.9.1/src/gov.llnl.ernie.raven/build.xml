@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="gov.llnl.ernie.raven" default="default" basedir=".">
+    <description>Builds, tests, and runs the project gov.llnl.ernie.raven.</description>
+
+  <!-- WLS support -->
+  <property environment="env"/>
+  <target name="-pre-init" if="env.NETBEANS_USER_PROPERTIES">
+    <property name="user.properties.file" value="${env.NETBEANS_USER_PROPERTIES}"/>
+    <echo message="Use ${user.properties.file}"/>
+  </target>
+  <property file="nbproject/project.properties"/>
+
+  <import file="nbproject/build-impl.xml"/>
+  <import file="nbproject/build-ivy.xml"/>
+  <import file="nbproject/build-proto.xml"/>
+  <target depends="proto,proto-py,proto-csharp" name="-pre-compile" /> 
+  <target depends="init,resolve,proto,compile,-pre-jar,-do-jar,-post-jar" description="Build JAR." name="jar"/>
+
+</project>

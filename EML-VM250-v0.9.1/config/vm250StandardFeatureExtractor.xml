@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<standardFeatureExtractor
+	xmlns="http://ernie.llnl.gov/vm250"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation= "http://ernie.llnl.gov/vm250 http://ernie.llnl.gov/vm250/schema/ernie-vm250.xsd"
+>
+  <panels>4</panels>
+</standardFeatureExtractor>

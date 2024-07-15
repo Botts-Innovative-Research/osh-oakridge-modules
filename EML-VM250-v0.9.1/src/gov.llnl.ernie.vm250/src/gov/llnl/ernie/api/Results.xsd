@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Copyright (c) 2020, Lawrence Livermore National Security, LLC.
+All rights reserved.
+
+Terms and conditions are given in "Notice" file.
+-->
+
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:element name="results">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="ERNIEContextualInfo" type="ERNIEContextualInfo"/>
+        <xs:element name="ScanContextualInfo" type="ScanContextualInfo"/>
+        <xs:element name="ERNIEAnalysis" type="ERNIEAnalysis"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  
+  <xs:complexType name="ERNIEContextualInfo">
+    <xs:sequence>
+      <xs:element name="versionID" type="xs:string"/>
+      <xs:element name="modelID" type="xs:string"/>
+      <xs:element name="thresholds" type="thresholds"/>
+    </xs:sequence>
+  </xs:complexType>
+  
+  <xs:complexType name="thresholds">
+    <xs:sequence>
+      <xs:element name="primary" type="xs:double"/>
+    </xs:sequence>
+  </xs:complexType>
+  
+  <xs:complexType name="ScanContextualInfo">
+    <xs:sequence>
+      <xs:element name="portID" type="xs:string"/>
+      <xs:element name="laneID" type="xs:integer"/>
+      <xs:element name="dateTime" type="xs:string"/>
+      <xs:element name="segmentId" type="xs:string"/>
+      <xs:element name="RPMResult" type="xs:NCName"/>
+      <xs:element name="RPMgammaAlert" type="xs:boolean"/>
+      <xs:element name="RPMneutronAlert" type="xs:boolean"/>
+      <xs:element name="RPMScanError" type="xs:boolean"/>
+    </xs:sequence>
+  </xs:complexType>
+  
+  <xs:complexType name="ERNIEAnalysis">
+    <xs:sequence>
+      <xs:element name="result" type="xs:NCName"/>
+      <xs:element name="investigateProbability" type="xs:double"/>
+      <xs:element name="releaseProbability" type="xs:double"/>
+      <xs:element name="gammaAlert" type="xs:boolean"/>
+      <xs:element name="neutronAlert" type="xs:boolean"/>
+      <xs:element minOccurs="0" maxOccurs="unbounded" name="sources" type="source"/>
+      <xs:element minOccurs="0" name="overallSource" type="source"/>
+      <!-- <xs:element name="occupancyStart" type="xs:integer"/> -->
+      <!-- <xs:element name="occupancyEnd" type="xs:integer"/> -->
+      <xs:element name="vehicleClass" type="xs:integer"/>
+      <xs:element name="vehicleLength" type="xs:decimal"/>
+      
+      <xs:element minOccurs="0" name="message" type="xs:string"/>
+      <xs:element minOccurs="0" name="yellowLightMessage" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="source">
+    <xs:sequence>
+      <xs:element name="sourceType" type="xs:NCName"/>
+      <xs:element name="classifierUsed" type="xs:NCName"/>
+      <xs:element name="xLocation1" type="xs:decimal"/>
+      <xs:element name="xLocation2" type="xs:decimal"/>
+      <xs:element name="yLocation" type="xs:double"/>
+      <xs:element name="zLocation" type="xs:decimal"/>
+      <xs:element name="probabilityNonEmitting" type="xs:double"/>
+      <xs:element name="probabilityNORM" type="xs:double"/>
+      <xs:element name="probabilityThreat" type="xs:double"/>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<vm250:analysis
+	xmlns="http://ernie.llnl.gov/vm250"
+	xmlns:vm250="http://ernie.llnl.gov/vm250"
+  xmlns:ernie="http://ernie.llnl.gov"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation= 
+	"http://ernie.llnl.gov http://ernie.llnl.gov/schema/ernie.xsd
+	http://ernie.llnl.gov/vm250 http://ernie.llnl.gov/vm250/schema/ernie-vm250.xsd"
+>
+
+  <verbose/>
+
+  <!-- Imports section can import elements defined seperately from this file.
+         imports are pulled from the same directory.
+  -->
+  <imports>
+    <vm250:vehicleClassifier extern="vm250VehicleClassifier.xml.gz" id="vehicleClassifier" />
+    <vm250:standardFeatureExtractor extern="vm250StandardFeatureExtractor.xml" id="standard"/>
+    <ernie:transformFeatureExtractor extern="vm250Transform.xml" id="tfe"/>
+  </imports>
+
+  <!-- Defines allow elements with complex contents to be defined in advance and then
+  used in more than one place. -->
+  <defines>
+  </defines>
+  
+  <!-- Parameters contains any settings for the analysis -->
+  <parameters>
+    <threshold>0.7</threshold>
+    <nSigmaThreshold>20</nSigmaThreshold>
+    <backgroundRatioThreshold>-1</backgroundRatioThreshold>
+  </parameters>
+
+  <!-- We need a list of tasks to execute for the preprocessing of a record. -->
+  <preprocessors>
+    <vm250:qualityCheck/>
+    <vm250:gammaPanelFix ttbr="1"/>
+    <vm250:motionProfiler
+      defaultVelocity="2.0"
+      minCredibleVelocity="0.2"
+      maxCredibleVelocity="25"
+      velocityFallbackThreshold="10"/>
+    <vm250:vehicleClassifier ref_id="vehicleClassifier"/>
+    <vm250:backgroundEstimator/>
+  </preprocessors>
+
+  <!-- We also need a list of feature extractors -->
+  <featureExtractors>
+    <vm250:motionInfoExtractor/>
+
+    <vm250:backgroundFeatureExtractor>
+      <vm250:panels>4</vm250:panels>
+    </vm250:backgroundFeatureExtractor>
+
+    <vm250:standardFeatureExtractor ref_id="standard"/>
+    <vm250:vehicleFeatureExtractor/>
+    <ernie:statisticalFeatureExtractor padding="5" minSamples="6">
+      <ernie:peakFeatureExtractor/>
+    </ernie:statisticalFeatureExtractor>
+    <ernie:gammaNSigmaFeatureExtractor/>
+    <ernie:extentFeatureExtractor/>
+    <ernie:transformFeatureExtractor ref_id="tfe"/>
+  </featureExtractors>
+  
+  <!-- Last we can load in a set of classifiers -->
+  <classifiers>
+    <vm250:alarmClassifier model="uber_SSL_model_uncollimated.txt" metrics="CMU_metric.csv"/>
+  </classifiers>
+  
+
+
+</vm250:analysis>
+

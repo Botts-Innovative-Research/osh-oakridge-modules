@@ -1,0 +1,433 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<xs:schema elementFormDefault="qualified" xmlns:ernie="http://ernie.llnl.gov" ernie:version="1.0" xmlns:math="http://math.llnl.gov" math:version="1.0" targetNamespace="http://ernie.llnl.gov" xmlns:util="http://utility.llnl.gov" util:version="1.0" version="1.0" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:import namespace="http://math.llnl.gov" schemaLocation="http://math.llnl.gov/schema/math.xsd"/>
+  <xs:import namespace="http://utility.llnl.gov" schemaLocation="http://utility.llnl.gov/schema/utility.xsd"/>
+  <xs:complexType name="BackgroundModelReader-type">
+    <xs:all>
+      <xs:element minOccurs="0" name="matrix" type="math:MatrixReader-type"/>
+    </xs:all>
+  </xs:complexType>
+  <xs:complexType name="ClassifierReader-type">
+    <xs:attributeGroup ref="util:object-attribs"/>
+    <xs:attribute name="metrics" type="xs:string" use="required"/>
+    <xs:attribute name="model" type="xs:string" use="required"/>
+  </xs:complexType>
+  <xs:complexType name="DoubleSpectraListReader-type">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="gadrasVersion" type="xs:string"/>
+      <xs:element name="energyBins" type="ernie:EnergyScaleReader-type"/>
+      <xs:element name="spectrum" type="ernie:DoubleSpectrumReader-type"/>
+    </xs:choice>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="DoubleSpectrumReader-type">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="gammaCounts" type="util:AttributeContentsReader-type"/>
+      <xs:element name="title" type="xs:string"/>
+      <xs:element name="realTime" type="util:double-attr"/>
+      <xs:element name="liveTime" type="util:double-attr"/>
+      <xs:element name="gammaEnergyBins" type="ernie:EnergyScaleReader-type"/>
+      <xs:element name="attributes" type="ernie:SpectrumReader-AttributesSection-type"/>
+    </xs:choice>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="EnergyExtractor2Reader-HypothesisTestReader-type">
+    <xs:all>
+      <xs:element name="mean" type="math:MatrixReader-type"/>
+      <xs:element name="cov" type="math:MatrixReader-type"/>
+    </xs:all>
+    <xs:attribute name="title" type="xs:string"/>
+  </xs:complexType>
+  <xs:complexType name="EnergyExtractor2Reader-RatioTestReader-type">
+    <xs:simpleContent>
+      <xs:extension base="xs:string"/>
+    </xs:simpleContent>
+  </xs:complexType>
+  <xs:complexType name="EnergyExtractor2Reader-type">
+    <xs:all minOccurs="0">
+      <xs:element minOccurs="0" name="ratioTests" type="ernie:List-EnergyExtractor2Reader-RatioTestReader-type"/>
+      <xs:element minOccurs="0" name="energyFactors" type="util:string-attr"/>
+      <xs:element minOccurs="0" name="pcaTransform" type="math:MatrixReader-type"/>
+      <xs:element minOccurs="0" name="dataMean" type="math:MatrixReader-type"/>
+      <xs:element minOccurs="0" name="coh" type="math:MatrixReader-type"/>
+      <xs:element name="hypothesisTests" type="ernie:List-EnergyExtractor2Reader-HypothesisTestReader-type"/>
+      <xs:element name="bkgHypothesisCov" type="math:MatrixReader-type"/>
+    </xs:all>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="EnergyScaleReader-BinsLinear-type">
+    <xs:attribute name="begin" type="xs:double"/>
+    <xs:attribute name="end" type="xs:double"/>
+    <xs:attribute name="steps" type="xs:int"/>
+  </xs:complexType>
+  <xs:complexType name="EnergyScaleReader-BinsSqrt-type">
+    <xs:attribute name="begin" type="xs:double"/>
+    <xs:attribute name="end" type="xs:double"/>
+    <xs:attribute name="steps" type="xs:int"/>
+  </xs:complexType>
+  <xs:complexType name="EnergyScaleReader-type">
+    <xs:choice minOccurs="0">
+      <xs:element name="sqrt" type="ernie:EnergyScaleReader-BinsSqrt-type"/>
+      <xs:element name="linear" type="ernie:EnergyScaleReader-BinsLinear-type"/>
+      <xs:element name="values" type="util:string-attr"/>
+    </xs:choice>
+    <xs:attributeGroup ref="util:object-attribs"/>
+    <xs:attribute name="external" type="xs:string"/>
+    <xs:attribute name="type" type="xs:string"/>
+    <xs:attribute name="use_db" type="xs:string"/>
+  </xs:complexType>
+  <xs:complexType name="ExtentFeatureExtractor-Reader-type"/>
+  <xs:complexType name="GammaNSigmaFeatureExtractor-Reader-type"/>
+  <xs:complexType name="InjectionSourceLibraryReader-type">
+    <xs:attribute name="path" type="xs:string" use="required"/>
+  </xs:complexType>
+  <xs:complexType name="JointFeatureExtractorReader-type">
+    <xs:all minOccurs="0">
+      <xs:element minOccurs="0" name="panels" type="util:integer-attr"/>
+      <xs:element minOccurs="0" name="energyExtractor" type="ernie:EnergyExtractor2Reader-type"/>
+      <xs:element minOccurs="0" name="fallback" type="xs:boolean"/>
+    </xs:all>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="LaneDatabaseReader-type">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element minOccurs="0" name="imports" type="ernie:ObjectReader-Imports-type"/>
+      <xs:element minOccurs="0" name="defines" type="ernie:ObjectReader-Defines-type"/>
+      <xs:element name="lane" type="ernie:LaneDefinitionReader-type"/>
+    </xs:choice>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="LaneDefinitionReader-GammaSection-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element name="energyEdges" type="util:string-attr"/>
+      <xs:element name="energyFactors" type="util:string-attr"/>
+      <xs:element name="panelHeight" type="util:double-attr"/>
+      <xs:element name="panelWidth" type="util:double-attr"/>
+      <xs:element name="panelThickness" type="util:double-attr"/>
+      <xs:element name="collimated" type="xs:boolean"/>
+      <xs:element name="sideCollimator" type="util:double-attr"/>
+      <xs:element name="samplePeriod" type="util:DurationContents-type"/>
+      <xs:element name="panel" type="math:Vector3Reader-type"/>
+      <xs:element name="group" type="ernie:LaneDefinitionReader-PanelGroupReader-type"/>
+      <xs:element name="yFactors" type="util:string-attr"/>
+      <xs:element name="zFactors" type="util:string-attr"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="LaneDefinitionReader-NeutronSection-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element name="panelHeight" type="util:double-attr"/>
+      <xs:element name="panelWidth" type="util:double-attr"/>
+      <xs:element name="panelThickness" type="util:double-attr"/>
+      <xs:element name="samplePeriod" type="util:DurationContents-type"/>
+      <xs:element name="panel" type="math:Vector3Reader-type"/>
+      <xs:element name="group" type="ernie:LaneDefinitionReader-PanelGroupReader-type"/>
+      <xs:element name="yFactors" type="util:string-attr"/>
+      <xs:element name="zFactors" type="util:string-attr"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="LaneDefinitionReader-PanelGroupReader-type">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="loc" type="xs:string"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+  <xs:complexType name="LaneDefinitionReader-type">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="laneWidth" type="util:double-attr"/>
+      <xs:element name="laneHeight" type="util:double-attr"/>
+      <xs:element name="vpsProperties" type="ernie:VPSPropertiesReader-type"/>
+      <xs:element name="gammaPanels" type="ernie:LaneDefinitionReader-GammaSection-type"/>
+      <xs:element name="neutronPanels" type="ernie:LaneDefinitionReader-NeutronSection-type"/>
+    </xs:choice>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="List-BackgroundModelReader-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element minOccurs="0" name="backgroundModel" type="ernie:BackgroundModelReader-type"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="List-EnergyExtractor2Reader-HypothesisTestReader-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element minOccurs="0" name="hypothesisTest" type="ernie:EnergyExtractor2Reader-HypothesisTestReader-type"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="List-EnergyExtractor2Reader-RatioTestReader-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element minOccurs="0" name="ratioTest" type="ernie:EnergyExtractor2Reader-RatioTestReader-type"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="List-SensorViewReader-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element minOccurs="0" name="smallFace" type="ernie:SensorFaceSmallReader-type"/>
+      <xs:element minOccurs="0" name="rectangularFace" type="ernie:SensorFaceRectangularReader-type"/>
+      <xs:element minOccurs="0" name="rectangularCollimatedFace" type="ernie:SensorFaceRectangularCollimatedReader-type"/>
+      <xs:element minOccurs="0" name="sensorViewComposite" type="ernie:SensorViewCompositeReader-type"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="List-VehicleClassReader-BackgroundReader-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element minOccurs="0" name="backgroundModel" type="ernie:VehicleClassReader-BackgroundReader-type"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="List-VehicleRepresentativeReader-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element minOccurs="0" name="representative" type="ernie:VehicleRepresentativeReader-type"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="ObjectReader-Defines-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:any minOccurs="0"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="ObjectReader-Imports-type">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:any processContents="skip"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="PeakFeatureExtractor-Reader-type">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="energyExtractor" type="ernie:EnergyExtractor2Reader-type"/>
+    </xs:choice>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="PropertiesReader-KeyValueReader-type">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="value" type="xs:string" use="required"/>
+  </xs:complexType>
+  <xs:complexType name="PropertiesReader-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element minOccurs="0" name="set" type="ernie:PropertiesReader-KeyValueReader-type"/>
+    </xs:choice>
+    <xs:attribute name="extern" type="xs:string"/>
+  </xs:complexType>
+  <xs:complexType name="SensorFaceRectangularCollimatedReader-type">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="origin" type="math:Vector3Reader-type"/>
+      <xs:element name="orientation" type="math:VersorReader-type"/>
+    </xs:choice>
+    <xs:attributeGroup ref="util:object-attribs"/>
+    <xs:attribute name="height" type="xs:double" use="required"/>
+    <xs:attribute name="size" type="xs:double" use="required"/>
+    <xs:attribute name="top" type="xs:double" use="required"/>
+    <xs:attribute name="width" type="xs:double" use="required"/>
+  </xs:complexType>
+  <xs:complexType name="SensorFaceRectangularReader-type">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="origin" type="math:Vector3Reader-type"/>
+      <xs:element name="orientation" type="math:VersorReader-type"/>
+    </xs:choice>
+    <xs:attributeGroup ref="util:object-attribs"/>
+    <xs:attribute name="height" type="xs:double" use="required"/>
+    <xs:attribute name="width" type="xs:double" use="required"/>
+  </xs:complexType>
+  <xs:complexType name="SensorFaceSmallReader-type">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="origin" type="math:Vector3Reader-type"/>
+      <xs:element name="orientation" type="math:VersorReader-type"/>
+    </xs:choice>
+    <xs:attributeGroup ref="util:object-attribs"/>
+    <xs:attribute name="area" type="xs:double" use="required"/>
+    <xs:attribute name="width" type="xs:double" use="required"/>
+  </xs:complexType>
+  <xs:complexType name="SensorViewCompositeReader-type">
+    <xs:sequence minOccurs="0">
+      <xs:element name="origin" type="math:Vector3Reader-type"/>
+      <xs:element name="orientation" type="math:VersorReader-type"/>
+      <xs:element name="elements" type="ernie:List-SensorViewReader-type"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="SensorViewReader-type">
+    <xs:choice minOccurs="0">
+      <xs:element name="smallFace" type="ernie:SensorFaceSmallReader-type"/>
+      <xs:element name="rectangularFace" type="ernie:SensorFaceRectangularReader-type"/>
+      <xs:element name="rectangularCollimatedFace" type="ernie:SensorFaceRectangularCollimatedReader-type"/>
+      <xs:element name="sensorViewComposite" type="ernie:SensorViewCompositeReader-type"/>
+    </xs:choice>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="ShieldingModelReader-FluxModelReader-type">
+    <xs:sequence>
+      <xs:element maxOccurs="unbounded" name="shielding" type="util:AttributeContentsReader-type"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:string"/>
+  </xs:complexType>
+  <xs:complexType name="ShieldingModelReader-type">
+    <xs:sequence>
+      <xs:element name="inputBins" type="util:integer-attr"/>
+      <xs:element name="fluxBins" type="util:integer-attr"/>
+      <xs:element name="outputBins" type="util:integer-attr"/>
+      <xs:element name="transform" type="math:MatrixReader-type"/>
+      <xs:element name="basis" type="math:MatrixReader-type"/>
+      <xs:element maxOccurs="unbounded" name="model" type="ernie:ShieldingModelReader-FluxModelReader-type"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="SpectrumReader-AttributesSection-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:any minOccurs="0" namespace="##any" processContents="skip"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="StatisticalFeatureExtractor-Reader-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element name="peakFeatureExtractor" type="ernie:PeakFeatureExtractor-Reader-type"/>
+    </xs:choice>
+    <xs:attribute name="minSamples" type="xs:int" use="required"/>
+    <xs:attribute name="padding" type="xs:int" use="required"/>
+  </xs:complexType>
+  <xs:complexType name="TransformFeatureExtractorReader-type">
+    <xs:sequence minOccurs="0">
+      <xs:element minOccurs="0" name="imports" type="ernie:ObjectReader-Imports-type"/>
+      <xs:element name="fft" type="math:MatrixReader-type"/>
+      <xs:element name="pca" type="math:MatrixReader-type"/>
+      <xs:element name="uniformGammaExtractor" type="ernie:UniformGammaExtractorReader-type"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="UniformGammaExtractorReader-type">
+    <xs:sequence minOccurs="0">
+      <xs:any/>
+    </xs:sequence>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="VPSPropertiesReader-type">
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="Vehicle2ClassReader-type">
+    <xs:sequence>
+      <xs:element name="type" type="util:integer-attr"/>
+      <xs:element name="trailerStart" type="util:double-attr"/>
+      <xs:element name="trailerEnd" type="util:double-attr"/>
+      <xs:element name="injection" type="ernie:vehicle2Vehicle2ClassReader-InjectionSection-type"/>
+      <xs:element name="display" type="ernie:vehicle2Vehicle2ClassReader-DisplaySection-type"/>
+      <xs:element name="representatives" type="ernie:List-VehicleRepresentativeReader-type"/>
+      <xs:element name="backgroundModels" type="ernie:List-BackgroundModelReader-type"/>
+    </xs:sequence>
+    <xs:attribute name="index" type="xs:int"/>
+  </xs:complexType>
+  <xs:complexType name="Vehicle2ClassifierReader-type">
+    <xs:sequence minOccurs="0">
+      <xs:element minOccurs="0" name="extractor" type="util:AnyReader-type"/>
+      <xs:element maxOccurs="unbounded" minOccurs="0" name="vehicleClass2" type="ernie:Vehicle2ClassReader-type"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="util:object-attribs"/>
+    <xs:attribute name="defaultId" type="xs:int"/>
+  </xs:complexType>
+  <xs:complexType name="VehicleClassReader-BackgroundReader-type">
+    <xs:all>
+      <xs:element minOccurs="0" name="matrix" type="math:MatrixReader-type"/>
+    </xs:all>
+  </xs:complexType>
+  <xs:complexType name="VehicleClassReader-DisplaySection-type">
+    <xs:all>
+      <xs:element minOccurs="0" name="vehicle_length" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="cab_length" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="isLongHaul" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="trailerPresent" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="hitchPresent" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="hasWideAxel" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="bedOnly" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="numTrailerAxels" type="util:integer-attr"/>
+    </xs:all>
+  </xs:complexType>
+  <xs:complexType name="VehicleClassReader-InjectionSection-type">
+    <xs:all>
+      <xs:element minOccurs="0" name="passengerAreaStart" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="passengerAreaEnd" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="payloadAreaStart" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="payloadAreaEnd" type="util:double-attr"/>
+    </xs:all>
+  </xs:complexType>
+  <xs:complexType name="VehicleClassReader-type">
+    <xs:sequence>
+      <xs:element name="type" type="util:integer-attr"/>
+      <xs:element name="trailerStart" type="util:double-attr"/>
+      <xs:element name="trailerEnd" type="util:double-attr"/>
+      <xs:element name="injection" type="ernie:VehicleClassReader-InjectionSection-type"/>
+      <xs:element name="display" type="ernie:VehicleClassReader-DisplaySection-type"/>
+      <xs:element name="template" type="util:string-attr"/>
+      <xs:element name="backgroundModels" type="ernie:List-VehicleClassReader-BackgroundReader-type"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:int"/>
+  </xs:complexType>
+  <xs:complexType name="VehicleClassifierReader-type">
+    <xs:sequence minOccurs="0">
+      <xs:element minOccurs="0" name="renormalizeTemplates" type="xs:boolean"/>
+      <xs:element minOccurs="0" name="extractor" type="util:AnyReader-type"/>
+      <xs:element maxOccurs="unbounded" name="vehicleClass" type="ernie:VehicleClassReader-type"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="VehicleRepresentativeReader-type">
+    <xs:all>
+      <xs:element minOccurs="0" name="template" type="util:string-attr"/>
+      <xs:element minOccurs="0" name="features" type="util:string-attr"/>
+    </xs:all>
+    <xs:attribute name="index" type="xs:int"/>
+  </xs:complexType>
+  <xs:complexType name="vehicle2Vehicle2ClassReader-DisplaySection-type">
+    <xs:all>
+      <xs:element minOccurs="0" name="vehicle_length" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="cab_length" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="isLongHaul" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="trailerPresent" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="hitchPresent" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="hasWideAxel" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="bedOnly" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="numTrailerAxels" type="util:integer-attr"/>
+    </xs:all>
+  </xs:complexType>
+  <xs:complexType name="vehicle2Vehicle2ClassReader-InjectionSection-type">
+    <xs:all>
+      <xs:element minOccurs="0" name="passengerAreaStart" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="passengerAreaEnd" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="payloadAreaStart" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="payloadAreaEnd" type="util:double-attr"/>
+    </xs:all>
+  </xs:complexType>
+  <xs:element name="backgroundModel" type="ernie:BackgroundModelReader-type" util:class="gov.llnl.ernie.vehicle.BackgroundModelImpl"/>
+  <xs:element name="classifier" type="ernie:ClassifierReader-type" util:class="gov.llnl.ernie.classifier.Classifier"/>
+  <xs:element name="distance" type="xs:double" util:class="java.lang.Double"/>
+  <xs:element name="energyExtractor2" type="ernie:EnergyExtractor2Reader-type" util:class="gov.llnl.ernie.spectral.EnergyExtractor2"/>
+  <xs:element name="energyPolynomial" type="util:string-attr"/>
+  <xs:element name="energyScale" type="ernie:EnergyScaleReader-type" util:class="gov.llnl.ernie.data.EnergyScale"/>
+  <xs:element name="extentFeatureExtractor" type="ernie:ExtentFeatureExtractor-Reader-type" util:class="gov.llnl.ernie.common.ExtentFeatureExtractor"/>
+  <xs:element name="gammaDose" type="xs:double" util:class="java.lang.Double"/>
+  <xs:element name="gammaFluxLines" type="xs:double" util:class="java.lang.Double"/>
+  <xs:element name="gammaFluxTotal" type="xs:double" util:class="java.lang.Double"/>
+  <xs:element name="gammaNSigmaFeatureExtractor" type="ernie:GammaNSigmaFeatureExtractor-Reader-type" util:class="gov.llnl.ernie.common.GammaNSigmaFeatureExtractor"/>
+  <xs:element name="highVoltage" type="xs:double" util:class="java.lang.Double"/>
+  <xs:element name="jointFeatureExtractor" type="ernie:JointFeatureExtractorReader-type" util:class="gov.llnl.ernie.spectral.JointFeatureExtractor"/>
+  <xs:element name="laneDatabase" type="ernie:LaneDatabaseReader-type" util:class="gov.llnl.ernie.io.LaneDatabase"/>
+  <xs:element name="laneDefinition" type="ernie:LaneDefinitionReader-type" util:class="gov.llnl.ernie.io.LaneDatabase"/>
+  <xs:element name="linear" type="ernie:EnergyScaleReader-BinsLinear-type" util:class="gov.llnl.ernie.data.EnergyScale"/>
+  <xs:element name="neutronDose" type="xs:double" util:class="java.lang.Double"/>
+  <xs:element name="neutronFluxTotal" type="xs:double" util:class="java.lang.Double"/>
+  <xs:element name="neutrons" type="xs:double" util:class="java.lang.Double"/>
+  <xs:element name="panelGroup" type="ernie:LaneDefinitionReader-PanelGroupReader-type" util:class="gov.llnl.ernie.internal.io.LaneDefinitionReader$PanelGroup"/>
+  <xs:element name="peakFeatureExtractor" type="ernie:PeakFeatureExtractor-Reader-type" util:class="gov.llnl.ernie.common.PeakFeatureExtractor"/>
+  <xs:element name="properties" type="ernie:PropertiesReader-type" util:class="java.util.Properties"/>
+  <xs:element name="rectangularCollimatedFace" type="ernie:SensorFaceRectangularCollimatedReader-type" util:class="gov.llnl.ernie.rtk.view.SensorFaceRectangularCollimated"/>
+  <xs:element name="rectangularFace" type="ernie:SensorFaceRectangularReader-type" util:class="gov.llnl.ernie.rtk.view.SensorFaceRectangular"/>
+  <xs:element name="representative" type="ernie:VehicleRepresentativeReader-type" util:class="gov.llnl.ernie.data.VehicleRepresentative"/>
+  <xs:element name="sensorView" type="ernie:SensorViewReader-type" util:class="gov.llnl.ernie.data.SensorView"/>
+  <xs:element name="sensorViewComposite" type="ernie:SensorViewCompositeReader-type" util:class="gov.llnl.ernie.rtk.view.SensorViewComposite"/>
+  <xs:element name="shieldingFluxModel" type="ernie:ShieldingModelReader-FluxModelReader-type" util:class="gov.llnl.ernie.internal.manipulator.ShieldingModel$FluxModel"/>
+  <xs:element name="shieldingModel" type="ernie:ShieldingModelReader-type" util:class="gov.llnl.ernie.internal.manipulator.ShieldingModel"/>
+  <xs:element name="smallFace" type="ernie:SensorFaceSmallReader-type" util:class="gov.llnl.ernie.rtk.view.SensorFaceSmall"/>
+  <xs:element name="sourceLibrary" type="ernie:InjectionSourceLibraryReader-type" util:class="gov.llnl.ernie.manipulator.InjectionSourceLibrary"/>
+  <xs:element name="spectraList" type="ernie:DoubleSpectraListReader-type" util:class="gov.llnl.ernie.rtk.DoubleSpectraList"/>
+  <xs:element name="spectrum" type="ernie:DoubleSpectrumReader-type" util:class="gov.llnl.ernie.rtk.DoubleSpectrum"/>
+  <xs:element name="sqrt" type="ernie:EnergyScaleReader-BinsSqrt-type" util:class="gov.llnl.ernie.data.EnergyScale"/>
+  <xs:element name="statisticalFeatureExtractor" type="ernie:StatisticalFeatureExtractor-Reader-type" util:class="gov.llnl.ernie.common.StatisticalFeatureExtractor"/>
+  <xs:element name="temperature" type="xs:double" util:class="java.lang.Double"/>
+  <xs:element name="timestamp" type="xs:string" util:class="java.time.Instant"/>
+  <xs:element name="title" type="xs:string" util:class="java.lang.String"/>
+  <xs:element name="transformFeatureExtractor" type="ernie:TransformFeatureExtractorReader-type" util:class="gov.llnl.ernie.common.TransformFeatureExtractor"/>
+  <xs:element name="uniformGammaExtractor" type="ernie:UniformGammaExtractorReader-type" util:class="gov.llnl.ernie.common.UniformGammaExtractor"/>
+  <xs:element name="vehicleClass" type="ernie:VehicleClassReader-type" util:class="gov.llnl.ernie.vehicle.VehicleClassImpl"/>
+  <xs:element name="vehicleClass2" type="ernie:Vehicle2ClassReader-type" util:class="gov.llnl.ernie.vehicle2.Vehicle2ClassImpl"/>
+  <xs:element name="vehicleClassifier" type="ernie:VehicleClassifierReader-type" util:class="gov.llnl.ernie.vehicle.VehicleClassifierImpl"/>
+  <xs:element name="vehicleClassifier2" type="ernie:Vehicle2ClassifierReader-type" util:class="gov.llnl.ernie.vehicle2.Vehicle2ClassifierImpl"/>
+  <xs:element name="vpsProperites" type="ernie:VPSPropertiesReader-type" util:class="gov.llnl.ernie.data.VPSProperties"/>
+</xs:schema>

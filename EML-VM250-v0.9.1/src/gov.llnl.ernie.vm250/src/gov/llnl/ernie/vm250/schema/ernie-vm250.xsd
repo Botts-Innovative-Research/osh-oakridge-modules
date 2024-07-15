@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<xs:schema elementFormDefault="qualified" xmlns:ernie="http://ernie.llnl.gov" ernie:version="1.0" xmlns:math="http://math.llnl.gov" math:version="1.0" targetNamespace="http://ernie.llnl.gov/vm250" xmlns:util="http://utility.llnl.gov" util:version="1.0" version="1.0" xmlns:vm250="http://ernie.llnl.gov/vm250" vm250:version="1.0" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:import namespace="http://ernie.llnl.gov" schemaLocation="http://ernie.llnl.gov/schema/ernie.xsd"/>
+  <xs:import namespace="http://math.llnl.gov" schemaLocation="http://math.llnl.gov/schema/math.xsd"/>
+  <xs:import namespace="http://utility.llnl.gov" schemaLocation="http://utility.llnl.gov/schema/utility.xsd"/>
+  <xs:complexType name="DailyFileWriter-Reader-type">
+    <xs:attributeGroup ref="util:object-attribs"/>
+    <xs:attribute name="dirname" type="xs:string"/>
+  </xs:complexType>
+  <xs:complexType name="List-AnyReader-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:any minOccurs="0"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="List-VM250VehicleClassReader-BackgroundReader-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element minOccurs="0" name="backgroundModel" type="vm250:VM250VehicleClassReader-BackgroundReader-type"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="ObjectReader-Defines-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:any minOccurs="0"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="ObjectReader-Imports-type">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:any processContents="skip"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="VM250AnalysisReader-type">
+    <xs:sequence minOccurs="0">
+      <xs:element name="verbose" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="imports" type="vm250:ObjectReader-Imports-type"/>
+      <xs:element minOccurs="0" name="defines" type="vm250:ObjectReader-Defines-type"/>
+      <xs:element name="parameters" type="vm250:vm250VM250AnalysisReader-Parameters-type"/>
+      <xs:element name="preprocessors" type="vm250:List-AnyReader-type"/>
+      <xs:element name="featureExtractors" type="vm250:List-AnyReader-type"/>
+      <xs:element name="classifiers" type="vm250:vm250VM250AnalysisReader-ClassifiersSection-type"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="VM250BackgroundEstimator-Reader-type">
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="VM250BackgroundFeatureExtractor-Reader-type">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element name="panels" type="xs:int"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:complexType name="VM250GammaPanelFix-Reader-type">
+    <xs:attributeGroup ref="util:object-attribs"/>
+    <xs:attribute name="ttbr" type="xs:double"/>
+  </xs:complexType>
+  <xs:complexType name="VM250MotionInfoExtractor-Reader-type"/>
+  <xs:complexType name="VM250MotionProfiler-Reader-type">
+    <xs:attributeGroup ref="util:object-attribs"/>
+    <xs:attribute name="defaultVelocity" type="xs:double"/>
+    <xs:attribute name="maxCredibleVelocity" type="xs:double"/>
+    <xs:attribute name="minCredibleVelocity" type="xs:double"/>
+    <xs:attribute name="velocityFallbackThreshold" type="xs:double"/>
+  </xs:complexType>
+  <xs:complexType name="VM250QualityCheck-Reader-type">
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="VM250RecordDatabaseReader-type">
+    <xs:all minOccurs="0">
+      <xs:element minOccurs="0" name="imports" type="vm250:ObjectReader-Imports-type"/>
+      <xs:element minOccurs="0" name="queries" type="ernie:PropertiesReader-type"/>
+      <xs:element minOccurs="0" name="lanes" type="ernie:LaneDatabaseReader-type"/>
+    </xs:all>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="VM250RecordManipulatorReader-AnisotropicModelReader-type">
+    <xs:simpleContent>
+      <xs:extension base="xs:string"/>
+    </xs:simpleContent>
+  </xs:complexType>
+  <xs:complexType name="VM250RecordManipulatorReader-type">
+    <xs:sequence minOccurs="0">
+      <xs:element minOccurs="0" name="imports" type="vm250:ObjectReader-Imports-type"/>
+      <xs:element minOccurs="0" name="applyShielding" type="xs:boolean"/>
+      <xs:element minOccurs="0" name="nominalLaneWidth" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="passengerAreaModel" type="vm250:VM250RecordManipulatorReader-AnisotropicModelReader-type"/>
+      <xs:element maxOccurs="unbounded" name="cargoModel" type="vm250:VM250RecordManipulatorReader-AnisotropicModelReader-type"/>
+      <xs:element name="shieldingModel" type="util:reference-type"/>
+      <xs:element name="sourceLibrary" type="ernie:InjectionSourceLibraryReader-type"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="VM250StandardFeatureExtractorReader-type">
+    <xs:sequence minOccurs="0">
+      <xs:element name="panels" type="util:integer-attr"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="VM250UniformGammaExtractor-Reader-type">
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="VM250VehicleClassReader-BackgroundReader-type">
+    <xs:all>
+      <xs:element minOccurs="0" name="matrix" type="math:MatrixReader-type"/>
+    </xs:all>
+  </xs:complexType>
+  <xs:complexType name="VM250VehicleClassReader-type">
+    <xs:sequence>
+      <xs:element name="type" type="util:integer-attr"/>
+      <xs:element name="trailerStart" type="util:double-attr"/>
+      <xs:element name="trailerEnd" type="util:double-attr"/>
+      <xs:element name="injection" type="vm250:vm250VM250VehicleClassReader-InjectionSection-type"/>
+      <xs:element name="display" type="vm250:vm250VM250VehicleClassReader-DisplaySection-type"/>
+      <xs:element name="template" type="util:string-attr"/>
+      <xs:element name="backgroundModels" type="vm250:List-VM250VehicleClassReader-BackgroundReader-type"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:int"/>
+  </xs:complexType>
+  <xs:complexType name="VM250VehicleClassifierReader-type">
+    <xs:sequence minOccurs="0">
+      <xs:element minOccurs="0" name="renormalizeTemplates" type="xs:boolean"/>
+      <xs:element maxOccurs="unbounded" name="vehicleClass" type="vm250:VM250VehicleClassReader-type"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="VM250VehicleFeatureExtractor-Reader-type">
+    <xs:attributeGroup ref="util:object-attribs"/>
+  </xs:complexType>
+  <xs:complexType name="vm250VM250AnalysisReader-ClassifiersSection-type">
+    <xs:all>
+      <xs:element minOccurs="0" name="alarmClassifier" type="ernie:ClassifierReader-type"/>
+    </xs:all>
+  </xs:complexType>
+  <xs:complexType name="vm250VM250AnalysisReader-Parameters-type">
+    <xs:all>
+      <xs:element minOccurs="0" name="threshold" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="nSigmaThreshold" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="backgroundRatioThreshold" type="util:double-attr"/>
+    </xs:all>
+  </xs:complexType>
+  <xs:complexType name="vm250VM250VehicleClassReader-DisplaySection-type">
+    <xs:all>
+      <xs:element minOccurs="0" name="vehicle_length" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="cab_length" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="isLongHaul" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="trailerPresent" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="hitchPresent" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="hasWideAxel" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="bedOnly" type="util:boolean-optional"/>
+      <xs:element minOccurs="0" name="numTrailerAxels" type="util:integer-attr"/>
+    </xs:all>
+  </xs:complexType>
+  <xs:complexType name="vm250VM250VehicleClassReader-InjectionSection-type">
+    <xs:all>
+      <xs:element minOccurs="0" name="passengerAreaStart" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="passengerAreaEnd" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="payloadAreaStart" type="util:double-attr"/>
+      <xs:element minOccurs="0" name="payloadAreaEnd" type="util:double-attr"/>
+    </xs:all>
+  </xs:complexType>
+  <xs:element name="analysis" type="vm250:VM250AnalysisReader-type" util:class="gov.llnl.ernie.vm250.VM250Analysis"/>
+  <xs:element name="backgroundEstimator" type="vm250:VM250BackgroundEstimator-Reader-type" util:class="gov.llnl.ernie.vm250.VM250BackgroundEstimator"/>
+  <xs:element name="backgroundFeatureExtractor" type="vm250:VM250BackgroundFeatureExtractor-Reader-type" util:class="gov.llnl.ernie.vm250.VM250BackgroundFeatureExtractor"/>
+  <xs:element name="dailyFileWriter" type="vm250:DailyFileWriter-Reader-type" util:class="gov.llnl.ernie.vm250.tools.DailyFileWriter"/>
+  <xs:element name="gammaPanelFix" type="vm250:VM250GammaPanelFix-Reader-type" util:class="gov.llnl.ernie.vm250.VM250GammaPanelFix"/>
+  <xs:element name="motionInfoExtractor" type="vm250:VM250MotionInfoExtractor-Reader-type" util:class="gov.llnl.ernie.vm250.VM250MotionInfoExtractor"/>
+  <xs:element name="motionProfiler" type="vm250:VM250MotionProfiler-Reader-type" util:class="gov.llnl.ernie.vm250.VM250MotionProfiler"/>
+  <xs:element name="qualityCheck" type="vm250:VM250QualityCheck-Reader-type" util:class="gov.llnl.ernie.vm250.VM250QualityCheck"/>
+  <xs:element name="recordDatabase" type="vm250:VM250RecordDatabaseReader-type" util:class="gov.llnl.ernie.vm250.VM250RecordDatabase"/>
+  <xs:element name="recordManipulator" type="vm250:VM250RecordManipulatorReader-type" util:class="gov.llnl.ernie.vm250.VM250RecordManipulator"/>
+  <xs:element name="standardFeatureExtractor" type="vm250:VM250StandardFeatureExtractorReader-type" util:class="gov.llnl.ernie.vm250.VM250StandardFeatureExtractor"/>
+  <xs:element name="uniformGammaExtractor" type="vm250:VM250UniformGammaExtractor-Reader-type" util:class="gov.llnl.ernie.vm250.VM250UniformGammaExtractor"/>
+  <xs:element name="vehicleClass" type="vm250:VM250VehicleClassReader-type" util:class="gov.llnl.ernie.vm250.VM250VehicleClass"/>
+  <xs:element name="vehicleClassifier" type="vm250:VM250VehicleClassifierReader-type" util:class="gov.llnl.ernie.vm250.VM250VehicleClassifier"/>
+  <xs:element name="vehicleFeatureExtractor" type="vm250:VM250VehicleFeatureExtractor-Reader-type" util:class="gov.llnl.ernie.vm250.VM250VehicleFeatureExtractor"/>
+</xs:schema>

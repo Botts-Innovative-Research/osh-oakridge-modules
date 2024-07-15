@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package gov.llnl.ernie.raven;
+
+option java_package = "gov.llnl.ernie.raven";
+option java_outer_classname = "LogProtos";
+
+import "google/protobuf/timestamp.proto";
+
+enum Level 
+{
+    SEVERE=0;
+    WARNING=1;
+    INFO=3;
+    CONFIG=4;
+    FINE=5;
+    FINER=6;
+    FINEST=7; 
+}
+
+message LogMessage
+{
+   google.protobuf.Timestamp timestamp = 1;
+   Level level = 2;
+   string origin = 3; // To use or not to use
+   string message = 4;
+}

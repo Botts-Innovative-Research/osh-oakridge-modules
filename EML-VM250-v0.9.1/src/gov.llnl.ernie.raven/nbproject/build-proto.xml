@@ -1,0 +1,73 @@
+<project name="build-proto">
+
+  <target name="-init-proto">
+    <property file="nbproject/project.properties"/>
+    <condition property="arch" value="osx-x86_64">
+      <os family="mac" />
+    </condition>
+    <condition property="arch" value="windows-x86_64">
+      <os family="windows" />
+    </condition>
+    <condition property="arch" value="linux-x86_64">
+      <os family="unix" />
+    </condition>
+    <condition property="windows">
+      <os family="windows" />
+    </condition>
+    <property name="proto.exe" value="lib/build/protoc-3.11.0-${arch}.exe"/>
+    <echo message="Arch ${arch}"/>
+  </target>
+
+  <target name="-uptodate-proto" depends="-init-proto">
+    <property name="proto.java.abs" location="${proto.java}"/>
+    <condition property="proto.uptodate">
+      <uptodate>
+        <srcfiles dir="${proto.srcs}" includes="**/*.proto"/>
+        <chainedmapper>
+          <globmapper from="*" to="${proto.java.abs}/*"/> 
+          <globmapper from="*.proto" to="*.java"/>
+        </chainedmapper>
+      </uptodate>
+    </condition>
+    <echo>Proto uptodate ${proto.uptodate}</echo>
+  </target>
+
+  <target name="proto-check" depends="-uptodate-proto"/>
+
+  <target name="proto" depends="-uptodate-proto,resolve-build" unless="proto.uptodate">
+    <echo>Run proto</echo>
+    <mkdir dir="${basedir}/${proto.java}"/>
+    <property name="proto.exe.abs" location="${proto.exe}"/>
+    <chmod file="${proto.exe}" perm="u+x"/>
+    <apply executable="${proto.exe.abs}" failonerror="true" dir="${proto.srcs}" relative="false">    
+      <arg value="--proto_path=${basedir}/${proto.srcs}" />            
+      <arg value="--java_out=${basedir}/${proto.java}" />
+      <fileset id="proto_files" dir="${proto.srcs}" includes="**/*.proto" />
+    </apply>
+  </target>
+
+  <target name="proto-py" depends="-uptodate-proto,resolve-build">
+    <echo>Run proto</echo> 
+    <mkdir dir="${basedir}/${proto.stub}/py"/>
+    <property name="proto.exe.abs" location="${proto.exe}"/>
+    <chmod file="${proto.exe}" perm="u+x"/>
+    <apply executable="${proto.exe.abs}" failonerror="true" dir="${proto.srcs}" relative="false">  
+      <arg value="--proto_path=${basedir}/${proto.srcs}" />    
+      <arg value="--python_out=${basedir}/${proto.stub}/py" />
+      <fileset id="proto_files" dir="${proto.srcs}" includes="**/*.proto" />
+    </apply>
+  </target>
+  
+  <target name="proto-csharp" depends="-uptodate-proto,resolve-build">
+    <echo>Run proto</echo>
+    <mkdir dir="${basedir}/${proto.stub}/cs"/>
+    <property name="proto.exe.abs" location="${proto.exe}"/>
+    <chmod file="${proto.exe}" perm="u+x"/>
+    <apply executable="${proto.exe.abs}" failonerror="true" dir="${proto.srcs}" relative="false"> 
+      <arg value="--proto_path=${basedir}/${proto.srcs}" />    
+      <arg value="--csharp_out=${basedir}/${proto.stub}/cs" />
+      <fileset id="proto_files" dir="${proto.srcs}" includes="**/*.proto" />
+    </apply>
+  </target>
+
+</project>

@@ -1,0 +1,23 @@
+<ivy-module version="2.0" xmlns:e="http://ant.apache.org/ivy/extra">
+  <info organisation="gov.llnl.ernie.raven" module="deps"/>
+
+  <configurations>
+    <conf name="build" description="build jars"/>
+    <conf name="deps" description="binary jars"/>
+    <conf name="test" description="test jars"/>
+    <conf name="coverage" description="coverage jars"/>
+  </configurations>
+
+  <dependencies>
+    <dependency org="com.beust" name="jcommander" rev="1.78" conf="test->default"/>
+    <dependency org="org.testng" name="testng" rev="7.0.0" conf="test->default"/>
+    <dependency org="org.jacoco" name="org.jacoco.ant" rev="0.8.5" conf="coverage->default">
+      <artifact name="org.jacoco.ant" e:classifier="nodeps"/>
+    </dependency>
+    <dependency org="com.google.protobuf" name="protobuf-java" rev="3.11.0" conf="deps->default"/>
+    <dependency org="com.google.protobuf" name="protoc" rev="3.11.0" conf="build->default">
+      <artifact name="protoc" ext="exe" e:classifier="${arch}"/>
+    </dependency>
+    <dependency org="org.zeromq" name="jeromq" rev="0.5.2" conf="deps->default"/>
+  </dependencies>
+</ivy-module>
