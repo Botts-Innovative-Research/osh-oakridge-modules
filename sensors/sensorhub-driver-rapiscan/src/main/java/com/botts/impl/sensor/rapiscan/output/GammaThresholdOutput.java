@@ -59,7 +59,7 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
         int index = 0;
 
         dataBlock.setLongValue(index++, System.currentTimeMillis()/1000);
-        dataBlock.setStringValue(index++, parent.laneID);
+        dataBlock.setStringValue(index++, parent.laneName);
 
         MessageHandler messageHandler = parentSensor.getMessageHandler();
 

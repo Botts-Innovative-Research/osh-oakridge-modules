@@ -8,7 +8,7 @@ dependencies {
 
     testImplementation('junit:junit:4.13')
     implementation group: 'com.opencsv', name: 'opencsv', version: '4.1'
-
+    implementation fileTree(dir: 'lib', include: ['*.jar'])
 }
 
 // exclude tests requiring connection to the sensor

@@ -12,7 +12,9 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
 public class SpeedOutput extends AbstractSensorOutput<AspectSensor> {
-    private static final String SENSOR_OUTPUT_NAME = "Speed";
+
+    private static final String SENSOR_OUTPUT_NAME = "speed";
+    private static final String SENSOR_OUTPUT_LABEL = "Speed";
     private static final int MAX_NUM_TIMING_SAMPLES = 10;
 
     protected DataRecord dataRecord;
@@ -30,19 +32,17 @@ public class SpeedOutput extends AbstractSensorOutput<AspectSensor> {
     public void init() {
         RADHelper radHelper = new RADHelper();
 
+        var samplingTime = radHelper.createPrecisionTimeStamp();
+        var laneID = radHelper.createLaneID();
+        var speedMMS = radHelper.createSpeedMms();
+
         dataRecord = radHelper.createRecord()
                 .name(getName())
-                .label(getName())
+                .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("speed"))
-                .addField("Timestamp", radHelper.createPrecisionTimeStamp())
-                .addField("LaneID", radHelper.createText()
-                        .label("Lane ID")
-                        .definition(RADHelper.getRadUri("LaneID")))
-                .addField("Speed", radHelper.createQuantity()
-                        .name("Speed")
-                        .label("Speed")
-                        .definition(RADHelper.getRadUri("speed"))
-                        .uomCode("mm/s"))
+                .addField(samplingTime.getName(), samplingTime)
+                .addField(laneID.getName(), laneID)
+                .addField(speedMMS.getName(), speedMMS)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");

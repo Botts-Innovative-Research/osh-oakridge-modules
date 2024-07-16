@@ -2,6 +2,7 @@ package com.botts.impl.sensor.rapiscan.eml;
 
 import com.botts.impl.sensor.rapiscan.output.NeutronOutput;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
+import gov.llnl.ernie.api.Results;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
@@ -33,44 +34,16 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
 
-    String result;
-    double releaseProbability;
-    double investigateProbability;
-    boolean gammaAlert;
-    boolean neutronAlert;
-    String overallSourceType;
-    String overallClassifierUsed;
-    double overallXLocation1;
-    double overallXLocation2;
-    double overallYLocation;
-    double overallZLocation;
-    double overallProbabilityNonEmitting;
-    double overallProbabilityNORM;
-    double overallProbabilityThreat;
-    String sourceType;
-    String classifierUsed;
-    double xLocation1;
-    double xLocation2;
-    double yLocation;
-    double zLocation;
-    double probabilityNonEmitting;
-    double probabilityNORM;
-    double probabilityThreat;
-
-    int sourceListSize;
-    int vehicleClass;
-    double vehicleLength;
-    String message;
-    String yellowLightMessage;
-
     public EMLOutput(RapiscanSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
-    public void init(){
+
+    public void init() {
         dataStruct = createDataRecord();
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
-    DataRecord createDataRecord(){
+
+    DataRecord createDataRecord() {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
@@ -163,142 +136,14 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
 
     }
 
-    public void setData(){
-        dataStruct = createDataRecord();
-        DataBlock dataBlock;
-        if (latestRecord == null) {
-
-            dataBlock = dataStruct.createDataBlock();
-
-        } else {
-
-            dataBlock = latestRecord.renew();
-        }
-        dataStruct.setData(dataBlock);
-
-        //TODO: parse xml reader for the values
-
-        int index =0;
-        dataBlock.setDoubleValue(index++, System.currentTimeMillis()/1000d);
-        dataBlock.setStringValue(index++, getResult());
-        dataBlock.setDoubleValue(index++, getInvestigateProbability());
-        dataBlock.setDoubleValue(index++, getReleaseProbability());
-        dataBlock.setBooleanValue(index++, isGammaAlert() );
-        dataBlock.setBooleanValue(index++, isNeutronAlert());
-        dataBlock.setIntValue(index++, sourceListSize);
-
-
-//        var sourceArray = ((DataBlockParallel) this.dataStruct.getComponent("sources").getData());
-        var sourceArray = ((DataArrayImpl) this.dataStruct.getComponent("sources"));
-        sourceArray.updateSize();
-        //dataBlock.updateAtomCount();
-
-        for(int j=0; j<sourceListSize; j++) {
-            dataBlock.setStringValue(index++, getSourceType());
-            dataBlock.setStringValue(index++, getClassifierUsed());
-            dataBlock.setDoubleValue(index++, getxLocation1());
-            dataBlock.setDoubleValue(index++, getxLocation2());
-            dataBlock.setDoubleValue(index++, getyLocation());
-            dataBlock.setDoubleValue(index++, getzLocation());
-            dataBlock.setDoubleValue(index++, getProbabilityNonEmitting());
-            dataBlock.setDoubleValue(index++, getProbabilityNORM());
-            dataBlock.setDoubleValue(index++, getProbabilityThreat());
-
-        }
-//            dataBlock.setStringValue(index++, getSourceType());
-//            dataBlock.setStringValue(index++, getClassifierUsed());
-//            dataBlock.setDoubleValue(index++, getxLocation1());
-//            dataBlock.setDoubleValue(index++, getxLocation2());
-//            dataBlock.setDoubleValue(index++, getyLocation());
-//            dataBlock.setDoubleValue(index++, getzLocation());
-//            dataBlock.setDoubleValue(index++, getProbabilityNonEmitting());
-//            dataBlock.setDoubleValue(index++, getProbabilityNORM());
-//            dataBlock.setDoubleValue(index++, getProbabilityThreat());
-
-//            dataBlock.updateAtomCount();
-//        }
-
-        dataBlock.setStringValue(index++, getOverallSourceType());
-        dataBlock.setStringValue(index++, getOverallClassifierUsed());
-        dataBlock.setDoubleValue(index++, getOverallXLocation1());
-        dataBlock.setDoubleValue(index++, getOverallXLocation2());
-        dataBlock.setDoubleValue(index++, getOverallYLocation());
-        dataBlock.setDoubleValue(index++, getOverallZLocation());
-        dataBlock.setDoubleValue(index++, getOverallProbabilityNonEmitting());
-        dataBlock.setDoubleValue(index++, getOverallProbabilityNORM());
-        dataBlock.setDoubleValue(index++, getOverallProbabilityThreat());
-
-        dataBlock.setIntValue(index++, getVehicleClass());
-        dataBlock.setDoubleValue(index++,getVehicleLength());
-        dataBlock.setStringValue(index++, getMessage());
-        dataBlock.setStringValue(index++, getYellowLightMessage());
-
-        latestRecord = dataBlock;
-
-        eventHandler.publish(new DataEvent(System.currentTimeMillis(), EMLOutput.this, dataBlock));
+    public void onNewMessage(Results results) {
+        System.out.println(results.getMessage());
+        System.out.println(results.getLaneID());
+        System.out.println(results.getNumberOfSources());
+        System.out.println(results.getReleaseProbability());
+        System.out.println(results.getRPMResult());
+        System.out.println(results.getRPMGammaAlert());
     }
-
-
-    //credit to https://mkyong.com/java/how-to-read-xml-file-in-java-dom-parser/
-    public void parser(String emlResults) throws ParserConfigurationException, IOException, SAXException {
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        DocumentBuilder builder = factory.newDocumentBuilder();
-
-//        Document document = builder.parse(new File("fakeEMLOutputData.xml"));
-
-//        EMLService emlService = new EMLService(this, this.parentSensor.getMessageHandler());
-//        String emlResults = emlService.getXMLResults(0, "example scan data");
-        InputStream targetStream = new ByteArrayInputStream(emlResults.getBytes());
-        Document document = builder.parse(new BufferedInputStream(targetStream));
-        document.getDocumentElement().normalize();
-        NodeList ernieList = document.getElementsByTagName("ERNIEAnalysis");
-        Element ernieElement = (Element) ernieList.item(0);
-
-        result = ernieElement.getElementsByTagName("result").item(0).getTextContent();
-        investigateProbability = Double.parseDouble(ernieElement.getElementsByTagName("investigateProbability").item(0).getTextContent());
-        releaseProbability = Double.parseDouble(ernieElement.getElementsByTagName("releaseProbability").item(0).getTextContent());
-        gammaAlert = Boolean.parseBoolean(ernieElement.getElementsByTagName("gammaAlert").item(0).getTextContent());
-        neutronAlert = Boolean.parseBoolean(ernieElement.getElementsByTagName("neutronAlert").item(0).getTextContent());
-
-        NodeList sourceList = ernieElement.getElementsByTagName("sources");
-        sourceListSize = sourceList.getLength();
-        for(int i=0; i<sourceListSize; i++){
-            Element source = (Element) sourceList.item(i);
-            sourceType = source.getElementsByTagName("sourceType").item(0).getTextContent();
-            classifierUsed = source.getElementsByTagName("classifierUsed").item(0).getTextContent();
-            xLocation1 = Double.parseDouble(source.getElementsByTagName("xLocation1").item(0).getTextContent());
-            xLocation2 = Double.parseDouble(source.getElementsByTagName("xLocation2").item(0).getTextContent());
-            yLocation = Double.parseDouble(source.getElementsByTagName("yLocation").item(0).getTextContent());
-            zLocation = Double.parseDouble(source.getElementsByTagName("zLocation").item(0).getTextContent());
-            probabilityNonEmitting = Double.parseDouble(source.getElementsByTagName("probabilityNonEmitting").item(0).getTextContent());
-            probabilityNORM = Double.parseDouble(source.getElementsByTagName("probabilityNORM").item(0).getTextContent());
-            probabilityThreat = Double.parseDouble(source.getElementsByTagName("probabilityThreat").item(0).getTextContent());
-
-        }
-
-        //overall source
-        NodeList overallSourceList = ernieElement.getElementsByTagName("overallSource");
-        for(int i=0; i< overallSourceList.getLength(); i++){
-            Element overallSource = (Element) overallSourceList.item(i);
-            overallSourceType = overallSource.getElementsByTagName("sourceType").item(0).getTextContent();
-            overallClassifierUsed = overallSource.getElementsByTagName("classifierUsed").item(0).getTextContent();
-            overallXLocation1 = Double.parseDouble(overallSource.getElementsByTagName("xLocation1").item(0).getTextContent());
-            overallXLocation2 = Double.parseDouble(overallSource.getElementsByTagName("xLocation2").item(0).getTextContent());
-            overallYLocation = Double.parseDouble(overallSource.getElementsByTagName("yLocation").item(0).getTextContent());
-            overallZLocation = Double.parseDouble(overallSource.getElementsByTagName("zLocation").item(0).getTextContent());
-            overallProbabilityNonEmitting = Double.parseDouble(overallSource.getElementsByTagName("probabilityNonEmitting").item(0).getTextContent());
-            overallProbabilityNORM = Double.parseDouble(overallSource.getElementsByTagName("probabilityNORM").item(0).getTextContent());
-            overallProbabilityThreat = Double.parseDouble(overallSource.getElementsByTagName("probabilityThreat").item(0).getTextContent());
-        }
-
-
-        vehicleClass = Integer.parseInt(ernieElement.getElementsByTagName("vehicleClass").item(0).getTextContent());
-        vehicleLength = Double.parseDouble(ernieElement.getElementsByTagName("vehicleLength").item(0).getTextContent());
-        message = ernieElement.getElementsByTagName("message").item(0).getTextContent();
-        yellowLightMessage = ernieElement.getElementsByTagName("yellowLightMessage").item(0).getTextContent();
-    }
-
-
 
     @Override
     public DataComponent getRecordDescription() {
@@ -315,219 +160,4 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
         return 0;
     }
 
-    public String getResult() {
-        return result;
-    }
-
-    public void setResult(String result) {
-        this.result = result;
-    }
-
-    public double getReleaseProbability() {
-        return releaseProbability;
-    }
-
-    public void setReleaseProbability(double releaseProbability) {
-        this.releaseProbability = releaseProbability;
-    }
-
-    public double getInvestigateProbability() {
-        return investigateProbability;
-    }
-
-    public void setInvestigateProbability(double investigateProbability) {
-        this.investigateProbability = investigateProbability;
-    }
-
-    public boolean isGammaAlert() {
-        return gammaAlert;
-    }
-
-    public void setGammaAlert(boolean gammaAlert) {
-        this.gammaAlert = gammaAlert;
-    }
-
-    public boolean isNeutronAlert() {
-        return neutronAlert;
-    }
-
-    public void setNeutronAlert(boolean neutronAlert) {
-        this.neutronAlert = neutronAlert;
-    }
-
-    public String getOverallSourceType() {
-        return overallSourceType;
-    }
-
-    public void setOverallSourceType(String overallSourceType) {
-        this.overallSourceType = overallSourceType;
-    }
-
-    public String getOverallClassifierUsed() {
-        return overallClassifierUsed;
-    }
-
-    public void setOverallClassifierUsed(String overallClassifierUsed) {
-        this.overallClassifierUsed = overallClassifierUsed;
-    }
-
-    public double getOverallXLocation1() {
-        return overallXLocation1;
-    }
-
-    public void setOverallXLocation1(double overallXLocation1) {
-        this.overallXLocation1 = overallXLocation1;
-    }
-
-    public double getOverallXLocation2() {
-        return overallXLocation2;
-    }
-
-    public void setOverallXLocation2(double overallXLocation2) {
-        this.overallXLocation2 = overallXLocation2;
-    }
-
-    public double getOverallYLocation() {
-        return overallYLocation;
-    }
-
-    public void setOverallYLocation(double overallYLocation) {
-        this.overallYLocation = overallYLocation;
-    }
-
-    public double getOverallZLocation() {
-        return overallZLocation;
-    }
-
-    public void setOverallZLocation(double overallZLocation) {
-        this.overallZLocation = overallZLocation;
-    }
-
-    public double getOverallProbabilityNonEmitting() {
-        return overallProbabilityNonEmitting;
-    }
-
-    public void setOverallProbabilityNonEmitting(double overallProbabilityNonEmitting) {
-        this.overallProbabilityNonEmitting = overallProbabilityNonEmitting;
-    }
-
-    public double getOverallProbabilityNORM() {
-        return overallProbabilityNORM;
-    }
-
-    public void setOverallProbabilityNORM(double overallProbabilityNORM) {
-        this.overallProbabilityNORM = overallProbabilityNORM;
-    }
-
-    public double getOverallProbabilityThreat() {
-        return overallProbabilityThreat;
-    }
-
-    public void setOverallProbabilityThreat(double overallProbabilityThreat) {
-        this.overallProbabilityThreat = overallProbabilityThreat;
-    }
-
-    public String getSourceType() {
-        return sourceType;
-    }
-
-    public void setSourceType(String sourceType) {
-        this.sourceType = sourceType;
-    }
-
-    public String getClassifierUsed() {
-        return classifierUsed;
-    }
-
-    public void setClassifierUsed(String classifierUsed) {
-        this.classifierUsed = classifierUsed;
-    }
-
-    public double getxLocation1() {
-        return xLocation1;
-    }
-
-    public void setxLocation1(double xLocation1) {
-        this.xLocation1 = xLocation1;
-    }
-
-    public double getxLocation2() {
-        return xLocation2;
-    }
-
-    public void setxLocation2(double xLocation2) {
-        this.xLocation2 = xLocation2;
-    }
-
-    public double getyLocation() {
-        return yLocation;
-    }
-
-    public void setyLocation(double yLocation) {
-        this.yLocation = yLocation;
-    }
-
-    public double getzLocation() {
-        return zLocation;
-    }
-
-    public void setzLocation(double zLocation) {
-        this.zLocation = zLocation;
-    }
-
-    public double getProbabilityNonEmitting() {
-        return probabilityNonEmitting;
-    }
-
-    public void setProbabilityNonEmitting(double probabilityNonEmitting) {
-        this.probabilityNonEmitting = probabilityNonEmitting;
-    }
-
-    public double getProbabilityNORM() {
-        return probabilityNORM;
-    }
-
-    public void setProbabilityNORM(double probabilityNORM) {
-        this.probabilityNORM = probabilityNORM;
-    }
-
-    public double getProbabilityThreat() {
-        return probabilityThreat;
-    }
-
-    public void setProbabilityThreat(double probabilityThreat) {
-        this.probabilityThreat = probabilityThreat;
-    }
-
-    public int getVehicleClass() {
-        return vehicleClass;
-    }
-
-    public void setVehicleClass(int vehicleClass) {
-        this.vehicleClass = vehicleClass;
-    }
-
-    public double getVehicleLength() {
-        return vehicleLength;
-    }
-
-    public void setVehicleLength(double vehicleLength) {
-        this.vehicleLength = vehicleLength;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public void setMessage(String message) {
-        this.message = message;
-    }
-
-    public String getYellowLightMessage() {
-        return yellowLightMessage;
-    }
-
-    public void setYellowLightMessage(String yellowLightMessage) {
-        this.yellowLightMessage = yellowLightMessage;
-    }
 }

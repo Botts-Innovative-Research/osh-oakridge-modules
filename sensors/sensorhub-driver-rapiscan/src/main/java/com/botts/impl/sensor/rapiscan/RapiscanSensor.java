@@ -14,17 +14,16 @@
 package com.botts.impl.sensor.rapiscan;
 
 import com.botts.impl.sensor.rapiscan.eml.EMLOutput;
-import com.botts.impl.sensor.rapiscan.eml.EMLService;
 import com.botts.impl.sensor.rapiscan.output.*;
+import gov.llnl.ernie.api.ERNIE_lane;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.sensor.SensorException;
+import org.sensorhub.impl.comm.TCPCommProvider;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.xml.sax.SAXException;
 
-import javax.xml.parsers.ParserConfigurationException;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -45,7 +44,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     private static final Logger logger = LoggerFactory.getLogger(RapiscanSensor.class);
 
     ICommProvider<?> commProvider;
-    EMLOutput emlOutput;
+    EMLOutput emlOutput = null;
     GammaOutput gammaOutput;
     NeutronOutput neutronOutput;
     OccupancyOutput occupancyOutput;
@@ -59,7 +58,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     InputStream msgIn;
 
     Timer t;
-    public String laneID;
+    public String laneName;
 
 
     @Override
@@ -71,31 +70,14 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         generateUniqueID("urn:osh:sensor:rapiscan:", config.serialNumber);
         generateXmlID("Rapiscan", config.serialNumber);
 
-        laneID = config.laneID;
+        laneName = config.laneConfig.laneName;
 
         // TODO: EML integration
         if(config.isSupplementalAlgorithm){
-            //do EML stuff
-            //calculate the thresholds if this is true for eml service
-//            calculateThreshold();
-            try {
-                createEMLOutputs();
-                startEMLService();
-            } catch (ParserConfigurationException e) {
-                throw new RuntimeException(e);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            } catch (SAXException e) {
-                throw new RuntimeException(e);
-            }
-
+            createEMLOutputs();
         }
 
         createOutputs();
-    }
-
-    public void startEMLService() throws ParserConfigurationException, IOException, SAXException {
-        EMLService emlService = new EMLService(emlOutput, messageHandler);
     }
 
     public void createEMLOutputs(){
@@ -177,15 +159,38 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
 //         connect to data stream
             try {
-//                for (ICommProvider<?> commProvider : commProviderList) {
-                    msgIn = new BufferedInputStream(commProvider.getInputStream());
-                    messageHandler = new MessageHandler(msgIn, gammaOutput, neutronOutput, occupancyOutput, tamperOutput, speedOutput, setUpGamma1Output, setUpGamma2Output, setupGamma3Output, setupNeutronOutput);
+                TCPCommProvider tcp = null;
 
-//                    bufferedInputStreamsList.add(msgIn);
-//                    messageHandlerList.add(messageHandler);
-//                }
+                if (commProvider instanceof TCPCommProvider) {
+                    tcp = (TCPCommProvider) commProvider;
+                }
 
-//            csvMsgRead.readMessages(msgIn, gammaOutput, neutronOutput, occupancyOutput);
+                ERNIE_lane ernieLane = null;
+                if (config.isSupplementalAlgorithm && tcp != null) {
+                    String port = String.valueOf(tcp.getConfiguration().protocol.remotePort);
+                    ernieLane = new ERNIE_lane(
+                            port,
+                            config.laneConfig.laneID,
+                            config.laneConfig.isCollimated,
+                            config.laneConfig.laneWidth,
+                            config.laneConfig.intervals,
+                            config.laneConfig.occupancyHoldin
+                    );
+                }
+
+                msgIn = new BufferedInputStream(commProvider.getInputStream());
+                messageHandler = new MessageHandler(msgIn,
+                        gammaOutput,
+                        neutronOutput,
+                        occupancyOutput,
+                        tamperOutput,
+                        speedOutput,
+                        setUpGamma1Output,
+                        setUpGamma2Output,
+                        setupGamma3Output,
+                        setupNeutronOutput,
+                        emlOutput,
+                        ernieLane);
 
             } catch (IOException e) {
 
@@ -255,7 +260,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
             @Override
             public void run() {
                 locationOutput.setLocationOutput(config.getLocation());
-                System.out.println("location updated");
+//                System.out.println("location updated");
             }
         };
         t.scheduleAtFixedRate(tt,500,10000);

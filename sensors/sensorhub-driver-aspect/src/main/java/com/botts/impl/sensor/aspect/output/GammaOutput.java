@@ -12,7 +12,8 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
 public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
-    private static final String SENSOR_OUTPUT_NAME = "Gamma Scan";
+    private static final String SENSOR_OUTPUT_NAME = "gammaScan";
+    private static final String SENSOR_OUTPUT_LABEL = "Gamma Scan";
     private static final int MAX_NUM_TIMING_SAMPLES = 10;
 
     protected DataRecord dataRecord;
@@ -30,32 +31,25 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
     public void init() {
         RADHelper radHelper = new RADHelper();
 
+        var samplingTime = radHelper.createPrecisionTimeStamp();
+        var laneID = radHelper.createLaneID();
+        var gammaCount = radHelper.createGammaGrossCount();
+        var gammaBackground = radHelper.createGammaBackground();
+        var gammaVariance = radHelper.createGammaVariance();
+        var gammaVarianceBackground = radHelper.createGammaVarianceBackground();
+        var gammaAlarmState = radHelper.createGammaAlarmState();
+
         dataRecord = radHelper.createRecord()
                 .name(getName())
-                .label(getName())
+                .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("gamma-scan"))
-                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-                .addField("Lane ID", radHelper.createText()
-                        .definition(RADHelper.getRadUri("LaneID"))
-                        .label("LaneID"))
-                .addField("GammaGrossCount", radHelper.createGammaGrossCount())
-                .addField("GammaBackground", radHelper.createQuantity()
-                        .name("GammaBackground")
-                        .label("Gamma Background")
-                        .definition(RADHelper.getRadUri("gamma-background")))
-                .addField("GammaVariance", radHelper.createQuantity()
-                        .name("GammaVariance")
-                        .label("Gamma Variance")
-                        .definition(RADHelper.getRadUri("gamma-variance")))
-                .addField("Variance/Background", radHelper.createQuantity()
-                        .name("GammaVariance/GammaBackground")
-                        .label("Variance/Background")
-                        .definition(RADHelper.getRadUri("gamma-variance-background")))
-                .addField("Alarm State", radHelper.createCategory()
-                        .name("AlarmState")
-                        .label("Alarm State")
-                        .definition(RADHelper.getRadUri("alarm"))
-                        .addAllowedValues("Alarm", "Background", "Fault - Gamma High", "Fault - Gamma Low"))
+                .addField(samplingTime.getName(), samplingTime)
+                .addField(laneID.getName(), laneID)
+                .addField(gammaCount.getName(), gammaCount)
+                .addField(gammaBackground.getName(), gammaBackground)
+                .addField(gammaVariance.getName(), gammaVariance)
+                .addField(gammaVarianceBackground.getName(), gammaVarianceBackground)
+                .addField(gammaAlarmState.getName(), gammaAlarmState)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");

@@ -12,7 +12,9 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
 public class SensorLocationOutput extends AbstractSensorOutput<AspectSensor> {
-    private static final String SENSOR_OUTPUT_NAME = "Location";
+
+    private static final String SENSOR_OUTPUT_NAME = "location";
+    private static final String SENSOR_OUTPUT_LABEL = "Location";
 
     protected DataRecord dataRecord;
     protected DataEncoding dataEncoding;
@@ -25,15 +27,18 @@ public class SensorLocationOutput extends AbstractSensorOutput<AspectSensor> {
     public void init() {
         RADHelper radHelper = new RADHelper();
 
+        var samplingTime = radHelper.createPrecisionTimeStamp();
+        var laneID = radHelper.createLaneID();
+
+
         dataRecord = radHelper.createRecord()
                 .name(getName())
-                .label(getName())
+                .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("location-output"))
-                .addField("Sampling Time", radHelper.createPrecisionTimeStamp())
-                .addField("LaneID", radHelper.createText()
-                        .label("Lane ID")
-                        .definition(RADHelper.getRadUri("LaneID")))
-                .addField("Sensor Location", radHelper.createLocationVectorLLA())
+                .addField(samplingTime.getName(), samplingTime)
+                .addField(laneID.getName(), laneID)
+                .addField("sensorLocation", radHelper.createLocationVectorLLA()
+                        .label("Sensor Location"))
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");

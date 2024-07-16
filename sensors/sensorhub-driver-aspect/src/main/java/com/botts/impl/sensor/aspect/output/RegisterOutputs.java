@@ -13,7 +13,8 @@ import org.vast.data.TextEncodingImpl;
 
 public class RegisterOutputs extends AbstractSensorOutput<AspectSensor> {
 
-    private static final String SENSOR_OUTPUT_NAME = "Register Out[uts";
+    private static final String SENSOR_OUTPUT_NAME = "registerOutputs";
+    private static final String SENSOR_OUTPUT_LABEL = "Register Outputs";
     private static final int MAX_NUM_TIMING_SAMPLES = 10;
 
     protected DataRecord dataRecord;
@@ -30,19 +31,17 @@ public class RegisterOutputs extends AbstractSensorOutput<AspectSensor> {
     public void init() {
         RADHelper radHelper = new RADHelper();
 
+        var samplingTime = radHelper.createPrecisionTimeStamp();
+        var laneID = radHelper.createLaneID();
+        var objectMark = radHelper.createObjectMark();
+
         dataRecord = radHelper.createRecord()
                 .name(getName())
-                .label(getName())
+                .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("register-outputs"))
-                .addField("Timestamp", radHelper.createPrecisionTimeStamp())
-                .addField("LaneID", radHelper.createText()
-                        .label("Lane ID")
-                        .definition(RADHelper.getRadUri("LaneID")))
-                .addField("ObjectMark", radHelper.createQuantity()
-                        .name("objectMark")
-                        .label("Object Mark")
-                        .definition(RADHelper.getRadUri("object-mark"))
-                        )
+                .addField(samplingTime.getName(), samplingTime)
+                .addField(laneID.getName(), laneID)
+                .addField(objectMark.getName(), objectMark)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");

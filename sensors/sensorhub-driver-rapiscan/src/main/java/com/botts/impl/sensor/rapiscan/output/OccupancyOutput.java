@@ -69,7 +69,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
         int index =0;
 
         dataBlock.setLongValue(index++, System.currentTimeMillis()/1000);
-        dataBlock.setStringValue(index++, parent.laneID);
+        dataBlock.setStringValue(index++, parent.laneName);
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[1])); //occupancy count
         dataBlock.setLongValue(index++, startTime/1000);
         dataBlock.setLongValue(index++, endTime/1000);

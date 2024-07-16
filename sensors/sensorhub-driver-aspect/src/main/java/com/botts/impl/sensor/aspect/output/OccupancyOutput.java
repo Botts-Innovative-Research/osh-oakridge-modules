@@ -12,7 +12,8 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
 public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
-    private static final String SENSOR_OUTPUT_NAME = "Occupancy";
+    private static final String SENSOR_OUTPUT_NAME = "occupancy";
+    private static final String SENSOR_OUTPUT_LABEL = "Occupancy";
     private static final int MAX_NUM_TIMING_SAMPLES = 10;
 
     protected DataRecord dataRecord;
@@ -30,30 +31,27 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
     public void init() {
         RADHelper radHelper = new RADHelper();
 
+        var samplingTime = radHelper.createPrecisionTimeStamp();
+        var laneID = radHelper.createLaneID();
+        var occupancyCount = radHelper.createOccupancyCount();
+        var occupancyStart = radHelper.createOccupancyStartTime();
+        var occupancyEnd = radHelper.createOccupancyEndTime();
+        var gammaAlarm = radHelper.createGammaAlarm();
+        var neutronAlarm = radHelper.createNeutronAlarm();
+        var objectMark = radHelper.createObjectMark();
+
         dataRecord = radHelper.createRecord()
                 .name(getName())
-                .label(getName())
+                .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("occupancy"))
-                .addField("Timestamp", radHelper.createPrecisionTimeStamp())
-                .addField("LaneID", radHelper.createText()
-                        .label("Lane ID")
-                        .definition(RADHelper.getRadUri("LaneID")))
-                .addField("OccupancyCount", radHelper.createOccupancyCount())
-                .addField("StartTime", radHelper.createOccupancyStartTime())
-                .addField("EndTime", radHelper.createOccupancyEndTime())
-                .addField("GammaAlarm", radHelper.createBoolean()
-                        .name("gamma-alarm")
-                        .label("Gamma Alarm")
-                        .definition(RADHelper.getRadUri("gamma-alarm")))
-                .addField("NeutronAlarm", radHelper.createBoolean()
-                        .name("neutron-alarm")
-                        .label("Neutron Alarm")
-                        .definition(RADHelper.getRadUri("neutron-alarm")))
-
-                .addField("WheelNumbers", radHelper.createQuantity()
-                        .name("object-mark")
-                        .label("Wheel Numbers")
-                        .definition(RADHelper.getRadUri("object-mark")))
+                .addField(samplingTime.getName(), samplingTime)
+                .addField(laneID.getName(), laneID)
+                .addField(occupancyCount.getName(), occupancyCount)
+                .addField(occupancyStart.getName(), occupancyStart)
+                .addField(occupancyEnd.getName(), occupancyEnd)
+                .addField(gammaAlarm.getName(), gammaAlarm)
+                .addField(neutronAlarm.getName(), neutronAlarm)
+                .addField(objectMark.getName(), objectMark)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");

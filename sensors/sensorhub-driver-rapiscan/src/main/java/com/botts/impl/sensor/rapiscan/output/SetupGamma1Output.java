@@ -67,7 +67,7 @@ public class SetupGamma1Output extends AbstractSensorOutput<RapiscanSensor> {
         }
         int index =0;
         dataBlock.setLongValue(index++,System.currentTimeMillis()/1000);
-        dataBlock.setStringValue(index++, parent.laneID);
+        dataBlock.setStringValue(index++, parent.laneName);
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[1])); //high bg
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[2])); // low bg
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[3])); //intervals

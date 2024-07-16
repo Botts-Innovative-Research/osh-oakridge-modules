@@ -9,7 +9,7 @@ import java.io.IOException;
 
 public class EMLService {
 
-    public EMLService(EMLOutput output, MessageHandler messageHandler) throws ParserConfigurationException, IOException, SAXException {
+    public EMLService(EMLOutput_OLD output, MessageHandler messageHandler) throws ParserConfigurationException, IOException, SAXException {
         doInit();
 
 //        XMLStreamReader streamReader = null;
@@ -38,7 +38,7 @@ public class EMLService {
                 "    </ERNIEContextualInfo>\n" +
                 "    <ScanContextualInfo>\n" +
                 "        <portID>string</portID>\n" +
-                "        <laneID>18</laneID>\n" +
+                "        <laneName>18</laneName>\n" +
                 "        <dateTime>string</dateTime>\n" +
                 "        <segmentId>string</segmentId>\n" +
                 "        <RPMResult>string</RPMResult>\n" +

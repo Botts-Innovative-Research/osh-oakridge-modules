@@ -64,7 +64,7 @@ public class SpeedOutput  extends AbstractSensorOutput<RapiscanSensor> {
         int index = 0;
 
         dataBlock.setLongValue(index++,System.currentTimeMillis()/1000);
-        dataBlock.setStringValue(index++, parent.laneID);
+        dataBlock.setStringValue(index++, parent.laneName);
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[1]));
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[2]));
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[3]));

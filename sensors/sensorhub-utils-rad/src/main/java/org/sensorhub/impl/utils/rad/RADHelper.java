@@ -118,10 +118,59 @@ public class RADHelper extends GeoPosHelper {
 
     public Quantity createNeutronBackground(){
         return createQuantity()
-                .name("neutronBackgroundCount")
-                .label("Neutron Background Count")
-                .definition(getRadUri("neutron-background-count"))
-                .description("neutron count to start occupancy")
+                .name("neutronBackground")
+                .label("Neutron Background")
+                .definition(getRadUri("neutron-background"))
+                .description("Neutron count to start occupancy")
+                .build();
+    }
+
+    public Quantity createGammaBackground() {
+        return createQuantity()
+                .name("gammaBackground")
+                .label("Gamma Background")
+                .definition(getRadUri("gamma-background"))
+                .description("Gamma count to start occupancy")
+                .build();
+    }
+
+    public Quantity createGammaVariance() {
+        return createQuantity()
+                .name("gammaVariance")
+                .label("Gamma Variance")
+                .definition(getRadUri("gamma-variance"))
+                .build();
+    }
+
+    public Quantity createNeutronVariance() {
+        return createQuantity()
+                .name("neutronVariance")
+                .label("Neutron Variance")
+                .definition(getRadUri("neutron-variance"))
+                .build();
+    }
+
+    public Quantity createGammaVarianceBackground() {
+        return createQuantity()
+                .name("gammaVarianceBackground")
+                .label("Gamma Variance/Background")
+                .definition(getRadUri("gamma-variance-background"))
+                .build();
+    }
+
+    public Quantity createNeutronVarianceBackground() {
+        return createQuantity()
+                .name("neutronVarianceBackground")
+                .label("Neutron Variance/Background")
+                .definition(getRadUri("neutron-variance-background"))
+                .build();
+    }
+
+    public Quantity createObjectMark() {
+        return createQuantity()
+                .name("objectMark")
+                .label("Object Mark")
+                .definition(getRadUri("object-mark"))
                 .build();
     }
 
@@ -168,6 +217,7 @@ public class RADHelper extends GeoPosHelper {
                 .description("number of 200ms time intervals to hold in after occupancy signal indicates the system is vacant")
                 .build();
     }
+
     public Quantity createIntervals(){
         return createQuantity()
                 .name("intervals")
@@ -312,7 +362,6 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-
     public Quantity createSpeedMph(){
         return createQuantity()
                 .name("speedMPH")
@@ -322,6 +371,7 @@ public class RADHelper extends GeoPosHelper {
                 //max 99
                 .build();
     }
+
     public Quantity createSpeedKph(){
         return createQuantity()
                 .name("speedKPH")
@@ -329,6 +379,15 @@ public class RADHelper extends GeoPosHelper {
                 .definition(getRadUri("speed-kph"))
                 .uomCode("kph")
                 //max 999
+                .build();
+    }
+
+    public Quantity createSpeedMms() {
+        return createQuantity()
+                .name("speedMMS")
+                .label("Speed (MM/S)")
+                .definition(getRadUri("speed-mms"))
+                .uomCode("mm/s")
                 .build();
     }
 
@@ -434,7 +493,7 @@ public class RADHelper extends GeoPosHelper {
 
     public Category createNeutronAlarmState() {
         return createAlarmState()
-                .addAllowedValues("Alarm", "Background", "Scan", "Fault - Neutron High")
+                .addAllowedValues("Alarm", "Background", "Scan", "Fault - Neutron High", "Fault - Neutron Low")
                 .build();
     }
 

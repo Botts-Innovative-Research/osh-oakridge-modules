@@ -12,7 +12,8 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
 public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
-    private static final String SENSOR_OUTPUT_NAME = "Neutron Scan";
+    private static final String SENSOR_OUTPUT_NAME = "neutronScan";
+    private static final String SENSOR_OUTPUT_LABEL = "Neutron Scan";
     private static final int MAX_NUM_TIMING_SAMPLES = 10;
 
     protected DataRecord dataRecord;
@@ -30,32 +31,25 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
     public void init() {
         RADHelper radHelper = new RADHelper();
 
+        var samplingTime = radHelper.createPrecisionTimeStamp();
+        var laneID = radHelper.createLaneID();
+        var neutronCount = radHelper.createNeutronGrossCount();
+        var neutronBackground = radHelper.createNeutronBackground();
+        var neutronVariance = radHelper.createNeutronVariance();
+        var neutronVarianceBackground = radHelper.createNeutronVarianceBackground();
+        var neutronAlarm = radHelper.createNeutronAlarmState();
+
         dataRecord = radHelper.createRecord()
                 .name(getName())
-                .label(getName())
+                .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("neutron-scan"))
-                .addField("SamplingTime", radHelper.createPrecisionTimeStamp())
-                .addField("LaneID", radHelper.createText()
-                        .label("Lane ID")
-                        .definition(RADHelper.getRadUri("LaneID")))
-                .addField("NeutronGrossCount", radHelper.createNeutronGrossCount())
-                .addField("NeutronBackground", radHelper.createQuantity()
-                        .name("NeutronBackground")
-                        .label("Neutron Background")
-                        .definition(RADHelper.getRadUri("neutron-background")))
-                .addField("NeutronVariance", radHelper.createQuantity()
-                        .name("NeutronVariance")
-                        .label("Neutron Variance")
-                        .definition(RADHelper.getRadUri("neutron-variance")))
-                .addField("NeutronVariance/NeutronBackground", radHelper.createQuantity()
-                        .name("Variance/Background")
-                        .label("Variance/Background")
-                        .definition(RADHelper.getRadUri("neutron-variance-background")))
-                .addField("AlarmState", radHelper.createCategory()
-                        .name("AlarmState")
-                        .label("Alarm State")
-                        .definition(RADHelper.getRadUri("alarm"))
-                        .addAllowedValues("Alarm", "Background", "Fault - Neutron High", "Fault - Neutron Low"))
+                .addField(samplingTime.getName(), samplingTime)
+                .addField(laneID.getName(), laneID)
+                .addField(neutronCount.getName(), neutronCount)
+                .addField(neutronBackground.getName(), neutronBackground)
+                .addField(neutronVariance.getName(), neutronVariance)
+                .addField(neutronVarianceBackground.getName(), neutronVarianceBackground)
+                .addField(neutronAlarm.getName(), neutronAlarm)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");

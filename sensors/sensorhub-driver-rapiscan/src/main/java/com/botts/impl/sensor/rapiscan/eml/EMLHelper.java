@@ -13,7 +13,7 @@ import java.util.EnumSet;
 public class EMLHelper extends RADHelper {
 
     //TODO ???
-    // Helper functions for EMLOutput
+    // Helper functions for EMLOutput_OLD
     public Text createResult() {
         return createText()
                 .name("result")

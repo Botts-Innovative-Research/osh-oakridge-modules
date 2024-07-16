@@ -26,7 +26,7 @@ import java.util.UUID;
 public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcessConfig> {
 
     protected SMLUtils smlUtils;
-    protected AggregateProcessImpl wrapperProcess;
+    public AggregateProcessImpl wrapperProcess;
     protected int errorCount = 0;
     protected boolean useThreads = true;
     String processUniqueID;
