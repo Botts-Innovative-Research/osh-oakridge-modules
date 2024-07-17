@@ -14,6 +14,7 @@
 package com.botts.impl.sensor.rapiscan;
 
 import com.botts.impl.sensor.rapiscan.eml.EMLOutput;
+import com.botts.impl.sensor.rapiscan.eml.EMLService;
 import com.botts.impl.sensor.rapiscan.output.*;
 import gov.llnl.ernie.api.ERNIE_lane;
 import org.sensorhub.api.comm.ICommProvider;
@@ -56,6 +57,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     SetupGamma3Output setupGamma3Output;
     SetupNeutronOutput setupNeutronOutput;
     InputStream msgIn;
+    ERNIE_lane ernieLane = null;
+    EMLService emlService = null;
 
     Timer t;
     public String laneName;
@@ -75,6 +78,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         // TODO: EML integration
         if(config.isSupplementalAlgorithm){
             createEMLOutputs();
+            emlService = new EMLService(this);
         }
 
         createOutputs();
@@ -165,7 +169,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                     tcp = (TCPCommProvider) commProvider;
                 }
 
-                ERNIE_lane ernieLane = null;
                 if (config.isSupplementalAlgorithm && tcp != null) {
                     String port = String.valueOf(tcp.getConfiguration().protocol.remotePort);
                     ernieLane = new ERNIE_lane(
@@ -190,7 +193,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                         setupGamma3Output,
                         setupNeutronOutput,
                         emlOutput,
-                        ernieLane);
+                        emlService);
 
             } catch (IOException e) {
 
@@ -270,4 +273,13 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     public MessageHandler getMessageHandler(){
         return messageHandler;
     }
+
+    public ERNIE_lane getErnieLane() {
+        return this.ernieLane;
+    }
+
+    public EMLService getEmlService() {
+        return this.emlService;
+    }
+
 }

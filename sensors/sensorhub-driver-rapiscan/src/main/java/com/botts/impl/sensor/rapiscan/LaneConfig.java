@@ -3,6 +3,8 @@ package com.botts.impl.sensor.rapiscan;
 import gov.llnl.ernie.api.ERNIE_lane;
 import org.sensorhub.api.config.DisplayInfo;
 
+import java.nio.file.Path;
+
 public class LaneConfig {
 
     @DisplayInfo(label = "Lane Name", desc = "Human readable name of the lane")
@@ -26,4 +28,6 @@ public class LaneConfig {
     @DisplayInfo(label = "Occupancy Holdin")
     public int occupancyHoldin = 0;
 
+    @DisplayInfo(label = "Lane Database XML Path")
+    public String laneDatabaseXmlPath = "config/vm250LaneDatabase.xml";
 }

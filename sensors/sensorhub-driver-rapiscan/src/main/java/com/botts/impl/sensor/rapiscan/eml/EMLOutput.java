@@ -1,5 +1,6 @@
 package com.botts.impl.sensor.rapiscan.eml;
 
+import com.botts.impl.sensor.rapiscan.output.GammaOutput;
 import com.botts.impl.sensor.rapiscan.output.NeutronOutput;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import gov.llnl.ernie.api.Results;
@@ -21,6 +22,7 @@ import org.xml.sax.SAXException;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import java.awt.*;
 import java.io.*;
 import java.lang.Boolean;
 
@@ -33,6 +35,7 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
+    protected DataBlock dataBlock;
 
     public EMLOutput(RapiscanSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
@@ -47,12 +50,14 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
+        var laneID = radHelper.createLaneID();
 
         return radHelper.createRecord()
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("ERNIEAnalysis"))
                 .addField(samplingTime.getName(), samplingTime)
+                .addField(laneID.getName(), laneID)
                 .addField("result", radHelper.createText()
                         .name("result")
                         .label("Result")
@@ -109,7 +114,7 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
                         .addField("probabilityNORM", radHelper.createQuantity())
                         .addField("probabilityThreat", radHelper.createQuantity())
                         .build())
-                .addField("vehicleClass", radHelper.createQuantity()
+                .addField("vehicleClass", radHelper.createCount()
                         .name("vehicle-class")
                         .label("Vehicle Class")
                         .dataType(DataType.INT)
@@ -136,13 +141,66 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
 
     }
 
-    public void onNewMessage(Results results) {
-        System.out.println(results.getMessage());
-        System.out.println(results.getLaneID());
-        System.out.println(results.getNumberOfSources());
-        System.out.println(results.getReleaseProbability());
-        System.out.println(results.getRPMResult());
-        System.out.println(results.getRPMGammaAlert());
+    public void onNewMessage(Results results, long timeStamp) {
+        if (latestRecord == null) {
+            dataBlock = dataStruct.createDataBlock();
+        } else {
+
+            dataBlock = latestRecord.renew();
+        }
+
+        int index = 0;
+        dataBlock.setLongValue(index++,timeStamp/1000);
+        dataBlock.setStringValue(index++, parent.laneName);
+
+        dataBlock.setStringValue(index++, results.getResult().name());
+        dataBlock.setDoubleValue(index++, results.getInvestigateProbability());
+        dataBlock.setDoubleValue(index++, results.getReleaseProbability());
+        dataBlock.setBooleanValue(index++, results.getERNIEGammaAlert());
+        dataBlock.setBooleanValue(index++, results.getERNIENeutronAlert());
+
+        dataBlock.setIntValue(index++, results.getNumberOfSources());
+
+        for(int srcIndex = 0; srcIndex < results.getNumberOfSources(); srcIndex++) {
+            var source = results.getSource(srcIndex);
+            dataBlock.setStringValue(index++, source.getSourceType());
+            dataBlock.setStringValue(index++, source.getClassifierUsed());
+            dataBlock.setDoubleValue(index++, source.getxLocation1());
+            dataBlock.setDoubleValue(index++, source.getxLocation2());
+            dataBlock.setDoubleValue(index++, source.getyLocation());
+            dataBlock.setDoubleValue(index++, source.getzLocation());
+            dataBlock.setDoubleValue(index++, source.getProbabilityNonEmitting());
+            dataBlock.setDoubleValue(index++, source.getProbabilityNORM());
+            dataBlock.setDoubleValue(index++, source.getProbabilityThreat());
+        }
+
+        if(results.getNumberOfSources() == 0) {
+            index++;
+        }
+
+        var overallSource = results.getOverallSource();
+        if(overallSource != null) {
+            dataBlock.setStringValue(index++, overallSource.getSourceType());
+            dataBlock.setStringValue(index++, overallSource.getClassifierUsed());
+            dataBlock.setDoubleValue(index++, overallSource.getxLocation1());
+            dataBlock.setDoubleValue(index++, overallSource.getxLocation2());
+            dataBlock.setDoubleValue(index++, overallSource.getyLocation());
+            dataBlock.setDoubleValue(index++, overallSource.getzLocation());
+            dataBlock.setDoubleValue(index++, overallSource.getProbabilityNonEmitting());
+            dataBlock.setDoubleValue(index++, overallSource.getProbabilityNORM());
+            dataBlock.setDoubleValue(index++, overallSource.getProbabilityThreat());
+        } else {
+            index += 7;
+        }
+
+        dataBlock.setIntValue(index++, results.getVehicleClass());
+        dataBlock.setDoubleValue(index++, results.getVehicleLength());
+        dataBlock.setStringValue(index++, results.getMessage());
+        dataBlock.setStringValue(index, results.getYellowLightMessage());
+
+        latestRecord = dataBlock;
+        eventHandler.publish(new DataEvent(timeStamp, EMLOutput.this, dataBlock));
+
     }
 
     @Override

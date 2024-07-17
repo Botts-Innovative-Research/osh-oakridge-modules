@@ -1,96 +1,78 @@
 package com.botts.impl.sensor.rapiscan.eml;
 
 import com.botts.impl.sensor.rapiscan.MessageHandler;
+import com.botts.impl.sensor.rapiscan.RapiscanSensor;
+import gov.llnl.ernie.analysis.AnalysisException;
+import gov.llnl.ernie.api.DailyFileLoader;
+import gov.llnl.ernie.api.Results;
+import gov.llnl.ernie.vm250.VM250RecordDatabase;
+import gov.llnl.ernie.vm250.VM250RecordDatabaseReader;
+import gov.llnl.ernie.vm250.data.VM250Occupancy;
+import gov.llnl.ernie.vm250.data.VM250Record;
+import gov.llnl.ernie.vm250.data.VM250RecordInternal;
+import gov.llnl.ernie.vm250.tools.DailyFileWriter;
+import gov.llnl.ernie.vm250.tools.VM250OccupancyConverter;
+import gov.llnl.utility.io.ReaderException;
+import org.javatuples.Triplet;
 import org.xml.sax.SAXException;
 
+import javax.xml.bind.JAXBException;
 import javax.xml.parsers.ParserConfigurationException;
 import java.io.IOException;
+import java.nio.file.Paths;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Stream;
 
 
 public class EMLService {
 
-    public EMLService(EMLOutput_OLD output, MessageHandler messageHandler) throws ParserConfigurationException, IOException, SAXException {
-        doInit();
+    RapiscanSensor parentSensor;
+    DailyFileWriter writer;
+    DailyFileLoader loader;
+    VM250RecordDatabase recordDatabase;
+    VM250Record record;
+    VM250RecordInternal recordData;
+    List<String> occupancyDataList;
 
-//        XMLStreamReader streamReader = null;
-//        XMLReader reader;
-        output.parser(getXMLResults(0,"example"));
-        output.setData();
+    public EMLService(RapiscanSensor parentSensor) {
+        this.parentSensor = parentSensor;
+        this.writer = new DailyFileWriter();
+        this.occupancyDataList = new ArrayList<>();
     }
 
-    private void doInit() {
-        // TODO: Start EML service or just EML process for current lane
+    // TODO: Read record database
+    // TODO: Write to record database
+    // TODO: Process occupancy data
+
+    public void addOccupancyLine(String scanData) {
+        this.occupancyDataList.add(scanData);
     }
 
-    public String getXMLResults(int scanID, String scanData) {
-        String results = "";
+    public List<String> getOccupancyDataList() {
+        return this.occupancyDataList;
+    }
 
-        // TODO: Pass scan data and scan ID (maybe) to EML service and return ERNIE results
-
-        return "<?xml version=\"1.0\" encoding=\"utf-8\"?>"+
-                "<results xsi:noNamespaceSchemaLocation=\"schema.xsd\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n"+
-                "<ERNIEContextualInfo>\n" +
-                "        <versionID>string</versionID>\n" +
-                "        <modelID>string</modelID>\n" +
-                "        <thresholds>\n" +
-                "            <primary>-9973999999999.77</primary>\n" +
-                "        </thresholds>\n" +
-                "    </ERNIEContextualInfo>\n" +
-                "    <ScanContextualInfo>\n" +
-                "        <portID>string</portID>\n" +
-                "        <laneName>18</laneName>\n" +
-                "        <dateTime>string</dateTime>\n" +
-                "        <segmentId>string</segmentId>\n" +
-                "        <RPMResult>string</RPMResult>\n" +
-                "        <RPMgammaAlert>false</RPMgammaAlert>\n" +
-                "        <RPMneutronAlert>0</RPMneutronAlert>\n" +
-                "        <RPMScanError>0</RPMScanError>\n" +
-                "    </ScanContextualInfo>\n" +
-                "    <ERNIEAnalysis>\n" +
-                "        <result>string</result>\n" +
-                "        <investigateProbability>-9404399999999.77</investigateProbability>\n" +
-                "        <releaseProbability>-38009999999999.8</releaseProbability>\n" +
-                "        <gammaAlert>0</gammaAlert>\n" +
-                "        <neutronAlert>false</neutronAlert>\n" +
-                "        <sources>\n" +
-                "            <sourceType>string</sourceType>\n" +
-                "            <classifierUsed>string</classifierUsed>\n" +
-                "            <xLocation1>182670.234905804</xLocation1>\n" +
-                "            <xLocation2>2988970.2349058</xLocation2>\n" +
-                "            <yLocation>-8713399999999.76</yLocation>\n" +
-                "            <zLocation>4045150.2349058</zLocation>\n" +
-                "            <probabilityNonEmitting>32972800000000.2</probabilityNonEmitting>\n" +
-                "            <probabilityNORM>44271600000000.2</probabilityNORM>\n" +
-                "            <probabilityThreat>40553700000000.2</probabilityThreat>\n" +
-                "        </sources>\n" +
-                "        <sources>\n" +
-                "            <sourceType>string</sourceType>\n" +
-                "            <classifierUsed>string</classifierUsed>\n" +
-                "            <xLocation1>3998480.2349058</xLocation1>\n" +
-                "            <xLocation2>-4953329.7650942</xLocation2>\n" +
-                "            <yLocation>39714900000000.2</yLocation>\n" +
-                "            <zLocation>-2356849.7650942</zLocation>\n" +
-                "            <probabilityNonEmitting>28484500000000.2</probabilityNonEmitting>\n" +
-                "            <probabilityNORM>15800000000.2349</probabilityNORM>\n" +
-                "            <probabilityThreat>39605800000000.2</probabilityThreat>\n" +
-                "        </sources>\n" +
-                "        <overallSource>\n" +
-                "            <sourceType>string</sourceType>\n" +
-                "            <classifierUsed>string</classifierUsed>\n" +
-                "            <xLocation1>-3576769.7650942</xLocation1>\n" +
-                "            <xLocation2>2041070.2349058</xLocation2>\n" +
-                "            <yLocation>-22927799999999.8</yLocation>\n" +
-                "            <zLocation>1670560.2349058</zLocation>\n" +
-                "            <probabilityNonEmitting>-39421699999999.8</probabilityNonEmitting>\n" +
-                "            <probabilityNORM>-47698399999999.8</probabilityNORM>\n" +
-                "            <probabilityThreat>43997800000000.2</probabilityThreat>\n" +
-                "        </overallSource>\n" +
-                "        <vehicleClass>3541</vehicleClass>\n" +
-                "        <vehicleLength>-3378269.7650942</vehicleLength>\n" +
-                "        <message>string</message>\n" +
-                "        <yellowLightMessage>string</yellowLightMessage>\n" +
-                "    </ERNIEAnalysis>\n" +
-                "</results>";
+    public Results processCurrentOccupancy() {
+        Results results = null;
+        synchronized (this) {
+            try {
+                String[] streamArray = new String[this.occupancyDataList.size()];
+                for(int i = 0; i < streamArray.length; i++) {
+                    streamArray[i] = this.occupancyDataList.get(i);
+                }
+                Stream<String> stream = Stream.of(streamArray);
+                results = parentSensor.getErnieLane().process(stream);
+                System.out.println("ERNIE Results");
+                System.out.println(results.toXMLString());
+            } catch (ReaderException | AnalysisException | IOException | JAXBException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        // Purge occupancy data for next occupancy
+        this.occupancyDataList.clear();
+        return results;
     }
 
 }

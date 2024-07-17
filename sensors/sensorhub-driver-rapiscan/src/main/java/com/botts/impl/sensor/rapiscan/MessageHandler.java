@@ -2,25 +2,42 @@ package com.botts.impl.sensor.rapiscan;
 
 //import com.botts.impl.sensor.rapiscan.helpers.RapiscanPreset;
 import com.botts.impl.sensor.rapiscan.eml.EMLOutput;
+import com.botts.impl.sensor.rapiscan.eml.EMLService;
 import com.botts.impl.sensor.rapiscan.output.*;
 import com.opencsv.CSVReader;
 import gov.llnl.ernie.analysis.AnalysisException;
+import gov.llnl.ernie.api.DailyFileLoader;
 import gov.llnl.ernie.api.ERNIE_lane;
 import gov.llnl.ernie.api.Results;
 import gov.llnl.ernie.data.Record;
+import gov.llnl.ernie.io.RecordDatabase;
+import gov.llnl.ernie.vm250.VM250RecordDatabase;
+import gov.llnl.ernie.vm250.data.VM250Occupancy;
 import gov.llnl.ernie.vm250.data.VM250Record;
 import gov.llnl.ernie.vm250.data.VM250RecordInternal;
+import gov.llnl.ernie.vm250.tools.DailyFileWriter;
+import gov.llnl.utility.PathUtilities;
 import gov.llnl.utility.io.ReaderException;
+import gov.llnl.utility.io.tables.TablesReader;
+import gov.llnl.utility.xml.bind.DocumentReader;
+import org.javatuples.Triplet;
 
+import javax.xml.bind.JAXBException;
 import java.io.*;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class MessageHandler {
 
     private final InputStream msgIn;
+    private final EMLService emlService;
 
     List<String[]> csvList;
     String[] csvLine;
@@ -56,7 +73,6 @@ public class MessageHandler {
         @Override
         public void run() {
             boolean continueProcessing = true;
-
             try{
                 while (continueProcessing){
                     BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
@@ -70,10 +86,6 @@ public class MessageHandler {
 
                         msgLine = bufferedReader.readLine();
 
-                        // EML
-                        var dailyScanStream = bufferedReader.lines();
-                        callEML(dailyScanStream);
-
                         synchronized (isProcessing) {
                             continueProcessing = isProcessing.get();
                         }
@@ -86,20 +98,7 @@ public class MessageHandler {
         }
     });
 
-    private void callEML(Stream stream) {
-        if(emlOutput != null && ernieLane != null) {
-            try {
-                Results results = ernieLane.process(stream);
-                System.out.println(results.toXMLString());
-                emlOutput.onNewMessage(results);
-            } catch (Exception e) {
-                throw new RuntimeException("Error when processing RPM scan", e);
-            }
-        }
-    }
-
-
-    public MessageHandler(InputStream msgIn, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, TamperOutput tamperOutput, SpeedOutput speedOutput, SetupGamma1Output setupGamma1Output, SetupGamma2Output setupGamma2Output, SetupGamma3Output setupGamma3Output, SetupNeutronOutput setupNeutronOutput, EMLOutput emlOutput, ERNIE_lane ernieLane) {
+    public MessageHandler(InputStream msgIn, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, TamperOutput tamperOutput, SpeedOutput speedOutput, SetupGamma1Output setupGamma1Output, SetupGamma2Output setupGamma2Output, SetupGamma3Output setupGamma3Output, SetupNeutronOutput setupNeutronOutput, EMLOutput emlOutput, EMLService emlService) {
         this.msgIn = msgIn;
         this.gammaOutput = gammaOutput;
         this.neutronOutput = neutronOutput;
@@ -112,7 +111,7 @@ public class MessageHandler {
         this.setupNeutronOutput = setupNeutronOutput;
 
         this.emlOutput = emlOutput;
-        this.ernieLane = ernieLane;
+        this.emlService = emlService;
 
         this.messageReader.start();
     }
@@ -124,6 +123,7 @@ public class MessageHandler {
     }
 
     void getMainCharDefinition(String mainChar, String[] csvLine){
+        pushOccupancyData(csvLine);
         switch (mainChar){
             // ------------------- NOT OCCUPIED
             case "GB":
@@ -168,6 +168,7 @@ public class MessageHandler {
                     currentOccupancy = true;
                 }
                 neutronOutput.onNewMessage(csvLine, System.currentTimeMillis(), ALARM);
+
                 isNeutronAlarm = true;
                 break;
 
@@ -186,6 +187,8 @@ public class MessageHandler {
                 currentOccupancy = false;
                 isGammaAlarm = false;
                 isNeutronAlarm = false;
+
+                emlOutput.onNewMessage(emlService.processCurrentOccupancy(), occupancyEndTime);
                 break;
 
             // -------------------- OTHER STATE
@@ -216,6 +219,20 @@ public class MessageHandler {
                 break;
         }
 
+    }
+
+    private void pushOccupancyData(String[] csvLine) {
+        // Time
+        long time = System.currentTimeMillis();
+        Instant now = Instant.now();
+
+        // Scan data
+        List<String> rawData = new ArrayList<>();
+        for(int i = 1; i < csvLine.length; i++) {
+            rawData.add(csvLine[i]);
+        }
+        String scanData = String.join(",", csvLine);
+        this.emlService.addOccupancyLine(scanData);
     }
 
     public GammaOutput getGammaOutput() { return this.gammaOutput; }
