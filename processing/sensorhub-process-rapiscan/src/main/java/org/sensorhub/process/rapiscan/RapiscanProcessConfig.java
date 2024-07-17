@@ -13,7 +13,7 @@ public class RapiscanProcessConfig extends ProcessConfig {
 
     @DisplayInfo.Required
     @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.MODULE_ID)
-    @DisplayInfo.ModuleType(ISensorModule.class)
+    @DisplayInfo.ModuleType(System.class)
     @DisplayInfo(label = "Rapiscan Driver ID", desc = "Datasource to read occupancy data")
     public String rapiscanDriverID;
 

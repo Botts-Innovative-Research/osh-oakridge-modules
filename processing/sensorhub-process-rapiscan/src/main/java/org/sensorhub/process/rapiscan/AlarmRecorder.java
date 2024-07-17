@@ -12,6 +12,7 @@ import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.processing.OSHProcessInfo;
 import org.sensorhub.impl.processing.ISensorHubProcess;
+import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.utils.Async;
 import org.vast.process.ExecutableProcessImpl;
@@ -94,6 +95,7 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
     private boolean checkDriverInput() {
         // TODO: Add occupancy as input from input driver
         var db = hub.getDatabaseRegistry().getFederatedDatabase();
+
         BigId internalID = null;
         try {
             if(hub.getModuleRegistry().getModuleById(inputDriverID) instanceof IDataProducerModule) {
@@ -103,6 +105,11 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
                     return false;
                 }
                 internalID = inputModule.getKey().getInternalID();
+            }
+            if(hub.getModuleRegistry().getModuleById(inputDriverID) instanceof SensorSystem) {
+                SensorSystem inputSystem = (SensorSystem) hub.getModuleRegistry().getModuleById(inputDriverID);
+                var submodules = inputSystem.getMembers();
+
             }
         } catch (SensorHubException e) {
             throw new RuntimeException("Module with id " + inputDriverID + " is not a data-producing module", e);
