@@ -206,7 +206,7 @@ public class MessageHandler {
                 isGammaAlarm = false;
                 isNeutronAlarm = false;
 
-                emlOutput.onNewMessage(emlService.processCurrentOccupancy(), occupancyEndTime);
+                emlOutput.handleMessage(emlService.processCurrentOccupancy(), occupancyEndTime);
                 gammaThresholdOutput.publishThreshold();
                 break;
 
