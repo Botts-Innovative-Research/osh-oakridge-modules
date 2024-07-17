@@ -29,16 +29,10 @@ import java.util.stream.Stream;
 public class EMLService {
 
     RapiscanSensor parentSensor;
-    DailyFileWriter writer;
-    DailyFileLoader loader;
-    VM250RecordDatabase recordDatabase;
-    VM250Record record;
-    VM250RecordInternal recordData;
     List<String> occupancyDataList;
 
     public EMLService(RapiscanSensor parentSensor) {
         this.parentSensor = parentSensor;
-        this.writer = new DailyFileWriter();
         this.occupancyDataList = new ArrayList<>();
     }
 
@@ -55,7 +49,7 @@ public class EMLService {
     }
 
     public Results processCurrentOccupancy() {
-        Results results = null;
+        Results results;
         synchronized (this) {
             try {
                 String[] streamArray = new String[this.occupancyDataList.size()];

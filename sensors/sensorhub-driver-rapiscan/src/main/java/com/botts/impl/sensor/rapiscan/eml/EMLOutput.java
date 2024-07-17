@@ -149,54 +149,54 @@ public class EMLOutput extends AbstractSensorOutput<RapiscanSensor> {
             dataBlock = latestRecord.renew();
         }
 
-        int index = 0;
-        dataBlock.setLongValue(index++,timeStamp/1000);
-        dataBlock.setStringValue(index++, parent.laneName);
-
-        dataBlock.setStringValue(index++, results.getResult().name());
-        dataBlock.setDoubleValue(index++, results.getInvestigateProbability());
-        dataBlock.setDoubleValue(index++, results.getReleaseProbability());
-        dataBlock.setBooleanValue(index++, results.getERNIEGammaAlert());
-        dataBlock.setBooleanValue(index++, results.getERNIENeutronAlert());
-
-        dataBlock.setIntValue(index++, results.getNumberOfSources());
-
-        for(int srcIndex = 0; srcIndex < results.getNumberOfSources(); srcIndex++) {
-            var source = results.getSource(srcIndex);
-            dataBlock.setStringValue(index++, source.getSourceType());
-            dataBlock.setStringValue(index++, source.getClassifierUsed());
-            dataBlock.setDoubleValue(index++, source.getxLocation1());
-            dataBlock.setDoubleValue(index++, source.getxLocation2());
-            dataBlock.setDoubleValue(index++, source.getyLocation());
-            dataBlock.setDoubleValue(index++, source.getzLocation());
-            dataBlock.setDoubleValue(index++, source.getProbabilityNonEmitting());
-            dataBlock.setDoubleValue(index++, source.getProbabilityNORM());
-            dataBlock.setDoubleValue(index++, source.getProbabilityThreat());
-        }
-
-        if(results.getNumberOfSources() == 0) {
-            index++;
-        }
-
-        var overallSource = results.getOverallSource();
-        if(overallSource != null) {
-            dataBlock.setStringValue(index++, overallSource.getSourceType());
-            dataBlock.setStringValue(index++, overallSource.getClassifierUsed());
-            dataBlock.setDoubleValue(index++, overallSource.getxLocation1());
-            dataBlock.setDoubleValue(index++, overallSource.getxLocation2());
-            dataBlock.setDoubleValue(index++, overallSource.getyLocation());
-            dataBlock.setDoubleValue(index++, overallSource.getzLocation());
-            dataBlock.setDoubleValue(index++, overallSource.getProbabilityNonEmitting());
-            dataBlock.setDoubleValue(index++, overallSource.getProbabilityNORM());
-            dataBlock.setDoubleValue(index++, overallSource.getProbabilityThreat());
-        } else {
-            index += 7;
-        }
-
-        dataBlock.setIntValue(index++, results.getVehicleClass());
-        dataBlock.setDoubleValue(index++, results.getVehicleLength());
-        dataBlock.setStringValue(index++, results.getMessage());
-        dataBlock.setStringValue(index, results.getYellowLightMessage());
+//        int index = 0;
+//        dataBlock.setLongValue(index++,timeStamp/1000);
+//        dataBlock.setStringValue(index++, parent.laneName);
+//
+//        dataBlock.setStringValue(index++, results.getResult().name());
+//        dataBlock.setDoubleValue(index++, results.getInvestigateProbability());
+//        dataBlock.setDoubleValue(index++, results.getReleaseProbability());
+//        dataBlock.setBooleanValue(index++, results.getERNIEGammaAlert());
+//        dataBlock.setBooleanValue(index++, results.getERNIENeutronAlert());
+//
+//        dataBlock.setIntValue(index++, results.getNumberOfSources());
+//
+//        for(int srcIndex = 0; srcIndex < results.getNumberOfSources(); srcIndex++) {
+//            var source = results.getSource(srcIndex);
+//            dataBlock.setStringValue(index++, source.getSourceType());
+//            dataBlock.setStringValue(index++, source.getClassifierUsed());
+//            dataBlock.setDoubleValue(index++, source.getxLocation1());
+//            dataBlock.setDoubleValue(index++, source.getxLocation2());
+//            dataBlock.setDoubleValue(index++, source.getyLocation());
+//            dataBlock.setDoubleValue(index++, source.getzLocation());
+//            dataBlock.setDoubleValue(index++, source.getProbabilityNonEmitting());
+//            dataBlock.setDoubleValue(index++, source.getProbabilityNORM());
+//            dataBlock.setDoubleValue(index++, source.getProbabilityThreat());
+//        }
+//
+//        if(results.getNumberOfSources() == 0) {
+//            index++;
+//        }
+//
+//        var overallSource = results.getOverallSource();
+//        if(overallSource != null) {
+//            dataBlock.setStringValue(index++, overallSource.getSourceType());
+//            dataBlock.setStringValue(index++, overallSource.getClassifierUsed());
+//            dataBlock.setDoubleValue(index++, overallSource.getxLocation1());
+//            dataBlock.setDoubleValue(index++, overallSource.getxLocation2());
+//            dataBlock.setDoubleValue(index++, overallSource.getyLocation());
+//            dataBlock.setDoubleValue(index++, overallSource.getzLocation());
+//            dataBlock.setDoubleValue(index++, overallSource.getProbabilityNonEmitting());
+//            dataBlock.setDoubleValue(index++, overallSource.getProbabilityNORM());
+//            dataBlock.setDoubleValue(index++, overallSource.getProbabilityThreat());
+//        } else {
+//            index += 7;
+//        }
+//
+//        dataBlock.setIntValue(index++, results.getVehicleClass());
+//        dataBlock.setDoubleValue(index++, results.getVehicleLength());
+//        dataBlock.setStringValue(index++, results.getMessage());
+//        dataBlock.setStringValue(index, results.getYellowLightMessage());
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(timeStamp, EMLOutput.this, dataBlock));

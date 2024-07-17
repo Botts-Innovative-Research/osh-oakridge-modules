@@ -8,6 +8,7 @@ import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
+import org.sensorhub.api.utils.OshAsserts;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
@@ -27,7 +28,9 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
 
-    protected GammaThresholdOutput(RapiscanSensor parentSensor) {
+    private int latestBackgroundSum = 0;
+
+    public GammaThresholdOutput(RapiscanSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
@@ -49,6 +52,20 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
 
+    public void onNewGammaBackground(String[] csvLine) {
+        int sum = 0;
+        int index;
+        for(index = 1; index < csvLine.length; index++) {
+            int bg = Integer.parseInt(csvLine[index]);
+            sum += bg;
+        }
+        if(sum == 0) {
+            latestBackgroundSum = 0;
+            getLogger().warn("No gamma background");
+        }
+        latestBackgroundSum = sum / index-1;
+    }
+
     public void publishThreshold() {
         if(latestRecord == null) {
             dataBlock = dataStruct.createDataBlock();
@@ -68,9 +85,11 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
         //TODO: Somehow ensure that we can get setup values even if unavailable
 
         // Get NSigma value from gamma setup 1 data record
-        float nSigma = messageHandler.getGammaSetUp1Output().getLatestRecord().getFloatValue(6);
+        // If none, default value = 6
+        float nSigma = messageHandler.getGammaSetUp1Output().getLatestRecord() != null ? messageHandler.getGammaSetUp1Output().getLatestRecord().getFloatValue(6) : 6.0f;
         // Get Algorithm value from gamma setup 2 data record
-        String algorithmData = messageHandler.getGammaSetUp2Output().getLatestRecord().getStringValue(6);
+        // If none default value = 1010 or SUM & VERTICAL
+        String algorithmData = messageHandler.getGammaSetUp2Output().getLatestRecord() != null ? messageHandler.getGammaSetUp2Output().getLatestRecord().getStringValue(6) : "1010";
         // Algorithm EnumSet includes algorithm type (example: 1010 = SUM, VERTICAL)
         EnumSet<AlgorithmType> algorithmSet = EnumSet.noneOf(AlgorithmType.class);
 
@@ -80,23 +99,12 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
             }
         }
 
-        // TODO: Only sum # of detectors based on algorithm AND whether all 4 detectors are on
-        int[] gammaCounts = new int[4];
-
-        // TODO: Somehow ensure that we get latest background counts
-        // Be able to get this from RPM history or "daily file"
-        if(messageHandler.getGammaOutput().getLatestRecord().getStringValue(2) == "Background") {
-            for(int i = 0; i < 4; i++) {
-                gammaCounts[i] = messageHandler.getGammaOutput().getLatestRecord().getIntValue(i+3);
-            }
-        }
-
-//        double averageGB = Arrays.stream(gammaCounts).average().orElse(Double.NaN);
-        int sumGB = Arrays.stream(gammaCounts).sum();
+        int sumGB = this.latestBackgroundSum;
         double sqrtSumGB = Math.sqrt(sumGB);
 
         // Return equation for threshold calculation
         dataBlock.setDoubleValue(index, sumGB + (nSigma * sqrtSumGB));
+        getLogger().debug("Threshold is {}", sumGB + (nSigma * sqrtSumGB));
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), GammaThresholdOutput.this, dataBlock));
@@ -116,4 +124,5 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
     public double getAverageSamplingPeriod() {
         return 0;
     }
+
 }

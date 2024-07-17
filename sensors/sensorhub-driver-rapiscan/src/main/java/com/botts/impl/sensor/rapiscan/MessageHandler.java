@@ -58,7 +58,7 @@ public class MessageHandler {
     SetupGamma2Output setupGamma2Output;
     SetupGamma3Output setupGamma3Output;
     SetupNeutronOutput setupNeutronOutput;
-    ERNIE_lane ernieLane;
+    GammaThresholdOutput gammaThresholdOutput;
 
     final static String ALARM = "Alarm";
     final static String BACKGROUND = "Background";
@@ -98,7 +98,19 @@ public class MessageHandler {
         }
     });
 
-    public MessageHandler(InputStream msgIn, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, TamperOutput tamperOutput, SpeedOutput speedOutput, SetupGamma1Output setupGamma1Output, SetupGamma2Output setupGamma2Output, SetupGamma3Output setupGamma3Output, SetupNeutronOutput setupNeutronOutput, EMLOutput emlOutput, EMLService emlService) {
+    public MessageHandler(InputStream msgIn,
+                          GammaOutput gammaOutput,
+                          NeutronOutput neutronOutput,
+                          OccupancyOutput occupancyOutput,
+                          TamperOutput tamperOutput,
+                          SpeedOutput speedOutput,
+                          SetupGamma1Output setupGamma1Output,
+                          SetupGamma2Output setupGamma2Output,
+                          SetupGamma3Output setupGamma3Output,
+                          SetupNeutronOutput setupNeutronOutput,
+                          EMLOutput emlOutput,
+                          EMLService emlService,
+                          GammaThresholdOutput gammaThresholdOutput) {
         this.msgIn = msgIn;
         this.gammaOutput = gammaOutput;
         this.neutronOutput = neutronOutput;
@@ -109,6 +121,7 @@ public class MessageHandler {
         this.setupGamma2Output = setupGamma2Output;
         this.setupGamma3Output = setupGamma3Output;
         this.setupNeutronOutput = setupNeutronOutput;
+        this.gammaThresholdOutput = gammaThresholdOutput;
 
         this.emlOutput = emlOutput;
         this.emlService = emlService;
@@ -123,11 +136,16 @@ public class MessageHandler {
     }
 
     void getMainCharDefinition(String mainChar, String[] csvLine){
-        pushOccupancyData(csvLine);
+        // Add occupancy for eml service
+        String scanData = String.join(",", csvLine);
+        this.emlService.addOccupancyLine(scanData);
+
         switch (mainChar){
             // ------------------- NOT OCCUPIED
             case "GB":
                 gammaOutput.onNewMessage(csvLine, System.currentTimeMillis(), BACKGROUND);
+                // Send latest Gamma Background to threshold calculator
+                gammaThresholdOutput.onNewGammaBackground(csvLine);
                 break;
             case "GH":
                 gammaOutput.onNewMessage(csvLine, System.currentTimeMillis(), FAULT_GH);
@@ -189,6 +207,7 @@ public class MessageHandler {
                 isNeutronAlarm = false;
 
                 emlOutput.onNewMessage(emlService.processCurrentOccupancy(), occupancyEndTime);
+                gammaThresholdOutput.publishThreshold();
                 break;
 
             // -------------------- OTHER STATE
@@ -219,20 +238,6 @@ public class MessageHandler {
                 break;
         }
 
-    }
-
-    private void pushOccupancyData(String[] csvLine) {
-        // Time
-        long time = System.currentTimeMillis();
-        Instant now = Instant.now();
-
-        // Scan data
-        List<String> rawData = new ArrayList<>();
-        for(int i = 1; i < csvLine.length; i++) {
-            rawData.add(csvLine[i]);
-        }
-        String scanData = String.join(",", csvLine);
-        this.emlService.addOccupancyLine(scanData);
     }
 
     public GammaOutput getGammaOutput() { return this.gammaOutput; }

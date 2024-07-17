@@ -56,6 +56,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     SetupGamma2Output setUpGamma2Output;
     SetupGamma3Output setupGamma3Output;
     SetupNeutronOutput setupNeutronOutput;
+    GammaThresholdOutput gammaThresholdOutput;
     InputStream msgIn;
     ERNIE_lane ernieLane = null;
     EMLService emlService = null;
@@ -131,6 +132,9 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         addOutput(setupNeutronOutput, false);
         setupNeutronOutput.init();
 
+        gammaThresholdOutput = new GammaThresholdOutput(this);
+        addOutput(gammaThresholdOutput, false);
+        gammaThresholdOutput.init();
     }
 
     @Override
@@ -193,7 +197,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                         setupGamma3Output,
                         setupNeutronOutput,
                         emlOutput,
-                        emlService);
+                        emlService,
+                        gammaThresholdOutput);
 
             } catch (IOException e) {
 

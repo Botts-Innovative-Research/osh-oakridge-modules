@@ -27,7 +27,4 @@ public class LaneConfig {
 
     @DisplayInfo(label = "Occupancy Holdin")
     public int occupancyHoldin = 0;
-
-    @DisplayInfo(label = "Lane Database XML Path")
-    public String laneDatabaseXmlPath = "config/vm250LaneDatabase.xml";
 }
