@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 
 public class MessageHandler {
 
@@ -58,7 +59,13 @@ public class MessageHandler {
     FileWriter fw;
     CSVWriter writer;
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
-
+    // Setup boolean
+    boolean isSetup = false;
+    String sampleSetups = "SG1,000450,000068,05,10,08.0,P\n" +
+            "SG2,1111,0.069,0.455,01,1010,A\n" +
+            "SG3,0.069,0.455,020,000,1.10.1\n" +
+            "SN1,000050,05,0047,1200,02,120\n" +
+            "SN2,0.504,5.040,0.504,5.040,PP\n";
     private final Thread messageReader = new Thread(new Runnable() {
         @Override
         public void run() {
@@ -76,7 +83,16 @@ public class MessageHandler {
                 writer = new CSVWriter(fw);
 
                 while (continueProcessing){
-                    BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
+                    BufferedReader bufferedReader;
+                    InputStream setupInput = new ByteArrayInputStream(sampleSetups.getBytes());
+
+                    if(!isSetup) {
+                        bufferedReader = new BufferedReader(new InputStreamReader(setupInput));
+                        isSetup = true;
+                    } else {
+                        bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
+                    }
+
                     String msgLine = bufferedReader.readLine();
                     while (msgLine != null){
                         reader = new CSVReader(new StringReader(msgLine));
