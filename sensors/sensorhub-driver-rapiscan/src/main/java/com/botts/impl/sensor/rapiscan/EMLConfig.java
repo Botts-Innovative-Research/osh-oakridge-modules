@@ -1,23 +1,16 @@
 package com.botts.impl.sensor.rapiscan;
 
-import gov.llnl.ernie.api.ERNIE_lane;
+import com.google.gson.annotations.SerializedName;
 import org.sensorhub.api.config.DisplayInfo;
 
-import java.nio.file.Path;
-
-public class LaneConfig {
-
-    @DisplayInfo(label = "Lane Name", desc = "Human readable name of the lane")
-    @DisplayInfo.Required
-    public String laneName;
-
-    @DisplayInfo(label = "Lane ID", desc = "ID of lane")
-    @DisplayInfo.Required
-    public int laneID;
+public class EMLConfig {
 
     @DisplayInfo(label = "Collimated", desc = "Collimation status")
     public boolean isCollimated = false;
 
+    @DisplayInfo(label="Supplemental Algorithm", desc="Check if the lane is VM250. For all lanes not designated to be EML lanes do NOT check this box.")
+    @SerializedName(value="supplementalAlgorithm", alternate={"emlEnabled"})
+    public boolean isSupplementalAlgorithm = false;
     @DisplayInfo(label = "Lane Width", desc = "Width of the lane")
     public double laneWidth = 0.0f;
 

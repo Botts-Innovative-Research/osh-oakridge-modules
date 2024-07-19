@@ -1,38 +1,17 @@
 package com.botts.impl.sensor.rapiscan;
 
 //import com.botts.impl.sensor.rapiscan.helpers.RapiscanPreset;
-import com.botts.impl.sensor.rapiscan.eml.EMLOutput;
+import com.botts.impl.sensor.rapiscan.eml.EMLAnalysisOutput;
+import com.botts.impl.sensor.rapiscan.eml.EMLContextualOutputs;
+import com.botts.impl.sensor.rapiscan.eml.EMLScanContextualOutput;
 import com.botts.impl.sensor.rapiscan.eml.EMLService;
 import com.botts.impl.sensor.rapiscan.output.*;
 import com.opencsv.CSVReader;
-import gov.llnl.ernie.analysis.AnalysisException;
-import gov.llnl.ernie.api.DailyFileLoader;
-import gov.llnl.ernie.api.ERNIE_lane;
-import gov.llnl.ernie.api.Results;
-import gov.llnl.ernie.data.Record;
-import gov.llnl.ernie.io.RecordDatabase;
-import gov.llnl.ernie.vm250.VM250RecordDatabase;
-import gov.llnl.ernie.vm250.data.VM250Occupancy;
-import gov.llnl.ernie.vm250.data.VM250Record;
-import gov.llnl.ernie.vm250.data.VM250RecordInternal;
-import gov.llnl.ernie.vm250.tools.DailyFileWriter;
-import gov.llnl.utility.PathUtilities;
-import gov.llnl.utility.io.ReaderException;
-import gov.llnl.utility.io.tables.TablesReader;
-import gov.llnl.utility.xml.bind.DocumentReader;
-import org.javatuples.Triplet;
 
-import javax.xml.bind.JAXBException;
 import java.io.*;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public class MessageHandler {
 
@@ -52,20 +31,25 @@ public class MessageHandler {
     OccupancyOutput occupancyOutput;
     TamperOutput tamperOutput;
     SpeedOutput speedOutput;
-    EMLOutput emlOutput;
+    EMLAnalysisOutput emlAnalysisOutput;
+    EMLScanContextualOutput emlScanContextualOutput;
+    EMLContextualOutputs emlContextualOutputs;
 
-    SetupGamma1Output setupGamma1Output;
-    SetupGamma2Output setupGamma2Output;
-    SetupGamma3Output setupGamma3Output;
+    GammaSetupOutputs gammaSetup;
     SetupNeutronOutput setupNeutronOutput;
     GammaThresholdOutput gammaThresholdOutput;
 
+    EMLConfig emlConfig;
     final static String ALARM = "Alarm";
     final static String BACKGROUND = "Background";
     final static String SCAN = "Scan";
     final static String FAULT_GH = "Fault - Gamma High";
     final static String FAULT_GL = "Fault - Gamma Low";
     final static String FAULT_NH = "Fault - Neutron High";
+
+    String [] setupGamma1;
+    String [] setupGamma2;
+
 
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
 
@@ -98,33 +82,35 @@ public class MessageHandler {
         }
     });
 
-    public MessageHandler(InputStream msgIn,
+    public MessageHandler(EMLConfig emlConfig, InputStream msgIn,
                           GammaOutput gammaOutput,
                           NeutronOutput neutronOutput,
                           OccupancyOutput occupancyOutput,
                           TamperOutput tamperOutput,
                           SpeedOutput speedOutput,
-                          SetupGamma1Output setupGamma1Output,
-                          SetupGamma2Output setupGamma2Output,
-                          SetupGamma3Output setupGamma3Output,
+                          GammaSetupOutputs gammaSetup,
                           SetupNeutronOutput setupNeutronOutput,
-                          EMLOutput emlOutput,
+                          EMLAnalysisOutput emlAnalysisOutput,
                           EMLService emlService,
-                          GammaThresholdOutput gammaThresholdOutput) {
+                          GammaThresholdOutput gammaThresholdOutput,
+                          EMLScanContextualOutput emlScanContextualOutput,
+                          EMLContextualOutputs emlContextualOutput)
+    {
         this.msgIn = msgIn;
         this.gammaOutput = gammaOutput;
         this.neutronOutput = neutronOutput;
         this.occupancyOutput = occupancyOutput;
         this.tamperOutput = tamperOutput;
         this.speedOutput = speedOutput;
-        this.setupGamma1Output = setupGamma1Output;
-        this.setupGamma2Output = setupGamma2Output;
-        this.setupGamma3Output = setupGamma3Output;
+        this.gammaSetup = gammaSetup;
         this.setupNeutronOutput = setupNeutronOutput;
         this.gammaThresholdOutput = gammaThresholdOutput;
 
-        this.emlOutput = emlOutput;
+        this.emlConfig = emlConfig;
+        this.emlAnalysisOutput = emlAnalysisOutput;
         this.emlService = emlService;
+        this.emlContextualOutputs = emlContextualOutput;
+        this.emlScanContextualOutput = emlScanContextualOutput;
 
         this.messageReader.start();
     }
@@ -138,7 +124,12 @@ public class MessageHandler {
     void getMainCharDefinition(String mainChar, String[] csvLine){
         // Add occupancy for eml service
         String scanData = String.join(",", csvLine);
-        this.emlService.addOccupancyLine(scanData);
+
+        //TODO: fix this.  bc it doesnt allways need this.
+        if(emlConfig.isSupplementalAlgorithm){
+            this.emlService.addOccupancyLine(scanData);
+
+        }
 
         switch (mainChar){
             // ------------------- NOT OCCUPIED
@@ -206,7 +197,13 @@ public class MessageHandler {
                 isGammaAlarm = false;
                 isNeutronAlarm = false;
 
-                emlOutput.handleMessage(emlService.processCurrentOccupancy(), occupancyEndTime);
+                if(emlConfig.isSupplementalAlgorithm){
+                    var results = emlService.processCurrentOccupancy();
+                    emlScanContextualOutput.handleScanContextualMessage(results, occupancyEndTime);
+                    emlContextualOutputs.handleContextualMessage(results, occupancyEndTime);
+                    emlAnalysisOutput.handleAnalysisMessage(results, occupancyEndTime);
+                }
+
                 gammaThresholdOutput.publishThreshold();
                 break;
 
@@ -221,14 +218,17 @@ public class MessageHandler {
                 speedOutput.onNewMessage(csvLine);
                 break;
 
+                //TODO: combine set up gammas
             case "SG1":
-                setupGamma1Output.onNewMessage(csvLine);
+                setupGamma1 = csvLine;
                 break;
             case "SG2":
-                setupGamma2Output.onNewMessage(csvLine);
+                setupGamma2 = csvLine;
                 break;
             case "SG3":
-                setupGamma3Output.onNewMessage(csvLine);
+                gammaSetup.onNewMessage(setupGamma1, setupGamma2, csvLine);
+                setupGamma1 = new String[]{""};
+                setupGamma2 = new String[]{""};
                 break;
             case "SN1":
                 setupNeutronOutput.onNewMessage(csvLine);
@@ -245,9 +245,7 @@ public class MessageHandler {
     public OccupancyOutput getOccupancyOutput() { return this.occupancyOutput; }
     public TamperOutput getTamperOutput() { return this.tamperOutput; }
     public SpeedOutput getSpeedOutput() { return this.speedOutput; }
-    public SetupGamma1Output getGammaSetUp1Output() { return this.setupGamma1Output; }
-    public SetupGamma2Output getGammaSetUp2Output() { return this.setupGamma2Output; }
-    public SetupGamma3Output getGammaSetUp3Output() { return this.setupGamma3Output; }
+    public GammaSetupOutputs getGammaSetup() { return this.gammaSetup; }
     public SetupNeutronOutput getNeutronSetupOutput() { return this.setupNeutronOutput; }
 
 }

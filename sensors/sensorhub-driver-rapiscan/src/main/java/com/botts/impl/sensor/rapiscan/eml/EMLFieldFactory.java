@@ -1,6 +1,9 @@
 package com.botts.impl.sensor.rapiscan.eml;
 
+import gov.llnl.ernie.Analysis;
+import gov.llnl.ernie.api.Results;
 import net.opengis.swe.v20.Boolean;
+import net.opengis.swe.v20.Category;
 import net.opengis.swe.v20.Quantity;
 import net.opengis.swe.v20.Text;
 import org.sensorhub.impl.utils.rad.RADHelper;
@@ -258,41 +261,45 @@ public class EMLFieldFactory extends RADHelper {
                 .label(SEGMENT_ID_FIELD_LABEL)
                 .build();
     }
-    public Text createRpmResultField(){
-        return createText()
+    public Category createRpmResultField(){
+        return createCategory()
                 .definition(RPM_RESULT_FIELD_DEFINITION)
                 .description(RPM_RESULT_FIELD_DESCRIPTION)
                 .label(RPM_RESULT_FIELD_LABEL)
+                .addAllowedValues("INVESTIGATE", "NONE", "RELEASE")
                 .build();
     }
 
-
-    public Text createRpmGammaField(){
-        return createText()
+    public Boolean createRpmGammaAlertField(){
+        return createBoolean()
                 .definition(RPM_GAMMA_ALERT_FIELD_DEFINITION)
                 .description(RPM_GAMMA_ALERT_FIELD_DESCRIPTION)
                 .label(RPM_GAMMA_ALERT_FIELD_LABEL)
                 .build();
     }
-    public Text createRpmNeutronField(){
-        return createText()
+    public Boolean createRpmNeutronAlertField(){
+        return createBoolean()
                 .definition(RPM_NEUTRON_ALERT_FIELD_DEFINITION)
                 .description(RPM_NEUTRON_ALERT_FIELD_DESCRIPTION)
                 .label(RPM_NEUTRON_ALERT_FIELD_LABEL)
                 .build();
     }
-    public Text createRpmScanField(){
-        return createText()
+    public Boolean createRpmScanErrorField(){
+        return createBoolean()
                 .definition(RPM_SCAN_ERROR_FIELD_DEFINITION)
                 .description(RPM_SCAN_ERROR_FIELD_DESCRIPTION)
                 .label(RPM_SCAN_ERROR_FIELD_LABEL)
                 .build();
     }
-    public Text createResultsField(){
-        return createText()
+    public Category createResultsField(){
+        return createCategory()
                 .definition(RESULT_FIELD_DEFINITION)
                 .description(RESULT_FIELD_DESCRIPTION)
                 .label(RESULT_FIELD_LABEL)
+                .addAllowedValues(
+                        Analysis.RecommendedAction.NONE.getValue(),
+                        Analysis.RecommendedAction.INVESTIGATE.getValue(),
+                        Analysis.RecommendedAction.RELEASE.getValue())
                 .build();
     }
     public Quantity createReleaseProbabilityField(){
@@ -310,7 +317,7 @@ public class EMLFieldFactory extends RADHelper {
                 .label(INVESTIGATIVE_PROBABILITY_FIELD_LABEL)
                 .build();
     }
-    public Boolean createGammaAlertField(){
+    public Boolean createErnieGammaAlertField(){
         return createBoolean()
                 .definition(GAMMA_ALERT_FIELD_DEFINITION)
                 .description(GAMMA_ALERT_FIELD_DESCRIPTION)
@@ -318,25 +325,50 @@ public class EMLFieldFactory extends RADHelper {
                 .build();
     }
 
-    public Boolean createNeutronAlertField(){
+    public Boolean createErnieNeutronAlertField(){
         return createBoolean()
                 .definition(NEUTRON_ALERT_FIELD_DEFINITION)
                 .description(NEUTRON_ALERT_FIELD_DESCRIPTION)
                 .label(NEUTRON_ALERT_FIELD_LABEL)
                 .build();
     }
-    public Text createSourceTypeField(){
-        return createText()
+    public Category createSourceTypeField(){
+        return createCategory()
                 .definition(SOURCE_FIELD_DEFINITION)
                 .description(SOURCE_TYPE_FIELD_DESCRIPTION)
                 .label(SOURCE_TYPE_FIELD_LABEL)
+                .addAllowedValues(
+//                        "CONTAMINATION",
+//                        "FISSILE",
+//                        "INDUSTRIAL",
+//                        "INVALID",
+//                        "MEDICAL",
+//                        "NEUTRON",
+                        "NONE",
+                        "NonEmitting",
+                        "NORM",
+//                        "UNKNOWN",
+                        "Threat")
+
                 .build();
     }
-    public Text createOverallSourceTypeField(){
-        return createText()
+    public Category createOverallSourceTypeField(){
+        return createCategory()
                 .definition(OVERALL_SOURCE_FIELD_DEFINITION)
                 .description(OVERALL_SOURCE_TYPE_FIELD_DESCRIPTION)
                 .label(OVERALL_SOURCE_TYPE_FIELD_LABEL)
+                .addAllowedValues(
+//                        "CONTAMINATION",
+//                        "FISSILE",
+//                        "INDUSTRIAL",
+//                        "INVALID",
+//                        "MEDICAL",
+//                        "NEUTRON",
+                        "NONE",
+                        "NonEmitting",
+                        "NORM",
+//                        "UNKNOWN",
+                        "Threat")
                 .build();
     }
     public Text createClassifierUsedField(){

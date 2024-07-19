@@ -30,7 +30,6 @@ public class NeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
-        var laneID = radHelper.createLaneID();
         var alarmState = radHelper.createNeutronAlarmState();
         var count1 = radHelper.createNeutronGrossCount(1);
         var count2 = radHelper.createNeutronGrossCount(2);
@@ -43,7 +42,6 @@ public class NeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
                 .updatable(true)
                 .definition(RADHelper.getRadUri("neutron-scan"))
                 .addField(samplingTime.getName(), samplingTime)
-                .addField(laneID.getName(), laneID)
                 .addField(alarmState.getName(), alarmState)
                 .addField(count1.getName(), count1)
                 .addField(count2.getName(), count2)
@@ -69,7 +67,6 @@ public class NeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
         int index =0;
 
         dataBlock.setLongValue(index++,timeStamp/1000);
-        dataBlock.setStringValue(index++, parent.laneName);
         dataBlock.setStringValue(index++, alarmState);
 
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[1]));

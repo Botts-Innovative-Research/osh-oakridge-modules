@@ -13,7 +13,6 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.rapiscan;
 
-import com.botts.impl.sensor.rapiscan.LaneConfig;
 import com.google.gson.annotations.SerializedName;
 import org.sensorhub.api.comm.CommProviderConfig;
 import org.sensorhub.api.sensor.PositionConfig.LLALocation;
@@ -52,12 +51,19 @@ public class RapiscanConfig extends SensorConfig {
     @DisplayInfo(desc="RPM Location")
     public PositionConfig positionConfig = new PositionConfig();
 
-    @DisplayInfo(desc = "Lane Settings")
-    public LaneConfig laneConfig = new LaneConfig();
+    @DisplayInfo(label = "Lane Name", desc = "Human readable name of the lane")
+    @DisplayInfo.Required
+    public String laneName;
 
-    @DisplayInfo(label="Supplemental Algorithm", desc="Check if the lane is VM250. For all lanes not designated to be EML lanes do NOT check this box.")
-    @SerializedName(value="supplementalAlgorithm", alternate={"emlEnabled"})
-    public boolean isSupplementalAlgorithm = false;
+    @DisplayInfo(label = "Lane ID", desc = "ID of lane")
+    @DisplayInfo.Required
+    public int laneID;
+
+    @DisplayInfo(desc = "Lane Settings")
+    public EMLConfig EMLConfig = new EMLConfig();
+
+
+
 
     @Override
     public LLALocation getLocation(){return positionConfig.location;}

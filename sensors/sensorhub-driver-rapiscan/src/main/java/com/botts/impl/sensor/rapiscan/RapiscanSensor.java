@@ -13,7 +13,9 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.rapiscan;
 
-import com.botts.impl.sensor.rapiscan.eml.EMLOutput;
+import com.botts.impl.sensor.rapiscan.eml.EMLAnalysisOutput;
+import com.botts.impl.sensor.rapiscan.eml.EMLContextualOutputs;
+import com.botts.impl.sensor.rapiscan.eml.EMLScanContextualOutput;
 import com.botts.impl.sensor.rapiscan.eml.EMLService;
 import com.botts.impl.sensor.rapiscan.output.*;
 import gov.llnl.ernie.api.ERNIE_lane;
@@ -45,18 +47,18 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     private static final Logger logger = LoggerFactory.getLogger(RapiscanSensor.class);
 
     ICommProvider<?> commProvider;
-    EMLOutput emlOutput = null;
+    EMLAnalysisOutput emlAnalysisOutput = null;
     GammaOutput gammaOutput;
     NeutronOutput neutronOutput;
     OccupancyOutput occupancyOutput;
     LocationOutput locationOutput;
     TamperOutput tamperOutput;
     SpeedOutput speedOutput;
-    SetupGamma1Output setUpGamma1Output;
-    SetupGamma2Output setUpGamma2Output;
-    SetupGamma3Output setupGamma3Output;
+    GammaSetupOutputs gammaSetup;
     SetupNeutronOutput setupNeutronOutput;
     GammaThresholdOutput gammaThresholdOutput;
+    EMLScanContextualOutput emlScanContextualOutput;
+    EMLContextualOutputs emlContextualOutput;
     InputStream msgIn;
     ERNIE_lane ernieLane = null;
     EMLService emlService = null;
@@ -74,10 +76,10 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         generateUniqueID("urn:osh:sensor:rapiscan:", config.serialNumber);
         generateXmlID("Rapiscan", config.serialNumber);
 
-        laneName = config.laneConfig.laneName;
+        laneName = config.laneName;
 
         // TODO: EML integration
-        if(config.isSupplementalAlgorithm){
+        if(config.EMLConfig.isSupplementalAlgorithm){
             createEMLOutputs();
             emlService = new EMLService(this);
         }
@@ -86,9 +88,17 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     }
 
     public void createEMLOutputs(){
-        emlOutput = new EMLOutput(this);
-        addOutput(emlOutput, false);
-        emlOutput.init();
+        emlAnalysisOutput = new EMLAnalysisOutput(this);
+        addOutput(emlAnalysisOutput, false);
+        emlAnalysisOutput.init();
+
+        emlContextualOutput = new EMLContextualOutputs(this);
+        addOutput(emlContextualOutput, false);
+        emlContextualOutput.init();
+
+        emlScanContextualOutput = new EMLScanContextualOutput(this);
+        addOutput(emlScanContextualOutput, false);
+        emlScanContextualOutput.init();
     }
 
     public void createOutputs(){
@@ -116,17 +126,9 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         addOutput(speedOutput, false);
         speedOutput.init();
 
-        setUpGamma1Output = new SetupGamma1Output(this);
-        addOutput(setUpGamma1Output, false);
-        setUpGamma1Output.init();
-
-        setUpGamma2Output = new SetupGamma2Output(this);
-        addOutput(setUpGamma2Output, false);
-        setUpGamma2Output.init();
-
-        setupGamma3Output = new SetupGamma3Output(this);
-        addOutput(setupGamma3Output, false);
-        setupGamma3Output.init();
+        gammaSetup = new GammaSetupOutputs(this);
+        addOutput(gammaSetup, false);
+        gammaSetup.init();
 
         setupNeutronOutput = new SetupNeutronOutput(this);
         addOutput(setupNeutronOutput, false);
@@ -173,32 +175,34 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                     tcp = (TCPCommProvider) commProvider;
                 }
 
-                if (config.isSupplementalAlgorithm && tcp != null) {
+                if (config.EMLConfig.isSupplementalAlgorithm && tcp != null) {
                     String port = String.valueOf(tcp.getConfiguration().protocol.remotePort);
                     ernieLane = new ERNIE_lane(
                             port,
-                            config.laneConfig.laneID,
-                            config.laneConfig.isCollimated,
-                            config.laneConfig.laneWidth,
-                            config.laneConfig.intervals,
-                            config.laneConfig.occupancyHoldin
+                            config.laneID,
+                            config.EMLConfig.isCollimated,
+                            config.EMLConfig.laneWidth,
+                            config.EMLConfig.intervals,
+                            config.EMLConfig.occupancyHoldin
                     );
                 }
 
                 msgIn = new BufferedInputStream(commProvider.getInputStream());
-                messageHandler = new MessageHandler(msgIn,
+                messageHandler = new MessageHandler(
+                        config.EMLConfig,
+                        msgIn,
                         gammaOutput,
                         neutronOutput,
                         occupancyOutput,
                         tamperOutput,
                         speedOutput,
-                        setUpGamma1Output,
-                        setUpGamma2Output,
-                        setupGamma3Output,
+                        gammaSetup,
                         setupNeutronOutput,
-                        emlOutput,
+                        emlAnalysisOutput,
                         emlService,
-                        gammaThresholdOutput);
+                        gammaThresholdOutput,
+                        emlScanContextualOutput,
+                        emlContextualOutput);
 
             } catch (IOException e) {
 

@@ -32,14 +32,12 @@ public class LocationOutput  extends AbstractSensorOutput<RapiscanSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
-        var laneID = radHelper.createLaneID();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("location-output"))
                 .addField(samplingTime.getName(), samplingTime)
-                .addField(laneID.getName(), laneID)
                 .addField("sensorLocation", radHelper.createLocationVectorLLA()
                         .label("Sensor Location"))
                 .build();
@@ -64,8 +62,6 @@ public class LocationOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
             int index = 0;
             dataBlock.setLongValue(index++, latestRecordTime);
-            dataBlock.setStringValue(index++, parentSensor.laneName);
-
             dataBlock.setDoubleValue(index++, gpsLocation.lat);
             dataBlock.setDoubleValue(index++, gpsLocation.lon);
             dataBlock.setDoubleValue(index++, gpsLocation.alt);

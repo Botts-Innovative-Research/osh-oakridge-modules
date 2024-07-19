@@ -64,9 +64,12 @@ public class EMLService {
                 throw new RuntimeException(e);
             }
         }
-        // Purge occupancy data for next occupancy
-        this.occupancyDataList.clear();
+        //purge data occupancy for next occupancy!
+        clearOccupancyList();
+
         return results;
     }
-
+    public void clearOccupancyList(){
+        this.occupancyDataList.clear();
+    }
 }

@@ -31,7 +31,6 @@ public class SetupNeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
-        var laneID = radHelper.createLaneID();
         var highBGFault = radHelper.createHighBackgroundFault();
         var maxIntervals = radHelper.createMaxIntervals();
         var alphaValue = radHelper.createAlphaValue();
@@ -43,7 +42,6 @@ public class SetupNeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
                 .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("setup-neutron-1"))
                 .addField(samplingTime.getName(), samplingTime)
-                .addField(laneID.getName(), laneID)
                 .addField(highBGFault.getName(), highBGFault)
                 .addField(maxIntervals.getName(), maxIntervals)
                 .addField(alphaValue.getName(), alphaValue)
@@ -51,6 +49,7 @@ public class SetupNeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
                 .addField(sequentialIntervals.getName(), sequentialIntervals)
                 .build();
 
+        //TODO: add set up neutron 2
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
 
@@ -65,7 +64,6 @@ public class SetupNeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
         }
         int index =0;
         dataBlock.setLongValue(index++,System.currentTimeMillis()/1000);
-        dataBlock.setStringValue(index++, parent.laneName);
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[1])); //high bg
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[2])); //max intervals
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[3])); //alpha val

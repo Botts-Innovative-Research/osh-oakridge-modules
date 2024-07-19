@@ -86,10 +86,10 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
 
         // Get NSigma value from gamma setup 1 data record
         // If none, default value = 6
-        float nSigma = messageHandler.getGammaSetUp1Output().getLatestRecord() != null ? messageHandler.getGammaSetUp1Output().getLatestRecord().getFloatValue(6) : 6.0f;
+        float nSigma = messageHandler.getGammaSetup().getLatestRecord() != null ? messageHandler.getGammaSetup().getLatestRecord().getFloatValue(5) : 6.0f;
         // Get Algorithm value from gamma setup 2 data record
         // If none default value = 1010 or SUM & VERTICAL
-        String algorithmData = messageHandler.getGammaSetUp2Output().getLatestRecord() != null ? messageHandler.getGammaSetUp2Output().getLatestRecord().getStringValue(6) : "1010";
+        String algorithmData = messageHandler.getGammaSetup().getLatestRecord() != null ? messageHandler.getGammaSetup().getLatestRecord().getStringValue(11) : "1010";
         // Algorithm EnumSet includes algorithm type (example: 1010 = SUM, VERTICAL)
         EnumSet<AlgorithmType> algorithmSet = EnumSet.noneOf(AlgorithmType.class);
 
