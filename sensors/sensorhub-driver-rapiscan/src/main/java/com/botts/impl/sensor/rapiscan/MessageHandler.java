@@ -7,9 +7,13 @@ import com.botts.impl.sensor.rapiscan.eml.EMLScanContextualOutput;
 import com.botts.impl.sensor.rapiscan.eml.EMLService;
 import com.botts.impl.sensor.rapiscan.output.*;
 import com.opencsv.CSVReader;
+import com.opencsv.CSVWriter;
+import org.sensorhub.utils.FileUtils;
 
 import java.io.*;
+import java.text.SimpleDateFormat;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -51,12 +55,20 @@ public class MessageHandler {
     String [] setupGamma2;
 
 
+    FileWriter fw;
+    CSVWriter writer;
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
 
     private final Thread messageReader = new Thread(new Runnable() {
         @Override
         public void run() {
             boolean continueProcessing = true;
+
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd");
+            String dateStamp = dateFormat.format(new Date());
+            String fileName= "dailyfile_"+dateStamp+"_"+System.currentTimeMillis()+".csv";
+            File dailyFile = new File(fileName);
+
             try{
                 while (continueProcessing){
                     BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
@@ -68,6 +80,9 @@ public class MessageHandler {
                         getMainCharDefinition(csvLine[0], csvLine);
                         System.out.println(msgLine);
 
+                        fw = new FileWriter(dailyFile);
+                        writer = new CSVWriter(fw);
+                        writer.writeNext(new String[]{msgLine});
                         msgLine = bufferedReader.readLine();
 
                         synchronized (isProcessing) {
@@ -118,6 +133,11 @@ public class MessageHandler {
     public void stopProcessing() {
         synchronized (isProcessing) {
             isProcessing.set(false);
+        }
+        try {
+            writer.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 

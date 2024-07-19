@@ -50,6 +50,11 @@ public class EMLAnalysisOutput extends AbstractSensorOutput<RapiscanSensor> {
         dataRecordBuilder.addField(RELEASE_PROBABILITY_FIELD_NAME, emlFieldFactory.createReleaseProbabilityField());
         dataRecordBuilder.addField(GAMMA_ALERT_FIELD_NAME, emlFieldFactory.createErnieGammaAlertField());
         dataRecordBuilder.addField(NEUTRON_ALERT_FIELD_NAME, emlFieldFactory.createErnieNeutronAlertField());
+
+        dataRecordBuilder.addField(VEHICLE_CLASS_FIELD_NAME, emlFieldFactory.createVehicleClassField());
+        dataRecordBuilder.addField(VEHICLE_LENGTH_FIELD_NAME, emlFieldFactory.createVehicleLengthField());
+        dataRecordBuilder.addField(YELLOW_LIGHT_MESSAGE_FIELD_NAME, emlFieldFactory.createYellowLightMessageField());
+
         dataRecordBuilder.addField("sourceCount", emlFieldFactory.createCount().id("sourceCountId"));
 
         SWEBuilders.DataRecordBuilder sourceArrayBuilder = emlFieldFactory.createRecord();
@@ -75,10 +80,6 @@ public class EMLAnalysisOutput extends AbstractSensorOutput<RapiscanSensor> {
         dataRecordBuilder.addField(OVERALL_PROBABILITY_NON_EMITTING_FIELD_NAME, emlFieldFactory.createOverallProbabilityNonEmittingField());
         dataRecordBuilder.addField(OVERALL_PROBABILITY_NORM_FIELD_NAME, emlFieldFactory.createOverallProbabilityNormField());
         dataRecordBuilder.addField(OVERALL_PROBABILITY_THREAT_FIELD_NAME, emlFieldFactory.createOverallProbabilityThreatField());
-        dataRecordBuilder.addField(VEHICLE_CLASS_FIELD_NAME, emlFieldFactory.createVehicleClassField());
-        dataRecordBuilder.addField(VEHICLE_LENGTH_FIELD_NAME, emlFieldFactory.createVehicleLengthField());
-        dataRecordBuilder.addField(YELLOW_LIGHT_MESSAGE_FIELD_NAME, emlFieldFactory.createYellowLightMessageField());
-
         return dataRecordBuilder.build();
 
     }
@@ -95,6 +96,10 @@ public class EMLAnalysisOutput extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setDoubleValue(index++, results.getReleaseProbability());
         dataBlock.setBooleanValue(index++, results.getERNIEGammaAlert());
         dataBlock.setBooleanValue(index++, results.getERNIENeutronAlert());
+
+        dataBlock.setIntValue(index++, results.getVehicleClass());
+        dataBlock.setDoubleValue(index++, results.getVehicleLength());
+        dataBlock.setStringValue(index++, results.getYellowLightMessage());
 
         int sourceCount = results.getNumberOfSources();
         dataBlock.setIntValue(index++, sourceCount);
@@ -124,50 +129,6 @@ public class EMLAnalysisOutput extends AbstractSensorOutput<RapiscanSensor> {
             dataBlock.setDoubleValue(index++, results.getOverallSource().getProbabilityNORM());
             dataBlock.setDoubleValue(index++, results.getOverallSource().getProbabilityThreat());
         }
-        dataBlock.setIntValue(index++, results.getVehicleClass());
-        dataBlock.setDoubleValue(index++, results.getVehicleLength());
-//        dataBlock.setStringValue(index++, results.getMessage());
-        dataBlock.setStringValue(index++, results.getYellowLightMessage());
-
-//        dataBlock.setStringValue(resultIndex, results.getResult().toString());
-//        dataBlock.setDoubleValue(investigateProbabilityIndex, results.getInvestigateProbability());
-//        dataBlock.setDoubleValue(releaseProbabilityIndex, results.getReleaseProbability());
-//        dataBlock.setBooleanValue(gammaAlertIndex, results.getERNIEGammaAlert());
-//        dataBlock.setBooleanValue(neutronAlertIndex, results.getERNIENeutronAlert());
-//
-//        int sourceCount = results.getNumberOfSources();
-//        dataBlock.setIntValue(sourceCountIdIndex, sourceCount);
-//
-//        var array = ((DataArrayImpl) dataStruct.getComponent("sources"));
-//        array.updateSize();
-//
-//        if(sourceCount > 0){
-//            for(int i = 0; i < sourceCount; i++){
-//                dataBlock.setStringValue(sourceTypeIndex, results.getSource(i).getSourceType());
-//                dataBlock.setStringValue(classifierUsedIndex, results.getSource(i).getClassifierUsed());
-//                dataBlock.setDoubleValue(xLocation1Index, results.getSource(i).getxLocation1());
-//                dataBlock.setDoubleValue(xLocation2Index, results.getSource(i).getxLocation2());
-//                dataBlock.setDoubleValue(yLocationIndex, results.getSource(i).getyLocation());
-//                dataBlock.setDoubleValue(zLocationIndex, results.getSource(i).getzLocation());
-//                dataBlock.setDoubleValue(probabilityNonEmittingIndex, results.getSource(i).getProbabilityNonEmitting());
-//                dataBlock.setDoubleValue(probabilityNORMIndex, results.getSource(i).getProbabilityNORM());
-//                dataBlock.setDoubleValue(probabilityThreatIndex, results.getSource(i).getProbabilityThreat());
-//            }
-//            dataBlock.setStringValue(overallSourceTypeIndex, results.getOverallSource().getSourceType());
-//            dataBlock.setStringValue(overallClassifierUsedIndex, results.getOverallSource().getClassifierUsed());
-//            dataBlock.setDoubleValue(overallXLocation1Index, results.getOverallSource().getxLocation1());
-//            dataBlock.setDoubleValue(overallXLocation2Index, results.getOverallSource().getxLocation2());
-//            dataBlock.setDoubleValue(overallYLocationIndex, results.getOverallSource().getyLocation());
-//            dataBlock.setDoubleValue(overallZLocationIndex, results.getOverallSource().getzLocation());
-//            dataBlock.setDoubleValue(overallProbabilityNonEmittingIndex, results.getOverallSource().getProbabilityNonEmitting());
-//            dataBlock.setDoubleValue(overallProbabilityNORMIndex, results.getOverallSource().getProbabilityNORM());
-//            dataBlock.setDoubleValue(overallProbabilityThreatIndex, results.getOverallSource().getProbabilityThreat());
-//        }
-//        dataBlock.setIntValue(vehicleClassIndex, results.getVehicleClass());
-//        dataBlock.setDoubleValue(vehicleLengthIndex, results.getVehicleLength());
-//        dataBlock.setStringValue(messageIndex, results.getMessage());
-//        dataBlock.setStringValue(yellowLightMessageIndex, results.getYellowLightMessage());
-
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), EMLAnalysisOutput.this, dataBlock));

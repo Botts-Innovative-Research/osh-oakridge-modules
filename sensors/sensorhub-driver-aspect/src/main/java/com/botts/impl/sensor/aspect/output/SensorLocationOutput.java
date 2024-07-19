@@ -28,15 +28,12 @@ public class SensorLocationOutput extends AbstractSensorOutput<AspectSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
-        var laneID = radHelper.createLaneID();
-
 
         dataRecord = radHelper.createRecord()
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("location-output"))
                 .addField(samplingTime.getName(), samplingTime)
-                .addField(laneID.getName(), laneID)
                 .addField("sensorLocation", radHelper.createLocationVectorLLA()
                         .label("Sensor Location"))
                 .build();
@@ -54,10 +51,9 @@ public class SensorLocationOutput extends AbstractSensorOutput<AspectSensor> {
         latestRecordTime = System.currentTimeMillis() / 1000;
 
         dataBlock.setLongValue(0, latestRecordTime);
-        dataBlock.setLongValue(1, parent.laneID);
-        dataBlock.setDoubleValue(2, gpsLocation.lat);
-        dataBlock.setDoubleValue(3, gpsLocation.lon);
-        dataBlock.setDoubleValue(4, gpsLocation.alt);
+        dataBlock.setDoubleValue(1, gpsLocation.lat);
+        dataBlock.setDoubleValue(2, gpsLocation.lon);
+        dataBlock.setDoubleValue(3, gpsLocation.alt);
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

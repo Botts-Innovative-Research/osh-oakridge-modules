@@ -38,7 +38,6 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
-        var laneID = radHelper.createLaneID();
         var threshold = radHelper.createThreshold();
 
         dataStruct = radHelper.createRecord()
@@ -46,7 +45,6 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
                 .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("gamma-threshold"))
                 .addField(samplingTime.getName(), samplingTime)
-                .addField(laneID.getName(), laneID)
                 .addField(threshold.getName(), threshold)
                 .build();
         dataEncoding = new TextEncodingImpl(",", "\n");
@@ -76,7 +74,6 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
         int index = 0;
 
         dataBlock.setLongValue(index++, System.currentTimeMillis()/1000);
-        dataBlock.setStringValue(index++, parent.laneName);
 
         MessageHandler messageHandler = parentSensor.getMessageHandler();
 

@@ -69,7 +69,6 @@ public class GammaOutput extends AbstractSensorOutput<RapiscanSensor> {
 
         dataBlock.setLongValue(index++,timeStamp/1000);
         dataBlock.setStringValue(index++, alarmState);
-
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[1]));
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[2]));
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[3]));

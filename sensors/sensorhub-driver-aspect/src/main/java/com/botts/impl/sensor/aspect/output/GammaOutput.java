@@ -32,7 +32,6 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
-        var laneID = radHelper.createLaneID();
         var gammaCount = radHelper.createGammaGrossCount();
         var gammaBackground = radHelper.createGammaBackground();
         var gammaVariance = radHelper.createGammaVariance();
@@ -44,7 +43,6 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
                 .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("gamma-scan"))
                 .addField(samplingTime.getName(), samplingTime)
-                .addField(laneID.getName(), laneID)
                 .addField(gammaCount.getName(), gammaCount)
                 .addField(gammaBackground.getName(), gammaBackground)
                 .addField(gammaVariance.getName(), gammaVariance)
@@ -75,12 +73,11 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
         ++setCount;
 
         dataBlock.setDoubleValue(0, timeStamp);
-        dataBlock.setIntValue(1, parent.laneID);
-        dataBlock.setIntValue(2, monitorRegisters.getGammaChannelCount());
-        dataBlock.setDoubleValue(3, monitorRegisters.getGammaChannelBackground());
-        dataBlock.setDoubleValue(4, monitorRegisters.getGammaChannelVariance());
-        dataBlock.setDoubleValue(5, monitorRegisters.getGammaVarianceBackground());
-        dataBlock.setStringValue(6, monitorRegisters.getGammaAlarmState());
+        dataBlock.setIntValue(1, monitorRegisters.getGammaChannelCount());
+        dataBlock.setDoubleValue(2, monitorRegisters.getGammaChannelBackground());
+        dataBlock.setDoubleValue(3, monitorRegisters.getGammaChannelVariance());
+        dataBlock.setDoubleValue(4, monitorRegisters.getGammaVarianceBackground());
+        dataBlock.setStringValue(5, monitorRegisters.getGammaAlarmState());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

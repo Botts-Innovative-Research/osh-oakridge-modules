@@ -68,14 +68,10 @@ public class NeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
 
         dataBlock.setLongValue(index++,timeStamp/1000);
         dataBlock.setStringValue(index++, alarmState);
-
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[1]));
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[2]));
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[3]));
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[4]));
-//        for(int i=1; i< csvString.length; i++){
-//            dataBlock.setIntValue(index++, Integer.parseInt(csvString[i]));
-//        }
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(timeStamp, NeutronOutput.this, dataBlock));

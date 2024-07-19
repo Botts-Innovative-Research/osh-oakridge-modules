@@ -88,10 +88,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     }
 
     public void createEMLOutputs(){
-        emlAnalysisOutput = new EMLAnalysisOutput(this);
-        addOutput(emlAnalysisOutput, false);
-        emlAnalysisOutput.init();
-
         emlContextualOutput = new EMLContextualOutputs(this);
         addOutput(emlContextualOutput, false);
         emlContextualOutput.init();
@@ -99,6 +95,14 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         emlScanContextualOutput = new EMLScanContextualOutput(this);
         addOutput(emlScanContextualOutput, false);
         emlScanContextualOutput.init();
+
+        emlAnalysisOutput = new EMLAnalysisOutput(this);
+        addOutput(emlAnalysisOutput, false);
+        emlAnalysisOutput.init();
+
+        gammaThresholdOutput = new GammaThresholdOutput(this);
+        addOutput(gammaThresholdOutput, false);
+        gammaThresholdOutput.init();
     }
 
     public void createOutputs(){
@@ -115,7 +119,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         occupancyOutput.init();
 
         locationOutput = new LocationOutput(this);
-        addOutput(locationOutput, false);
+//        addOutput(locationOutput, false);
         locationOutput.init();
 
         tamperOutput = new TamperOutput(this);
@@ -134,9 +138,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         addOutput(setupNeutronOutput, false);
         setupNeutronOutput.init();
 
-        gammaThresholdOutput = new GammaThresholdOutput(this);
-        addOutput(gammaThresholdOutput, false);
-        gammaThresholdOutput.init();
     }
 
     @Override

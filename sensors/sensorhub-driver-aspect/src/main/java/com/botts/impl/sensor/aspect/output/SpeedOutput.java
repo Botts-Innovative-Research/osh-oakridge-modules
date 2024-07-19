@@ -33,7 +33,6 @@ public class SpeedOutput extends AbstractSensorOutput<AspectSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
-        var laneID = radHelper.createLaneID();
         var speedMMS = radHelper.createSpeedMms();
 
         dataRecord = radHelper.createRecord()
@@ -41,7 +40,6 @@ public class SpeedOutput extends AbstractSensorOutput<AspectSensor> {
                 .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("speed"))
                 .addField(samplingTime.getName(), samplingTime)
-                .addField(laneID.getName(), laneID)
                 .addField(speedMMS.getName(), speedMMS)
                 .build();
 
@@ -68,8 +66,7 @@ public class SpeedOutput extends AbstractSensorOutput<AspectSensor> {
         ++setCount;
 
         dataBlock.setDoubleValue(0, timeStamp);
-        dataBlock.setIntValue(1, parent.laneID);
-        dataBlock.setIntValue(2, monitorRegisters.getObjectSpeed());
+        dataBlock.setIntValue(1, monitorRegisters.getObjectSpeed());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

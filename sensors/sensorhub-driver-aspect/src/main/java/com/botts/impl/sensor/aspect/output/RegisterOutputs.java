@@ -32,7 +32,6 @@ public class RegisterOutputs extends AbstractSensorOutput<AspectSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
-        var laneID = radHelper.createLaneID();
         var objectMark = radHelper.createObjectMark();
 
         dataRecord = radHelper.createRecord()
@@ -40,7 +39,6 @@ public class RegisterOutputs extends AbstractSensorOutput<AspectSensor> {
                 .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("register-outputs"))
                 .addField(samplingTime.getName(), samplingTime)
-                .addField(laneID.getName(), laneID)
                 .addField(objectMark.getName(), objectMark)
                 .build();
 
@@ -67,9 +65,8 @@ public class RegisterOutputs extends AbstractSensorOutput<AspectSensor> {
         ++setCount;
 
         dataBlock.setDoubleValue(0, timeStamp);
-        dataBlock.setIntValue(1, parent.laneID);
-        dataBlock.setIntValue(2, monitorRegisters.getObjectMark());
-        dataBlock.setIntValue(3, monitorRegisters.getObjectCounter());
+        dataBlock.setIntValue(1, monitorRegisters.getObjectMark());
+        dataBlock.setIntValue(2, monitorRegisters.getObjectCounter());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

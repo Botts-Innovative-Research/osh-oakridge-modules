@@ -32,7 +32,6 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
-        var laneID = radHelper.createLaneID();
         var neutronCount = radHelper.createNeutronGrossCount();
         var neutronBackground = radHelper.createNeutronBackground();
         var neutronVariance = radHelper.createNeutronVariance();
@@ -44,7 +43,6 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
                 .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("neutron-scan"))
                 .addField(samplingTime.getName(), samplingTime)
-                .addField(laneID.getName(), laneID)
                 .addField(neutronCount.getName(), neutronCount)
                 .addField(neutronBackground.getName(), neutronBackground)
                 .addField(neutronVariance.getName(), neutronVariance)
@@ -75,12 +73,11 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
         ++setCount;
 
         dataBlock.setDoubleValue(0, timeStamp);
-        dataBlock.setIntValue(1, parent.laneID);
-        dataBlock.setIntValue(2, monitorRegisters.getNeutronChannelCount());
-        dataBlock.setFloatValue(3, monitorRegisters.getNeutronChannelBackground());
-        dataBlock.setFloatValue(4, monitorRegisters.getNeutronChannelVariance());
-        dataBlock.setDoubleValue(5, monitorRegisters.getNeutronVarianceBackground());
-        dataBlock.setStringValue(6, monitorRegisters.getNeutronAlarmState());
+        dataBlock.setIntValue(1, monitorRegisters.getNeutronChannelCount());
+        dataBlock.setFloatValue(2, monitorRegisters.getNeutronChannelBackground());
+        dataBlock.setFloatValue(3, monitorRegisters.getNeutronChannelVariance());
+        dataBlock.setDoubleValue(4, monitorRegisters.getNeutronVarianceBackground());
+        dataBlock.setStringValue(5, monitorRegisters.getNeutronAlarmState());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();
