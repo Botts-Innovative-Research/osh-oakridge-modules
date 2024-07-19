@@ -16,8 +16,8 @@ public class EMLConfig {
 
     // TODO: Describe these
     @DisplayInfo(label = "Intervals")
-    public int intervals = 0;
+    public int intervals = 5;
 
     @DisplayInfo(label = "Occupancy Holdin")
-    public int occupancyHoldin = 0;
+    public int occupancyHoldin = 10;
 }
