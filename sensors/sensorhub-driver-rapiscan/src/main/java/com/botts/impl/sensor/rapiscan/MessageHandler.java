@@ -69,7 +69,12 @@ public class MessageHandler {
             String fileName= "dailyfile_"+dateStamp+"_"+System.currentTimeMillis()+".csv";
             File dailyFile = new File(fileName);
 
-            try{
+            try
+            {
+
+                fw = new FileWriter(dailyFile);
+                writer = new CSVWriter(fw);
+
                 while (continueProcessing){
                     BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
                     String msgLine = bufferedReader.readLine();
@@ -80,9 +85,8 @@ public class MessageHandler {
                         getMainCharDefinition(csvLine[0], csvLine);
                         System.out.println(msgLine);
 
-                        fw = new FileWriter(dailyFile);
-                        writer = new CSVWriter(fw);
                         writer.writeNext(new String[]{msgLine});
+
                         msgLine = bufferedReader.readLine();
 
                         synchronized (isProcessing) {
