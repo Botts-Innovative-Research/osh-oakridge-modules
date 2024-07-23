@@ -70,7 +70,7 @@ Connection Options:
 -**Check Reachability:**
 
 
-Position Config: (*Settings for the location adn orientation of the rapiscan sensor.*)
+Position Config: (*Settings for the location and orientation of the rapiscan sensor.*)
 Location:
 -**Latitude:**
 -**Longitude:**
@@ -84,8 +84,10 @@ Orientation:
 
 EML Config: (*Settings for VM250 lanes, only configure these settings if the lane requires the EML service.*)
 -**Lane Width:**
--**Intervals:**
--**Occupancy Holdin:**
 -**Collimated:** If checked, 
 -**Supplemental Algorithm:** If checked, this will initiate the eml service for the driver. 
 
+-**Intervals:**
+-**Occupancy Holdin:**
+-**Algorithm:**
+-**Sigma**

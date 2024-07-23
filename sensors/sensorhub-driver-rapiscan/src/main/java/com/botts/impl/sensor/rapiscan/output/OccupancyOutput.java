@@ -30,11 +30,22 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
     public void init(){
         RADHelper radHelper = new RADHelper();
 
+
+//         else if (tag.equals("GX"))
+//        {
+//            out.index = Integer.parseInt(valueStrList.get(0));
+//            out.neutronBackground = Double.parseDouble(valueStrList.get(1)) / 1000.0;
+//            out.railCarIndex = Integer.parseInt(valueStrList.get(2));
+//            out.endTime = time;
+//            out.duration = Duration.between(out.startTime, out.endTime);
+//            out.realOccupancy = true;
+//        }
         var samplingTime = radHelper.createPrecisionTimeStamp();
         var occupancyCount = radHelper.createOccupancyCount();
         var occupancyStart = radHelper.createOccupancyStartTime();
         var occupancyEnd = radHelper.createOccupancyEndTime();
         var neutronBackground = radHelper.createNeutronBackground();
+        var gammaBackground = radHelper.createGammaBackground();
         var gammaAlarm = radHelper.createGammaAlarm();
         var neutronAlarm = radHelper.createNeutronAlarm();
 
@@ -49,6 +60,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
                 .addField(occupancyStart.getName(), occupancyStart)
                 .addField(occupancyEnd.getName(), occupancyEnd)
                 .addField(neutronBackground.getName(), neutronBackground)
+//                .addField(gammaBackground.getName(), gammaBackground)
                 .addField(gammaAlarm.getName(), gammaAlarm)
                 .addField(neutronAlarm.getName(), neutronAlarm)
                 .build();
@@ -70,7 +82,9 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[1])); //occupancy count
         dataBlock.setLongValue(index++, startTime/1000);
         dataBlock.setLongValue(index++, endTime/1000);
-        dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[2])/1000); //neutron background count
+        dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[2])/1000); //neutron background
+////      TODO gamma background
+//        dataBlock.setDoubleValue(index++, 0); //gamma background
         dataBlock.setBooleanValue(index++, isGammaAlarm);
         dataBlock.setBooleanValue(index++, isNeutronAlarm);
 

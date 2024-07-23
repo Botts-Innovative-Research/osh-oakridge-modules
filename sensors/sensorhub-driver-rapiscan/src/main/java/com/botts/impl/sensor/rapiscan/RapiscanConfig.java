@@ -59,10 +59,8 @@ public class RapiscanConfig extends SensorConfig {
     @DisplayInfo.Required
     public int laneID;
 
-    @DisplayInfo(desc = "Lane Settings")
+    @DisplayInfo(desc = "EML Lane Settings")
     public EMLConfig EMLConfig = new EMLConfig();
-
-
 
 
     @Override

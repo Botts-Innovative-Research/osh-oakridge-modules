@@ -1,22 +1,19 @@
 package com.botts.impl.sensor.rapiscan;
 
-//import com.botts.impl.sensor.rapiscan.helpers.RapiscanPreset;
-import com.botts.impl.sensor.rapiscan.eml.EMLAnalysisOutput;
-import com.botts.impl.sensor.rapiscan.eml.EMLContextualOutputs;
-import com.botts.impl.sensor.rapiscan.eml.EMLScanContextualOutput;
+
 import com.botts.impl.sensor.rapiscan.eml.EMLService;
+import com.botts.impl.sensor.rapiscan.eml.outputs.EMLAnalysisOutput;
+import com.botts.impl.sensor.rapiscan.eml.outputs.EMLContextualOutputs;
+import com.botts.impl.sensor.rapiscan.eml.outputs.EMLScanContextualOutput;
 import com.botts.impl.sensor.rapiscan.output.*;
 import com.opencsv.CSVReader;
 import com.opencsv.CSVWriter;
-import org.sensorhub.utils.FileUtils;
 
 import java.io.*;
 import java.text.SimpleDateFormat;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Stream;
 
 public class MessageHandler {
 
@@ -54,18 +51,38 @@ public class MessageHandler {
 
     String [] setupGamma1;
     String [] setupGamma2;
+    String [] setupNeutron1;
+
+
+    boolean isSetup = false;
+    String sampleSetups =
+            "SG1,000450,000068,05,10,08.0,P\n" +
+            "SG2,1111,0.069,0.455,01,1010,A\n" +
+            "SG3,0.069,0.455,020,000,1.10.1\n" +
+            "SN1,000050,05,0047,1200,02,120\n" +
+            "SN2,0.504,5.040,0.504,5.040,PP\n" +
+            "NS,000000,000000,000000,000000\n" +
+            "GS,000052,000052,000052,000052\n" +
+            "GS,000052,000052,000052,000052\n" +
+            "SP,0.2249,03.032,004.88,000000\n" +
+            "GS,000053,000053,000053,000053\n" +
+            "GS,000054,000054,000054,000054\n" +
+            "GS,000056,000056,000056,000056\n" +
+            "NS,000000,000000,000000,000000\n" +
+            "GS,000059,000059,000059,000059\n" +
+            "GS,000064,000064,000064,000064\n" +
+            "GS,000072,000072,000072,000072\n" +
+            "SG1,000450,000068,06,08,14.0,P\n" +
+            "SG2,1111,0.069,0.455,01,1111,A\n" +
+            "SG3,0.069,0.455,020,000,1.10.1\n" +
+            "SN1,000050,05,0047,1200,02,120\n" +
+            "SN2,0.504,5.040,0.504,5.040,PP\n";
 
 
     FileWriter fw;
     CSVWriter writer;
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
     // Setup boolean
-    boolean isSetup = false;
-    String sampleSetups = "SG1,000450,000068,05,10,08.0,P\n" +
-            "SG2,1111,0.069,0.455,01,1010,A\n" +
-            "SG3,0.069,0.455,020,000,1.10.1\n" +
-            "SN1,000050,05,0047,1200,02,120\n" +
-            "SN2,0.504,5.040,0.504,5.040,PP\n";
     private final Thread messageReader = new Thread(new Runnable() {
         @Override
         public void run() {
@@ -73,36 +90,53 @@ public class MessageHandler {
 
             SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd");
             String dateStamp = dateFormat.format(new Date());
-            String fileName= "dailyfile_"+dateStamp+"_"+System.currentTimeMillis()+".csv";
+            String fileName = "dailyfile_"+dateStamp+"_"+System.currentTimeMillis()+".csv";
+
             File dailyFile = new File(fileName);
 
             try
             {
-
                 fw = new FileWriter(dailyFile);
                 writer = new CSVWriter(fw);
 
+
+                //todo: read from config if no set up values are available
+                //todo:
                 while (continueProcessing){
                     BufferedReader bufferedReader;
                     InputStream setupInput = new ByteArrayInputStream(sampleSetups.getBytes());
 
-                    if(!isSetup) {
-                        bufferedReader = new BufferedReader(new InputStreamReader(setupInput));
-                        isSetup = true;
-                    } else {
-                        bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
-                    }
+
+
+
+//                    //this is just to simulate the setup values coming in!! for testing purposes :)
+//                    if(!isSetup) {
+//                        bufferedReader = new BufferedReader(new InputStreamReader(setupInput));
+//                        isSetup = true;
+//
+//                    } else {
+//                        bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
+//                    }
+
+                    bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
 
                     String msgLine = bufferedReader.readLine();
                     while (msgLine != null){
                         reader = new CSVReader(new StringReader(msgLine));
                         csvList = reader.readAll();
                         csvLine = csvList.get(0);
-                        getMainCharDefinition(csvLine[0], csvLine);
-                        System.out.println(msgLine);
 
+                        //todo add time to csv files after each line!
                         writer.writeNext(new String[]{msgLine});
 
+                        getMainCharDefinition(csvLine[0], csvLine);
+
+                        if(csvLine[0].contains("SG1")){
+                            isSetup = true;
+                        }
+                        checkParameters(); //checks if set up values are given, if not then sets default values from config
+
+                        System.out.println(msgLine);
                         msgLine = bufferedReader.readLine();
 
                         synchronized (isProcessing) {
@@ -165,18 +199,18 @@ public class MessageHandler {
         // Add occupancy for eml service
         String scanData = String.join(",", csvLine);
 
-        //TODO: fix this.  bc it doesnt allways need this.
         if(emlConfig.isSupplementalAlgorithm){
             this.emlService.addOccupancyLine(scanData);
-
         }
 
         switch (mainChar){
             // ------------------- NOT OCCUPIED
             case "GB":
                 gammaOutput.onNewMessage(csvLine, System.currentTimeMillis(), BACKGROUND);
+
                 // Send latest Gamma Background to threshold calculator
                 gammaThresholdOutput.onNewGammaBackground(csvLine);
+
                 break;
             case "GH":
                 gammaOutput.onNewMessage(csvLine, System.currentTimeMillis(), FAULT_GH);
@@ -203,6 +237,7 @@ public class MessageHandler {
                 break;
 
             case "GS":
+                //usually the foreground value will switch to "GA" in an alarm state
                 if (!currentOccupancy){
                     occupancyStartTime = System.currentTimeMillis();
                     currentOccupancy = true;
@@ -242,9 +277,9 @@ public class MessageHandler {
                     emlScanContextualOutput.handleScanContextualMessage(results, occupancyEndTime);
                     emlContextualOutputs.handleContextualMessage(results, occupancyEndTime);
                     emlAnalysisOutput.handleAnalysisMessage(results, occupancyEndTime);
+                    gammaThresholdOutput.publishThreshold(isSetup);
                 }
 
-                gammaThresholdOutput.publishThreshold();
                 break;
 
             // -------------------- OTHER STATE
@@ -257,9 +292,8 @@ public class MessageHandler {
             case "SP":
                 speedOutput.onNewMessage(csvLine);
                 break;
-
-                //TODO: combine set up gammas
             case "SG1":
+                isSetup = true;
                 setupGamma1 = csvLine;
                 break;
             case "SG2":
@@ -271,14 +305,40 @@ public class MessageHandler {
                 setupGamma2 = new String[]{""};
                 break;
             case "SN1":
-                setupNeutronOutput.onNewMessage(csvLine);
+                setupNeutron1 = csvLine;
                 break;
             case "SN2":
-                System.out.println("SN2 no output");
+                setupNeutronOutput.onNewMessage(setupNeutron1, csvLine);
+                setupNeutron1 = new String[]{""};
                 break;
         }
 
     }
+
+    /**
+     * this checks to see if setups are available if not sets the default values
+     */
+    public void checkParameters(){
+        if(!isSetup){
+            System.out.println("No setup information found");
+            // use the setup values from the config
+            useDefaultValues();
+        }else{
+            System.out.println("Setup information is found!");
+        }
+    }
+
+    /**
+     * this sets the set up values that are used in the gamma threshold outputs
+     */
+    public void useDefaultValues(){
+        this.gammaSetup.setIntervals(emlConfig.gammaSetupConfig.intervals);
+        this.gammaSetup.setOccupancyHoldin(emlConfig.gammaSetupConfig.occupancyHoldin);
+        this.gammaSetup.setNsigma(emlConfig.gammaSetupConfig.nsigma);
+        this.gammaSetup.setAlgorithm(emlConfig.gammaSetupConfig.algorithm);
+    }
+
+
 
     public GammaOutput getGammaOutput() { return this.gammaOutput; }
     public NeutronOutput getNeutronOutput() { return this.neutronOutput; }

@@ -1,6 +1,7 @@
-package com.botts.impl.sensor.rapiscan.eml;
+package com.botts.impl.sensor.rapiscan.eml.outputs;
 
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
+import com.botts.impl.sensor.rapiscan.eml.EMLFieldFactory;
 import gov.llnl.ernie.api.Results;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
