@@ -23,6 +23,11 @@ public class GammaSetupOutputs extends AbstractSensorOutput<RapiscanSensor> {
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
 
+    int intervals;
+    int occupancyHoldin;
+    double nsigma;
+    String algorithm;
+
     public GammaSetupOutputs(RapiscanSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
@@ -31,24 +36,24 @@ public class GammaSetupOutputs extends AbstractSensorOutput<RapiscanSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
+
         var highBGFault = radHelper.createHighBackgroundFault();
         var lowBGFault = radHelper.createLowBackgroundFault();
         var intervals = radHelper.createIntervals();
         var holdin = radHelper.createOccupancyHoldin();
-        var nSigma = radHelper.createNSigma();
-        var placeholder = radHelper.createPlaceholder();
+        var sigma = radHelper.createSigma();
 
         var detectors = radHelper.createDetectors();
-        var controlLLD = radHelper.createLowerControlDiscriminator();
-        var controlULD = radHelper.createUpperControlDiscriminator();
+        var controlLLD = radHelper.createMasterLLD();
+        var controlULD = radHelper.createMasterULD();
         var relayOutput = radHelper.createRelayOutput();
         var algorithm = radHelper.createAlgorithm();
-        var version = radHelper.createSoftwareVersion();
+        var softwareVersion = radHelper.createSoftwareVersion();
 
-        var auxLLD = radHelper.createAuxiliaryLowerDiscriminator();
-        var auxULD = radHelper.createAuxiliaryUpperDiscriminator();
+        var slaveLLD = radHelper.createSlaveLLD();
+        var saveULD = radHelper.createSlaveULD();
         var backgroundTime = radHelper.createBackgroundTime();
-        var backgroundNSigma = radHelper.createBackgroundNSigma();
+        var backgroundSigma = radHelper.createBackgroundSigma();
         var firmwareVersion = radHelper.createFirmwareVersion();
 
         dataStruct = radHelper.createRecord()
@@ -60,20 +65,19 @@ public class GammaSetupOutputs extends AbstractSensorOutput<RapiscanSensor> {
                 .addField(lowBGFault.getName(), lowBGFault)
                 .addField(intervals.getName(), intervals)
                 .addField(holdin.getName(), holdin)
-                .addField(nSigma.getName(), nSigma)
-                .addField(placeholder.getName(), placeholder)
+                .addField(sigma.getName(), sigma)
 
                 .addField(detectors.getName(), detectors)
                 .addField(controlLLD.getName(), controlLLD)
                 .addField(controlULD.getName(), controlULD)
                 .addField(relayOutput.getName(), relayOutput)
                 .addField(algorithm.getName(), algorithm)
-                .addField(version.getName(), version)
+                .addField(softwareVersion.getName(), softwareVersion)
 
-                .addField(auxLLD.getName(), auxLLD)
-                .addField(auxULD.getName(), auxULD)
+                .addField(slaveLLD.getName(), slaveLLD) //slave lld
+                .addField(saveULD.getName(), saveULD) //slave uld
                 .addField(backgroundTime.getName(), backgroundTime)
-                .addField(backgroundNSigma.getName(), backgroundNSigma)
+                .addField(backgroundSigma.getName(), backgroundSigma)
                 .addField(firmwareVersion.getName(), firmwareVersion)
                 .build();
 
@@ -96,8 +100,8 @@ public class GammaSetupOutputs extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setIntValue(index++, Integer.parseInt(setup1[2])); // low bg
         dataBlock.setIntValue(index++, Integer.parseInt(setup1[3])); //intervals
         dataBlock.setIntValue(index++, Integer.parseInt(setup1[4])); //occupancy holding
-        dataBlock.setDoubleValue(index++, Double.parseDouble(setup1[5])); //nsigma
-        dataBlock.setStringValue(index++, setup1[6]); //placeholder
+        dataBlock.setDoubleValue(index++, Double.parseDouble(setup1[5])); //sigma
+//        dataBlock.setStringValue(index++, setup1[6]); //placeholder
 
         //set up 2
         dataBlock.setStringValue(index++, setup2[1]); //detectors
@@ -111,13 +115,45 @@ public class GammaSetupOutputs extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setDoubleValue(index++, Double.parseDouble(setup3[1])); //low discrim
         dataBlock.setDoubleValue(index++, Double.parseDouble(setup3[2])); //high discrim
         dataBlock.setIntValue(index++, Integer.parseInt(setup3[3])); //background time
-        dataBlock.setIntValue(index++, Integer.parseInt(setup3[4])); //background nsgima
+        dataBlock.setIntValue(index++, Integer.parseInt(setup3[4])); //background sgima
         dataBlock.setStringValue(index++, setup3[5]); //version of firmware
+
+        //gamma config values!
+        intervals=  Integer.parseInt(setup1[3]);
+        occupancyHoldin =  Integer.parseInt(setup1[4]);
+        algorithm=  setup2[5];
+        nsigma =  Double.parseDouble(setup1[5]);
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), GammaSetupOutputs.this, dataBlock));
 
     }
+
+    public double getNsigma(){
+        return nsigma;
+    }
+    public int getIntervals(){
+        return intervals;
+    }
+    public String getAlgorithm(){
+        return algorithm;
+    }
+    public int getOccupancyHoldin(){
+        return occupancyHoldin;
+    }
+    public void setNsigma(double nsigma){
+        this.nsigma = nsigma;
+    }
+    public void setIntervals(int intervals){
+       this.intervals= intervals;
+    }
+    public void setAlgorithm(String algorithm){
+        this.algorithm =algorithm;
+    }
+    public void setOccupancyHoldin(int occupancyHoldin){
+        this.occupancyHoldin = occupancyHoldin;
+    }
+
     @Override
     public DataComponent getRecordDescription() {
         return dataStruct;

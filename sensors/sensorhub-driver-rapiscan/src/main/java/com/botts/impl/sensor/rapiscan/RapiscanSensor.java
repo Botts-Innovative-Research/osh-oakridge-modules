@@ -13,10 +13,11 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.rapiscan;
 
-import com.botts.impl.sensor.rapiscan.eml.EMLAnalysisOutput;
-import com.botts.impl.sensor.rapiscan.eml.EMLContextualOutputs;
-import com.botts.impl.sensor.rapiscan.eml.EMLScanContextualOutput;
-import com.botts.impl.sensor.rapiscan.eml.EMLService;
+import com.botts.impl.sensor.rapiscan.eml.*;
+import com.botts.impl.sensor.rapiscan.eml.outputs.EMLAnalysisOutput;
+import com.botts.impl.sensor.rapiscan.eml.outputs.EMLContextualOutputs;
+import com.botts.impl.sensor.rapiscan.eml.outputs.EMLScanContextualOutput;
+import com.botts.impl.sensor.rapiscan.output.GammaThresholdOutput;
 import com.botts.impl.sensor.rapiscan.output.*;
 import gov.llnl.ernie.api.ERNIE_lane;
 import org.sensorhub.api.comm.ICommProvider;
@@ -64,7 +65,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     EMLService emlService = null;
 
     Timer t;
-    public String laneName;
+    public String laneName; //TODO: possible change lane name to site name?
 
 
     @Override
@@ -119,7 +120,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         occupancyOutput.init();
 
         locationOutput = new LocationOutput(this);
-//        addOutput(locationOutput, false);
         locationOutput.init();
 
         tamperOutput = new TamperOutput(this);
@@ -160,8 +160,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                 commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
                 commProvider.start();
 
-//                commProviderList.add(commProvider);
-
             } catch (Exception e) {
                 commProvider = null;
                 throw new SensorException("error during  start of Sensor: {}", e);
@@ -183,8 +181,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                             config.laneID,
                             config.EMLConfig.isCollimated,
                             config.EMLConfig.laneWidth,
-                            config.EMLConfig.intervals,
-                            config.EMLConfig.occupancyHoldin
+                            config.EMLConfig.gammaSetupConfig.intervals,
+                            config.EMLConfig.gammaSetupConfig.occupancyHoldin
                     );
                 }
 
@@ -215,19 +213,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     @Override
     public void doStop() throws SensorHubException {
 
-//        if(!commProviderList.isEmpty()){
-//            try {
-//                t.cancel();
-//                t.purge();
-//                for(ICommProvider<?> commProvider: commProviderList){
-//                    commProvider.stop();
-//                }
-//            } catch (Exception e) {
-//                logger.error("Uncaught exception attempting to stop comms module", e);
-//            } finally {
-//                commProviderList.clear();
-//            }
-//        }
         if (commProvider != null) {
 
             try {
@@ -244,9 +229,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                 commProvider = null;
             }
         }
-
-//        messageHandlerList.forEach(MessageHandler::stopProcessing);
-
     }
 
     @Override
@@ -259,12 +241,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
             return commProvider.isStarted();
         }
-//        for(ICommProvider<?> commProvider: commProviderList){
-//            if(commProvider.isStarted()){
-//                return true;
-//            }
-//        }
-//        return false;
     }
 
     void setLocationRepeatTimer(){

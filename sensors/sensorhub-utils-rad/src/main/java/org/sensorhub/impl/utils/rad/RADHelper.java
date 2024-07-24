@@ -125,6 +125,8 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+
+
     public Quantity createGammaBackground() {
         return createQuantity()
                 .name("gammaBackground")
@@ -174,11 +176,11 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-    public Quantity createNSigma(){
+    public Quantity createSigma(){
         return createQuantity()
-                .name("nSigma")
-                .label("NSigma")
-                .definition(getRadUri("n-sigma"))
+                .name("Sigma")
+                .label("Sigma")
+                .definition(getRadUri("sigma"))
                 .description("formula determines the number of counts above background that will trigger a radiation alarm")
                 .build();
     }
@@ -194,18 +196,18 @@ public class RADHelper extends GeoPosHelper {
 
     public Quantity createZMaxValue(){
         return createQuantity()
-                .name("zMaxValue")
-                .label("Z Max Value")
-                .definition(getRadUri("zmax-value"))
+                .name("zmax")
+                .label("ZMax")
+                .definition(getRadUri("zmax"))
                 .description("Maximum z-value")
                 .build();
     }
 
     public Quantity createAlphaValue(){
         return createQuantity()
-                .name("alphaValue")
-                .label("Alpha Value")
-                .definition(getRadUri("alpha-value"))
+                .name("alpha")
+                .label("Alpha")
+                .definition(getRadUri("alpha"))
                 .description("value used in calculations")
                 .build();
     }
@@ -237,8 +239,8 @@ public class RADHelper extends GeoPosHelper {
 
     public Quantity createMaxIntervals(){
         return createQuantity()
-                .name("maximumIntervals")
-                .label("Maximum Intervals")
+                .name("neutronMaximumIntervals")
+                .label("Neutron Maximum Intervals")
                 .definition(getRadUri("maximum-intervals"))
                 .build();
     }
@@ -251,11 +253,11 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-    public Quantity createBackgroundNSigma(){
+    public Quantity createBackgroundSigma(){
         return createQuantity()
-                .name("backgroundNSigma")
-                .label("Background NSigma")
-                .definition(getRadUri("background-nsigma"))
+                .name("backgroundSigma")
+                .label("Background Sigma")
+                .definition(getRadUri("background-sigma"))
                 .description("sets a sigma value for a throw-through alarm")
 //                .description("is used to set alarm thresholds for detecting anomalies in radiation levels")
                 .build();
@@ -287,36 +289,21 @@ public class RADHelper extends GeoPosHelper {
                 .description("radiation detectors that are actively operating and connected to the monitoring system")
                 .build();
     }
-    public Quantity createUpperControlDiscriminator(){
+
+    public Quantity createSlaveULD(){
         return createQuantity()
-                .name("controlUpperLevelDiscriminator")
-                .label("Upper Level Discriminator ULD")
-                .definition(getRadUri("control-upper-level-discriminator"))
-                .description("threshold setting in radiation detector that defines the max energy level for detecting radiation")
-                .build();
-    }
-    public Quantity createLowerControlDiscriminator(){
-        return createQuantity()
-                .name("controlLowerLevelDiscriminator")
-                .label("Lower Level Discriminator LLD")
-                .definition(getRadUri("control-lower-level-discriminator"))
-                .description("threshold setting in radiation detector that defines the minimum energy level for detecting radiation")
-                .build();
-    }
-    public Quantity createAuxiliaryUpperDiscriminator(){
-        return createQuantity()
-                .name("auxiliaryUpperLevelDiscriminator")
-                .label("Auxiliary Upper Level Discriminator")
-                .definition(getRadUri("auxiliary-level-upper-discriminator"))
+                .name("slave-upper-level-discriminator")
+                .label("Slave Upper Level Discriminator")
+                .definition(getRadUri("slave-level-upper-discriminator"))
                 .description("threshold setting that defines an upper limit for the energy of detected radiation events")
                 .build();
     }
 
-    public Quantity createAuxiliaryLowerDiscriminator(){
+    public Quantity createSlaveLLD(){
         return createQuantity()
-                .name("auxiliaryLowerLevelDiscriminator")
-                .label("Auxiliary Lower Level Discriminator")
-                .definition(getRadUri("auxiliary-level-lower-discriminator"))
+                .name("slave-lower-level-discriminator")
+                .label("Slave Lower Level Discriminator")
+                .definition(getRadUri("slave-level-lower-discriminator"))
                 .description("threshold setting that defines an lower limit for the energy of detected radiation events")
                 .build();
     }
@@ -333,14 +320,15 @@ public class RADHelper extends GeoPosHelper {
                 .name("algorithm")
                 .label("Algorithm")
                 .definition(getRadUri("algorithm"))
-                .description("permits the operator to select which detectors will be included in the alarm calculations")
+                .description("SUM, HORIZONTAL, VERTICAL, SINGLE" +
+                        "permits the operator to select which detectors will be included in the alarm calculations")
                 .build();
     }
 
     public Text createSoftwareVersion(){
         return createText()
                 .name("softwareVersion")
-                .label("Software version")
+                .label("Software Version")
                 .definition(getRadUri("software-version"))
                 .addAllowedValues("A", "T")
                 .build();
@@ -505,11 +493,19 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-    public Count createGammaGrossCount(int countID){
+    public Count createGammaCPS(int countID){
         return createCount()
-                .name("gammaGrossCount" + countID)
-                .label("Gamma Gross Count " + countID)
-                .definition(getRadUri("gamma-gross-count"))
+                .name("gammaCPS" + countID)
+                .label("Gamma CPS " + countID)
+                .definition(getRadUri("gamma-cps"))
+                .build();
+    }
+
+    public Count createGammaCp200ms(int countID){
+        return createCount()
+                .name("gammaCp200ms" + countID)
+                .label("Gamma Cp200ms " + countID)
+                .definition(getRadUri("gamma-cp200ms"))
                 .build();
     }
 
@@ -556,6 +552,22 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+
+    public Quantity createMasterLLD(){
+        return createQuantity()
+                .name("masterLowerLevelDiscriminator")
+                .label("Master Lower Level Discriminator")
+                .definition(getRadUri("master-lower-level-discriminator"))
+                .build();
+    }
+
+    public Quantity createMasterULD(){
+        return createQuantity()
+                .name("masterUpperLevelDiscriminator")
+                .label("Master UpperLevel Discriminator")
+                .definition(getRadUri("master-upper-level-discriminator"))
+                .build();
+    }
 
         //////////////////////////////// vvvv OLD vvvvvv ///////////////////////////////
 
