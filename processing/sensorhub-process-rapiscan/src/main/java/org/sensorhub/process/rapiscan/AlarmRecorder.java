@@ -7,9 +7,9 @@ import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.data.IDataProducerModule;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.database.IObsSystemDatabase;
-import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
+import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.api.processing.OSHProcessInfo;
 import org.sensorhub.impl.processing.ISensorHubProcess;
 import org.sensorhub.impl.sensor.SensorSystem;
@@ -31,9 +31,9 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
     Text dbInputParam;
     String inputDatabaseID;
     public static final String DATABASE_INPUT_PARAM = "databaseInput";
-    Text driverInputParam;
-    String inputDriverID;
-    public static final String DRIVER_INPUT = "driverInput";
+    Text dsInputParam;
+    String inputDatastreamID;
+    public static final String DATASTREAM_INPUT_PARAM = "datastreamInput";
     // TODO: Possibly replace occupancy name with string from RADHelper
     public static final String OCCUPANCY_NAME = "occupancy";
     private final String gammaAlarmName;
@@ -53,10 +53,10 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         startTimeName = fac.createOccupancyStartTime().getName();
         endTimeName = fac.createOccupancyEndTime().getName();
 
-        paramData.add(DRIVER_INPUT, driverInputParam = fac.createText()
-                .label("Rapiscan Driver Input")
-                .description("Rapiscan driver to use occupancy data")
-                .definition(SWEHelper.getPropertyUri("Driver"))
+        paramData.add(DATASTREAM_INPUT_PARAM, dsInputParam = fac.createText()
+                .label("Rapiscan Datastream Input")
+                .description("Rapiscan datastream to use occupancy data")
+                .definition(SWEHelper.getPropertyUri("Datastream"))
                 .value("")
                 .build());
 
@@ -73,15 +73,15 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         super.notifyParamChange();
         populateIDs();
 
-        if(!Objects.equals(inputDriverID, "") && !Objects.equals(inputDatabaseID, "")) {
+        if(!Objects.equals(inputDatastreamID, "") && !Objects.equals(inputDatabaseID, "")) {
             try {
-                Async.waitForCondition(this::checkDriverInput, 500, 10000);
+                Async.waitForCondition(this::checkDatastreamInput, 500, 10000);
                 Async.waitForCondition(this::checkDatabaseInput, 500, 10000);
             } catch (TimeoutException e) {
                 if(processInfo == null) {
-                    throw new IllegalStateException("Rapiscan driver " + inputDriverID + " not found", e);
+                    throw new IllegalStateException("Rapiscan datastream " + inputDatastreamID + " not found", e);
                 } else {
-                    throw new IllegalStateException("Rapiscan driver " + inputDriverID + " has no datastreams", e);
+                    throw new IllegalStateException("Rapiscan datastream " + inputDatastreamID + " has no data", e);
                 }
             }
         }
@@ -89,37 +89,23 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
 
     private void populateIDs() {
         inputDatabaseID = dbInputParam.getData().getStringValue();
-        inputDriverID = driverInputParam.getData().getStringValue();
+        inputDatastreamID = dsInputParam.getData().getStringValue();
     }
 
-    private boolean checkDriverInput() {
-        // TODO: Add occupancy as input from input driver
+    private boolean checkDatastreamInput() {
+        // Clear old inputs
+        inputData.clear();
+
+        // Get systems with input UID
+        var sysFilter = new SystemFilter.Builder()
+                .withUniqueIDs(inputDatastreamID)
+                .build();
+
         var db = hub.getDatabaseRegistry().getFederatedDatabase();
 
-        BigId internalID = null;
-        try {
-            if(hub.getModuleRegistry().getModuleById(inputDriverID) instanceof IDataProducerModule) {
-                IDataProducerModule dataProducer = (IDataProducerModule) hub.getModuleRegistry().getModuleById(inputDriverID);
-                var inputModule = db.getSystemDescStore().getCurrentVersionEntry(dataProducer.getUniqueIdentifier());
-                if(inputModule == null) {
-                    return false;
-                }
-                internalID = inputModule.getKey().getInternalID();
-            }
-            if(hub.getModuleRegistry().getModuleById(inputDriverID) instanceof SensorSystem) {
-                SensorSystem inputSystem = (SensorSystem) hub.getModuleRegistry().getModuleById(inputDriverID);
-                var submodules = inputSystem.getMembers();
-
-            }
-        } catch (SensorHubException e) {
-            throw new RuntimeException("Module with id " + inputDriverID + " is not a data-producing module", e);
-        }
-        if(internalID == null) {
-            return false;
-        }
-        inputData.clear();
+        // Get output data from input system UID
         db.getDataStreamStore().select(new DataStreamFilter.Builder()
-                        .withSystems(internalID)
+                        .withSystems(sysFilter)
                         .withCurrentVersion()
                         .withOutputNames(OCCUPANCY_NAME)
                         .build())
@@ -131,7 +117,6 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
     }
 
     private boolean checkDatabaseInput() {
-        // TODO: Add database streams as outputs from input database
         var db = hub.getDatabaseRegistry().getObsDatabaseByModuleID(inputDatabaseID);
         if(db == null) {
             return false;
@@ -184,7 +169,7 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
 
     @Override
     public void execute() throws ProcessException {
-        if(inputDatabaseID == null || inputDriverID == null) {
+        if(inputDatabaseID == null || inputDatastreamID == null) {
             populateIDs();
         }
         // TODO: Use radhelper to get names of occupancy inputs such as start time, end time, alarms

@@ -74,19 +74,12 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
 
         AlarmRecorder process = new AlarmRecorder();
 
-        String rapiscanUID = null;
+        OshAsserts.checkValidUID(config.datastreamUID);
 
-        var module = getParentHub().getModuleRegistry().getModuleById(config.rapiscanDriverID);
-        if (module instanceof ISensorModule) {
-            ISensorModule rapiscanDriver = (ISensorModule) module;
-            rapiscanUID = rapiscanDriver.getUniqueIdentifier();
-        }
-
-        assert rapiscanUID != null;
-        processHelper.addDataSource("source0", rapiscanUID);
+        processHelper.addDataSource("source0", config.datastreamUID);
 
         process.getParameterList().getComponent(AlarmRecorder.DATABASE_INPUT_PARAM).getData().setStringValue(config.databaseModuleID);
-        process.getParameterList().getComponent(AlarmRecorder.DRIVER_INPUT).getData().setStringValue(config.rapiscanDriverID);
+        process.getParameterList().getComponent(AlarmRecorder.DATASTREAM_INPUT_PARAM).getData().setStringValue(config.datastreamUID);
 
         process.setParentHub(getParentHub());
         process.notifyParamChange();

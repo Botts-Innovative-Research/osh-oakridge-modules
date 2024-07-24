@@ -14,10 +14,9 @@ public class RapiscanProcessConfig extends ProcessConfig {
     public String serialNumber = "process001";
 
     @DisplayInfo.Required
-    @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.MODULE_ID)
-    @DisplayInfo.ModuleType(System.class)
-    @DisplayInfo(label = "Rapiscan Driver ID", desc = "Datasource to read occupancy data")
-    public String rapiscanDriverID;
+    @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.SYSTEM_UID)
+    @DisplayInfo(label = "Rapiscan Datastream Source", desc = "Datasource to read occupancy data")
+    public String datastreamUID;
 
     @DisplayInfo.Required
     @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.MODULE_ID)
