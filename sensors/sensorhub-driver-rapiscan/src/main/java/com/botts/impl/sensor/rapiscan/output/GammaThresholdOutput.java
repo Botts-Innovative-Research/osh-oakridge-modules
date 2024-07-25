@@ -58,7 +58,7 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
     public void onNewGammaBackground(String[] csvLine) {
         int sum = 0;
         int index;
-        for(index = 0; index < csvLine.length; index++) {
+        for(index = 0; index < csvLine.length-1; index++) {
             int bg = Integer.parseInt(csvLine[index+1]);
             sum += bg;
         }
@@ -141,7 +141,7 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
         // Get NSigma value from gamma setup 1 data record
         // If none, default value = 6
 
-        if(!isSetup){
+        if(isSetup){
             //if setup is not available it uses the preset config values (these are updatable)
             nVal = messageHandler.getGammaSetup().getNsigma();
             algorithmData = messageHandler.getGammaSetup().getAlgorithm();

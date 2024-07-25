@@ -180,6 +180,8 @@ public class MessageHandler {
         this.emlContextualOutputs = emlContextualOutput;
         this.emlScanContextualOutput = emlScanContextualOutput;
 
+        currentBatch = new LinkedList<>();
+
         this.messageReader.start();
     }
 
@@ -201,6 +203,11 @@ public class MessageHandler {
         if(emlConfig.isSupplementalAlgorithm){
             this.emlService.addOccupancyLine(scanData);
         }
+
+        gammaThresholdOutput.publishThreshold(isSetup);
+
+        if(currentBatch.size() == 5)
+            currentBatch.removeFirst();
 
         switch (mainChar){
             // ------------------- NOT OCCUPIED
@@ -232,6 +239,8 @@ public class MessageHandler {
                 }
                 gammaOutput.onNewMessage(csvLine, System.currentTimeMillis(), ALARM);
 
+                currentBatch.addLast(csvLine);
+
                 isGammaAlarm = true;
                 break;
 
@@ -242,6 +251,8 @@ public class MessageHandler {
                     currentOccupancy = true;
                 }
                 gammaOutput.onNewMessage(csvLine, System.currentTimeMillis(), SCAN);
+
+                currentBatch.addLast(csvLine);
 
                 break;
 
@@ -276,7 +287,6 @@ public class MessageHandler {
                     emlScanContextualOutput.handleScanContextualMessage(results, occupancyEndTime);
                     emlContextualOutputs.handleContextualMessage(results, occupancyEndTime);
                     emlAnalysisOutput.handleAnalysisMessage(results, occupancyEndTime);
-                    gammaThresholdOutput.publishThreshold(isSetup);
                 }
 
                 break;
@@ -311,6 +321,8 @@ public class MessageHandler {
                 setupNeutron1 = new String[]{""};
                 break;
         }
+
+        gammaThresholdOutput.onNewForegroundBatch(currentBatch);
 
     }
 
