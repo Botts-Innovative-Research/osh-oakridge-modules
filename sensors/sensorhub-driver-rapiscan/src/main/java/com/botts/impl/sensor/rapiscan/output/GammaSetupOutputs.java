@@ -41,7 +41,7 @@ public class GammaSetupOutputs extends AbstractSensorOutput<RapiscanSensor> {
         var lowBGFault = radHelper.createLowBackgroundFault();
         var intervals = radHelper.createIntervals();
         var holdin = radHelper.createOccupancyHoldin();
-        var sigma = radHelper.createSigma();
+        var nSigma = radHelper.createNSigma();
 
         var detectors = radHelper.createDetectors();
         var controlLLD = radHelper.createMasterLLD();
@@ -65,7 +65,7 @@ public class GammaSetupOutputs extends AbstractSensorOutput<RapiscanSensor> {
                 .addField(lowBGFault.getName(), lowBGFault)
                 .addField(intervals.getName(), intervals)
                 .addField(holdin.getName(), holdin)
-                .addField(sigma.getName(), sigma)
+                .addField(nSigma.getName(), nSigma)
 
                 .addField(detectors.getName(), detectors)
                 .addField(controlLLD.getName(), controlLLD)
@@ -100,7 +100,7 @@ public class GammaSetupOutputs extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setIntValue(index++, Integer.parseInt(setup1[2])); // low bg
         dataBlock.setIntValue(index++, Integer.parseInt(setup1[3])); //intervals
         dataBlock.setIntValue(index++, Integer.parseInt(setup1[4])); //occupancy holding
-        dataBlock.setDoubleValue(index++, Double.parseDouble(setup1[5])); //sigma
+        dataBlock.setDoubleValue(index++, Double.parseDouble(setup1[5])); //nVal
 //        dataBlock.setStringValue(index++, setup1[6]); //placeholder
 
         //set up 2

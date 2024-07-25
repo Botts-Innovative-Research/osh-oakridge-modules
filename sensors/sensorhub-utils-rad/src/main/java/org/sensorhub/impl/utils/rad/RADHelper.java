@@ -176,12 +176,21 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-    public Quantity createSigma(){
+    public Quantity createNSigma(){
         return createQuantity()
-                .name("Sigma")
-                .label("Sigma")
+                .name("nSigma")
+                .label("N Sigma")
+                .definition(getRadUri("n-sigma"))
+                .description("Number of standard deviations above average background to test alarm threshold against")
+                .build();
+    }
+
+    public Quantity createSigmaValue() {
+        return createQuantity()
+                .name("sigma")
+                .label("Sigma Value")
                 .definition(getRadUri("sigma"))
-                .description("formula determines the number of counts above background that will trigger a radiation alarm")
+                .description("Standard deviation of the average background counts")
                 .build();
     }
 

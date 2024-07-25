@@ -12,6 +12,7 @@ import com.opencsv.CSVWriter;
 import java.io.*;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -53,6 +54,7 @@ public class MessageHandler {
     String [] setupGamma2;
     String [] setupNeutron1;
 
+    LinkedList<String[]> currentBatch;
 
     boolean isSetup = false;
     String sampleSetups =
@@ -105,9 +107,6 @@ public class MessageHandler {
                 while (continueProcessing){
                     BufferedReader bufferedReader;
                     InputStream setupInput = new ByteArrayInputStream(sampleSetups.getBytes());
-
-
-
 
 //                    //this is just to simulate the setup values coming in!! for testing purposes :)
 //                    if(!isSetup) {

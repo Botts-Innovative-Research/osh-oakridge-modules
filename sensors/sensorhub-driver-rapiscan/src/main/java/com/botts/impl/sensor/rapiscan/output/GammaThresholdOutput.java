@@ -14,7 +14,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
+import java.util.Arrays;
 import java.util.EnumSet;
+import java.util.LinkedList;
 
 public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
 
@@ -27,7 +29,8 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
     protected DataBlock dataBlock;
 
     private int latestBackgroundSum = 0;
-    double sigma = 0.0;
+    double nVal = 0.0;
+    double sigmaVal = 0.0;
     String algorithmData = null;
 
     public GammaThresholdOutput(RapiscanSensor parentSensor) {
@@ -39,6 +42,7 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
         var threshold = radHelper.createThreshold();
+        var sigma = radHelper.createSigmaValue();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
@@ -46,6 +50,7 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
                 .definition(RADHelper.getRadUri("gamma-threshold"))
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(threshold.getName(), threshold)
+                .addField(sigma.getName(), sigma)
                 .build();
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
@@ -53,15 +58,68 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
     public void onNewGammaBackground(String[] csvLine) {
         int sum = 0;
         int index;
-        for(index = 1; index < csvLine.length; index++) {
-            int bg = Integer.parseInt(csvLine[index]);
+        for(index = 0; index < csvLine.length; index++) {
+            int bg = Integer.parseInt(csvLine[index+1]);
             sum += bg;
         }
+        latestBackgroundSum = sum;
         if(sum == 0) {
-            latestBackgroundSum = 0;
             getLogger().warn("No gamma background");
         }
-        latestBackgroundSum = sum / index-1;
+    }
+
+    public void onNewForegroundBatch(LinkedList<String[]> batch) {
+        MessageHandler messageHandler = parentSensor.getMessageHandler();
+        if(messageHandler.getGammaSetup().getLatestRecord() != null) {
+            nVal = messageHandler.getGammaSetup().getNsigma();
+        } else {
+            nVal = parentSensor.getConfiguration().EMLConfig.gammaSetupConfig.nsigma;
+        }
+
+        int size = batch.size();
+
+        // Only update threshold when foreground batch is at 1 second
+        if(size == 5 && nVal != 0 && latestBackgroundSum != 0) {
+            // Find the foreground counts for 1 second
+            int[] foregroundCounts = new int[4];
+
+            for(String[] line : batch) {
+                for(int i = 0; i < 4; i++) {
+                    foregroundCounts[i] += Integer.parseInt(line[i+1]);
+                }
+            }
+
+            // Sum up the current foreground sum over 1 second
+            int foregroundSum = 0;
+            for(int i = 0; i < 4; i++) {
+                foregroundSum += foregroundCounts[i];
+            }
+
+            // Sigma calculation = FG-BG / sqrt(BG)
+            sigmaVal = (foregroundSum - latestBackgroundSum)
+                    / Math.sqrt(latestBackgroundSum);
+            double threshold = latestBackgroundSum + (nVal * sigmaVal);
+
+            getLogger().debug("Threshold and sigma set during occupancy");
+            publishThreshold(threshold, sigmaVal);
+        }
+    }
+
+    public void publishThreshold(double newThreshold, double newSigma) {
+        if(latestRecord == null) {
+            dataBlock = dataStruct.createDataBlock();
+        } else {
+            dataBlock = latestRecord.renew();
+        }
+
+        int index = 0;
+
+        dataBlock.setLongValue(index++, System.currentTimeMillis()/1000);
+        dataBlock.setDoubleValue(index++, newThreshold);
+        dataBlock.setDoubleValue(index, newSigma);
+
+        latestRecord = dataBlock;
+        eventHandler.publish(new DataEvent(System.currentTimeMillis(), GammaThresholdOutput.this, dataBlock));
     }
 
     public void publishThreshold(boolean isSetup) {
@@ -85,11 +143,14 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
 
         if(!isSetup){
             //if setup is not available it uses the preset config values (these are updatable)
-            sigma = messageHandler.getGammaSetup().getNsigma();
+            nVal = messageHandler.getGammaSetup().getNsigma();
             algorithmData = messageHandler.getGammaSetup().getAlgorithm();
+
+            // TODO: Sigma = sum(FG) - sum(BG) / sqrt(sum(BG))
+            //  Threshold = BG(avg) + n*sigma
         }
         else{
-            sigma = messageHandler.getGammaSetup().getLatestRecord() != null ? messageHandler.getGammaSetup().getLatestRecord().getFloatValue(5) : 6.0f;
+            nVal = messageHandler.getGammaSetup().getLatestRecord() != null ? messageHandler.getGammaSetup().getLatestRecord().getFloatValue(5) : 6.0f;
             algorithmData = messageHandler.getGammaSetup().getLatestRecord() != null ? messageHandler.getGammaSetup().getLatestRecord().getStringValue(11) : "1010";
         }
 
@@ -110,8 +171,9 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
         double sqrtSumGB = Math.sqrt(sumGB);
 
         // Return equation for threshold calculation
-        dataBlock.setDoubleValue(index, sumGB + (sigma * sqrtSumGB));
-        getLogger().debug("Threshold is {}", sumGB + (sigma * sqrtSumGB));
+        dataBlock.setDoubleValue(index++, sumGB + (nVal * sqrtSumGB));
+        dataBlock.setDoubleValue(index, sigmaVal);
+        getLogger().debug("Threshold is {}", sumGB + (nVal * sqrtSumGB));
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), GammaThresholdOutput.this, dataBlock));
