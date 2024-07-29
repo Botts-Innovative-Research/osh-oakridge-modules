@@ -100,10 +100,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         emlAnalysisOutput = new EMLAnalysisOutput(this);
         addOutput(emlAnalysisOutput, false);
         emlAnalysisOutput.init();
-
-        gammaThresholdOutput = new GammaThresholdOutput(this);
-        addOutput(gammaThresholdOutput, false);
-        gammaThresholdOutput.init();
     }
 
     public void createOutputs(){
@@ -138,6 +134,9 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         addOutput(setupNeutronOutput, false);
         setupNeutronOutput.init();
 
+        gammaThresholdOutput = new GammaThresholdOutput(this);
+        addOutput(gammaThresholdOutput, false);
+        gammaThresholdOutput.init();
     }
 
     @Override

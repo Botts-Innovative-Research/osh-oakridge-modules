@@ -109,15 +109,15 @@ public class MessageHandler {
                     InputStream setupInput = new ByteArrayInputStream(sampleSetups.getBytes());
 
 //                    //this is just to simulate the setup values coming in!! for testing purposes :)
-//                    if(!isSetup) {
-//                        bufferedReader = new BufferedReader(new InputStreamReader(setupInput));
-//                        isSetup = true;
-//
-//                    } else {
-//                        bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
-//                    }
+                    if(!isSetup) {
+                        bufferedReader = new BufferedReader(new InputStreamReader(setupInput));
+                        isSetup = true;
 
-                    bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
+                    } else {
+                        bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
+                    }
+
+//                    bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
 
                     String msgLine = bufferedReader.readLine();
                     while (msgLine != null){

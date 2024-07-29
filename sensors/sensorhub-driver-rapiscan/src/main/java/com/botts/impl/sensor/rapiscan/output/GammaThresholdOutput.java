@@ -98,14 +98,13 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
             // Sigma calculation = FG-BG / sqrt(BG)
             sigmaVal = (foregroundSum - latestBackgroundSum)
                     / Math.sqrt(latestBackgroundSum);
-            double threshold = latestBackgroundSum + (nVal * sigmaVal);
 
             getLogger().debug("Threshold and sigma set during occupancy");
-            publishThreshold(threshold, sigmaVal);
+            publishSigma(sigmaVal);
         }
     }
 
-    public void publishThreshold(double newThreshold, double newSigma) {
+    public void publishSigma(double newSigma) {
         if(latestRecord == null) {
             dataBlock = dataStruct.createDataBlock();
         } else {
@@ -115,7 +114,7 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
         int index = 0;
 
         dataBlock.setLongValue(index++, System.currentTimeMillis()/1000);
-        dataBlock.setDoubleValue(index++, newThreshold);
+        dataBlock.setDoubleValue(index++, latestRecord != null ? latestRecord.getDoubleValue(1) : 0.0f);
         dataBlock.setDoubleValue(index, newSigma);
 
         latestRecord = dataBlock;
@@ -143,15 +142,15 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
 
         if(isSetup){
             //if setup is not available it uses the preset config values (these are updatable)
-            nVal = messageHandler.getGammaSetup().getNsigma();
-            algorithmData = messageHandler.getGammaSetup().getAlgorithm();
+            nVal = messageHandler.getGammaSetup().getLatestRecord() != null ? messageHandler.getGammaSetup().getNsigma() : 6.0f;
+            algorithmData = messageHandler.getGammaSetup().getLatestRecord() != null ? messageHandler.getGammaSetup().getLatestRecord().getStringValue(10) : "1010";
 
             // TODO: Sigma = sum(FG) - sum(BG) / sqrt(sum(BG))
             //  Threshold = BG(avg) + n*sigma
         }
         else{
             nVal = messageHandler.getGammaSetup().getLatestRecord() != null ? messageHandler.getGammaSetup().getLatestRecord().getFloatValue(5) : 6.0f;
-            algorithmData = messageHandler.getGammaSetup().getLatestRecord() != null ? messageHandler.getGammaSetup().getLatestRecord().getStringValue(11) : "1010";
+            algorithmData = messageHandler.getGammaSetup().getLatestRecord() != null ? messageHandler.getGammaSetup().getLatestRecord().getStringValue(10) : "1010";
         }
 
 //        float nSigma = messageHandler.getGammaSetup().getLatestRecord() != null ? messageHandler.getGammaSetup().getLatestRecord().getFloatValue(5) : 6.0f;
