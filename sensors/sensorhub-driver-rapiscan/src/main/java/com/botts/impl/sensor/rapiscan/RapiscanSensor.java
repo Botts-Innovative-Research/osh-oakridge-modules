@@ -186,21 +186,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                 }
 
                 msgIn = new BufferedInputStream(commProvider.getInputStream());
-                messageHandler = new MessageHandler(
-                        config.EMLConfig,
-                        msgIn,
-                        gammaOutput,
-                        neutronOutput,
-                        occupancyOutput,
-                        tamperOutput,
-                        speedOutput,
-                        gammaSetup,
-                        setupNeutronOutput,
-                        emlAnalysisOutput,
-                        emlService,
-                        gammaThresholdOutput,
-                        emlScanContextualOutput,
-                        emlContextualOutput);
+                messageHandler = new MessageHandler(msgIn, this);
 
             } catch (IOException e) {
 
@@ -232,27 +218,14 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     @Override
     public boolean isConnected() {
-        if (commProvider == null) {
-
-            return false;
-
-        } else {
-
-            return commProvider.isStarted();
-        }
+        return commProvider != null && commProvider.isStarted();
     }
 
-    void setLocationRepeatTimer(){
-        t = new Timer();
-        TimerTask tt = new TimerTask() {
-            @Override
-            public void run() {
-                locationOutput.setLocationOutput(config.getLocation());
-//                System.out.println("location updated");
-            }
-        };
-        t.scheduleAtFixedRate(tt,500,10000);
+    @Override
+    public synchronized void updateConfig(RapiscanConfig config) throws SensorHubException {
+        super.updateConfig(config);
 
+        locationOutput.setLocationOutput(config.getLocation());
     }
 
     public MessageHandler getMessageHandler(){

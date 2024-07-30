@@ -19,30 +19,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class MessageHandler {
 
     private final InputStream msgIn;
-    private final EMLService emlService;
+    private final RapiscanSensor parentSensor;
 
     List<String[]> csvList;
-    String[] csvLine;
     CSVReader reader;
     Boolean currentOccupancy = false;
     Boolean isGammaAlarm = false;
     Boolean isNeutronAlarm = false;
     long occupancyStartTime;
     long occupancyEndTime;
-    GammaOutput gammaOutput;
-    NeutronOutput neutronOutput;
-    OccupancyOutput occupancyOutput;
-    TamperOutput tamperOutput;
-    SpeedOutput speedOutput;
-    EMLAnalysisOutput emlAnalysisOutput;
-    EMLScanContextualOutput emlScanContextualOutput;
-    EMLContextualOutputs emlContextualOutputs;
 
-    GammaSetupOutputs gammaSetup;
-    SetupNeutronOutput setupNeutronOutput;
-    GammaThresholdOutput gammaThresholdOutput;
-
-    EMLConfig emlConfig;
     final static String ALARM = "Alarm";
     final static String BACKGROUND = "Background";
     final static String SCAN = "Scan";
@@ -123,14 +109,13 @@ public class MessageHandler {
                     while (msgLine != null){
                         reader = new CSVReader(new StringReader(msgLine));
                         csvList = reader.readAll();
-                        csvLine = csvList.get(0);
 
                         //todo add time to csv files after each line!
                         writer.writeNext(new String[]{msgLine});
 
-                        getMainCharDefinition(csvLine[0], csvLine);
+                        getMainCharDefinition(csvList.get(0)[0], csvList.get(0));
 
-                        if(csvLine[0].contains("SG1")){
+                        if(csvList.get(0)[0].contains("SG1")){
                             isSetup = true;
                         }
                         checkParameters(); //checks if set up values are given, if not then sets default values from config
@@ -150,35 +135,10 @@ public class MessageHandler {
         }
     });
 
-    public MessageHandler(EMLConfig emlConfig, InputStream msgIn,
-                          GammaOutput gammaOutput,
-                          NeutronOutput neutronOutput,
-                          OccupancyOutput occupancyOutput,
-                          TamperOutput tamperOutput,
-                          SpeedOutput speedOutput,
-                          GammaSetupOutputs gammaSetup,
-                          SetupNeutronOutput setupNeutronOutput,
-                          EMLAnalysisOutput emlAnalysisOutput,
-                          EMLService emlService,
-                          GammaThresholdOutput gammaThresholdOutput,
-                          EMLScanContextualOutput emlScanContextualOutput,
-                          EMLContextualOutputs emlContextualOutput)
+    public MessageHandler(InputStream msgIn, RapiscanSensor parentSensor)
     {
         this.msgIn = msgIn;
-        this.gammaOutput = gammaOutput;
-        this.neutronOutput = neutronOutput;
-        this.occupancyOutput = occupancyOutput;
-        this.tamperOutput = tamperOutput;
-        this.speedOutput = speedOutput;
-        this.gammaSetup = gammaSetup;
-        this.setupNeutronOutput = setupNeutronOutput;
-        this.gammaThresholdOutput = gammaThresholdOutput;
-
-        this.emlConfig = emlConfig;
-        this.emlAnalysisOutput = emlAnalysisOutput;
-        this.emlService = emlService;
-        this.emlContextualOutputs = emlContextualOutput;
-        this.emlScanContextualOutput = emlScanContextualOutput;
+        this.parentSensor = parentSensor;
 
         currentBatch = new LinkedList<>();
 
@@ -348,15 +308,5 @@ public class MessageHandler {
         this.gammaSetup.setNsigma(emlConfig.gammaSetupConfig.nsigma);
         this.gammaSetup.setAlgorithm(emlConfig.gammaSetupConfig.algorithm);
     }
-
-
-
-    public GammaOutput getGammaOutput() { return this.gammaOutput; }
-    public NeutronOutput getNeutronOutput() { return this.neutronOutput; }
-    public OccupancyOutput getOccupancyOutput() { return this.occupancyOutput; }
-    public TamperOutput getTamperOutput() { return this.tamperOutput; }
-    public SpeedOutput getSpeedOutput() { return this.speedOutput; }
-    public GammaSetupOutputs getGammaSetup() { return this.gammaSetup; }
-    public SetupNeutronOutput getNeutronSetupOutput() { return this.setupNeutronOutput; }
 
 }
