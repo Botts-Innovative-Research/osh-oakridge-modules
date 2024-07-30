@@ -5,17 +5,13 @@ import org.sensorhub.api.config.DisplayInfo;
 
 public class EMLConfig {
 
+    @DisplayInfo(label="EML Analysis", desc="Check if the lane is VM250. For all lanes not designated to be EML lanes do NOT check this box.")
+    public boolean emlEnabled = false;
+
     @DisplayInfo(label = "Collimated", desc = "Collimation status")
     public boolean isCollimated = false;
 
-    @DisplayInfo(label="Supplemental Algorithm", desc="Check if the lane is VM250. For all lanes not designated to be EML lanes do NOT check this box.")
-    @SerializedName(value="supplementalAlgorithm", alternate={"emlEnabled"})
-    public boolean isSupplementalAlgorithm = false;
-
     @DisplayInfo(label = "Lane Width", desc = "Width of the lane")
     public double laneWidth = 0.0f;
-
-    @DisplayInfo(desc = "Gamma Setup Configuration")
-    public GammaSetupConfig gammaSetupConfig = new GammaSetupConfig();
 
 }

@@ -1,11 +1,6 @@
 package com.botts.impl.sensor.rapiscan;
 
 
-import com.botts.impl.sensor.rapiscan.eml.EMLService;
-import com.botts.impl.sensor.rapiscan.eml.outputs.EMLAnalysisOutput;
-import com.botts.impl.sensor.rapiscan.eml.outputs.EMLContextualOutputs;
-import com.botts.impl.sensor.rapiscan.eml.outputs.EMLScanContextualOutput;
-import com.botts.impl.sensor.rapiscan.output.*;
 import com.opencsv.CSVReader;
 import com.opencsv.CSVWriter;
 
@@ -113,7 +108,7 @@ public class MessageHandler {
                         //todo add time to csv files after each line!
                         writer.writeNext(new String[]{msgLine});
 
-                        getMainCharDefinition(csvList.get(0)[0], csvList.get(0));
+                        onNewMainChar(csvList.get(0)[0], csvList.get(0));
 
                         if(csvList.get(0)[0].contains("SG1")){
                             isSetup = true;
@@ -156,12 +151,11 @@ public class MessageHandler {
         }
     }
 
-    void getMainCharDefinition(String mainChar, String[] csvLine){
+    void onNewMainChar(String mainChar, String[] csvLine){
         // Add occupancy for eml service
-        String scanData = String.join(",", csvLine);
 
-        if(emlConfig.isSupplementalAlgorithm){
-            this.emlService.addOccupancyLine(scanData);
+        if(emlConfig.isSupplementalAlgorithm) {
+            parentSensor.getEmlService().addOccupancyLine(csvLine);
         }
 
         gammaThresholdOutput.publishThreshold(isSetup);

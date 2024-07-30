@@ -15,7 +15,7 @@ package com.botts.impl.sensor.rapiscan;
 
 import com.botts.impl.sensor.rapiscan.eml.*;
 import com.botts.impl.sensor.rapiscan.eml.outputs.EMLAnalysisOutput;
-import com.botts.impl.sensor.rapiscan.eml.outputs.EMLContextualOutputs;
+import com.botts.impl.sensor.rapiscan.eml.outputs.EMLContextualOutput;
 import com.botts.impl.sensor.rapiscan.eml.outputs.EMLScanContextualOutput;
 import com.botts.impl.sensor.rapiscan.output.GammaThresholdOutput;
 import com.botts.impl.sensor.rapiscan.output.*;
@@ -32,7 +32,6 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Timer;
-import java.util.TimerTask;
 
 /**
  * Sensor driver for the ... providing sensor description, output registration,
@@ -43,30 +42,28 @@ import java.util.TimerTask;
  */
 public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
-    MessageHandler messageHandler;
-
     private static final Logger logger = LoggerFactory.getLogger(RapiscanSensor.class);
 
+    // Utilities
+    MessageHandler messageHandler;
+    EMLService emlService;
+
+    // Connection
     ICommProvider<?> commProvider;
-    EMLAnalysisOutput emlAnalysisOutput = null;
+
+    // Outputs
     GammaOutput gammaOutput;
     NeutronOutput neutronOutput;
     OccupancyOutput occupancyOutput;
     LocationOutput locationOutput;
     TamperOutput tamperOutput;
     SpeedOutput speedOutput;
-    GammaSetupOutputs gammaSetup;
+    SetupGammaOutput setupGammaOutput;
     SetupNeutronOutput setupNeutronOutput;
     GammaThresholdOutput gammaThresholdOutput;
+    EMLAnalysisOutput emlAnalysisOutput;
     EMLScanContextualOutput emlScanContextualOutput;
-    EMLContextualOutputs emlContextualOutput;
-    InputStream msgIn;
-    ERNIE_lane ernieLane = null;
-    EMLService emlService = null;
-
-    Timer t;
-    public String laneName; //TODO: possible change lane name to site name?
-
+    EMLContextualOutput emlContextualOutput;
 
     @Override
     public void doInit() throws SensorHubException {
@@ -75,21 +72,20 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
         // Generate identifiers
         generateUniqueID("urn:osh:sensor:rapiscan:", config.serialNumber);
-        generateXmlID("Rapiscan", config.serialNumber);
+        generateXmlID("RAPISCAN_", config.serialNumber);
 
-        laneName = config.laneName;
-
-        // TODO: EML integration
-        if(config.EMLConfig.isSupplementalAlgorithm){
+        // EML integration
+        if(config.emlConfig.emlEnabled){
             createEMLOutputs();
             emlService = new EMLService(this);
         }
 
+        // Add outputs
         createOutputs();
     }
 
     public void createEMLOutputs(){
-        emlContextualOutput = new EMLContextualOutputs(this);
+        emlContextualOutput = new EMLContextualOutput(this);
         addOutput(emlContextualOutput, false);
         emlContextualOutput.init();
 
@@ -126,9 +122,9 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         addOutput(speedOutput, false);
         speedOutput.init();
 
-        gammaSetup = new GammaSetupOutputs(this);
-        addOutput(gammaSetup, false);
-        gammaSetup.init();
+        setupGammaOutput = new SetupGammaOutput(this);
+        addOutput(setupGammaOutput, false);
+        setupGammaOutput.init();
 
         setupNeutronOutput = new SetupNeutronOutput(this);
         addOutput(setupNeutronOutput, false);
@@ -142,10 +138,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     @Override
     protected void doStart() throws SensorHubException {
 
-//        locationOutput.setLocationOutput(config.getLocation());
-        setLocationRepeatTimer();
-
-        // init comm provider
+        // Initialize comm provider
         if (commProvider == null) {
 
             // we need to recreate comm provider here because it can be changed by UI
@@ -165,27 +158,21 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
             }
 
 
-//         connect to data stream
+            // Connect to data stream
             try {
-                TCPCommProvider tcp = null;
+//                TCPCommProvider tcp = null;
+//
+//                if (commProvider instanceof TCPCommProvider) {
+//                    tcp = (TCPCommProvider) commProvider;
+//                }
+//
+//                if (config.emlConfig.emlEnabled && tcp != null) {
+//                    emlService = new EMLService(this);
+//                } else {
+//                    emlService = null;
+//                }
 
-                if (commProvider instanceof TCPCommProvider) {
-                    tcp = (TCPCommProvider) commProvider;
-                }
-
-                if (config.EMLConfig.isSupplementalAlgorithm && tcp != null) {
-                    String port = String.valueOf(tcp.getConfiguration().protocol.remotePort);
-                    ernieLane = new ERNIE_lane(
-                            port,
-                            config.laneID,
-                            config.EMLConfig.isCollimated,
-                            config.EMLConfig.laneWidth,
-                            config.EMLConfig.gammaSetupConfig.intervals,
-                            config.EMLConfig.gammaSetupConfig.occupancyHoldin
-                    );
-                }
-
-                msgIn = new BufferedInputStream(commProvider.getInputStream());
+                InputStream msgIn = new BufferedInputStream(commProvider.getInputStream());
                 messageHandler = new MessageHandler(msgIn, this);
 
             } catch (IOException e) {
@@ -201,8 +188,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         if (commProvider != null) {
 
             try {
-                t.cancel();
-                t.purge();
                 commProvider.stop();
 
             } catch (Exception e) {
@@ -228,12 +213,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         locationOutput.setLocationOutput(config.getLocation());
     }
 
-    public MessageHandler getMessageHandler(){
+    public MessageHandler getMessageHandler() {
         return messageHandler;
-    }
-
-    public ERNIE_lane getErnieLane() {
-        return this.ernieLane;
     }
 
     public EMLService getEmlService() {

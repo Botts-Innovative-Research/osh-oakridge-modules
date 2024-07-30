@@ -13,7 +13,6 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.rapiscan;
 
-import com.google.gson.annotations.SerializedName;
 import org.sensorhub.api.comm.CommProviderConfig;
 import org.sensorhub.api.sensor.PositionConfig.LLALocation;
 import org.sensorhub.api.sensor.PositionConfig.EulerOrientation;
@@ -45,23 +44,24 @@ public class RapiscanConfig extends SensorConfig {
     @DisplayInfo(desc = "Serial number or unique identifier")
     public String serialNumber = "rpm001";
 
-    @DisplayInfo(desc = "Communication settings to connect to RS-350 data stream")
+    @DisplayInfo(desc = "Communication settings to connect to the radiation portal monitor's data stream")
     public CommProviderConfig<?> commSettings;
 
     @DisplayInfo(desc="RPM Location")
     public PositionConfig positionConfig = new PositionConfig();
 
-    @DisplayInfo(label = "Lane Name", desc = "Human readable name of the lane")
-    @DisplayInfo.Required
-    public String laneName;
-
     @DisplayInfo(label = "Lane ID", desc = "ID of lane")
     @DisplayInfo.Required
     public int laneID;
 
-    @DisplayInfo(desc = "EML Lane Settings")
-    public EMLConfig EMLConfig = new EMLConfig();
+    @DisplayInfo(desc = "Setup Gamma Configuration", label = "Setup values from RPM hardware (if applicable)")
+    public SetupGammaConfig setupGammaConfig = new SetupGammaConfig();
 
+//    @DisplayInfo(desc = "Setup Neutron Configuration", label = "Setup values from RPM hardware (if applicable)")
+//    public SetupNeutronConfig setupNeutronConfig = new SetupNeutronConfig();
+
+    @DisplayInfo(desc = "EML Lane Settings")
+    public EMLConfig emlConfig = new EMLConfig();
 
     @Override
     public LLALocation getLocation(){return positionConfig.location;}

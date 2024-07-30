@@ -17,21 +17,21 @@ import org.vast.swe.SWEBuilders;
 
 import static com.botts.impl.sensor.rapiscan.eml.EMLFieldFactory.*;
 
-public class EMLContextualOutputs extends AbstractSensorOutput<RapiscanSensor> {
+public class EMLContextualOutput extends AbstractSensorOutput<RapiscanSensor> {
 
 
     private static final String SENSOR_OUTPUT_NAME = "ERNIEContextual";
     private static final String SENSOR_OUTPUT_LABEL = "EML ERNIE Contextual";
     private static final String SENSOR_OUTPUT_DESCRIPTION = "EML ERNIE Contextual Data parsed from XML";
 
-    private static final Logger logger = LoggerFactory.getLogger(EMLContextualOutputs.class);
+    private static final Logger logger = LoggerFactory.getLogger(EMLContextualOutput.class);
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
 
     int versionIdIndex, modelIdIndex, thresholdsIndex;
 
-    public EMLContextualOutputs(RapiscanSensor parentSensor) {
+    public EMLContextualOutput(RapiscanSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
@@ -76,7 +76,7 @@ public class EMLContextualOutputs extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setDoubleValue(thresholdsIndex, results.getThresholds().getPrimary());
 
         latestRecord = dataBlock;
-        eventHandler.publish(new DataEvent(System.currentTimeMillis(), EMLContextualOutputs.this, dataBlock));
+        eventHandler.publish(new DataEvent(System.currentTimeMillis(), EMLContextualOutput.this, dataBlock));
     }
 
     @Override

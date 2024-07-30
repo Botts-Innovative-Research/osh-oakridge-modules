@@ -1,59 +1,49 @@
 package com.botts.impl.sensor.rapiscan.eml;
 
-import com.botts.impl.sensor.rapiscan.MessageHandler;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import gov.llnl.ernie.analysis.AnalysisException;
-import gov.llnl.ernie.api.DailyFileLoader;
+import gov.llnl.ernie.api.ERNIE_lane;
 import gov.llnl.ernie.api.Results;
-import gov.llnl.ernie.vm250.VM250RecordDatabase;
-import gov.llnl.ernie.vm250.VM250RecordDatabaseReader;
-import gov.llnl.ernie.vm250.data.VM250Occupancy;
-import gov.llnl.ernie.vm250.data.VM250Record;
-import gov.llnl.ernie.vm250.data.VM250RecordInternal;
-import gov.llnl.ernie.vm250.tools.DailyFileWriter;
-import gov.llnl.ernie.vm250.tools.VM250OccupancyConverter;
 import gov.llnl.utility.io.ReaderException;
-import org.javatuples.Triplet;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.xml.sax.SAXException;
+import org.sensorhub.api.data.DataEvent;
+import org.sensorhub.api.data.IStreamingDataInterface;
+import org.sensorhub.api.event.Event;
+import org.sensorhub.api.event.IEventListener;
 
 import javax.xml.bind.JAXBException;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerConfigurationException;
-import javax.xml.transform.TransformerException;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.dom.DOMSource;
-import javax.xml.transform.stream.StreamResult;
 import java.io.*;
-import java.nio.file.Paths;
-import java.text.SimpleDateFormat;
-import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.stream.Stream;
 
 
-public class EMLService {
+public class EMLService implements IEventListener {
 
+    private ERNIE_lane ernieLane;
     RapiscanSensor parentSensor;
     List<String> occupancyDataList;
 
     public EMLService(RapiscanSensor parentSensor) {
         this.parentSensor = parentSensor;
+        this.ernieLane = new ERNIE_lane(
+                parentSensor.getConfiguration().name,
+                parentSensor.getConfiguration().laneID,
+                parentSensor.getConfiguration().
+        );
         this.occupancyDataList = new ArrayList<>();
+    }
+
+    public void updateErnieLane() {
+
     }
 
     // TODO: Read record database
     // TODO: Write to record database
     // TODO: Process occupancy data
 
-    public void addOccupancyLine(String scanData) {
-        this.occupancyDataList.add(scanData);
+    public void addOccupancyLine(String[] scanData) {
+        String scanJoined = String.join(",", csvLine);
+        this.occupancyDataList.add(scanJoined);
     }
 
     public List<String> getOccupancyDataList() {
@@ -74,7 +64,7 @@ public class EMLService {
                     streamArray[i] = this.occupancyDataList.get(i);
                 }
                 Stream<String> stream = Stream.of(streamArray);
-                results = parentSensor.getErnieLane().process(stream);
+                results = ernieLane.process(stream);
                 System.out.println("ERNIE Results");
                 System.out.println(results.toXMLString());
 
@@ -115,13 +105,41 @@ public class EMLService {
         this.occupancyDataList.clear();
     }
 
+    @Override
+    public void handleEvent(Event e) {
+        // On data received, change ernie lane to have new setup values
+        if(e instanceof DataEvent) {
 
-//    private static void writeXml(Document doc, OutputStream outputStream) throws TransformerException {
-//        TransformerFactory transformerFactory = TransformerFactory.newInstance();
-//        Transformer transformer = transformerFactory.newTransformer();
-//        DOMSource source = new DOMSource(doc);
-//        StreamResult result = new StreamResult(outputStream);
-//
-//        transformer.transform(source, result);
-//    }
+            DataEvent dataEvent = (DataEvent)e;
+
+            try
+            {
+                // Get setup values, then update ERNIE_lane with new setup values
+                int holdin = dataEvent.getSource().getLatestRecord().getIntValue(4);
+                int intervals = dataEvent.getSource().getLatestRecord().getIntValue(5);
+                int nsigma = dataEvent.getSource().getLatestRecord().getIntValue(6);
+                updateErnieLane(holdin, intervals, nsigma);
+                // Needs
+                //    String portId,
+                //    int laneId,
+                //    boolean isCollimated,
+                //    double laneWidth,
+                //    int intervals,
+                //    int occupancyHoldi
+                IStreamingDataInterface output = driver.getObservationOutputs().get(dataEvent.getOutputName());
+                writer.setDataComponents(output.getRecordDescription().copy());
+                writer.reset();
+                writer.write(dataEvent.getRecords()[0]);
+                writer.flush();
+
+                sampleCount++;
+            }
+            catch (IOException e1)
+            {
+                e1.printStackTrace();
+            }
+
+            synchronized (this) { this.notify(); }
+        }
+    }
 }

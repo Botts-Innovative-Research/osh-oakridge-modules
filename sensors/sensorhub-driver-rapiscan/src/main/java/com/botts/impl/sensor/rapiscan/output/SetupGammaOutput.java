@@ -6,18 +6,19 @@ import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
+import org.sensorhub.api.event.IEventListener;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
-public class GammaSetupOutputs extends AbstractSensorOutput<RapiscanSensor> {
+public class SetupGammaOutput extends AbstractSensorOutput<RapiscanSensor> {
 
     private static final String SENSOR_OUTPUT_NAME = "setupGamma";
     private static final String SENSOR_OUTPUT_LABEL = "Setup Gamma";
 
-    private static final Logger logger = LoggerFactory.getLogger(GammaSetupOutputs.class);
+    private static final Logger logger = LoggerFactory.getLogger(SetupGammaOutput.class);
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
@@ -28,7 +29,7 @@ public class GammaSetupOutputs extends AbstractSensorOutput<RapiscanSensor> {
     double nsigma;
     String algorithm;
 
-    public GammaSetupOutputs(RapiscanSensor parentSensor) {
+    public SetupGammaOutput(RapiscanSensor parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
@@ -82,6 +83,10 @@ public class GammaSetupOutputs extends AbstractSensorOutput<RapiscanSensor> {
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
+
+        if(parentSensor.getConfiguration().emlConfig.emlEnabled) {
+            registerListener(parentSensor.getEmlService());
+        }
     }
 
     public void onNewMessage(String[] setup1, String [] setup2, String[] setup3){
@@ -125,7 +130,7 @@ public class GammaSetupOutputs extends AbstractSensorOutput<RapiscanSensor> {
         nsigma =  Double.parseDouble(setup1[5]);
 
         latestRecord = dataBlock;
-        eventHandler.publish(new DataEvent(System.currentTimeMillis(), GammaSetupOutputs.this, dataBlock));
+        eventHandler.publish(new DataEvent(System.currentTimeMillis(), SetupGammaOutput.this, dataBlock));
 
     }
 

@@ -2,7 +2,7 @@ package com.botts.impl.sensor.rapiscan.output;
 
 import com.botts.impl.sensor.rapiscan.MessageHandler;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
-import com.botts.impl.sensor.rapiscan.eml.types.AlgorithmType;
+import com.botts.impl.sensor.rapiscan.types.AlgorithmType;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -14,7 +14,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
-import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.LinkedList;
 
@@ -73,7 +72,7 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
         if(messageHandler.getGammaSetup().getLatestRecord() != null) {
             nVal = messageHandler.getGammaSetup().getNsigma();
         } else {
-            nVal = parentSensor.getConfiguration().EMLConfig.gammaSetupConfig.nsigma;
+            nVal = parentSensor.getConfiguration().emlConfig.gammaSetupConfig.nsigma;
         }
 
         int size = batch.size();
