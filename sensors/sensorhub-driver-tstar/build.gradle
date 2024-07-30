@@ -1,0 +1,33 @@
+description = 'TSTAR API Driver'
+ext.details = "..."
+version = '1.0.0'
+
+dependencies {
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+}
+
+// exclude tests requiring connection to the sensor
+// these have to be run manually
+//test {
+//    exclude '**/TestAvlDriverSimu.class'
+//}
+
+// add info to OSGi manifest
+jar {
+    manifest {
+        attributes 'Bundle-Vendor': 'Botts Innovative Research, Inc.'
+        attributes 'Bundle-Activator': 'org.sensorhub.impl.sensor.tstar.TSTARActivator'
+    }
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'cardy'
+            name 'Cardy'
+            organization 'Botts Innovative Research, Inc.'
+            organizationUrl 'http://www.botts-inc.com'
+        }
+    }
+}
