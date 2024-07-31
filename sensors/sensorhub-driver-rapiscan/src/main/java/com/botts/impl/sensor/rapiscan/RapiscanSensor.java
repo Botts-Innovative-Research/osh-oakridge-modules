@@ -160,21 +160,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
             // Connect to data stream
             try {
-//                TCPCommProvider tcp = null;
-//
-//                if (commProvider instanceof TCPCommProvider) {
-//                    tcp = (TCPCommProvider) commProvider;
-//                }
-//
-//                if (config.emlConfig.emlEnabled && tcp != null) {
-//                    emlService = new EMLService(this);
-//                } else {
-//                    emlService = null;
-//                }
-
                 InputStream msgIn = new BufferedInputStream(commProvider.getInputStream());
                 messageHandler = new MessageHandler(msgIn, this);
-
             } catch (IOException e) {
 
                 throw new SensorException("Error while initializing communications ", e);

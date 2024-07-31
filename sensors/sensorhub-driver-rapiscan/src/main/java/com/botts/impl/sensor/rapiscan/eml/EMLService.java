@@ -42,7 +42,7 @@ public class EMLService implements IEventListener {
     // TODO: Process occupancy data
 
     public void addOccupancyLine(String[] scanData) {
-        String scanJoined = String.join(",", csvLine);
+        String scanJoined = String.join(",", scanData);
         this.occupancyDataList.add(scanJoined);
     }
 
@@ -52,10 +52,6 @@ public class EMLService implements IEventListener {
 
     public Results processCurrentOccupancy() {
         Results results;
-
-//        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd");
-//        String dateStamp = dateFormat.format(new Date());
-//        String fileName = "emlResults"+dateStamp+"_"+System.currentTimeMillis()+".xml";
 
         synchronized (this) {
             try {
@@ -68,34 +64,11 @@ public class EMLService implements IEventListener {
                 System.out.println("ERNIE Results");
                 System.out.println(results.toXMLString());
 
-
-//                //TODO: eml database
-//                DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
-//                DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
-//                Document doc = docBuilder.newDocument();
-//
-//                Element rootElement = doc.createElement("EMLResults");
-//                doc.appendChild(rootElement);
-//
-//                Element ernieResults = doc.createElement("ErnieResults");
-//                ernieResults.appendChild(doc.createTextNode(results.toXMLString()));
-//                rootElement.appendChild(ernieResults);
-//
-//                try(FileOutputStream output = new FileOutputStream(fileName)){
-//                    writeXml(doc, output);
-//                    System.out.println("Results written to xml file");
-//                }
-
-
             } catch (ReaderException | AnalysisException | IOException | JAXBException e) {
                 throw new RuntimeException(e);
             }
-//            catch (ParserConfigurationException e) {
-//                throw new RuntimeException(e);
-//            } catch (TransformerException e) {
-//                throw new RuntimeException(e);
-//            }
         }
+
         //purge data occupancy for next occupancy!
         clearOccupancyList();
 

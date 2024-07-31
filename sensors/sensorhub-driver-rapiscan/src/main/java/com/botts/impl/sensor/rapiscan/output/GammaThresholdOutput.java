@@ -52,6 +52,7 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> {
                 .addField(sigma.getName(), sigma)
                 .build();
         dataEncoding = new TextEncodingImpl(",", "\n");
+
     }
 
     public void onNewGammaBackground(String[] csvLine) {
