@@ -53,7 +53,6 @@ public class MessageHandler {
         }
 
         // Setup boolean
-        //todo add time to csv files after each line!
         Thread messageReader = new Thread(() -> {
             boolean continueProcessing = true;
 
@@ -76,7 +75,6 @@ public class MessageHandler {
                         reader = new CSVReader(new StringReader(msgLine));
                         csvList = reader.readAll();
 
-                        //todo add time to csv files after each line!
                         writer.writeNext(new String[]{msgLine, Instant.now().toString()});
 
                         onNewMainChar(csvList.get(0)[0], csvList.get(0));
