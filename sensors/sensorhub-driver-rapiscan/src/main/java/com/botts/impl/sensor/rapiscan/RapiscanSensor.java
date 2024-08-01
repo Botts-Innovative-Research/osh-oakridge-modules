@@ -19,11 +19,9 @@ import com.botts.impl.sensor.rapiscan.eml.outputs.EMLContextualOutput;
 import com.botts.impl.sensor.rapiscan.eml.outputs.EMLScanContextualOutput;
 import com.botts.impl.sensor.rapiscan.output.GammaThresholdOutput;
 import com.botts.impl.sensor.rapiscan.output.*;
-import gov.llnl.ernie.api.ERNIE_lane;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.sensor.SensorException;
-import org.sensorhub.impl.comm.TCPCommProvider;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,7 +29,6 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Timer;
 
 /**
  * Sensor driver for the ... providing sensor description, output registration,
@@ -45,25 +42,26 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     private static final Logger logger = LoggerFactory.getLogger(RapiscanSensor.class);
 
     // Utilities
-    MessageHandler messageHandler;
-    EMLService emlService;
+    private MessageHandler messageHandler;
+    private EMLService emlService;
 
     // Connection
-    ICommProvider<?> commProvider;
+    private ICommProvider<?> commProvider;
 
     // Outputs
-    GammaOutput gammaOutput;
-    NeutronOutput neutronOutput;
-    OccupancyOutput occupancyOutput;
-    LocationOutput locationOutput;
-    TamperOutput tamperOutput;
-    SpeedOutput speedOutput;
-    SetupGammaOutput setupGammaOutput;
-    SetupNeutronOutput setupNeutronOutput;
-    GammaThresholdOutput gammaThresholdOutput;
-    EMLAnalysisOutput emlAnalysisOutput;
-    EMLScanContextualOutput emlScanContextualOutput;
-    EMLContextualOutput emlContextualOutput;
+    private GammaOutput gammaOutput;
+    private NeutronOutput neutronOutput;
+    private OccupancyOutput occupancyOutput;
+    private LocationOutput locationOutput;
+    private TamperOutput tamperOutput;
+    private SpeedOutput speedOutput;
+    private SetupGammaOutput setupGammaOutput;
+    private SetupNeutronOutput setupNeutronOutput;
+    private GammaThresholdOutput gammaThresholdOutput;
+
+    private EMLAnalysisOutput emlAnalysisOutput;
+    private EMLScanContextualOutput emlScanContextualOutput;
+    private EMLContextualOutput emlContextualOutput;
 
     @Override
     public void doInit() throws SensorHubException {
@@ -74,14 +72,20 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         generateUniqueID("urn:osh:sensor:rapiscan:", config.serialNumber);
         generateXmlID("RAPISCAN_", config.serialNumber);
 
+        // Add outputs
+        createOutputs();
+
+        // Register GammaThresholdOutput as a listener to SetupGammaOutput
+        setupGammaOutput.registerListener(gammaThresholdOutput);
+
         // EML integration
         if(config.emlConfig.emlEnabled){
             createEMLOutputs();
             emlService = new EMLService(this);
-        }
 
-        // Add outputs
-        createOutputs();
+            // Register EMLService as a listener to SetupGammaOutput
+            setupGammaOutput.registerListener(emlService);
+        }
     }
 
     public void createEMLOutputs(){
@@ -170,19 +174,15 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     }
 
     @Override
-    public void doStop() throws SensorHubException {
+    public void doStop() {
 
         if (commProvider != null) {
 
             try {
                 commProvider.stop();
-
             } catch (Exception e) {
-
                 logger.error("Uncaught exception attempting to stop comms module", e);
-
             } finally {
-
                 commProvider = null;
             }
         }
@@ -200,12 +200,52 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         locationOutput.setLocationOutput(config.getLocation());
     }
 
-    public MessageHandler getMessageHandler() {
-        return messageHandler;
-    }
-
     public EMLService getEmlService() {
         return this.emlService;
+    }
+
+    public GammaOutput getGammaOutput() {
+        return gammaOutput;
+    }
+
+    public NeutronOutput getNeutronOutput() {
+        return neutronOutput;
+    }
+
+    public OccupancyOutput getOccupancyOutput() {
+        return occupancyOutput;
+    }
+
+    public TamperOutput getTamperOutput() {
+        return tamperOutput;
+    }
+
+    public SpeedOutput getSpeedOutput() {
+        return speedOutput;
+    }
+
+    public SetupGammaOutput getSetupGammaOutput() {
+        return setupGammaOutput;
+    }
+
+    public SetupNeutronOutput getSetupNeutronOutput() {
+        return setupNeutronOutput;
+    }
+
+    public GammaThresholdOutput getGammaThresholdOutput() {
+        return gammaThresholdOutput;
+    }
+
+    public EMLAnalysisOutput getEmlAnalysisOutput() {
+        return emlAnalysisOutput;
+    }
+
+    public EMLScanContextualOutput getEmlScanContextualOutput() {
+        return emlScanContextualOutput;
+    }
+
+    public EMLContextualOutput getEmlContextualOutput() {
+        return emlContextualOutput;
     }
 
 }

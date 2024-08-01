@@ -10,8 +10,6 @@ import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 import org.vast.swe.SWEBuilders;
 
@@ -20,11 +18,9 @@ import static com.botts.impl.sensor.rapiscan.eml.EMLFieldFactory.*;
 public class EMLContextualOutput extends AbstractSensorOutput<RapiscanSensor> {
 
 
-    private static final String SENSOR_OUTPUT_NAME = "ERNIEContextual";
+    private static final String SENSOR_OUTPUT_NAME = "emlContextual";
     private static final String SENSOR_OUTPUT_LABEL = "EML ERNIE Contextual";
     private static final String SENSOR_OUTPUT_DESCRIPTION = "EML ERNIE Contextual Data parsed from XML";
-
-    private static final Logger logger = LoggerFactory.getLogger(EMLContextualOutput.class);
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
@@ -58,12 +54,12 @@ public class EMLContextualOutput extends AbstractSensorOutput<RapiscanSensor> {
         dataRecordBuilder.addField(MODEL_ID_FIELD_NAME, emlFieldFactory.createModelIdField());
         modelIdIndex= fieldIndex++;
         dataRecordBuilder.addField(THRESHOLDS_FIELD_NAME, emlFieldFactory.createThresholdsField());
-        thresholdsIndex= fieldIndex++;
+        thresholdsIndex= fieldIndex;
 
         return dataRecordBuilder.build();
     }
 
-    public void handleContextualMessage(Results results, long timestamp){
+    public void handleContextualMessage(Results results){
         DataBlock dataBlock;
         if (latestRecord == null) {
             dataBlock = dataStruct.createDataBlock();

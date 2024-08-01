@@ -10,8 +10,6 @@ import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 import org.vast.swe.SWEBuilders;
 
@@ -20,11 +18,9 @@ import static com.botts.impl.sensor.rapiscan.eml.EMLFieldFactory.*;
 public class EMLScanContextualOutput extends AbstractSensorOutput<RapiscanSensor> {
 
 
-    private static final String SENSOR_OUTPUT_NAME = "ERNIEScanContextual";
+    private static final String SENSOR_OUTPUT_NAME = "emlScanContextual";
     private static final String SENSOR_OUTPUT_LABEL = "EML Scan Contextual";
     private static final String SENSOR_OUTPUT_DESCRIPTION = "EML ERNIE Contextual Data parsed from XML";
-
-    private static final Logger logger = LoggerFactory.getLogger(EMLScanContextualOutput.class);
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
@@ -74,12 +70,12 @@ public class EMLScanContextualOutput extends AbstractSensorOutput<RapiscanSensor
         rpmNeutronAlertIndex= fieldIndex++;
 
         dataRecordBuilder.addField(RPM_SCAN_ERROR_FIELD_NAME, emlFieldFactory.createRpmScanErrorField());
-        rpmScanErrorIndex= fieldIndex++;
+        rpmScanErrorIndex= fieldIndex;
 
         return dataRecordBuilder.build();
     }
 
-    public void handleScanContextualMessage(Results results, long timestamp){
+    public void handleScanContextualMessage(Results results){
         DataBlock dataBlock;
         if (latestRecord == null) {
             dataBlock = dataStruct.createDataBlock();

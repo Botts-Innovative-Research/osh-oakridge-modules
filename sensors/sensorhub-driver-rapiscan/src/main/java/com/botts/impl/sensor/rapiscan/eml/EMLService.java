@@ -6,7 +6,6 @@ import gov.llnl.ernie.api.ERNIE_lane;
 import gov.llnl.ernie.api.Results;
 import gov.llnl.utility.io.ReaderException;
 import org.sensorhub.api.data.DataEvent;
-import org.sensorhub.api.data.IStreamingDataInterface;
 import org.sensorhub.api.event.Event;
 import org.sensorhub.api.event.IEventListener;
 
@@ -21,33 +20,35 @@ public class EMLService implements IEventListener {
 
     private ERNIE_lane ernieLane;
     RapiscanSensor parentSensor;
-    List<String> occupancyDataList;
+    List<String> scanDataList;
 
     public EMLService(RapiscanSensor parentSensor) {
         this.parentSensor = parentSensor;
         this.ernieLane = new ERNIE_lane(
                 parentSensor.getConfiguration().name,
                 parentSensor.getConfiguration().laneID,
-                parentSensor.getConfiguration().
+                parentSensor.getConfiguration().emlConfig.isCollimated,
+                parentSensor.getConfiguration().emlConfig.laneWidth,
+                parentSensor.getConfiguration().setupGammaConfig.intervals,
+                parentSensor.getConfiguration().setupGammaConfig.occupancyHoldin
         );
-        this.occupancyDataList = new ArrayList<>();
+        this.scanDataList = new ArrayList<>();
     }
 
-    public void updateErnieLane() {
-
+    private void updateErnieSetup(int intervals, int holdin) {
+        this.ernieLane = new ERNIE_lane(
+                parentSensor.getConfiguration().name,
+                parentSensor.getConfiguration().laneID,
+                parentSensor.getConfiguration().emlConfig.isCollimated,
+                parentSensor.getConfiguration().emlConfig.laneWidth,
+                intervals,
+                holdin
+        );
     }
 
-    // TODO: Read record database
-    // TODO: Write to record database
-    // TODO: Process occupancy data
-
-    public void addOccupancyLine(String[] scanData) {
+    public void addScanDataLine(String[] scanData) {
         String scanJoined = String.join(",", scanData);
-        this.occupancyDataList.add(scanJoined);
-    }
-
-    public List<String> getOccupancyDataList() {
-        return this.occupancyDataList;
+        this.scanDataList.add(scanJoined);
     }
 
     public Results processCurrentOccupancy() {
@@ -55,9 +56,9 @@ public class EMLService implements IEventListener {
 
         synchronized (this) {
             try {
-                String[] streamArray = new String[this.occupancyDataList.size()];
+                String[] streamArray = new String[this.scanDataList.size()];
                 for(int i = 0; i < streamArray.length; i++) {
-                    streamArray[i] = this.occupancyDataList.get(i);
+                    streamArray[i] = this.scanDataList.get(i);
                 }
                 Stream<String> stream = Stream.of(streamArray);
                 results = ernieLane.process(stream);
@@ -75,44 +76,19 @@ public class EMLService implements IEventListener {
         return results;
     }
     public void clearOccupancyList(){
-        this.occupancyDataList.clear();
+        this.scanDataList.clear();
     }
 
     @Override
     public void handleEvent(Event e) {
-        // On data received, change ernie lane to have new setup values
+        // On setup data received, change ernie lane to have new setup values
         if(e instanceof DataEvent) {
+            DataEvent dataEvent = (DataEvent) e;
 
-            DataEvent dataEvent = (DataEvent)e;
-
-            try
-            {
-                // Get setup values, then update ERNIE_lane with new setup values
-                int holdin = dataEvent.getSource().getLatestRecord().getIntValue(4);
-                int intervals = dataEvent.getSource().getLatestRecord().getIntValue(5);
-                int nsigma = dataEvent.getSource().getLatestRecord().getIntValue(6);
-                updateErnieLane(holdin, intervals, nsigma);
-                // Needs
-                //    String portId,
-                //    int laneId,
-                //    boolean isCollimated,
-                //    double laneWidth,
-                //    int intervals,
-                //    int occupancyHoldi
-                IStreamingDataInterface output = driver.getObservationOutputs().get(dataEvent.getOutputName());
-                writer.setDataComponents(output.getRecordDescription().copy());
-                writer.reset();
-                writer.write(dataEvent.getRecords()[0]);
-                writer.flush();
-
-                sampleCount++;
-            }
-            catch (IOException e1)
-            {
-                e1.printStackTrace();
-            }
-
-            synchronized (this) { this.notify(); }
+            // Get setup values, then update ERNIE_lane with new setup values
+            int intervals = dataEvent.getSource().getLatestRecord().getIntValue(3);
+            int holdin = dataEvent.getSource().getLatestRecord().getIntValue(4);
+            updateErnieSetup(intervals, holdin);
         }
     }
 }

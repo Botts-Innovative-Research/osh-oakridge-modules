@@ -10,8 +10,6 @@ import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.vast.data.DataArrayImpl;
 import org.vast.data.TextEncodingImpl;
 import org.vast.swe.SWEBuilders;
@@ -20,11 +18,9 @@ import static com.botts.impl.sensor.rapiscan.eml.EMLFieldFactory.*;
 
 
 public class EMLAnalysisOutput extends AbstractSensorOutput<RapiscanSensor> {
-    private static final String SENSOR_OUTPUT_NAME = "ERNIEAnalysis";
+    private static final String SENSOR_OUTPUT_NAME = "emlAnalysis";
     private static final String SENSOR_OUTPUT_LABEL = "EML ERNIE Analysis";
     private static final String SENSOR_OUTPUT_DESCRIPTION = "EML ERNIE Analysis Data parsed from XML";
-
-    private static final Logger logger = LoggerFactory.getLogger(EMLAnalysisOutput.class);
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
@@ -85,7 +81,7 @@ public class EMLAnalysisOutput extends AbstractSensorOutput<RapiscanSensor> {
 
     }
 
-    public void handleAnalysisMessage(Results results, long timeStamp)
+    public void handleAnalysisMessage(Results results)
     {
         dataStruct = getDataRecord();
         DataBlock dataBlock = dataStruct.createDataBlock();
@@ -128,7 +124,7 @@ public class EMLAnalysisOutput extends AbstractSensorOutput<RapiscanSensor> {
             dataBlock.setDoubleValue(index++, results.getOverallSource().getzLocation());
             dataBlock.setDoubleValue(index++, results.getOverallSource().getProbabilityNonEmitting());
             dataBlock.setDoubleValue(index++, results.getOverallSource().getProbabilityNORM());
-            dataBlock.setDoubleValue(index++, results.getOverallSource().getProbabilityThreat());
+            dataBlock.setDoubleValue(index, results.getOverallSource().getProbabilityThreat());
         }
 
         latestRecord = dataBlock;

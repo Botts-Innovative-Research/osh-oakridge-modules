@@ -6,19 +6,14 @@ import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
-import org.sensorhub.api.event.IEventListener;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
 public class SetupGammaOutput extends AbstractSensorOutput<RapiscanSensor> {
 
     private static final String SENSOR_OUTPUT_NAME = "setupGamma";
     private static final String SENSOR_OUTPUT_LABEL = "Setup Gamma";
-
-    private static final Logger logger = LoggerFactory.getLogger(SetupGammaOutput.class);
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
@@ -83,10 +78,6 @@ public class SetupGammaOutput extends AbstractSensorOutput<RapiscanSensor> {
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
-
-        if(parentSensor.getConfiguration().emlConfig.emlEnabled) {
-            registerListener(parentSensor.getEmlService());
-        }
     }
 
     public void onNewMessage(String[] setup1, String [] setup2, String[] setup3){
@@ -121,7 +112,7 @@ public class SetupGammaOutput extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setDoubleValue(index++, Double.parseDouble(setup3[2])); //high discrim
         dataBlock.setIntValue(index++, Integer.parseInt(setup3[3])); //background time
         dataBlock.setIntValue(index++, Integer.parseInt(setup3[4])); //background sgima
-        dataBlock.setStringValue(index++, setup3[5]); //version of firmware
+        dataBlock.setStringValue(index, setup3[5]); //version of firmware
 
         //gamma config values!
         intervals=  Integer.parseInt(setup1[3]);
@@ -132,31 +123,6 @@ public class SetupGammaOutput extends AbstractSensorOutput<RapiscanSensor> {
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), SetupGammaOutput.this, dataBlock));
 
-    }
-
-    public double getNsigma(){
-        return nsigma;
-    }
-    public int getIntervals(){
-        return intervals;
-    }
-    public String getAlgorithm(){
-        return algorithm;
-    }
-    public int getOccupancyHoldin(){
-        return occupancyHoldin;
-    }
-    public void setNsigma(double nsigma){
-        this.nsigma = nsigma;
-    }
-    public void setIntervals(int intervals){
-       this.intervals= intervals;
-    }
-    public void setAlgorithm(String algorithm){
-        this.algorithm =algorithm;
-    }
-    public void setOccupancyHoldin(int occupancyHoldin){
-        this.occupancyHoldin = occupancyHoldin;
     }
 
     @Override

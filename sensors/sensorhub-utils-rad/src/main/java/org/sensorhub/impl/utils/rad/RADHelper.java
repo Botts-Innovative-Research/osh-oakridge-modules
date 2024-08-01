@@ -290,8 +290,8 @@ public class RADHelper extends GeoPosHelper {
 //                .uomCode("cps")
                 .build();
     }
-    public Quantity createDetectors(){
-        return createQuantity()
+    public Text createDetectors(){
+        return createText()
                 .name("detectorsOnLine")
                 .label("Detectors on line")
                 .definition(getRadUri("detectors-on-line"))
@@ -502,19 +502,20 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-    public Count createGammaCPS(int countID){
+    public Count createGammaGrossCount(int countID){
         return createCount()
-                .name("gammaCPS" + countID)
-                .label("Gamma CPS " + countID)
-                .definition(getRadUri("gamma-cps"))
+                .name("gammaGrossCount" + countID)
+                .label("Gamma Gross Count " + countID)
+                .definition(getRadUri("gamma-gross-count"))
                 .build();
     }
 
-    public Count createGammaCp200ms(int countID){
+    public Count createGammaGrossCountPerInterval(int countID){
         return createCount()
-                .name("gammaCp200ms" + countID)
-                .label("Gamma Cp200ms " + countID)
-                .definition(getRadUri("gamma-cp200ms"))
+                .name("gammaGrossCountPerInterval" + countID)
+                .label("Gamma Gross Count (200ms) " + countID)
+                .definition(getRadUri("gamma-gross-count-per-interval"))
+                .value(0)
                 .build();
     }
 

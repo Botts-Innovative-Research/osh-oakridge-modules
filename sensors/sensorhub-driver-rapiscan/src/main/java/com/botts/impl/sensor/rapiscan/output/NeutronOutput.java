@@ -8,16 +8,11 @@ import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 
 public class NeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
 
     private static final String SENSOR_OUTPUT_NAME = "neutronScan";
     private static final String SENSOR_OUTPUT_LABEL = "Neutron Scan";
-
-    private static final Logger logger = LoggerFactory.getLogger(NeutronOutput.class);
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
@@ -71,11 +66,10 @@ public class NeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[1]));
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[2]));
         dataBlock.setIntValue(index++, Integer.parseInt(csvString[3]));
-        dataBlock.setIntValue(index++, Integer.parseInt(csvString[4]));
+        dataBlock.setIntValue(index, Integer.parseInt(csvString[4]));
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(timeStamp, NeutronOutput.this, dataBlock));
-
     }
 
     @Override
