@@ -104,14 +104,16 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         var db = hub.getDatabaseRegistry().getFederatedDatabase();
 
         // Get output data from input system UID
-        db.getDataStreamStore().select(new DataStreamFilter.Builder()
+        var stuff = db.getDataStreamStore().select(new DataStreamFilter.Builder()
                         .withSystems(sysFilter)
                         .withCurrentVersion()
                         .withOutputNames(OCCUPANCY_NAME)
-                        .build())
-                .forEach(ds -> {
-                    inputData.add(OCCUPANCY_NAME, ds.getRecordStructure());
-                });
+                        .withLimit(1)
+                        .build());
+        var colStuff = stuff.collect(Collectors.toList());
+        for(var item : colStuff) {
+            inputData.add(OCCUPANCY_NAME, item.getRecordStructure());
+        }
 
         return !inputData.isEmpty();
     }
@@ -152,6 +154,7 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         long endFromUTC = endTime.getData().getLongValue();
 
         Instant start = Instant.ofEpochSecond(startFromUTC);
+        // TODO: Check if EML time exists
         Instant end = Instant.ofEpochSecond(endFromUTC);
 
         IObsSystemDatabase inputDB = hub.getDatabaseRegistry().getObsDatabaseByModuleID(inputDatabaseID);
