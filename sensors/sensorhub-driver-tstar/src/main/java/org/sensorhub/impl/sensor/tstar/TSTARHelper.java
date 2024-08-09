@@ -95,12 +95,12 @@ public class TSTARHelper extends GeoPosHelper {
                 .dataType(DataType.INT)
                 .build();
     }
-    public Quantity createChannel(){
-        return createQuantity()
+    public Category createChannel(){
+        return createCategory()
                 .name("Channel")
                 .label("Channel")
                 .definition(SWEHelper.getPropertyUri("channel"))
-                .dataType(DataType.INT)
+                .dataType(DataType.UTF_STRING)
                 .build();
     }
 

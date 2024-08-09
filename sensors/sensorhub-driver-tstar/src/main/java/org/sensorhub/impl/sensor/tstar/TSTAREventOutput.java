@@ -3,6 +3,7 @@ package org.sensorhub.impl.sensor.tstar;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
+import org.sensorhub.impl.sensor.tstar.responses.Event;
 import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
 
@@ -13,9 +14,9 @@ import java.lang.Boolean;
 
 public class TSTAREventOutput extends AbstractSensorOutput<TSTARDriver>{
     private static final String SENSOR_OUTPUT_NAME = "Event Output";
-    DataRecord dataStruct;
+    protected DataRecord dataStruct;
     DataEncoding dataEncoding;
-    DataComponent dataComponent;
+    DataBlock dataBlock;
 
     public TSTAREventOutput(TSTARDriver parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
@@ -45,6 +46,7 @@ public class TSTAREventOutput extends AbstractSensorOutput<TSTARDriver>{
                 .name(getName())
                 .label(SENSOR_OUTPUT_NAME)
                 .definition(SWEHelper.getPropertyUri("EventData"))
+                .addField("samplingTime", tstarHelper.createPrecisionTimeStamp())
                 .addField("id", tstarHelper.createId())
                 .addField("campaign-id", tstarHelper.createCampaignId())
                 .addField("unit-id", tstarHelper.createUnitId())
@@ -60,29 +62,20 @@ public class TSTAREventOutput extends AbstractSensorOutput<TSTARDriver>{
         // set encoding to CSV
         dataEncoding = tstarHelper.newTextEncoding(",", "\n");
     }
-    public void doStart() {
 
-    }
+    public void parse(Event event) {
 
-    public void doStop() {
-
-    }
-
-    public void onNewMessage() {
-
-        DataBlock dataBlock;
-
-        int id = 0;
-        int campaign_id = 0;
-        int unit_id = 0;
-        Boolean alarm = false;
-        String event_type = " ";
-        double latitude = Double.NaN;
-        double longitude = Double.NaN;
-        Object msg_data = new Object();
-        String generated_timestamp = " ";
-        String received_timestamp = " ";
-        Boolean notification_sent = false;
+//        int id = 0;
+//        int campaign_id = 0;
+//        int unit_id = 0;
+//        Boolean alarm = false;
+//        String event_type = " ";
+//        double latitude = Double.NaN;
+//        double longitude = Double.NaN;
+//        Object msg_data = new Object();
+//        String generated_timestamp = " ";
+//        String received_timestamp = " ";
+//        Boolean notification_sent = false;
 
         if (latestRecord == null) {
 
@@ -90,19 +83,22 @@ public class TSTAREventOutput extends AbstractSensorOutput<TSTARDriver>{
 
         } else {
             dataBlock = latestRecord.renew();
+        }
+        latestRecordTime = System.currentTimeMillis() / 1000;
 
 
-                dataBlock.setDoubleValue(0, id);
-                dataBlock.setIntValue(1, campaign_id);
-                dataBlock.setIntValue(2, unit_id);
-                dataBlock.setBooleanValue(3, alarm);
-                dataBlock.setStringValue(4, event_type);
-                dataBlock.setDoubleValue(5, latitude);
-                dataBlock.setDoubleValue(6, longitude);
-                dataBlock.setUnderlyingObject(msg_data);
-                dataBlock.setStringValue(8, generated_timestamp);
-                dataBlock.setStringValue(9, received_timestamp);
-                dataBlock.setBooleanValue(10, notification_sent);
+                dataBlock.setLongValue(0, latestRecordTime);
+                dataBlock.setDoubleValue(1, event.id);
+                dataBlock.setIntValue(2, event.campaign_id);
+                dataBlock.setIntValue(3, event.unit_id);
+                dataBlock.setBooleanValue(4, event.alarm);
+                dataBlock.setStringValue(5, event.event_type);
+                dataBlock.setDoubleValue(6, event.latitude);
+                dataBlock.setDoubleValue(7, event.longitude);
+//                dataBlock.setUnderlyingObject(msg_data);
+                dataBlock.setStringValue(8, event.generated_timestamp);
+                dataBlock.setStringValue(9, event.received_timestamp);
+                dataBlock.setBooleanValue(10, event.notification_sent);
 
 
                 // update latest record and send event
@@ -110,7 +106,7 @@ public class TSTAREventOutput extends AbstractSensorOutput<TSTARDriver>{
                 latestRecordTime = System.currentTimeMillis();
                 eventHandler.publish(new DataEvent(latestRecordTime, TSTAREventOutput.this, dataBlock));
             }
-    }
+
 
     public DataComponent getRecordDescription() {
         return dataStruct;
@@ -123,6 +119,6 @@ public class TSTAREventOutput extends AbstractSensorOutput<TSTARDriver>{
 
     @Override
     public double getAverageSamplingPeriod() {
-        return 5;
+        return 1;
     }
 }

@@ -3,14 +3,16 @@ package org.sensorhub.impl.sensor.tstar;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
+import org.sensorhub.impl.sensor.tstar.responses.Position;
 import org.vast.swe.SWEHelper;
 import java.lang.Boolean;
 
 
 public class TSTARPositionOutput extends AbstractSensorOutput<TSTARDriver> {
     private static final String SENSOR_OUTPUT_NAME = "Position Output";
-    DataRecord dataStruct;
+    protected DataRecord dataStruct;
     DataEncoding dataEncoding;
+    DataBlock dataBlock;
 
     public TSTARPositionOutput(TSTARDriver parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
@@ -36,6 +38,7 @@ public class TSTARPositionOutput extends AbstractSensorOutput<TSTARDriver> {
                 .name(getName())
                 .label(SENSOR_OUTPUT_NAME)
                 .definition(SWEHelper.getPropertyUri("EventData"))
+                .addField("samplingTime", tstarHelper.createPrecisionTimeStamp())
                 .addField("id", tstarHelper.createId())
                 .addField("campaign-id", tstarHelper.createCampaignId())
                 .addField("unit-id", tstarHelper.createUnitId())
@@ -50,29 +53,18 @@ public class TSTARPositionOutput extends AbstractSensorOutput<TSTARDriver> {
         // set encoding to CSV
         dataEncoding = tstarHelper.newTextEncoding(",", "\n");
     }
+    public void parse(Position position) {
 
-    public void doStart() {
-
-    }
-
-    public void doStop() {
-
-    }
-
-    public void onNewMessage() {
-
-        DataBlock dataBlock;
-
-        int id = 0;
-        int campaign_id = 0;
-        int unit_id = 0;
-        double latitude = Double.NaN;
-        double longitude = Double.NaN;
-        int course = 0;
-        int speed = 0;
-        int channel = 0;
-        String generated_timestamp = " ";
-        String received_timestamp = " ";
+//        int id = 0;
+//        int campaign_id = 0;
+//        int unit_id = 0;
+//        double latitude = Double.NaN;
+//        double longitude = Double.NaN;
+//        int course = 0;
+//        int speed = 0;
+//        int channel = 0;
+//        String generated_timestamp = " ";
+//        String received_timestamp = " ";
 
         if (latestRecord == null) {
 
@@ -80,23 +72,25 @@ public class TSTARPositionOutput extends AbstractSensorOutput<TSTARDriver> {
 
         } else {
             dataBlock = latestRecord.renew();
+        }
+        latestRecordTime = System.currentTimeMillis() / 1000;
 
-
-            dataBlock.setDoubleValue(0, id);
-            dataBlock.setIntValue(1, campaign_id);
-            dataBlock.setIntValue(2, unit_id);
-            dataBlock.setDoubleValue(3, latitude);
-            dataBlock.setDoubleValue(4, longitude);
-            dataBlock.setIntValue(5, course);
-            dataBlock.setIntValue(6, speed);
-            dataBlock.setIntValue(7, channel);
-            dataBlock.setStringValue(8, generated_timestamp);
-            dataBlock.setStringValue(9, received_timestamp);
+            dataBlock.setLongValue(0, latestRecordTime);
+            dataBlock.setDoubleValue(1, position.id);
+            dataBlock.setIntValue(2, position.campaign_id);
+            dataBlock.setIntValue(3, position.unit_id);
+            dataBlock.setDoubleValue(4, position.latitude);
+            dataBlock.setDoubleValue(5, position.longitude);
+            dataBlock.setIntValue(6, position.course);
+            dataBlock.setIntValue(7, position.speed);
+//            dataBlock.setStringValue(8, position.channel);
+            dataBlock.setStringValue(9, position.generated_timestamp);
+            dataBlock.setStringValue(10, position.received_timestamp);
 
             // update latest record and send event
             latestRecord = dataBlock;
             eventHandler.publish(new DataEvent(latestRecordTime, TSTARPositionOutput.this, dataBlock));
-        }
+
     }
     public DataComponent getRecordDescription() {
         return dataStruct;
@@ -109,6 +103,6 @@ public class TSTARPositionOutput extends AbstractSensorOutput<TSTARDriver> {
 
     @Override
     public double getAverageSamplingPeriod() {
-        return 5;
+        return 1;
     }
 }

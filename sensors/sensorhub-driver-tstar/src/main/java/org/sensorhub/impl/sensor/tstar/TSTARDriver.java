@@ -2,14 +2,10 @@ package org.sensorhub.impl.sensor.tstar;
 
 import com.google.gson.*;
 import net.opengis.gml.v32.AbstractFeature;
-import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.impl.comm.RobustIPConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import java.net.*;
-import java.io.*;
 
 import java.io.IOException;
 import java.net.URI;
@@ -21,27 +17,26 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Set;
+import org.sensorhub.impl.sensor.tstar.responses.*;
 
 
 public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
 
     static final Logger log = LoggerFactory.getLogger(TSTARDriver.class);
-
     static final String SENSOR_UID_PREFIX = "urn:osh:sensor:tstar:";
 
     //Connections
     public String loginURL;
     public String apiURL;
     public String authToken;
-    ICommProvider<?> commProvider;
-    RobustIPConnection connection;
+    public String campaignId;
+    public String uri;
     public HttpClient httpClient;
-
+    TSTARMessageHandler messageHandler;
 
     //FOIs
     Set<String> foiIDs;
     Map<String, AbstractFeature> vehicleFois;
-
 
     //Outputs
     TSTAREventOutput eventOutput;
@@ -49,56 +44,45 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
     TSTARCampaignOutput campaignOutput;
 
     public TSTARDriver() {
+        httpClient = HttpClient.newHttpClient();
     }
 
-    /* TASKS
-    1. Assume that campaignIds or unitIds will be the way in which you will receive data
-    Based on this how will the driver need to ping these data sources? GET requests will have to be
-    sent every so often to pull data from the requested source. How will this data be parsed and
-    what functions will be necessary in making these calls?
+    public void startConnection() throws Exception {
+    setConfiguration(config);
+//        uri = String.valueOf(new URI("ws://127.0.0.1:10024/monitor"));
+        TSTARClient client = new TSTARClient(authToken, campaignId);
+        client.start();
 
-    Will the connection be via http?
-
-    2. Explore FOI and how they are connected in the AVL driver - it will likely be a similar process
-    for associating the data with a FOI in this driver
-     */
-    private Socket clientSocket;
-    private Socket serverSocket;
-    private PrintWriter out;
-    private BufferedReader in;
-
-    public void startConnection(String ip, int port) throws IOException {
-        clientSocket = new Socket(ip, port);
-        out = new PrintWriter(clientSocket.getOutputStream(), true);
-        in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+        String message = "{\"authToken\": " + authToken + ", \"campaignId\": " + campaignId +"}";
     }
 
     public String getAuthToken() throws URISyntaxException, IOException, InterruptedException {
 
         String body = "{\"email\": \"admin@gearsornl.com\", \"password\": \"imAgearHEADnow\"}";
 
-        httpClient = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(new URI(loginURL))
+                .headers("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
 
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(new URI(loginURL))
-                    .headers("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                    .build();
+        HttpResponse<String> response = HttpClient.newBuilder()
+                .build()
+                .send(request, HttpResponse.BodyHandlers.ofString());
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            String responseBody = response.body();
+        String responseBody = response.body();
 
-            Gson gson = new Gson();
-
+//        Gson gson = new Gson();
 //        Map jsonJavaRootObject = new Gson().fromJson(responseBody, Map.class);
 //        Object payloadObj = jsonJavaRootObject.get("payload");
 
-            JsonElement jElement = new Gson().fromJson(responseBody, JsonElement.class);
-            JsonObject  payload = jElement.getAsJsonObject();
-            payload = payload.getAsJsonObject("payload");
-            authToken = payload.get("token").getAsString();
-            return authToken;
-        }
+        JsonElement jElement = new Gson().fromJson(responseBody, JsonElement.class);
+        JsonObject payload = jElement.getAsJsonObject();
+        payload = payload.getAsJsonObject("payload");
+        config.authToken = payload.get("token").getAsString();
+        authToken = config.authToken;
+        return authToken;
+    }
 
     public void setConfiguration(TSTARConfig config) {
         super.setConfiguration(config);
@@ -112,15 +96,9 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
 //       headers: { "Content-Type": "application/json" },\n
 //        config.http.user = "admin@gearsornl.com";
 //        config.http.password = "imAgearHEADnow";
-
     }
-    public String getLoginURL() {return loginURL;}
-    public String getApiURL() {return apiURL;}
-
-
     @Override
-    public void init() throws SensorHubException {
-        super.init();
+    public void doInit() throws SensorHubException {
 
         // generate IDs
         generateUniqueID("urn:osh:sensor:tstar:", config.serialNumber);
@@ -129,8 +107,6 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
         // create foi maps
 //        this.foiIDs = new LinkedHashSet<String>();
 //        this.vehicleFois = new LinkedHashMap<String, AbstractFeature>();
-
-
 
         eventOutput = new TSTAREventOutput(this);
         addOutput(eventOutput, false);
@@ -141,12 +117,12 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
         positionOutput.init();
 
         campaignOutput = new TSTARCampaignOutput(this);
-        addOutput(campaignOutput, false);
         campaignOutput.init();
+        addOutput(campaignOutput, false);
 
         try {
-            setConfiguration(config);
             getAuthToken();
+            getCampaigns();
         } catch (URISyntaxException e) {
             throw new RuntimeException(e);
         } catch (IOException e) {
@@ -155,7 +131,6 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
             throw new RuntimeException(e);
         }
     }
-
     @Override
     protected void updateSensorDescription()
     {
@@ -165,95 +140,85 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
             sensorDescription.setDescription("TSTAR data");
         }
     }
-
-    public HttpClient getHttpClient() {
-        return httpClient;
-    }
-    public void httpGetRequest(String GETRequest, String token, HttpClient client) throws URISyntaxException,
+    public String getCampaigns() throws URISyntaxException,
             IOException,
             InterruptedException {
-        httpClient = client;
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(new URI(getApiURL()+GETRequest))
-                .headers("Content-Type", "application/json", "Authorization", "Bearer " + token)
+//              .uri(new URI(getApiURL()+GETRequest))
+                .uri(new URI(apiURL + "/campaigns"))
+                .headers("Content-Type", "application/json", "Authorization", "Bearer " + authToken)
                 .GET()
                 .build();
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = HttpClient.newBuilder()
+                .build()
+                .send(request, HttpResponse.BodyHandlers.ofString());
+
         String responseBody = response.body();
         System.out.println(responseBody);
-    }
 
+        JsonElement jElement = new Gson().fromJson(responseBody, JsonElement.class);
+        JsonArray payload = jElement.getAsJsonObject().getAsJsonArray("payload");
+        config.campaignId = payload.get(2).getAsJsonObject().getAsJsonPrimitive("id").getAsString();
+
+        campaignId = config.campaignId;
+        return campaignId;
+    }
     @Override
-    public void start() throws SensorHubException {
-        // init comm provider
-    try {
-        httpGetRequest("/campaigns", authToken, httpClient);
-    } catch (URISyntaxException e) {
-        throw new RuntimeException(e);
-    } catch (IOException e) {
-        throw new RuntimeException(e);
-    } catch (InterruptedException e) {
-        throw new RuntimeException(e);
-    }
-
-    serverSocket = new Socket(;
-}
-
-//        if (commProvider == null) {
-//            try {
-//                if (config.commSettings == null)
-//                    throw new SensorHubException("No communication settings specified");
-//
-//                var moduleReg = getParentHub().getModuleRegistry();
-//                commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
-//                commProvider.start();
-//            } catch (Exception e) {
-//                commProvider = null;
-//                throw new SensorException("Error while initializing communications ", e);
-//            }
+    public void doStart() throws SensorHubException {
+//        try {
+//            startConnection();
+//        } catch (IOException e) {
+//            throw new RuntimeException(e);
+//        } catch (URISyntaxException e) {
+//            throw new RuntimeException(e);
+//        } catch (Exception e) {
+//            throw new RuntimeException(e);
 //        }
-//        if (connection == null) {
-//            try {
-//                if (config.connection == null)
-//                    throw new SensorHubException("No communication settings specified");
-//
-//                var moduleReg = getParentHub().getModuleRegistry();
-//                connection = (connection) <?>) moduleReg.loadSubModule(config.com, true);
-//                connection.start();
-//            } catch (Exception e) {
-//                connection = null;
-//                throw new SensorException("Error while initializing communications ", e);
-//            }
-//        }
-//        TSTAREventOutput.start(commProvider);
 //    }
+        logger.info("Starting Messenger");
+        messageHandler = new TSTARMessageHandler(authToken, campaignId, campaignOutput, eventOutput,
+                positionOutput);
+        logger.info("Messenger Started");
+//            if (started)
+//                return;
+        try{
+            messageHandler.connectWS("ws://127.0.0.1:10024/monitor");
+            logger.info("connected to WS");
+//            messageHandler.sendMsg(messageHandler.openMessage);
+//            logger.info("remote join req sent");
+        } catch (Exception e) {
+            logger.error(e.getMessage(), e);
+        }
 
+    }
     @Override
-    public void stop() throws SensorHubException {
-        // stop comm provider
-//        if (commProvider != null)
-//        {
-//            commProvider.stop();
-//            commProvider = null;
-//        }
+    public void doStop() throws SensorHubException {
+    }
+
+    public String getLoginURL() {return loginURL;}
+    public String getApiURL() {return apiURL;}
+    public HttpClient getHttpClient() {return httpClient;}
+    public String fetchAuthToken() {return authToken;}
+    public String getCampaignId() {return campaignId;}
+
+    public static String toJson(Object object) {
+        Gson gson = new  GsonBuilder().setPrettyPrinting().create();
+        String json = gson.toJson(object);
+        return json;
+    }
+    public void printJson(String json) {
+        JsonParser parser = new JsonParser();
+        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+
+        JsonElement el = parser.parse(json);
+        json = gson.toJson(el); // done
+        System.err.println(json);
     }
 
     @Override
-    public boolean isConnected()
-    {
-        return connection.isConnected();
-    }
-
-
-//    @Override
-//    public void cleanup() throws SensorHubException
-//    {
-//
-//    }
-//
-
+    public boolean isConnected() {return false;}
 
 //    void addFoi(double recordTime, String vehicleID)
 //    {
@@ -289,7 +254,6 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
 //            log.debug("New vehicle added as FOI: {}", uid);
 //        }
 //    }
-//
 //
 //    @Override
 //    public Collection<String> getEntityIDs()

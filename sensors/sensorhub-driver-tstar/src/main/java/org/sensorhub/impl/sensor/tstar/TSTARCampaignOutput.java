@@ -6,14 +6,15 @@ import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
+import org.sensorhub.impl.sensor.tstar.responses.Campaign;
 import org.vast.swe.SWEHelper;
-import java.lang.Boolean;
 
 
 public class TSTARCampaignOutput extends AbstractSensorOutput<TSTARDriver> {
     private static final String SENSOR_OUTPUT_NAME = "Campaign Output";
-    DataRecord dataStruct;
+    protected DataRecord dataStruct;
     DataEncoding dataEncoding;
+    DataBlock dataBlock;
 
     public TSTARCampaignOutput(TSTARDriver parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
@@ -39,7 +40,8 @@ public class TSTARCampaignOutput extends AbstractSensorOutput<TSTARDriver> {
                 .name(getName())
                 .label(SENSOR_OUTPUT_NAME)
                 .definition(SWEHelper.getPropertyUri("CampaignData"))
-                .addField("id", tstarHelper.createId())
+                .addField("samplingTime", tstarHelper.createPrecisionTimeStamp())
+                .addField("campaignId", tstarHelper.createId())
                 .addField("name", tstarHelper.createCampaignName())
                 .addField("unit_id", tstarHelper.createUnitId())
                 .addField("enabled", tstarHelper.createEnabled())
@@ -54,51 +56,43 @@ public class TSTARCampaignOutput extends AbstractSensorOutput<TSTARDriver> {
         dataEncoding = tstarHelper.newTextEncoding(",", "\n");
     }
 
-    public void doStart() {
+    public void parse(Campaign campaign) {
 
-    }
-
-    public void doStop() {
-
-    }
-
-    public void onNewMessage() {
-
-        DataBlock dataBlock;
-
-        int id = 0;
-        String name = " ";
-        int unit_id = 0;
-        boolean enabled = false;
-        boolean armed = false;
-        String vehicle = " ";
-        String cargo = " ";
-        String last_activity = " ";
-        boolean deleted = false;
-
+//        int id = 0;
+//        String name = " ";
+//        int unit_id = 0;
+//        boolean enabled = false;
+//        boolean armed = false;
+//        String vehicle = " ";
+//        String cargo = " ";
+//        String last_activity = " ";
+//        boolean deleted = false;
         if (latestRecord == null) {
 
             dataBlock = dataStruct.createDataBlock();
 
         } else {
             dataBlock = latestRecord.renew();
+        }
 
+        latestRecordTime = System.currentTimeMillis() / 1000;
 
-            dataBlock.setIntValue(0, id);
-            dataBlock.setStringValue(1, name);
-            dataBlock.setIntValue(2, unit_id);
-            dataBlock.setBooleanValue(3, enabled);
-            dataBlock.setBooleanValue(4, armed);
-            dataBlock.setStringValue(5, vehicle);
-            dataBlock.setStringValue(6, cargo);
-            dataBlock.setStringValue(7, last_activity);
-            dataBlock.setBooleanValue(8, deleted);
+            dataBlock.setLongValue(0, latestRecordTime);
+            dataBlock.setIntValue(1, campaign.id);
+            dataBlock.setStringValue(2, campaign.name);
+            dataBlock.setIntValue(3, campaign.unit_id);
+            dataBlock.setBooleanValue(4, campaign.enabled);
+            dataBlock.setBooleanValue(5, campaign.armed);
+            dataBlock.setStringValue(6, campaign.vehicle);
+            dataBlock.setStringValue(7, campaign.cargo);
+            dataBlock.setStringValue(8, campaign.last_activity);
+            dataBlock.setBooleanValue(9, campaign.deleted);
 
             // update latest record and send event
             latestRecord = dataBlock;
             eventHandler.publish(new DataEvent(latestRecordTime, TSTARCampaignOutput.this, dataBlock));
         }
-    }
+
     public DataComponent getRecordDescription() {
         return dataStruct;
     }
@@ -110,6 +104,6 @@ public class TSTARCampaignOutput extends AbstractSensorOutput<TSTARDriver> {
 
     @Override
     public double getAverageSamplingPeriod() {
-        return 5;
+        return 1;
     }
 }
