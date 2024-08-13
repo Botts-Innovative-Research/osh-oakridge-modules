@@ -68,26 +68,6 @@ public class MonitorRegisters {
             modbusTCPTransaction.execute();
 
             ReadMultipleRegistersResponse response = (ReadMultipleRegistersResponse) modbusTCPTransaction.getResponse();
-            Register[] registers = response.getRegisters();
-
-//            System.out.println("Register Values:\n");
-//            for(int i =0; i< registers.length; i++){
-//                System.out.println(registers[i].getValue());
-//            }
-//            timeElapsed = convertRegistersToInteger(registers[0], registers[1]);
-//            inputSignals= registers[2].getValue();
-//            gammaChannelStatus = registers[3].getValue();
-//            gammaChannelCount = convertRegistersToInteger(registers[4], registers[5]);
-//            gammaChannelBackground = convertRegistersToFloat(registers[6], registers[7]);
-//            gammaChannelVariance = convertRegistersToFloat(registers[8], registers[9]);
-//            neutronChannelStatus = registers[10].getValue();
-//            neutronChannelCount = convertRegistersToInteger(registers[11], registers[12]);
-//            neutronChannelBackground = convertRegistersToFloat(registers[13], registers[14]);
-//            neutronChannelVariance = convertRegistersToFloat(registers[15], registers[16]);
-//            objectCount = registers[17].getValue();
-//            objectMark = registers[18].getValue();
-//            objectSpeed = registers[19].getValue();
-//            outputSignals = registers[20].getValue();
 
         timeElapsed = convertRegistersToInteger(response.getRegisterValue(0), response.getRegisterValue(1));
         inputSignals = response.getRegisterValue(2);

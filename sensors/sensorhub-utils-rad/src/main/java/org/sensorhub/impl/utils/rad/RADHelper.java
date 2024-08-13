@@ -62,6 +62,14 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public Text createMonitorRegister(){
+        return createText()
+                .name("monitorRegistersMsg")
+                .label("Aspect Monitor Register Message")
+                .definition(getRadUri("monitor-register"))
+                .build();
+    }
+
     public Time createBackgroundTime() {
         return createTime()
                 .name("backgroundTime")
@@ -646,6 +654,13 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public Text createCsvLine(){
+        return createText()
+                .name("csvLine")
+                .label("CSV Line")
+                .definition(getRadInstrumentUri("csv-line"))
+                .build();
+    }
     public Text createRIComponentVersion() {
         return createText()
                 .name("radInstrumentComponentVersion")

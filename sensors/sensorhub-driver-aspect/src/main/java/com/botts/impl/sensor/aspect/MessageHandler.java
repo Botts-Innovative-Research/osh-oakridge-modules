@@ -1,9 +1,6 @@
 package com.botts.impl.sensor.aspect;
 
-import com.botts.impl.sensor.aspect.output.GammaOutput;
-import com.botts.impl.sensor.aspect.output.NeutronOutput;
-import com.botts.impl.sensor.aspect.output.OccupancyOutput;
-import com.botts.impl.sensor.aspect.output.SpeedOutput;
+import com.botts.impl.sensor.aspect.output.*;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
 import com.ghgande.j2mod.modbus.net.TCPMasterConnection;
@@ -28,6 +25,7 @@ public class MessageHandler implements Runnable {
     private final NeutronOutput neutronOutput;
     private final OccupancyOutput occupancyOutput;
     private final SpeedOutput speedOutput;
+    private final DailyFileOutput dailyFileOutput;
     Thread thread;
 
     int occupancyCount = -1;
@@ -36,12 +34,13 @@ public class MessageHandler implements Runnable {
     boolean gammaAlarm = false;
     boolean neutronAlarm = false;
 
-    public MessageHandler(TCPMasterConnection tcpMasterConnection, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, SpeedOutput speedOutput) {
+    public MessageHandler(TCPMasterConnection tcpMasterConnection, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, SpeedOutput speedOutput, DailyFileOutput dailyFileOutput) {
         this.tcpMasterConnection = tcpMasterConnection;
         this.gammaOutput = gammaOutput;
         this.neutronOutput = neutronOutput;
         this.occupancyOutput = occupancyOutput;
         this.speedOutput = speedOutput;
+        this.dailyFileOutput = dailyFileOutput;
 
         thread = new Thread(this, "Message Handler");
     }
@@ -65,6 +64,8 @@ public class MessageHandler implements Runnable {
                 monitorRegisters.readRegisters(1);
 
                 double timestamp = System.currentTimeMillis() / 1000d;
+                dailyFileOutput.getDailyFile(monitorRegisters);
+                dailyFileOutput.onNewMessage();
 
                 gammaOutput.setData(monitorRegisters, timestamp);
 

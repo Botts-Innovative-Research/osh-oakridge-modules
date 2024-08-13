@@ -2,12 +2,11 @@ package com.botts.impl.sensor.rapiscan;
 
 
 import com.opencsv.CSVReader;
-import com.opencsv.CSVWriter;
 
-import java.io.*;
-import java.text.SimpleDateFormat;
-import java.time.Instant;
-import java.util.Date;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.StringReader;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -37,8 +36,8 @@ public class MessageHandler {
 
     LinkedList<String[]> gammaScanRunningSumBatch;
 
-    FileWriter fw;
-    CSVWriter writer;
+//    FileWriter fw;
+//    CSVWriter writer;
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
 
     public MessageHandler(InputStream msgIn, RapiscanSensor parentSensor)
@@ -47,24 +46,24 @@ public class MessageHandler {
 
         gammaScanRunningSumBatch = new LinkedList<>();
 
-        File dailyFileDirectory = new File("./dailyfiles");
-        if(!dailyFileDirectory.exists()) {
-            dailyFileDirectory.mkdirs();
-        }
+//        File dailyFileDirectory = new File("./dailyfiles");
+//        if(!dailyFileDirectory.exists()) {
+//            dailyFileDirectory.mkdirs();
+//        }
 
         // Setup boolean
         Thread messageReader = new Thread(() -> {
             boolean continueProcessing = true;
 
-            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd");
-            String dateStamp = dateFormat.format(new Date());
-            String fileName = "./dailyfiles/dailyfile_" + dateStamp + "_" + System.currentTimeMillis() + ".csv";
+//            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd");
+//            String dateStamp = dateFormat.format(new Date());
+//            String fileName = "./dailyfiles/dailyfile_" + dateStamp + "_" + System.currentTimeMillis() + ".csv";
 
-            File dailyFile = new File(fileName);
+//            File dailyFile = new File(fileName);
 
             try {
-                fw = new FileWriter(dailyFile);
-                writer = new CSVWriter(fw);
+//                fw = new FileWriter(dailyFile);
+//                writer = new CSVWriter(fw);
 
                 while (continueProcessing) {
                     BufferedReader bufferedReader;
@@ -75,7 +74,9 @@ public class MessageHandler {
                         reader = new CSVReader(new StringReader(msgLine));
                         csvList = reader.readAll();
 
-                        writer.writeNext(new String[]{msgLine, Instant.now().toString()});
+//                        writer.writeNext(new String[]{msgLine, Instant.now().toString()});
+
+                        parentSensor.getDailyFileOutput().onNewMessage(msgLine);
 
                         onNewMainChar(csvList.get(0)[0], csvList.get(0));
 
@@ -99,11 +100,11 @@ public class MessageHandler {
         synchronized (isProcessing) {
             isProcessing.set(false);
         }
-        try {
-            writer.close();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+//        try {
+//            writer.close();
+//        } catch (IOException e) {
+//            throw new RuntimeException(e);
+//        }
     }
 
     public int[] getGammaForegroundCountsPerSecond() {

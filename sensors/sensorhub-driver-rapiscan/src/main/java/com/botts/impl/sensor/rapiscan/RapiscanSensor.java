@@ -58,6 +58,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     private SetupGammaOutput setupGammaOutput;
     private SetupNeutronOutput setupNeutronOutput;
     private GammaThresholdOutput gammaThresholdOutput;
+    private DailyFileOutput dailyFileOutput;
 
     private EMLAnalysisOutput emlAnalysisOutput;
     private EMLScanContextualOutput emlScanContextualOutput;
@@ -137,6 +138,10 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         gammaThresholdOutput = new GammaThresholdOutput(this);
         addOutput(gammaThresholdOutput, false);
         gammaThresholdOutput.init();
+
+        dailyFileOutput = new DailyFileOutput(this);
+        addOutput(dailyFileOutput, false);
+        dailyFileOutput.init();
     }
 
     @Override
@@ -248,4 +253,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         return emlContextualOutput;
     }
 
+    public DailyFileOutput getDailyFileOutput() {
+        return dailyFileOutput;
+    }
 }

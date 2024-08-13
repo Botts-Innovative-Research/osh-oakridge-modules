@@ -37,6 +37,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     OccupancyOutput occupancyOutput;
     SpeedOutput speedOutput;
     SensorLocationOutput sensorLocationOutput;
+    DailyFileOutput dailyFileOutput;
     public int laneID;
 //    String laneName;
 
@@ -71,6 +72,10 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         sensorLocationOutput = new SensorLocationOutput(this);
         addOutput(sensorLocationOutput, false);
         sensorLocationOutput.init();
+
+        dailyFileOutput = new DailyFileOutput(this);
+        addOutput(dailyFileOutput, false);
+        dailyFileOutput.init();
     }
 
     @Override
@@ -102,7 +107,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         }
 
         // Start message handler
-        messageHandler = new MessageHandler(commProvider.getConnection(), gammaOutput, neutronOutput, occupancyOutput, speedOutput);
+        messageHandler = new MessageHandler(commProvider.getConnection(), gammaOutput, neutronOutput, occupancyOutput, speedOutput, dailyFileOutput);
         messageHandler.start();
     }
 
