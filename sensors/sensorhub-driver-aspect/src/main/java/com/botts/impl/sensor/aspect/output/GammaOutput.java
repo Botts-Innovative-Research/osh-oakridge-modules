@@ -35,7 +35,7 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
         var gammaCount = radHelper.createGammaGrossCount();
         var gammaBackground = radHelper.createGammaBackground();
         var gammaVariance = radHelper.createGammaVariance();
-        var gammaVarianceBackground = radHelper.createGammaVarianceBackground();
+//        var gammaVarianceBackground = radHelper.createGammaVarianceBackground();
         var gammaAlarmState = radHelper.createGammaAlarmState();
 
         dataRecord = radHelper.createRecord()
@@ -46,7 +46,7 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
                 .addField(gammaCount.getName(), gammaCount)
                 .addField(gammaBackground.getName(), gammaBackground)
                 .addField(gammaVariance.getName(), gammaVariance)
-                .addField(gammaVarianceBackground.getName(), gammaVarianceBackground)
+//                .addField(gammaVarianceBackground.getName(), gammaVarianceBackground)
                 .addField(gammaAlarmState.getName(), gammaAlarmState)
                 .build();
 
@@ -76,8 +76,8 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
         dataBlock.setIntValue(1, monitorRegisters.getGammaChannelCount());
         dataBlock.setDoubleValue(2, monitorRegisters.getGammaChannelBackground());
         dataBlock.setDoubleValue(3, monitorRegisters.getGammaChannelVariance());
-        dataBlock.setDoubleValue(4, monitorRegisters.getGammaVarianceBackground());
-        dataBlock.setStringValue(5, monitorRegisters.getGammaAlarmState());
+//        dataBlock.setDoubleValue(4, monitorRegisters.getGammaVarianceBackground());
+        dataBlock.setStringValue(4, monitorRegisters.getGammaAlarmState());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

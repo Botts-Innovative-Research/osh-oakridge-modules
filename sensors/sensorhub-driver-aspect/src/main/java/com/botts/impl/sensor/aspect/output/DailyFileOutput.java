@@ -14,6 +14,7 @@ import org.vast.data.TextEncodingImpl;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
 
@@ -22,7 +23,9 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
-    ArrayList<String> dailyfile;
+
+    List<String> dailyfile = new ArrayList<>();
+    StringBuilder dailyFileString = new StringBuilder();
 
     public DailyFileOutput(AspectSensor parentSensor){
         super(SENSOR_OUTPUT_NAME, parentSensor);
@@ -40,7 +43,6 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
                 .updatable(true)
                 .definition(RADHelper.getRadUri("gamma-count"))
                 .addField(samplingTime.getName(), samplingTime)
-                .addField("Monitor Registers", radHelper.createText())
                 .addField(monitorRegisters.getName(), monitorRegisters)
                 .build();
 
@@ -48,19 +50,18 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
     }
 
     public void getDailyFile(MonitorRegisters monitorRegisters){
-        dailyfile = new ArrayList<>();
+        dailyfile.clear();
 
+        dailyfile.add(String.valueOf(monitorRegisters.getTimeElapsed()));
         dailyfile.add(String.valueOf(monitorRegisters.getInputSignals()));
         dailyfile.add(String.valueOf(monitorRegisters.getGammaChannelStatus()));
         dailyfile.add(String.valueOf(monitorRegisters.getGammaChannelCount()));
         dailyfile.add(String.valueOf(monitorRegisters.getGammaChannelBackground()));
         dailyfile.add(String.valueOf(monitorRegisters.getGammaChannelVariance()));
-        dailyfile.add(String.valueOf(monitorRegisters.getGammaVarianceBackground()));
         dailyfile.add(String.valueOf(monitorRegisters.getNeutronChannelStatus()));
         dailyfile.add(String.valueOf(monitorRegisters.getNeutronChannelCount()));
         dailyfile.add(String.valueOf(monitorRegisters.getNeutronChannelBackground()));
         dailyfile.add(String.valueOf(monitorRegisters.getNeutronChannelVariance()));
-        dailyfile.add(String.valueOf(monitorRegisters.getNeutronVarianceBackground()));
         dailyfile.add(String.valueOf(monitorRegisters.getObjectCounter()));
         dailyfile.add(String.valueOf(monitorRegisters.getObjectMark()));
         dailyfile.add(String.valueOf(monitorRegisters.getObjectSpeed()));
@@ -74,31 +75,21 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
         } else {
             dataBlock = latestRecord.renew();
         }
-        long timeStamp = System.currentTimeMillis();
+        long timeStamp = System.currentTimeMillis()/1000;
 
-        String[] msgNames = new String[]{
-                "inputSignals",
-                "gammaChannelStatus",
-                "gammaChannelCount",
-                "gammaChannelBackground",
-                "gammaChannelVariance",
-                "gammaChannelVariance/Background",
-                "neutronChannelStatus",
-                "neutronChannelCount",
-                "neutronChannelBackground",
-                "neutronChannelVariance",
-                "neutronChannelVariance/Background",
-                "objectNumber",
-                "WheelsNumber",
-                "Velocity",
-                "Output Signals"
-        };
+        for(int i=0; i<dailyfile.size(); i++){
+
+            dailyFileString.append(dailyfile.get(i));
+            if(i< dailyfile.size()-1){
+                dailyFileString.append(",");
+            }
+        }
         dataBlock.setLongValue(0, timeStamp);
-        dataBlock.setStringValue(1, Arrays.toString(msgNames));
-        dataBlock.setStringValue(2, String.valueOf(dailyfile));
+        dataBlock.setStringValue(1, String.valueOf(dailyFileString));
+
 
         eventHandler.publish(new DataEvent(timeStamp, DailyFileOutput.this, dataBlock));
-        dailyfile.clear();
+        dailyFileString.setLength(0);
     }
 
     @Override

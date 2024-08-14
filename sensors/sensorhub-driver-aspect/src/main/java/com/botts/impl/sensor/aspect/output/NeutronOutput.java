@@ -35,7 +35,7 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
         var neutronCount = radHelper.createNeutronGrossCount();
         var neutronBackground = radHelper.createNeutronBackground();
         var neutronVariance = radHelper.createNeutronVariance();
-        var neutronVarianceBackground = radHelper.createNeutronVarianceBackground();
+//        var neutronVarianceBackground = radHelper.createNeutronVarianceBackground();
         var neutronAlarm = radHelper.createNeutronAlarmState();
 
         dataRecord = radHelper.createRecord()
@@ -46,7 +46,7 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
                 .addField(neutronCount.getName(), neutronCount)
                 .addField(neutronBackground.getName(), neutronBackground)
                 .addField(neutronVariance.getName(), neutronVariance)
-                .addField(neutronVarianceBackground.getName(), neutronVarianceBackground)
+//                .addField(neutronVarianceBackground.getName(), neutronVarianceBackground)
                 .addField(neutronAlarm.getName(), neutronAlarm)
                 .build();
 
@@ -76,8 +76,8 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
         dataBlock.setIntValue(1, monitorRegisters.getNeutronChannelCount());
         dataBlock.setFloatValue(2, monitorRegisters.getNeutronChannelBackground());
         dataBlock.setFloatValue(3, monitorRegisters.getNeutronChannelVariance());
-        dataBlock.setDoubleValue(4, monitorRegisters.getNeutronVarianceBackground());
-        dataBlock.setStringValue(5, monitorRegisters.getNeutronAlarmState());
+//        dataBlock.setDoubleValue(4, monitorRegisters.getNeutronVarianceBackground());
+        dataBlock.setStringValue(4, monitorRegisters.getNeutronAlarmState());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

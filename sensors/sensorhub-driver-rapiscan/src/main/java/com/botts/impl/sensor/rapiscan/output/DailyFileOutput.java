@@ -53,7 +53,7 @@ public class DailyFileOutput extends AbstractSensorOutput<RapiscanSensor> {
         } else {
             dataBlock = latestRecord.renew();
         }
-        long timeStamp = System.currentTimeMillis();
+        long timeStamp = System.currentTimeMillis()/1000;
 
         dataBlock.setLongValue(0, timeStamp);
         dataBlock.setStringValue(1, csvString);

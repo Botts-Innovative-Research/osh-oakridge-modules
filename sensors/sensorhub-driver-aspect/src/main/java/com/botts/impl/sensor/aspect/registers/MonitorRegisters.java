@@ -109,12 +109,12 @@ public class MonitorRegisters {
                 ", gammaChannelCount=" + getGammaChannelCount() +
                 ", gammaChannelBackground=" + getGammaChannelBackground() +
                 ", gammaChannelVariance=" + getGammaChannelVariance() +
-                ", gammaChannelVariance/Background=" + getGammaVarianceBackground() +
+//                ", gammaChannelVariance/Background=" + getGammaVarianceBackground() +
                 ", neutronChannelStatus=" + getNeutronChannelStatus() +
                 ", neutronChannelCount=" + getNeutronChannelCount() +
                 ", neutronChannelBackground=" + getNeutronChannelBackground() +
                 ", neutronChannelVariance=" + getNeutronChannelVariance() +
-                ", neutronChannelVariance/Background=" + getNeutronVarianceBackground() +
+//                ", neutronChannelVariance/Background=" + getNeutronVarianceBackground() +
                 ", objectNumber=" + getObjectCounter() +
                 ", wheelsNumber=" + getObjectMark() +
                 ", velocity=" + getObjectSpeed() +
