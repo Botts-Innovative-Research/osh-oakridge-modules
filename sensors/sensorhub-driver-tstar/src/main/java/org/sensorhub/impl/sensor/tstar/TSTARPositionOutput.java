@@ -3,9 +3,11 @@ package org.sensorhub.impl.sensor.tstar;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
-import org.sensorhub.impl.sensor.tstar.responses.Position;
+import org.sensorhub.impl.sensor.tstar.responses.PositionLog;
 import org.vast.swe.SWEHelper;
 import java.lang.Boolean;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 
 public class TSTARPositionOutput extends AbstractSensorOutput<TSTARDriver> {
@@ -13,23 +15,13 @@ public class TSTARPositionOutput extends AbstractSensorOutput<TSTARDriver> {
     protected DataRecord dataStruct;
     DataEncoding dataEncoding;
     DataBlock dataBlock;
+    Long positionGeneratedTimestamp;
+    Long positionReceivedTimestamp;
 
     public TSTARPositionOutput(TSTARDriver parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
-//    Position {
-//        id integer($int64)
-//        campaign_id integer($int64)
-//        unit_id integer($int64)
-//        latitude number($double)
-//        longitude number($double)
-//        course integer($int64)
-//        speed integer($int64)
-//        channel integer($int64)
-//        generated_timestamp string($date-time)
-//        received_timestamp string($date-time)
-//    }
     protected void init() {
         TSTARHelper tstarHelper = new TSTARHelper();
 
@@ -37,34 +29,23 @@ public class TSTARPositionOutput extends AbstractSensorOutput<TSTARDriver> {
         dataStruct = tstarHelper.createRecord()
                 .name(getName())
                 .label(SENSOR_OUTPUT_NAME)
-                .definition(SWEHelper.getPropertyUri("EventData"))
-                .addField("samplingTime", tstarHelper.createPrecisionTimeStamp())
-                .addField("id", tstarHelper.createId())
-                .addField("campaign-id", tstarHelper.createCampaignId())
+                .definition(SWEHelper.getPropertyUri("PositionData"))
+                .addField("id", tstarHelper.createPositionLogId())
                 .addField("unit-id", tstarHelper.createUnitId())
-                .addField("location", tstarHelper.createLocationVectorLLA())
+                .addField("location", tstarHelper.createLocationVectorLatLon())
+                .addField("position", tstarHelper.createPosition())
                 .addField("course", tstarHelper.createCourse())
                 .addField("speed", tstarHelper.createSpeed())
-                .addField("channel", tstarHelper.createChannel())
                 .addField("generated_timestamp", tstarHelper.createGeneratedTimestamp())
                 .addField("received_timestamp", tstarHelper.createReceivedTimestamp())
+                .addField("campaign-id", tstarHelper.createCampaignId())
+                .addField("channel", tstarHelper.createChannel())
                 .build();
 
         // set encoding to CSV
         dataEncoding = tstarHelper.newTextEncoding(",", "\n");
     }
-    public void parse(Position position) {
-
-//        int id = 0;
-//        int campaign_id = 0;
-//        int unit_id = 0;
-//        double latitude = Double.NaN;
-//        double longitude = Double.NaN;
-//        int course = 0;
-//        int speed = 0;
-//        int channel = 0;
-//        String generated_timestamp = " ";
-//        String received_timestamp = " ";
+    public void parse(PositionLog position) {
 
         if (latestRecord == null) {
 
@@ -74,23 +55,33 @@ public class TSTARPositionOutput extends AbstractSensorOutput<TSTARDriver> {
             dataBlock = latestRecord.renew();
         }
         latestRecordTime = System.currentTimeMillis() / 1000;
+        setPositionTimes(position);
 
-            dataBlock.setLongValue(0, latestRecordTime);
-            dataBlock.setDoubleValue(1, position.id);
-            dataBlock.setIntValue(2, position.campaign_id);
-            dataBlock.setIntValue(3, position.unit_id);
-            dataBlock.setDoubleValue(4, position.latitude);
-            dataBlock.setDoubleValue(5, position.longitude);
-            dataBlock.setIntValue(6, position.course);
-            dataBlock.setIntValue(7, position.speed);
-//            dataBlock.setStringValue(8, position.channel);
-            dataBlock.setStringValue(9, position.generated_timestamp);
-            dataBlock.setStringValue(10, position.received_timestamp);
+            dataBlock.setIntValue(0, position.id);
+            dataBlock.setIntValue(1, position.unit_id);
+            dataBlock.setDoubleValue(2, position.latitude);
+            dataBlock.setDoubleValue(3, position.longitude);
+            dataBlock.setStringValue(4, position.position);
+            dataBlock.setIntValue(5, position.course);
+            dataBlock.setIntValue(6, position.speed);
+            dataBlock.setLongValue(7, positionGeneratedTimestamp);
+            dataBlock.setLongValue(8, positionReceivedTimestamp);
+            dataBlock.setStringValue(9, position.channel);
 
             // update latest record and send event
             latestRecord = dataBlock;
             eventHandler.publish(new DataEvent(latestRecordTime, TSTARPositionOutput.this, dataBlock));
 
+    }
+    public void setPositionTimes(PositionLog position){
+        // parse UTC  to epoch time for 'generated_timestamp' and 'received_timestamp'
+        SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+
+        Date generatedTimestamp = position.generated_timestamp;
+        positionGeneratedTimestamp = generatedTimestamp.getTime()/ 1000;
+
+        Date receivedTimestamp = position.received_timestamp;
+        positionReceivedTimestamp = receivedTimestamp.getTime() / 1000;
     }
     public DataComponent getRecordDescription() {
         return dataStruct;

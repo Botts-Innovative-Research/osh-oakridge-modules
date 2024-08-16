@@ -17,8 +17,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Set;
-import org.sensorhub.impl.sensor.tstar.responses.*;
-
 
 public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
 
@@ -30,7 +28,6 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
     public String apiURL;
     public String authToken;
     public String campaignId;
-    public String uri;
     public HttpClient httpClient;
     TSTARMessageHandler messageHandler;
 
@@ -39,22 +36,26 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
     Map<String, AbstractFeature> vehicleFois;
 
     //Outputs
-    TSTAREventOutput eventOutput;
-    TSTARPositionOutput positionOutput;
+    TSTARAuditLogOutput auditLogOutput;
     TSTARCampaignOutput campaignOutput;
+    TSTAREventOutput eventOutput;
+    TSTARMessageLogOutput messageLogOutput;
+    TSTARPositionOutput positionOutput;
+    //    TSTARUnitOutput unitOutput;
+    TSTARUnitLogOutput unitLogOutput;
+
 
     public TSTARDriver() {
         httpClient = HttpClient.newHttpClient();
     }
 
-    public void startConnection() throws Exception {
-    setConfiguration(config);
-//        uri = String.valueOf(new URI("ws://127.0.0.1:10024/monitor"));
-        TSTARClient client = new TSTARClient(authToken, campaignId);
-        client.start();
-
-        String message = "{\"authToken\": " + authToken + ", \"campaignId\": " + campaignId +"}";
-    }
+//    public void startConnection() throws Exception {
+//    setConfiguration(config);
+//        TSTARClient client = new TSTARClient(authToken, campaignId);
+//        client.start();
+//
+//        String message = "{\"authToken\": " + authToken + ", \"campaignId\": " + campaignId +"}";
+//    }
 
     public String getAuthToken() throws URISyntaxException, IOException, InterruptedException {
 
@@ -83,6 +84,30 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
         authToken = config.authToken;
         return authToken;
     }
+    public String getCampaigns() throws URISyntaxException,
+            IOException,
+            InterruptedException {
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(new URI(apiURL + "/campaigns"))
+                .headers("Content-Type", "application/json", "Authorization", "Bearer " + authToken)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = HttpClient.newBuilder()
+                .build()
+                .send(request, HttpResponse.BodyHandlers.ofString());
+
+        String responseBody = response.body();
+        System.out.println(responseBody);
+
+        JsonElement jElement = new Gson().fromJson(responseBody, JsonElement.class);
+        JsonArray payload = jElement.getAsJsonObject().getAsJsonArray("payload");
+        config.campaignId = payload.get(0).getAsJsonObject().getAsJsonPrimitive("id").getAsString();
+
+        campaignId = config.campaignId;
+        return campaignId;
+    }
 
     public void setConfiguration(TSTARConfig config) {
         super.setConfiguration(config);
@@ -108,17 +133,34 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
 //        this.foiIDs = new LinkedHashSet<String>();
 //        this.vehicleFois = new LinkedHashMap<String, AbstractFeature>();
 
+        auditLogOutput = new TSTARAuditLogOutput(this);
+        addOutput(auditLogOutput, false);
+        auditLogOutput.init();
+
+        campaignOutput = new TSTARCampaignOutput(this);
+        addOutput(campaignOutput, false);
+        campaignOutput.init();
+
         eventOutput = new TSTAREventOutput(this);
         addOutput(eventOutput, false);
         eventOutput.init();
+
+        messageLogOutput = new TSTARMessageLogOutput(this);
+        addOutput(messageLogOutput, false);
+        messageLogOutput.init();
 
         positionOutput = new TSTARPositionOutput(this);
         addOutput(positionOutput, false);
         positionOutput.init();
 
-        campaignOutput = new TSTARCampaignOutput(this);
-        campaignOutput.init();
-        addOutput(campaignOutput, false);
+//        unitOutput = new TSTARUnitOutput(this);
+//        addOutput(unitOutput, false);
+//        unitOutput.init();
+
+        unitLogOutput = new TSTARUnitLogOutput(this);
+        addOutput(unitLogOutput, false);
+        unitLogOutput.init();
+
 
         try {
             getAuthToken();
@@ -140,82 +182,23 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
             sensorDescription.setDescription("TSTAR data");
         }
     }
-    public String getCampaigns() throws URISyntaxException,
-            IOException,
-            InterruptedException {
-
-        HttpRequest request = HttpRequest.newBuilder()
-//              .uri(new URI(getApiURL()+GETRequest))
-                .uri(new URI(apiURL + "/campaigns"))
-                .headers("Content-Type", "application/json", "Authorization", "Bearer " + authToken)
-                .GET()
-                .build();
-
-        HttpResponse<String> response = HttpClient.newBuilder()
-                .build()
-                .send(request, HttpResponse.BodyHandlers.ofString());
-
-        String responseBody = response.body();
-        System.out.println(responseBody);
-
-        JsonElement jElement = new Gson().fromJson(responseBody, JsonElement.class);
-        JsonArray payload = jElement.getAsJsonObject().getAsJsonArray("payload");
-        config.campaignId = payload.get(2).getAsJsonObject().getAsJsonPrimitive("id").getAsString();
-
-        campaignId = config.campaignId;
-        return campaignId;
-    }
     @Override
     public void doStart() throws SensorHubException {
-//        try {
-//            startConnection();
-//        } catch (IOException e) {
-//            throw new RuntimeException(e);
-//        } catch (URISyntaxException e) {
-//            throw new RuntimeException(e);
-//        } catch (Exception e) {
-//            throw new RuntimeException(e);
-//        }
-//    }
+
         logger.info("Starting Messenger");
-        messageHandler = new TSTARMessageHandler(authToken, campaignId, campaignOutput, eventOutput,
-                positionOutput);
+        messageHandler = new TSTARMessageHandler(authToken, campaignId, auditLogOutput, campaignOutput, eventOutput,
+                messageLogOutput, positionOutput, unitLogOutput);
         logger.info("Messenger Started");
-//            if (started)
-//                return;
+
         try{
             messageHandler.connectWS("ws://127.0.0.1:10024/monitor");
             logger.info("connected to WS");
-//            messageHandler.sendMsg(messageHandler.openMessage);
-//            logger.info("remote join req sent");
         } catch (Exception e) {
             logger.error(e.getMessage(), e);
         }
-
     }
     @Override
-    public void doStop() throws SensorHubException {
-    }
-
-    public String getLoginURL() {return loginURL;}
-    public String getApiURL() {return apiURL;}
-    public HttpClient getHttpClient() {return httpClient;}
-    public String fetchAuthToken() {return authToken;}
-    public String getCampaignId() {return campaignId;}
-
-    public static String toJson(Object object) {
-        Gson gson = new  GsonBuilder().setPrettyPrinting().create();
-        String json = gson.toJson(object);
-        return json;
-    }
-    public void printJson(String json) {
-        JsonParser parser = new JsonParser();
-        Gson gson = new GsonBuilder().setPrettyPrinting().create();
-
-        JsonElement el = parser.parse(json);
-        json = gson.toJson(el); // done
-        System.err.println(json);
-    }
+    public void doStop() throws SensorHubException {}
 
     @Override
     public boolean isConnected() {return false;}

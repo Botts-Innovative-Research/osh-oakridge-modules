@@ -1,13 +1,8 @@
 package org.sensorhub.impl.sensor.tstar;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
+import com.google.gson.*;
 import org.eclipse.jetty.websocket.client.WebSocketClient;
-import org.sensorhub.impl.sensor.tstar.responses.Campaign;
-import org.sensorhub.impl.sensor.tstar.responses.Event;
-import org.sensorhub.impl.sensor.tstar.responses.Position;
+import org.sensorhub.impl.sensor.tstar.responses.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,20 +10,32 @@ import java.io.IOException;
 import java.net.URI;
 
 public class TSTARMessageHandler {
+    TSTARAuditLogOutput auditLogOutput;
     TSTARCampaignOutput campaignOutput;
     TSTAREventOutput eventOutput;
+    TSTARMessageLogOutput messageLogOutput;
     TSTARPositionOutput positionOutput;
+//    TSTARUnitOutput unitOutput;
+    TSTARUnitLogOutput unitLogOutput;
     String openMessage;
     static final Logger log = LoggerFactory.getLogger(TSTARMessageHandler.class);
 
 
-    public TSTARMessageHandler(String authToken, String campaignId, TSTARCampaignOutput campaignOutput,
-                               TSTAREventOutput eventOutput, TSTARPositionOutput positionOutput) {
+    public TSTARMessageHandler(String authToken, String campaignId,
+                               TSTARAuditLogOutput auditLogOutput, TSTARCampaignOutput campaignOutput,
+                               TSTAREventOutput eventOutput,
+                               TSTARMessageLogOutput messageLogOutput, TSTARPositionOutput positionOutput,
+                               TSTARUnitLogOutput unitLogOutput) {
+        this.auditLogOutput = auditLogOutput;
         this.campaignOutput = campaignOutput;
         this.eventOutput = eventOutput;
+        this.messageLogOutput = messageLogOutput;
         this.positionOutput = positionOutput;
+//        this.unitOutput = unitOutput;
+        this.unitLogOutput = unitLogOutput;
         this.openMessage = "{\"authToken\": \"" + authToken + "\", \"campaignId\": \"" + campaignId + "\"}";
     }
+
     WebSocketClient client = new WebSocketClient();
     TSTARWebSocketClient socket = new TSTARWebSocketClient(this);
 
@@ -59,7 +66,8 @@ public class TSTARMessageHandler {
 
             switch (type) {
                 case "UNIT": {
-//                    Unit unit = mapper.readValue(msg, Unit.class);
+//                    Unit unit = new Gson().fromJson(dataStr, Unit.class);
+//                    unitOutput.parse(unit);
                     break;
                 }
                 case "CAMPAIGN": {
@@ -67,27 +75,30 @@ public class TSTARMessageHandler {
                     campaignOutput.parse(campaign);
                     break;
                 }
-                case "EVENT" : {
+                case "EVENT": {
                     Event event = new Gson().fromJson(dataStr, Event.class);
                     eventOutput.parse(event);
                     break;
-
                 }
-                case "UNIT_LOG" : {
+                case "UNIT_LOG": {
+                    UnitLog unitLog = new Gson().fromJson(dataStr, UnitLog.class);
+                    unitLogOutput.parse(unitLog);
                     break;
                 }
                 case "POSITION_LOG": {
-                    Position position = new Gson().fromJson(dataStr, Position.class);
+                    PositionLog position = new Gson().fromJson(dataStr, PositionLog.class);
                     positionOutput.parse(position);
                     break;
                 }
                 case "MESSAGE_LOG": {
+                    MessageLog messageLog = new Gson().fromJson(dataStr, MessageLog.class);
+                    messageLogOutput.parse(messageLog);
                     break;
-
                 }
                 case "AUDIT_LOG": {
+                    AuditLog auditLog = new Gson().fromJson(dataStr, AuditLog.class);
+                    auditLogOutput.parse(auditLog);
                     break;
-
                 }
             }
         }

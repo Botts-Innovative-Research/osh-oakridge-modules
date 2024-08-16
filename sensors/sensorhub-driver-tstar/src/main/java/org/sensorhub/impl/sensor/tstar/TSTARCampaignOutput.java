@@ -9,28 +9,20 @@ import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.sensor.tstar.responses.Campaign;
 import org.vast.swe.SWEHelper;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
 
 public class TSTARCampaignOutput extends AbstractSensorOutput<TSTARDriver> {
     private static final String SENSOR_OUTPUT_NAME = "Campaign Output";
     protected DataRecord dataStruct;
     DataEncoding dataEncoding;
     DataBlock dataBlock;
+    Long campaignLastActivity;
 
     public TSTARCampaignOutput(TSTARDriver parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
-
-//    Campaign {
-//        id integer($int64)
-//        name string
-//        unit_id integer($int64)
-//        enabled boolean
-//        armed boolean
-//        vehicle string
-//        cargo string
-//        last_activity string($date-time) archived boolean
-//        deleted boolean
-//    }
 
     protected void init() {
         TSTARHelper tstarHelper = new TSTARHelper();
@@ -40,16 +32,24 @@ public class TSTARCampaignOutput extends AbstractSensorOutput<TSTARDriver> {
                 .name(getName())
                 .label(SENSOR_OUTPUT_NAME)
                 .definition(SWEHelper.getPropertyUri("CampaignData"))
-                .addField("samplingTime", tstarHelper.createPrecisionTimeStamp())
-                .addField("campaignId", tstarHelper.createId())
-                .addField("name", tstarHelper.createCampaignName())
+                .addField("samplingTime", tstarHelper.createTimestamp())
+                .addField("campaign_id", tstarHelper.createCampaignId())
+                .addField("campaign_name", tstarHelper.createCampaignName())
+                .addField("last_activity", tstarHelper.createLastActivity())
                 .addField("unit_id", tstarHelper.createUnitId())
+                .addField("unit_name", tstarHelper.createUnitName())
+                .addField("total_alerts", tstarHelper.createTotalAlerts())
+                .addField("unacknowledged_alerts", tstarHelper.createUnacknowledgedAlerts())
+                .addField("unit_message_count", tstarHelper.createUnitMessageCount())
                 .addField("enabled", tstarHelper.createEnabled())
                 .addField("armed", tstarHelper.createArmed())
+                .addField("archived", tstarHelper.createArchived())
+                .addField("deleted", tstarHelper.createDeleted())
                 .addField("vehicle", tstarHelper.createVehicle())
                 .addField("cargo", tstarHelper.createCargo())
-                .addField("last-activity", tstarHelper.createLastActivity())
-                .addField("deleted", tstarHelper.createDeleted())
+                .addField("watchers", tstarHelper.createWatchers())
+                .addField("users", tstarHelper.createUsers())
+                .addField("fences", tstarHelper.createFences())
                 .build();
 
         // set encoding to CSV
@@ -58,15 +58,6 @@ public class TSTARCampaignOutput extends AbstractSensorOutput<TSTARDriver> {
 
     public void parse(Campaign campaign) {
 
-//        int id = 0;
-//        String name = " ";
-//        int unit_id = 0;
-//        boolean enabled = false;
-//        boolean armed = false;
-//        String vehicle = " ";
-//        String cargo = " ";
-//        String last_activity = " ";
-//        boolean deleted = false;
         if (latestRecord == null) {
 
             dataBlock = dataStruct.createDataBlock();
@@ -76,22 +67,39 @@ public class TSTARCampaignOutput extends AbstractSensorOutput<TSTARDriver> {
         }
 
         latestRecordTime = System.currentTimeMillis() / 1000;
+        setCampaignTime(campaign);
 
             dataBlock.setLongValue(0, latestRecordTime);
             dataBlock.setIntValue(1, campaign.id);
             dataBlock.setStringValue(2, campaign.name);
-            dataBlock.setIntValue(3, campaign.unit_id);
-            dataBlock.setBooleanValue(4, campaign.enabled);
-            dataBlock.setBooleanValue(5, campaign.armed);
-            dataBlock.setStringValue(6, campaign.vehicle);
-            dataBlock.setStringValue(7, campaign.cargo);
-            dataBlock.setStringValue(8, campaign.last_activity);
-            dataBlock.setBooleanValue(9, campaign.deleted);
+            dataBlock.setLongValue(3, campaignLastActivity);
+            dataBlock.setIntValue(4, campaign.unit_id);
+            dataBlock.setStringValue(5, campaign.unit_name);
+            dataBlock.setIntValue(6, campaign.total_alerts);
+            dataBlock.setIntValue(7, campaign.unacknowledged_alerts);
+            dataBlock.setIntValue(8, campaign.unit_message_count);
+            dataBlock.setBooleanValue(9, campaign.enabled);
+            dataBlock.setBooleanValue(10, campaign.armed);
+            dataBlock.setBooleanValue(11, campaign.archived);
+            dataBlock.setBooleanValue(12, campaign.deleted);
+            dataBlock.setStringValue(13, campaign.vehicle);
+            dataBlock.setStringValue(14, campaign.cargo);
+            dataBlock.setStringValue(15, campaign.watchers);
+            dataBlock.setStringValue(16, campaign.users);
+            dataBlock.setStringValue(17, campaign.fences);
 
             // update latest record and send event
             latestRecord = dataBlock;
             eventHandler.publish(new DataEvent(latestRecordTime, TSTARCampaignOutput.this, dataBlock));
         }
+
+    public void setCampaignTime(Campaign campaign){
+        // parse UTC  to epoch time for 'last_activity'
+        SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+
+        Date lastActivity = campaign.last_activity;
+        campaignLastActivity = lastActivity.getTime()/ 1000;
+    }
 
     public DataComponent getRecordDescription() {
         return dataStruct;

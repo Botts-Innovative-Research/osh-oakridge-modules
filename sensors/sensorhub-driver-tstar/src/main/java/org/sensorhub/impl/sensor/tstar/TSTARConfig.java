@@ -25,8 +25,6 @@ public class TSTARConfig extends SensorConfig
         http.password = "imAgearHEADnow";
         http.remoteHost = "127.0.0.1";
         http.remotePort = 10024;
-//        String authToken = "";
-//        String campaignId = "";
     }
 
     public String getCampaignId() {
@@ -36,12 +34,5 @@ public class TSTARConfig extends SensorConfig
         return authToken;
     }
 
-    //    @Required
-//    @DisplayInfo(label="Fleet ID", desc="ID of vehicle fleet (will be appended to system UID)")
-//    public String fleetID;
-//
-//    @Required
-//    @DisplayInfo(desc="Communication settings to connect to AVL data")
-//    public CommProviderConfig<?> commSettings = new MultipleFilesProviderConfig();
 
 }

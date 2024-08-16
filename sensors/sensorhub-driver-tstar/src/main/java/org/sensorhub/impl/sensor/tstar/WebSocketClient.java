@@ -1,4 +1,4 @@
-package org.sensorhub.impl.sensor.tstar;
+//package org.sensorhub.impl.sensor.tstar;
 
 import org.sensorhub.impl.sensor.tstar.TSTARMessageHandler;
 
@@ -68,30 +68,30 @@ import java.util.concurrent.CountDownLatch;
 //}
 //}
 //
-public class WebSocketClient implements WebSocket.Listener {
-        public final CountDownLatch latch;
-        TSTARMessageHandler messageHandler;
-        public WebSocketClient(TSTARMessageHandler messageHandler, CountDownLatch latch) {
-            this.messageHandler = messageHandler;
-            this.latch = latch;
-        }
-//        public WebSocketClient(CountDownLatch latch) { this.latch = latch; }
-        @Override
-        public void onOpen(WebSocket webSocket) {
-            System.out.println("Websocket connected... ");
-            WebSocket.Listener.super.onOpen(webSocket);
-        }
-        @Override
-        public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
-            System.out.println("Received: " + data);
-//            messageHandler.handleMsg(data);
-            latch.countDown();
-            return WebSocket.Listener.super.onText(webSocket, data, last);
-        }
-        @Override
-        public void onError(WebSocket webSocket, Throwable error) {
-            System.out.println("Websocket input has been closed... " + webSocket.toString());
-            WebSocket.Listener.super.onError(webSocket, error);
-        }
-
-    }
+//public class WebSocketClient implements WebSocket.Listener {
+//        public final CountDownLatch latch;
+//        TSTARMessageHandler messageHandler;
+//        public WebSocketClient(TSTARMessageHandler messageHandler, CountDownLatch latch) {
+//            this.messageHandler = messageHandler;
+//            this.latch = latch;
+//        }
+////        public WebSocketClient(CountDownLatch latch) { this.latch = latch; }
+//        @Override
+//        public void onOpen(WebSocket webSocket) {
+//            System.out.println("Websocket connected... ");
+//            WebSocket.Listener.super.onOpen(webSocket);
+//        }
+//        @Override
+//        public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+//            System.out.println("Received: " + data);
+////            messageHandler.handleMsg(data);
+//            latch.countDown();
+//            return WebSocket.Listener.super.onText(webSocket, data, last);
+//        }
+//        @Override
+//        public void onError(WebSocket webSocket, Throwable error) {
+//            System.out.println("Websocket input has been closed... " + webSocket.toString());
+//            WebSocket.Listener.super.onError(webSocket, error);
+//        }
+//
+//    }
