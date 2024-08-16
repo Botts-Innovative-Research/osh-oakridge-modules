@@ -50,7 +50,6 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         generateXmlID("Aspect", config.serialNumber);
 
         laneID = config.laneId;
-//        laneName= config.laneName;
 
         // Initialize outputs
         gammaOutput = new GammaOutput(this);
@@ -70,7 +69,6 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         speedOutput.init();
 
         sensorLocationOutput = new SensorLocationOutput(this);
-        addOutput(sensorLocationOutput, false);
         sensorLocationOutput.init();
 
         dailyFileOutput = new DailyFileOutput(this);
