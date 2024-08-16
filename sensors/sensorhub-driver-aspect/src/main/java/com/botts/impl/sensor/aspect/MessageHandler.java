@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.LinkedList;
 
 import static java.lang.Thread.sleep;
 
@@ -34,6 +35,11 @@ public class MessageHandler implements Runnable {
     boolean gammaAlarm = false;
     boolean neutronAlarm = false;
 
+    LinkedList<Integer> occupancyGammaBatch ;
+    LinkedList<Integer> occupancyNeutronBatch;
+    int maxNeutron = 0;
+    int maxGamma = 0;
+
     public MessageHandler(TCPMasterConnection tcpMasterConnection, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, SpeedOutput speedOutput, DailyFileOutput dailyFileOutput) {
         this.tcpMasterConnection = tcpMasterConnection;
         this.gammaOutput = gammaOutput;
@@ -41,6 +47,9 @@ public class MessageHandler implements Runnable {
         this.occupancyOutput = occupancyOutput;
         this.speedOutput = speedOutput;
         this.dailyFileOutput = dailyFileOutput;
+
+        occupancyGammaBatch = new LinkedList<>();
+        occupancyNeutronBatch = new LinkedList<>();
 
         thread = new Thread(this, "Message Handler");
     }
@@ -59,6 +68,7 @@ public class MessageHandler implements Runnable {
             DeviceDescriptionRegisters deviceDescriptionRegisters = new DeviceDescriptionRegisters(tcpMasterConnection);
             deviceDescriptionRegisters.readRegisters(1);
 
+
             MonitorRegisters monitorRegisters = new MonitorRegisters(tcpMasterConnection, deviceDescriptionRegisters.getMonitorRegistersBaseAddress(), deviceDescriptionRegisters.getMonitorRegistersNumberOfRegisters());
             while (!Thread.currentThread().isInterrupted()) {
                 monitorRegisters.readRegisters(1);
@@ -68,14 +78,16 @@ public class MessageHandler implements Runnable {
                 dailyFileOutput.onNewMessage();
 
                 gammaOutput.setData(monitorRegisters, timestamp);
-
                 neutronOutput.setData(monitorRegisters, timestamp);
                 speedOutput.setData(monitorRegisters, timestamp);
 
+//                occupancyGammaBatch = monitorRegisters.getOccupancyGammaBatch();
+//                occupancyNeutronBatch = monitorRegisters.getOccupancyNeutronBatch();
+
                 if (checkOccupancyRecord(monitorRegisters, timestamp)) {
-                    occupancyOutput.setData(monitorRegisters, timestamp, startTime, endTime, gammaAlarm, neutronAlarm);
+                    occupancyOutput.setData(monitorRegisters, timestamp, startTime, endTime, gammaAlarm, neutronAlarm, maxGamma, maxNeutron);
                 }
-                System.out.println("monitor registers: "+ monitorRegisters);
+//                System.out.println("monitor registers: "+ monitorRegisters);
                 sleep(500);
             }
         } catch (Exception e) {
@@ -102,37 +114,61 @@ public class MessageHandler implements Runnable {
         // If the occupancy count has changed, then we need to set the start time
         if (occupancyCount != monitorRegisters.getObjectCounter()) {
             startTime = timestamp;
+            System.out.println("occupancy started");
             endTime = 0;
             occupancyCount = monitorRegisters.getObjectCounter();
             gammaAlarm = false;
             neutronAlarm = false;
+            occupancyNeutronBatch.clear();
+            occupancyGammaBatch.clear();
             return false;
         }
 
         // If both start time and end time are set, the record has already been written
-        if (startTime != 0 && endTime != 0) {
+        if (startTime != 0 && endTime != 0){
             return false;
         }
-
         if (startTime == 0 && endTime == 0) {
             return false;
         }
 
         // If an alarm occurs during this time, set the alarm flag
-        if (monitorRegisters.isGammaAlarm()) {
+        if (monitorRegisters.isGammaAlarm()){
             gammaAlarm = true;
         }
-        if (monitorRegisters.isNeutronAlarm()) {
+        if (monitorRegisters.isNeutronAlarm()){
             neutronAlarm = true;
         }
 
+        occupancyGammaBatch.addLast(monitorRegisters.getGammaChannelCount());
+        System.out.println(occupancyGammaBatch);
+        occupancyNeutronBatch.addLast(monitorRegisters.getNeutronChannelCount());
+        System.out.println(occupancyNeutronBatch);
+
         // If the sensor is still occupied, wait for it to become unoccupied
         if (monitorRegisters.isOccupied()) {
+
             return false;
         }
 
         // If the sensor is now unoccupied, set the end time
         endTime = timestamp;
+        System.out.println("occupancy ended");
+        maxGamma = calcMax(occupancyGammaBatch);
+        maxNeutron = calcMax(occupancyNeutronBatch);
         return true;
+    }
+
+    public int calcMax(LinkedList<Integer> occBatch){
+
+        int temp = 0;
+        int position = 0;
+        for(int i = 0; i < occBatch.size(); i++){
+            if(occBatch.get(i) > temp){
+                temp = occBatch.get(i);
+                position = i;
+            }
+        }
+        return occBatch.get(position);
     }
 }

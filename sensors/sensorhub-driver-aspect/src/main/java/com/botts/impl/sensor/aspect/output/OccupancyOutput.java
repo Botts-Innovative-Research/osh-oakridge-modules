@@ -37,7 +37,9 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
         var occupancyEnd = radHelper.createOccupancyEndTime();
         var gammaAlarm = radHelper.createGammaAlarm();
         var neutronAlarm = radHelper.createNeutronAlarm();
-        var objectMark = radHelper.createObjectMark();
+//        var objectMark = radHelper.createObjectMark();
+        var maxGamma = radHelper.createMaxGamma();
+        var maxNeutron = radHelper.createMaxNeutron();
 
         dataRecord = radHelper.createRecord()
                 .name(getName())
@@ -49,13 +51,15 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
                 .addField(occupancyEnd.getName(), occupancyEnd)
                 .addField(gammaAlarm.getName(), gammaAlarm)
                 .addField(neutronAlarm.getName(), neutronAlarm)
-                .addField(objectMark.getName(), objectMark)
+//                .addField(objectMark.getName(), objectMark)
+                .addField(maxGamma.getName(), maxGamma)
+                .addField(maxNeutron.getName(), maxNeutron)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
 
-    public void setData(MonitorRegisters monitorRegisters, double timeStamp, double startTime, double endTime, boolean gammaAlarm, boolean neutronAlarm) {
+    public void setData(MonitorRegisters monitorRegisters, double timeStamp, double startTime, double endTime, boolean gammaAlarm, boolean neutronAlarm, int maxGamma, int maxNeutron) {
 
 
         if (latestRecord == null) {
@@ -82,6 +86,9 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
         dataBlock.setDoubleValue(3, endTime);
         dataBlock.setBooleanValue(4, gammaAlarm);
         dataBlock.setBooleanValue(5, neutronAlarm);
+//        dataBlock.setIntValue(6, monitorRegisters.getObjectMark());
+        dataBlock.setIntValue(6, maxGamma);
+        dataBlock.setIntValue(7, maxNeutron);
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

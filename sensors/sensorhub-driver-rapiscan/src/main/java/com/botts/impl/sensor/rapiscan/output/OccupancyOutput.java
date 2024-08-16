@@ -45,9 +45,11 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
         var occupancyStart = radHelper.createOccupancyStartTime();
         var occupancyEnd = radHelper.createOccupancyEndTime();
         var neutronBackground = radHelper.createNeutronBackground();
-        var gammaBackground = radHelper.createGammaBackground();
+//        var gammaBackground = radHelper.createGammaBackground();
         var gammaAlarm = radHelper.createGammaAlarm();
         var neutronAlarm = radHelper.createNeutronAlarm();
+        var maxGamma = radHelper.createMaxGamma();
+        var maxNeutron = radHelper.createMaxNeutron();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
@@ -63,11 +65,13 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
 //                .addField(gammaBackground.getName(), gammaBackground)
                 .addField(gammaAlarm.getName(), gammaAlarm)
                 .addField(neutronAlarm.getName(), neutronAlarm)
+                .addField(maxGamma.getName(), maxGamma)
+                .addField(maxNeutron.getName(), maxNeutron)
                 .build();
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
 
-    public void onNewMessage(long startTime, long endTime, Boolean isGammaAlarm, Boolean isNeutronAlarm, String[] csvString){
+    public void onNewMessage(long startTime, long endTime, Boolean isGammaAlarm, Boolean isNeutronAlarm, String[] csvString, int gammaMax, int neutronMax){
         if (latestRecord == null) {
 
             dataBlock = dataStruct.createDataBlock();
@@ -83,10 +87,10 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setLongValue(index++, startTime/1000);
         dataBlock.setLongValue(index++, endTime/1000);
         dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[2])/1000); //neutron background
-////      TODO gamma background
-//        dataBlock.setDoubleValue(index++, 0); //gamma background
         dataBlock.setBooleanValue(index++, isGammaAlarm);
         dataBlock.setBooleanValue(index++, isNeutronAlarm);
+        dataBlock.setIntValue(index++, gammaMax);
+        dataBlock.setIntValue(index++, neutronMax);
 
         //dataBlock.updateAtomCount();
         latestRecord = dataBlock;

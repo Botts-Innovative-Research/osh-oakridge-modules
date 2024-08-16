@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import javax.sound.midi.SysexMessage;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.LinkedList;
 
 public class MonitorRegisters {
     private static final Logger log = LoggerFactory.getLogger(MonitorRegisters.class);
@@ -40,14 +41,6 @@ public class MonitorRegisters {
     private int objectSpeed;
     private int outputSignals;
 
-//    private int version;
-//    private int devNum;
-//    private int backgroundTimer;
-//    private int occupancyTimer;
-//    private int alarmTimer;
-//    private int videoTimer;
-
-
     public MonitorRegisters(TCPMasterConnection tcpMasterConnection, int ref, int count) {
         this.tcpMasterConnection = tcpMasterConnection;
         this.ref = ref;
@@ -69,22 +62,22 @@ public class MonitorRegisters {
 
             ReadMultipleRegistersResponse response = (ReadMultipleRegistersResponse) modbusTCPTransaction.getResponse();
 
-        timeElapsed = convertRegistersToInteger(response.getRegisterValue(0), response.getRegisterValue(1));
-        inputSignals = response.getRegisterValue(2);
-        gammaChannelStatus = response.getRegisterValue(3);
-        gammaChannelCount = convertRegistersToInteger(response.getRegisterValue(4), response.getRegisterValue(5));
-        gammaChannelBackground = convertRegistersToFloat(response.getRegisterValue(6), response.getRegisterValue(7));
-        gammaChannelVariance = convertRegistersToFloat(response.getRegisterValue(8), response.getRegisterValue(9));
-        gammaVarianceBackground = gammaChannelVariance/gammaChannelBackground;
-        neutronChannelStatus = response.getRegisterValue(10);
-        neutronChannelCount = convertRegistersToInteger(response.getRegisterValue(11), response.getRegisterValue(12));
-        neutronChannelBackground = convertRegistersToFloat(response.getRegisterValue(13), response.getRegisterValue(14));
-        neutronChannelVariance = convertRegistersToFloat(response.getRegisterValue(15), response.getRegisterValue(16));
-        neutronVarianceBackground = neutronChannelVariance/neutronChannelBackground;
-        objectCount = response.getRegisterValue(17);
-        objectMark = response.getRegisterValue(18);
-        objectSpeed = response.getRegisterValue(19);
-        outputSignals = response.getRegisterValue(20);
+            timeElapsed = convertRegistersToInteger(response.getRegisterValue(0), response.getRegisterValue(1));
+            inputSignals = response.getRegisterValue(2);
+            gammaChannelStatus = response.getRegisterValue(3);
+            gammaChannelCount = convertRegistersToInteger(response.getRegisterValue(4), response.getRegisterValue(5));
+            gammaChannelBackground = convertRegistersToFloat(response.getRegisterValue(6), response.getRegisterValue(7));
+            gammaChannelVariance = convertRegistersToFloat(response.getRegisterValue(8), response.getRegisterValue(9));
+            gammaVarianceBackground = gammaChannelVariance/gammaChannelBackground;
+            neutronChannelStatus = response.getRegisterValue(10);
+            neutronChannelCount = convertRegistersToInteger(response.getRegisterValue(11), response.getRegisterValue(12));
+            neutronChannelBackground = convertRegistersToFloat(response.getRegisterValue(13), response.getRegisterValue(14));
+            neutronChannelVariance = convertRegistersToFloat(response.getRegisterValue(15), response.getRegisterValue(16));
+            neutronVarianceBackground = neutronChannelVariance/neutronChannelBackground;
+            objectCount = response.getRegisterValue(17);
+            objectMark = response.getRegisterValue(18);
+            objectSpeed = response.getRegisterValue(19);
+            outputSignals = response.getRegisterValue(20);
 
             log.debug("Registers read successfully: ", this.toString());
         }catch(ModbusException e){
@@ -92,12 +85,6 @@ public class MonitorRegisters {
         }catch(Exception e){
             log.debug("Error: ",e);
         }
-//        version = response.getRegisterValue(21);
-//        devNum = response.getRegisterValue(22);
-//        backgroundTimer= response.getRegisterValue(43);
-//        occupancyTimer =response.getRegisterValue(44);
-//        alarmTimer = response.getRegisterValue(45);
-//        videoTimer= response.getRegisterValue(46);
 
     }
 
@@ -250,4 +237,5 @@ public class MonitorRegisters {
                 || (getInputSignals() & Inputs.Occup2.getValue()) == Inputs.Occup2.getValue()
                 || (getInputSignals() & Inputs.Occup3.getValue()) == Inputs.Occup3.getValue();
     }
+
 }
