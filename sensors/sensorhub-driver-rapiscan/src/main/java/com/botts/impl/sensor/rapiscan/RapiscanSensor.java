@@ -127,14 +127,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         addOutput(speedOutput, false);
         speedOutput.init();
 
-        setupGammaOutput = new SetupGammaOutput(this);
-        addOutput(setupGammaOutput, false);
-        setupGammaOutput.init();
-
-        setupNeutronOutput = new SetupNeutronOutput(this);
-        addOutput(setupNeutronOutput, false);
-        setupNeutronOutput.init();
-
         gammaThresholdOutput = new GammaThresholdOutput(this);
         addOutput(gammaThresholdOutput, false);
         gammaThresholdOutput.init();
@@ -142,6 +134,14 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         dailyFileOutput = new DailyFileOutput(this);
         addOutput(dailyFileOutput, false);
         dailyFileOutput.init();
+
+        setupGammaOutput = new SetupGammaOutput(this);
+        addOutput(setupGammaOutput, false);
+        setupGammaOutput.init();
+
+        setupNeutronOutput = new SetupNeutronOutput(this);
+        addOutput(setupNeutronOutput, false);
+        setupNeutronOutput.init();
     }
 
     @Override
