@@ -23,7 +23,6 @@ public class MonitorRegisters {
     private final TCPMasterConnection tcpMasterConnection;
     private final int ref;
     private final int count;
-
     private int timeElapsed;
     private int inputSignals;
     private int gammaChannelStatus;
@@ -34,8 +33,6 @@ public class MonitorRegisters {
     private int neutronChannelCount;
     private float neutronChannelBackground;
     private float neutronChannelVariance;
-    private float neutronVarianceBackground;
-    private float gammaVarianceBackground;
     private int objectCount;
     private int objectMark;
     private int objectSpeed;
@@ -68,12 +65,10 @@ public class MonitorRegisters {
             gammaChannelCount = convertRegistersToInteger(response.getRegisterValue(4), response.getRegisterValue(5));
             gammaChannelBackground = convertRegistersToFloat(response.getRegisterValue(6), response.getRegisterValue(7));
             gammaChannelVariance = convertRegistersToFloat(response.getRegisterValue(8), response.getRegisterValue(9));
-            gammaVarianceBackground = gammaChannelVariance/gammaChannelBackground;
             neutronChannelStatus = response.getRegisterValue(10);
             neutronChannelCount = convertRegistersToInteger(response.getRegisterValue(11), response.getRegisterValue(12));
             neutronChannelBackground = convertRegistersToFloat(response.getRegisterValue(13), response.getRegisterValue(14));
             neutronChannelVariance = convertRegistersToFloat(response.getRegisterValue(15), response.getRegisterValue(16));
-            neutronVarianceBackground = neutronChannelVariance/neutronChannelBackground;
             objectCount = response.getRegisterValue(17);
             objectMark = response.getRegisterValue(18);
             objectSpeed = response.getRegisterValue(19);
@@ -96,12 +91,10 @@ public class MonitorRegisters {
                 ", gammaChannelCount=" + getGammaChannelCount() +
                 ", gammaChannelBackground=" + getGammaChannelBackground() +
                 ", gammaChannelVariance=" + getGammaChannelVariance() +
-//                ", gammaChannelVariance/Background=" + getGammaVarianceBackground() +
                 ", neutronChannelStatus=" + getNeutronChannelStatus() +
                 ", neutronChannelCount=" + getNeutronChannelCount() +
                 ", neutronChannelBackground=" + getNeutronChannelBackground() +
                 ", neutronChannelVariance=" + getNeutronChannelVariance() +
-//                ", neutronChannelVariance/Background=" + getNeutronVarianceBackground() +
                 ", objectNumber=" + getObjectCounter() +
                 ", wheelsNumber=" + getObjectMark() +
                 ", velocity=" + getObjectSpeed() +
@@ -172,13 +165,6 @@ public class MonitorRegisters {
     public float getNeutronChannelVariance() {
         return neutronChannelVariance;
     }
-    public float getGammaVarianceBackground() {
-        return gammaVarianceBackground;
-    }
-    public float getNeutronVarianceBackground() {
-        return neutronVarianceBackground;
-    }
-
     public int getObjectCounter() {
         return objectCount;
     }

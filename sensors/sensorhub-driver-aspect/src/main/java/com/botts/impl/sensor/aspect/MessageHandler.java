@@ -119,8 +119,6 @@ public class MessageHandler implements Runnable {
             occupancyCount = monitorRegisters.getObjectCounter();
             gammaAlarm = false;
             neutronAlarm = false;
-            occupancyNeutronBatch.clear();
-            occupancyGammaBatch.clear();
             return false;
         }
 
@@ -147,15 +145,19 @@ public class MessageHandler implements Runnable {
 
         // If the sensor is still occupied, wait for it to become unoccupied
         if (monitorRegisters.isOccupied()) {
-
             return false;
         }
 
         // If the sensor is now unoccupied, set the end time
         endTime = timestamp;
         System.out.println("occupancy ended");
+
+
         maxGamma = calcMax(occupancyGammaBatch);
         maxNeutron = calcMax(occupancyNeutronBatch);
+        
+        occupancyNeutronBatch.clear();
+        occupancyGammaBatch.clear();
         return true;
     }
 

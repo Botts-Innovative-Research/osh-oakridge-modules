@@ -32,22 +32,20 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
+        var neutronAlarm = radHelper.createNeutronAlarmState();
         var neutronCount = radHelper.createNeutronGrossCount();
         var neutronBackground = radHelper.createNeutronBackground();
         var neutronVariance = radHelper.createNeutronVariance();
-//        var neutronVarianceBackground = radHelper.createNeutronVarianceBackground();
-        var neutronAlarm = radHelper.createNeutronAlarmState();
 
         dataRecord = radHelper.createRecord()
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("neutron-scan"))
                 .addField(samplingTime.getName(), samplingTime)
+                .addField(neutronAlarm.getName(), neutronAlarm)
                 .addField(neutronCount.getName(), neutronCount)
                 .addField(neutronBackground.getName(), neutronBackground)
                 .addField(neutronVariance.getName(), neutronVariance)
-//                .addField(neutronVarianceBackground.getName(), neutronVarianceBackground)
-                .addField(neutronAlarm.getName(), neutronAlarm)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
@@ -73,11 +71,10 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
         ++setCount;
 
         dataBlock.setDoubleValue(0, timeStamp);
-        dataBlock.setIntValue(1, monitorRegisters.getNeutronChannelCount());
-        dataBlock.setFloatValue(2, monitorRegisters.getNeutronChannelBackground());
-        dataBlock.setFloatValue(3, monitorRegisters.getNeutronChannelVariance());
-//        dataBlock.setDoubleValue(4, monitorRegisters.getNeutronVarianceBackground());
-        dataBlock.setStringValue(4, monitorRegisters.getNeutronAlarmState());
+        dataBlock.setStringValue(1, monitorRegisters.getNeutronAlarmState());
+        dataBlock.setIntValue(2, monitorRegisters.getNeutronChannelCount());
+        dataBlock.setFloatValue(3, monitorRegisters.getNeutronChannelBackground());
+        dataBlock.setFloatValue(4, monitorRegisters.getNeutronChannelVariance());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

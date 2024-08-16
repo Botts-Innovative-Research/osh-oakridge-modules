@@ -32,22 +32,21 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
+        var gammaAlarmState = radHelper.createGammaAlarmState();
         var gammaCount = radHelper.createGammaGrossCount();
         var gammaBackground = radHelper.createGammaBackground();
         var gammaVariance = radHelper.createGammaVariance();
-//        var gammaVarianceBackground = radHelper.createGammaVarianceBackground();
-        var gammaAlarmState = radHelper.createGammaAlarmState();
+
 
         dataRecord = radHelper.createRecord()
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("gamma-scan"))
                 .addField(samplingTime.getName(), samplingTime)
+                .addField(gammaAlarmState.getName(), gammaAlarmState)
                 .addField(gammaCount.getName(), gammaCount)
                 .addField(gammaBackground.getName(), gammaBackground)
                 .addField(gammaVariance.getName(), gammaVariance)
-//                .addField(gammaVarianceBackground.getName(), gammaVarianceBackground)
-                .addField(gammaAlarmState.getName(), gammaAlarmState)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
@@ -73,11 +72,10 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
         ++setCount;
 
         dataBlock.setDoubleValue(0, timeStamp);
-        dataBlock.setIntValue(1, monitorRegisters.getGammaChannelCount());
-        dataBlock.setDoubleValue(2, monitorRegisters.getGammaChannelBackground());
-        dataBlock.setDoubleValue(3, monitorRegisters.getGammaChannelVariance());
-//        dataBlock.setDoubleValue(4, monitorRegisters.getGammaVarianceBackground());
-        dataBlock.setStringValue(4, monitorRegisters.getGammaAlarmState());
+        dataBlock.setStringValue(1, monitorRegisters.getGammaAlarmState());
+        dataBlock.setIntValue(2, monitorRegisters.getGammaChannelCount());
+        dataBlock.setDoubleValue(3, monitorRegisters.getGammaChannelBackground());
+        dataBlock.setDoubleValue(4, monitorRegisters.getGammaChannelVariance());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();
