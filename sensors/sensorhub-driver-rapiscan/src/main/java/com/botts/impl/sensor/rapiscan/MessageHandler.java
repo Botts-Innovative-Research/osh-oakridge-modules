@@ -36,18 +36,17 @@ public class MessageHandler {
 
     LinkedList<String[]> gammaScanRunningSumBatch;
 
-    LinkedList<Integer> occupancyGammaBatch ;
+    LinkedList<Integer> occupancyGammaBatch;
     LinkedList<Integer> occupancyNeutronBatch;
 
     int neutronMax;
     int gammaMax;
 
     //    FileWriter fw;
-//    CSVWriter writer;
+    //    CSVWriter writer;
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
 
-    public MessageHandler(InputStream msgIn, RapiscanSensor parentSensor)
-    {
+    public MessageHandler(InputStream msgIn, RapiscanSensor parentSensor) {
         this.parentSensor = parentSensor;
 
         gammaScanRunningSumBatch = new LinkedList<>();
@@ -118,29 +117,29 @@ public class MessageHandler {
     public int[] getGammaForegroundCountsPerSecond() {
         int size = gammaScanRunningSumBatch.size();
 
-        if(size != 5) {
+        if (size != 5) {
             return null;
         }
 
         int[] gammaForegroundCountsPerSecond = new int[4];
 
-        for(String[] line : gammaScanRunningSumBatch) {
-            for(int i = 0; i < 4; i++) {
-                gammaForegroundCountsPerSecond[i] += Integer.parseInt(line[i+1]);
+        for (String[] line : gammaScanRunningSumBatch) {
+            for (int i = 0; i < 4; i++) {
+                gammaForegroundCountsPerSecond[i] += Integer.parseInt(line[i + 1]);
             }
         }
 
         return gammaForegroundCountsPerSecond;
     }
 
-    void onNewMainChar(String mainChar, String[] csvLine){
+    void onNewMainChar(String mainChar, String[] csvLine) {
 
         // Add scan data for EML service. Background and other data gives EML context, so we must show EML everything until end of occupancy
-        if(parentSensor.getConfiguration().emlConfig.emlEnabled) {
+        if (parentSensor.getConfiguration().emlConfig.emlEnabled) {
             parentSensor.getEmlService().addScanDataLine(csvLine);
         }
 
-        switch (mainChar){
+        switch (mainChar) {
             // ------------------- NOT OCCUPIED
             case "GB":
                 parentSensor.getGammaOutput().onNewMessage(csvLine, System.currentTimeMillis(), BACKGROUND, null);
@@ -161,12 +160,12 @@ public class MessageHandler {
                 break;
 
             // --------------- OCCUPIED
-            case  "GA":
+            case "GA":
                 gammaScanRunningSumBatch.addLast(csvLine);
-                if (!currentOccupancy){
+                if (!currentOccupancy) {
                     occupancyStartTime = System.currentTimeMillis();
                     currentOccupancy = true;
-                } else{
+                } else {
                     occupancyGammaBatch.addLast(Integer.parseInt(csvLine[1]));
                     occupancyGammaBatch.addLast(Integer.parseInt(csvLine[2]));
                     occupancyGammaBatch.addLast(Integer.parseInt(csvLine[3]));
@@ -181,10 +180,10 @@ public class MessageHandler {
             case "GS":
                 gammaScanRunningSumBatch.addLast(csvLine);
                 //usually the foreground value will switch to "GA" in an alarm state
-                if (!currentOccupancy){
+                if (!currentOccupancy) {
                     occupancyStartTime = System.currentTimeMillis();
                     currentOccupancy = true;
-                } else{
+                } else {
                     occupancyGammaBatch.addLast(Integer.parseInt(csvLine[1]));
                     occupancyGammaBatch.addLast(Integer.parseInt(csvLine[2]));
                     occupancyGammaBatch.addLast(Integer.parseInt(csvLine[3]));
@@ -196,11 +195,11 @@ public class MessageHandler {
                 break;
 
             case "NA":
-                if (!currentOccupancy){
+                if (!currentOccupancy) {
                     occupancyStartTime = System.currentTimeMillis();
                     currentOccupancy = true;
 
-                }else{
+                } else {
                     occupancyNeutronBatch.addLast(Integer.parseInt(csvLine[1]));
                     occupancyNeutronBatch.addLast(Integer.parseInt(csvLine[2]));
                     occupancyNeutronBatch.addLast(Integer.parseInt(csvLine[3]));
@@ -212,10 +211,10 @@ public class MessageHandler {
                 break;
 
             case "NS":
-                if (!currentOccupancy){
+                if (!currentOccupancy) {
                     occupancyStartTime = System.currentTimeMillis();
                     currentOccupancy = true;
-                }else{
+                } else {
                     occupancyNeutronBatch.addLast(Integer.parseInt(csvLine[1]));
                     occupancyNeutronBatch.addLast(Integer.parseInt(csvLine[2]));
                     occupancyNeutronBatch.addLast(Integer.parseInt(csvLine[3]));
@@ -240,7 +239,7 @@ public class MessageHandler {
                 occupancyNeutronBatch.clear();
                 occupancyGammaBatch.clear();
 
-                if(parentSensor.getConfiguration().emlConfig.emlEnabled){
+                if (parentSensor.getConfiguration().emlConfig.emlEnabled) {
                     var results = parentSensor.getEmlService().processCurrentOccupancy();
                     parentSensor.getEmlScanContextualOutput().handleScanContextualMessage(results);
                     parentSensor.getEmlContextualOutput().handleContextualMessage(results);
@@ -278,17 +277,17 @@ public class MessageHandler {
                 break;
         }
 
-        if(gammaScanRunningSumBatch.size() > 4) {
+        if (gammaScanRunningSumBatch.size() > 4) {
             gammaScanRunningSumBatch.removeFirst();
         }
     }
 
-    public int calcMax(LinkedList<Integer> occBatch){
+    public int calcMax(LinkedList<Integer> occBatch) {
 
         int temp = 0;
         int position = 0;
-        for(int i = 0; i < occBatch.size(); i++){
-            if(occBatch.get(i) > temp){
+        for (int i = 0; i < occBatch.size(); i++) {
+            if (occBatch.get(i) > temp) {
                 temp = occBatch.get(i);
                 position = i;
             }
