@@ -81,13 +81,11 @@ public class MessageHandler implements Runnable {
                 neutronOutput.setData(monitorRegisters, timestamp);
                 speedOutput.setData(monitorRegisters, timestamp);
 
-//                occupancyGammaBatch = monitorRegisters.getOccupancyGammaBatch();
-//                occupancyNeutronBatch = monitorRegisters.getOccupancyNeutronBatch();
 
                 if (checkOccupancyRecord(monitorRegisters, timestamp)) {
                     occupancyOutput.setData(monitorRegisters, timestamp, startTime, endTime, gammaAlarm, neutronAlarm, maxGamma, maxNeutron);
                 }
-//                System.out.println("monitor registers: "+ monitorRegisters);
+                System.out.println("monitor registers: "+ monitorRegisters);
                 sleep(500);
             }
         } catch (Exception e) {
@@ -155,7 +153,7 @@ public class MessageHandler implements Runnable {
 
         maxGamma = calcMax(occupancyGammaBatch);
         maxNeutron = calcMax(occupancyNeutronBatch);
-        
+
         occupancyNeutronBatch.clear();
         occupancyGammaBatch.clear();
         return true;
