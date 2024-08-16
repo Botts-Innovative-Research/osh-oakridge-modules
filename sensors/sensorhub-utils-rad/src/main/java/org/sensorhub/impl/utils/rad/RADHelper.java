@@ -62,6 +62,22 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public Quantity createMaxGamma(){
+        return createQuantity()
+                .name("maxGamma")
+                .label("Max Gamma")
+                .definition(getRadUri("max-gamma"))
+                .build();
+    }
+
+    public Quantity createMaxNeutron(){
+        return createQuantity()
+                .name("maxNeutron")
+                .label("Max Neutron")
+                .definition(getRadUri("max-neutron"))
+                .build();
+    }
+
     public Text createMonitorRegister(){
         return createText()
                 .name("monitorRegistersMsg")
