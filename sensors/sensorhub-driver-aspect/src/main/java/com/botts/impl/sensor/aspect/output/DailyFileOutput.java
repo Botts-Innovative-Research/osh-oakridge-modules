@@ -35,7 +35,7 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
-        var monitorRegisters = radHelper.createMonitorRegister();
+        var aspectMessage = radHelper.createAspectMessageFile();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
@@ -43,7 +43,7 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
                 .updatable(true)
                 .definition(RADHelper.getRadUri("gamma-count"))
                 .addField(samplingTime.getName(), samplingTime)
-                .addField(monitorRegisters.getName(), monitorRegisters)
+                .addField(aspectMessage.getName(), aspectMessage)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");

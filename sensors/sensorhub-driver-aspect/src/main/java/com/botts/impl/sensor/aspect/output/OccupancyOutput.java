@@ -37,7 +37,7 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
         var occupancyEnd = radHelper.createOccupancyEndTime();
         var gammaAlarm = radHelper.createGammaAlarm();
         var neutronAlarm = radHelper.createNeutronAlarm();
-//        var objectMark = radHelper.createObjectMark();
+        var neutronBkg = radHelper.createNeutronBackground();;
         var maxGamma = radHelper.createMaxGamma();
         var maxNeutron = radHelper.createMaxNeutron();
 
@@ -49,9 +49,9 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
                 .addField(occupancyCount.getName(), occupancyCount)
                 .addField(occupancyStart.getName(), occupancyStart)
                 .addField(occupancyEnd.getName(), occupancyEnd)
+                .addField(neutronBkg.getName(), neutronBkg)
                 .addField(gammaAlarm.getName(), gammaAlarm)
                 .addField(neutronAlarm.getName(), neutronAlarm)
-//                .addField(objectMark.getName(), objectMark)
                 .addField(maxGamma.getName(), maxGamma)
                 .addField(maxNeutron.getName(), maxNeutron)
                 .build();
@@ -84,11 +84,11 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
         dataBlock.setIntValue(1, monitorRegisters.getObjectCounter());
         dataBlock.setDoubleValue(2, startTime);
         dataBlock.setDoubleValue(3, endTime);
-        dataBlock.setBooleanValue(4, gammaAlarm);
-        dataBlock.setBooleanValue(5, neutronAlarm);
-//        dataBlock.setIntValue(6, monitorRegisters.getObjectMark());
-        dataBlock.setIntValue(6, maxGamma);
-        dataBlock.setIntValue(7, maxNeutron);
+        dataBlock.setDoubleValue(4, monitorRegisters.getNeutronChannelBackground());
+        dataBlock.setBooleanValue(5, gammaAlarm);
+        dataBlock.setBooleanValue(6, neutronAlarm);
+        dataBlock.setIntValue(7, maxGamma);
+        dataBlock.setIntValue(8, maxNeutron);
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

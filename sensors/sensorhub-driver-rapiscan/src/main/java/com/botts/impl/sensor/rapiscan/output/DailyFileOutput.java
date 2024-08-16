@@ -31,7 +31,7 @@ public class DailyFileOutput extends AbstractSensorOutput<RapiscanSensor> {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
-        var csvLine = radHelper.createCsvLine();
+        var rpmMsg = radHelper.createRapiscanMessage();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
@@ -39,7 +39,7 @@ public class DailyFileOutput extends AbstractSensorOutput<RapiscanSensor> {
                 .updatable(true)
                 .definition(RADHelper.getRadUri("gamma-count"))
                 .addField(samplingTime.getName(), samplingTime)
-                .addField(csvLine.getName(), csvLine)
+                .addField(rpmMsg.getName(), rpmMsg)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");

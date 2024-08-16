@@ -78,11 +78,11 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-    public Text createMonitorRegister(){
+    public Text createAspectMessageFile(){
         return createText()
-                .name("monitorRegistersMsg")
+                .name("aspectMessage")
                 .label("Aspect Message")
-                .definition(getRadUri("monitor-register"))
+                .definition(getRadUri("aspect-message"))
                 .build();
     }
 
@@ -670,11 +670,11 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-    public Text createCsvLine(){
+    public Text createRapiscanMessage(){
         return createText()
-                .name("csvLine")
-                .label("CSV Line")
-                .definition(getRadInstrumentUri("csv-line"))
+                .name("rapiscanMessage")
+                .label("Rapiscan Message")
+                .definition(getRadInstrumentUri("rapiscan-message"))
                 .build();
     }
     public Text createRIComponentVersion() {
