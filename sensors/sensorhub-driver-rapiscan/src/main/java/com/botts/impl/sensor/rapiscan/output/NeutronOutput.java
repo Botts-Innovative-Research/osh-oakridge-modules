@@ -11,8 +11,8 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 
 public class NeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
 
-    private static final String SENSOR_OUTPUT_NAME = "neutronScan";
-    private static final String SENSOR_OUTPUT_LABEL = "Neutron Scan";
+    private static final String SENSOR_OUTPUT_NAME = "neutronCount";
+    private static final String SENSOR_OUTPUT_LABEL = "Neutron Count";
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
@@ -35,7 +35,7 @@ public class NeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
                 .updatable(true)
-                .definition(RADHelper.getRadUri("neutron-scan"))
+                .definition(RADHelper.getRadUri("neutron-count"))
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(alarmState.getName(), alarmState)
                 .addField(count1.getName(), count1)
