@@ -14,7 +14,7 @@ import org.vast.data.TextEncodingImpl;
 
 public class SetupNeutronOutput extends AbstractSensorOutput<RapiscanSensor> {
 
-    private static final String SENSOR_OUTPUT_NAME = "setupNeutron1";
+    private static final String SENSOR_OUTPUT_NAME = "setupNeutron";
     private static final String SENSOR_OUTPUT_LABEL = "Setup Neutron";
 
     private static final Logger logger = LoggerFactory.getLogger(SetupNeutronOutput.class);

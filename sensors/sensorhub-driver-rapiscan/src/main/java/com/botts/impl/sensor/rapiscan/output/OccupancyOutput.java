@@ -29,23 +29,11 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
     public void init(){
         RADHelper radHelper = new RADHelper();
-
-
-//         else if (tag.equals("GX"))
-//        {
-//            out.index = Integer.parseInt(valueStrList.get(0));
-//            out.neutronBackground = Double.parseDouble(valueStrList.get(1)) / 1000.0;
-//            out.railCarIndex = Integer.parseInt(valueStrList.get(2));
-//            out.endTime = time;
-//            out.duration = Duration.between(out.startTime, out.endTime);
-//            out.realOccupancy = true;
-//        }
         var samplingTime = radHelper.createPrecisionTimeStamp();
         var occupancyCount = radHelper.createOccupancyCount();
         var occupancyStart = radHelper.createOccupancyStartTime();
         var occupancyEnd = radHelper.createOccupancyEndTime();
         var neutronBackground = radHelper.createNeutronBackground();
-//        var gammaBackground = radHelper.createGammaBackground();
         var gammaAlarm = radHelper.createGammaAlarm();
         var neutronAlarm = radHelper.createNeutronAlarm();
         var maxGamma = radHelper.createMaxGamma();
@@ -62,7 +50,6 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
                 .addField(occupancyStart.getName(), occupancyStart)
                 .addField(occupancyEnd.getName(), occupancyEnd)
                 .addField(neutronBackground.getName(), neutronBackground)
-//                .addField(gammaBackground.getName(), gammaBackground)
                 .addField(gammaAlarm.getName(), gammaAlarm)
                 .addField(neutronAlarm.getName(), neutronAlarm)
                 .addField(maxGamma.getName(), maxGamma)
@@ -91,8 +78,6 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setBooleanValue(index++, isNeutronAlarm);
         dataBlock.setIntValue(index++, gammaMax);
         dataBlock.setIntValue(index++, neutronMax);
-
-        //dataBlock.updateAtomCount();
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));
 
