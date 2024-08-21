@@ -21,7 +21,10 @@ import com.botts.impl.sensor.rapiscan.output.GammaThresholdOutput;
 import com.botts.impl.sensor.rapiscan.output.*;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.sensor.SensorException;
+import org.sensorhub.impl.SensorHub;
+import org.sensorhub.impl.comm.TCPCommProvider;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,7 +40,7 @@ import java.io.InputStream;
  * @author Drew Botts
  * @since Oct 16, 2023
  */
-public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
+public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> implements Runnable {
 
     private static final Logger logger = LoggerFactory.getLogger(RapiscanSensor.class);
 
@@ -46,7 +49,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     private EMLService emlService;
 
     // Connection
-    private ICommProvider<?> commProvider;
+    private ICommProvider<?> commProviderModule;
 
     // Outputs
     private GammaOutput gammaOutput;
@@ -64,9 +67,14 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     private EMLScanContextualOutput emlScanContextualOutput;
     private EMLContextualOutput emlContextualOutput;
 
+    private Thread tcpConnectionThread;
+    private boolean isRunning;
+
+    private long reconnectAttempts;
+    private long count = 0;
+
     @Override
     public void doInit() throws SensorHubException {
-
         super.doInit();
 
         // Generate identifiers
@@ -146,56 +154,97 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     @Override
     protected void doStart() throws SensorHubException {
+        reconnectAttempts = config.commSettings.connection.reconnectAttempts;
 
         // Initialize comm provider
-        if (commProvider == null) {
+        if (commProviderModule == null) {
 
             // we need to recreate comm provider here because it can be changed by UI
             try {
+                tryConnection();
+            } catch (Exception e) {
+                throw new SensorException("error during  start of Sensor: {}", e);
+            }
+        }
+    }
 
+    @Override
+    protected void afterStart() {
+        // Begin heartbeat check
+        tcpConnectionThread = new Thread(this);
+        isRunning = true;
+        tcpConnectionThread.start();
+    }
+
+    public void tryConnection() throws SensorHubException {
+        synchronized (this) {
+            try {
                 if (config.commSettings == null)
                     throw new SensorHubException("No communication settings specified");
 
                 var moduleReg = getParentHub().getModuleRegistry();
 
-                commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
-                commProvider.start();
+                commProviderModule = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
+                commProviderModule.start();
 
-            } catch (Exception e) {
-                commProvider = null;
-                throw new SensorException("error during  start of Sensor: {}", e);
-            }
-
-
-            // Connect to data stream
-            try {
-                InputStream msgIn = new BufferedInputStream(commProvider.getInputStream());
+                // Connect to input stream
+                InputStream msgIn = new BufferedInputStream(commProviderModule.getInputStream());
                 messageHandler = new MessageHandler(msgIn, this);
-            } catch (IOException e) {
-
-                throw new SensorException("Error while initializing communications ", e);
+            } catch (Exception e) {
+                commProviderModule.stop();
+                commProviderModule = null;
+                messageHandler = null;
+                throw new SensorHubException("error during  start of Sensor: {}", e);
             }
         }
     }
 
     @Override
     public void doStop() {
-
-        if (commProvider != null) {
-
+        if (commProviderModule != null) {
             try {
-                commProvider.stop();
+                isRunning = false;
+                commProviderModule.stop();
             } catch (Exception e) {
                 logger.error("Uncaught exception attempting to stop comms module", e);
             } finally {
-                commProvider = null;
+                commProviderModule = null;
             }
         }
     }
 
     @Override
     public boolean isConnected() {
-        return commProvider != null && commProvider.isStarted();
+        return commProviderModule != null && commProviderModule.isStarted();
+    }
+
+    // Heartbeat connection retry
+    @Override
+    public void run() {
+        synchronized (this) {
+            while (isRunning) {
+                if(messageHandler.getTimeSinceLastMessage() < config.commSettings.connection.reconnectPeriod) {
+                    System.out.println("\nTCP currently connected");
+                    getLogger().debug("TCP currently connected");
+                }
+                else {
+                    try {
+                        // TODO: Retry connection after it gets dropped
+                        stop();
+                        reportError("Connection dropped", new SensorHubException("Rapiscan connection not received after " + config.commSettings.connection.reconnectPeriod/1000 + " seconds"));
+                    } catch (SensorHubException e) {
+                        throw new RuntimeException(e);
+                    }
+                    System.out.println("\nTCP disconnected");
+                    getLogger().debug("TCP disconnected");
+                }
+                try {
+                    Thread.sleep(1000);
+                } catch (Exception e) {
+                    logger.debug("Couldn't sleep");
+                }
+            }
+        }
     }
 
     @Override
@@ -256,4 +305,5 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     public DailyFileOutput getDailyFileOutput() {
         return dailyFileOutput;
     }
+
 }

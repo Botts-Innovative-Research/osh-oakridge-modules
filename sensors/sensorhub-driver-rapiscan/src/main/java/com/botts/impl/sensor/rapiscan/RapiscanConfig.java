@@ -19,6 +19,7 @@ import org.sensorhub.api.sensor.PositionConfig.EulerOrientation;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.api.sensor.SensorConfig;
+import org.sensorhub.impl.comm.TCPCommProviderConfig;
 
 /**
  * Configuration settings for the [NAME] driver exposed via the OpenSensorHub Admin panel.
@@ -45,7 +46,7 @@ public class RapiscanConfig extends SensorConfig {
     public String serialNumber = "rpm001";
 
     @DisplayInfo(desc = "Communication settings to connect to the radiation portal monitor's data stream")
-    public CommProviderConfig<?> commSettings;
+    public TCPCommProviderConfig commSettings;
 
     @DisplayInfo(desc="RPM Location")
     public PositionConfig positionConfig = new PositionConfig();
