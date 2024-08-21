@@ -18,9 +18,9 @@ public class ModbusTCPCommProvider extends AbstractModule<ModbusTCPCommProviderC
     @Override
     protected void doStart() throws SensorHubException, InterruptedException {
         var config = this.config.protocol;
-        var retry = config.retryAttempts;
+        var retry = config.retryAttempts + 1;
 
-        while (retry > 0) {
+        while (retry > 0 && !tcpMasterConnection.isConnected()) {
             try {
                 InetAddress address = InetAddress.getByName(config.remoteHost);
                 tcpMasterConnection = new TCPMasterConnection(address);
