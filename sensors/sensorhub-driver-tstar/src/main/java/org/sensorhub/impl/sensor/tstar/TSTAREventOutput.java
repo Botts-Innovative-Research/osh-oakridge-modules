@@ -43,10 +43,10 @@ public class TSTAREventOutput extends AbstractSensorOutput<TSTARDriver>{
                 .addField("unit-id", tstarHelper.createUnitId())
                 .addField("generated_timestamp", tstarHelper.createGeneratedTimestamp())
                 .addField("received_timestamp", tstarHelper.createReceivedTimestamp())
-                .addField("acknowledged_by", tstarHelper.createAcknowledgedBy())
+                .addField("acknowledged_by", tstarHelper.createAcknowledgedBy()) //Fields: user_id, name
                 .addField("location", tstarHelper.createLocationVectorLatLon())
                 .addField("ack_timestamp", tstarHelper.createAckTimestamp())
-//                .addField("msg_data", tstarHelper.createMessageData())
+                .addField("msg_data", tstarHelper.createMsgData()) //Fields: source_id, unit_name, sensor_name)
                 .addField("notification_sent", tstarHelper.createNotificationSent())
                 .build();
 
@@ -73,11 +73,22 @@ public class TSTAREventOutput extends AbstractSensorOutput<TSTARDriver>{
                 dataBlock.setIntValue(4, event.unit_id);
                 dataBlock.setLongValue(5, eventGeneratedTimestamp);
                 dataBlock.setLongValue(6, eventReceivedTimestamp);
-                dataBlock.setDoubleValue(7, event.latitude);
-                dataBlock.setDoubleValue(8, event.longitude);
-                dataBlock.setLongValue(9, eventAckTimestamp);
-                //msg_data Object? : int source_id, String unit_name, String sensor_name
-                dataBlock.setBooleanValue(10, event.notification_sent);
+                try {
+                    dataBlock.setIntValue(7, event.acknowledged_by.user_id);
+                    dataBlock.setStringValue(8, event.acknowledged_by.name);
+                } catch (NullPointerException e) {
+                    dataBlock.setIntValue(7, 0 );
+                    dataBlock.setStringValue(8, null);
+                }
+                dataBlock.setDoubleValue(9, event.latitude);
+                dataBlock.setDoubleValue(10, event.longitude);
+                try {
+                    dataBlock.setLongValue(11, eventAckTimestamp);
+                } catch (NullPointerException e) {}
+                dataBlock.setIntValue(12, event.msg_data.source_id);
+                dataBlock.setStringValue(13,event.msg_data.unit_name);
+                dataBlock.setStringValue(14, event.msg_data.sensor_name);
+                dataBlock.setBooleanValue(15, event.notification_sent);
 
 
                 // update latest record and send event
@@ -97,14 +108,10 @@ public class TSTAREventOutput extends AbstractSensorOutput<TSTARDriver>{
         Date receivedTimestamp = event.received_timestamp;
         eventReceivedTimestamp = receivedTimestamp.getTime() / 1000;
 
-
         if (event.ack_timestamp != null){
             Date ackTimestamp = event.ack_timestamp;
             eventAckTimestamp = ackTimestamp.getTime() / 1000;
-        } else {
-            eventAckTimestamp = 0L;
         }
-
     }
 
     public DataComponent getRecordDescription() {

@@ -66,7 +66,8 @@ public class TSTARPositionOutput extends AbstractSensorOutput<TSTARDriver> {
             dataBlock.setIntValue(6, position.speed);
             dataBlock.setLongValue(7, positionGeneratedTimestamp);
             dataBlock.setLongValue(8, positionReceivedTimestamp);
-            dataBlock.setStringValue(9, position.channel);
+            dataBlock.setIntValue(9, position.campaign_id);
+            dataBlock.setStringValue(10, position.channel);
 
             // update latest record and send event
             latestRecord = dataBlock;

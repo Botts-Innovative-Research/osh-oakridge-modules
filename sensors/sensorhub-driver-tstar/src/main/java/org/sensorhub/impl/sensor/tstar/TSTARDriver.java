@@ -41,7 +41,7 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
     TSTAREventOutput eventOutput;
     TSTARMessageLogOutput messageLogOutput;
     TSTARPositionOutput positionOutput;
-    //    TSTARUnitOutput unitOutput;
+    TSTARUnitOutput unitOutput;
     TSTARUnitLogOutput unitLogOutput;
 
 
@@ -153,9 +153,9 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
         addOutput(positionOutput, false);
         positionOutput.init();
 
-//        unitOutput = new TSTARUnitOutput(this);
-//        addOutput(unitOutput, false);
-//        unitOutput.init();
+        unitOutput = new TSTARUnitOutput(this);
+        addOutput(unitOutput, false);
+        unitOutput.init();
 
         unitLogOutput = new TSTARUnitLogOutput(this);
         addOutput(unitLogOutput, false);
@@ -187,7 +187,7 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
 
         logger.info("Starting Messenger");
         messageHandler = new TSTARMessageHandler(authToken, campaignId, auditLogOutput, campaignOutput, eventOutput,
-                messageLogOutput, positionOutput, unitLogOutput);
+                messageLogOutput, positionOutput, unitLogOutput, unitOutput);
         logger.info("Messenger Started");
 
         try{

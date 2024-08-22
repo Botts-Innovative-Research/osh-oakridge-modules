@@ -10,19 +10,20 @@ public class Event {
     public int unit_id;
     public Date generated_timestamp;
     public Date received_timestamp;
-
-    public Object acknowledged_by = new Object(){
-        int user_id;
-        String name;
-    };
+    public AcknowledgedBy acknowledged_by;
+    public static class AcknowledgedBy {
+        public int user_id;
+        public String name;
+    }
     public double latitude;
     public double longitude;
     public Date ack_timestamp;
-    public Object msg_data = new Object() {
+    public EventMsgData msg_data;
+    public static class EventMsgData {
         public int source_id;
         public String unit_name;
         public String sensor_name;
-    };
+    }
     public Boolean notification_sent;
 
 

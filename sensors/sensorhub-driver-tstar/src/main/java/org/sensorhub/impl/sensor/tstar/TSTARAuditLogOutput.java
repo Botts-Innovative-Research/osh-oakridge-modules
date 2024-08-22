@@ -40,7 +40,7 @@ public class TSTARAuditLogOutput extends AbstractSensorOutput<TSTARDriver> {
                 .addField("target_table", tstarHelper.createTargetTable())
                 .addField("target_id", tstarHelper.createTargetId())
                 .addField("target_name", tstarHelper.createTargetName())
-                //data Object? : String id, int campaign_id
+                .addField("audit_log_data", tstarHelper.createAuditLogData())
                 .addField("user_name", tstarHelper.createUserName())
                 .build();
 
@@ -68,8 +68,9 @@ public class TSTARAuditLogOutput extends AbstractSensorOutput<TSTARDriver> {
         dataBlock.setStringValue(5, auditLog.target_table);
         dataBlock.setStringValue(6, auditLog.target_id);
         dataBlock.setStringValue(7, auditLog.target_name);
-//      Object Data? : String id, int campaign_id
-        dataBlock.setStringValue(8, auditLog.user_name);
+        dataBlock.setStringValue(8, auditLog.data.id);
+        dataBlock.setIntValue(9, auditLog.data.campaign_id);
+        dataBlock.setStringValue(10, auditLog.user_name);
 
         // update latest record and send event
         latestRecord = dataBlock;

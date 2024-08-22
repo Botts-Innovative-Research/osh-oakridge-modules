@@ -11,10 +11,10 @@ public class AuditLog {
     public String target_table;
     public String target_id;
     public String target_name;
-    public Object data = new Object(){
+    public AuditLogData data;
+    public static class AuditLogData{
         public String id;
         public int campaign_id;
-
-    };
+    }
     public String user_name;
 }
