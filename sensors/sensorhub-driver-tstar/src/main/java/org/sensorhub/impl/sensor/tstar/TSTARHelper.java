@@ -2,54 +2,14 @@ package org.sensorhub.impl.sensor.tstar;
 
 import net.opengis.swe.v20.*;
 import net.opengis.swe.v20.Boolean;
-import org.sensorhub.api.data.ObsData;
-import org.vast.swe.SWEBuilders;
 import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
 
-import javax.swing.text.StyledEditorKit;
-import javax.xml.crypto.Data;
-import java.net.URI;
 
 public class TSTARHelper extends GeoPosHelper {
 
-    String url;
-    String campaignId;
-    String unitId;
-
-    public String getCampaignId(String propName) {
-        campaignId = "http://" + url + "/#/campaign/get_campaigns__campaignId_" + propName;
-        return campaignId;
-    }
-
-    public String getUnitId(String propName, int campaignId) {
-        return unitId;
-    }
-
-    //Create helpers to put together String for get requests
-
-
 //_____________________________________________________________________________
-//    USER INFO FIELDS
-//_____________________________________________________________________________
-
-    public Category createUserName() {
-        return createCategory()
-                .name("userName")
-                .label("User Name")
-                .definition(SWEHelper.getPropertyUri("user_name"))
-                .build();
-    }
-
-    public Category createUserId() {
-        return createCategory()
-                .name("userId")
-                .label("User ID")
-                .definition(SWEHelper.getPropertyUri("user_id"))
-                .build();
-    }
-//_____________________________________________________________________________
-//    DATE/TIME FIELDS
+//    GENERIC DATE/TIME FIELDS
 //_____________________________________________________________________________
 
     public Time createTimestamp() {
@@ -64,7 +24,7 @@ public class TSTARHelper extends GeoPosHelper {
 
     public Time createGeneratedTimestamp() {
         return createTime()
-                .asSamplingTimeIsoGPS()
+                .asSamplingTimeIsoUTC()
                 .name("generatedTimestamp")
                 .label("Generated Timestamp")
                 .definition(SWEHelper.getPropertyUri("generated_timestamp"))
@@ -102,7 +62,6 @@ public class TSTARHelper extends GeoPosHelper {
                 .build();
     }
 
-    //Check if this is same as heading
     public Quantity createCourse() {
         return createQuantity()
                 .name("course")
@@ -162,14 +121,8 @@ public class TSTARHelper extends GeoPosHelper {
                 .name("acknowledgedBy")
                 .label("Acknowledged By")
                 .definition(SWEHelper.getPropertyUri("acknowledged_by"))
-                .addField("userId", createCategory()
-                        .label("User ID")
-                        .definition(SWEHelper.getPropertyUri("ack_by_user_id"))
-                        .build())
-                .addField("name", createText()
-                        .label("Name")
-                        .definition(SWEHelper.getPropertyUri("ack_by_name"))
-                        .build())
+                    .addField("ackByUserId", createUserId())
+                .addField("ackByName", createUserName())
                 .build();
     }
 
@@ -189,21 +142,18 @@ public class TSTARHelper extends GeoPosHelper {
                 .name("msgData")
                 .label("Msg Data")
                 .definition(SWEHelper.getPropertyUri("msg_data"))
-                .addField("source_id", createCategory()
-                        .name("sourceID")
-                        .label("Source ID")
-                        .definition(SWEHelper.getPropertyUri("source_id"))
-                        .build())
-                .addField("unit_name", createText()
-                        .name("unitName")
-                        .label("Unit Name")
-                        .definition(SWEHelper.getPropertyUri("unit_name"))
-                        .build())
-                .addField("sensor_name", createText()
-                        .name("sensorName")
+                .addField("eventMsgDataSourceId", createSourceId())
+                .addField("eventMsgDataUnitName", createUnitName())
+                .addField("sensorName", createText()
                         .label("Sensor Name")
                         .definition(SWEHelper.getPropertyUri("sensor_name"))
                         .build())
+                .build();
+    }
+    public Category createSourceId(){
+        return createCategory()
+                .label("Source ID")
+                .definition(SWEHelper.getPropertyUri("source_id"))
                 .build();
     }
 
@@ -413,34 +363,52 @@ public class TSTARHelper extends GeoPosHelper {
 
     public DataRecord createUnitCheckin() {
         return createRecord()
-                .addField("CheckinScheduleSec", createCategory()
-                        .label("Checkin schedule (Seconds)")
-                        .build())
+                .addField("UnitCheckinScheduleSec", createCheckinSechduleSec())
                 .addField("normCheckinSec", createCategory()
-                        .label("Norm Checkin (Seconds)")
+                        .label("Norm Checkin (Secs)")
+                        .definition(SWEHelper.getPropertyUri("norm_checkin_sec"))
                         .build())
                 .addField("extCheckinSec", createCategory()
-                        .label("Ext Checkin (Seconds)")
+                        .label("Ext Checkin (Secs)")
+                        .definition(SWEHelper.getPropertyUri("ext_checkin_sec"))
                         .build())
                 .build();
     }
+    public Category createCheckinSechduleSec(){
+        return createCategory()
+                .label("Checkin Schedule (Secs)")
+                .definition(SWEHelper.getPropertyUri("checkin_schedule_sec"))
+                .build();
+    }
+
     public DataRecord createUnitStatus() {
         return createRecord()
-                .addField("powerMode", createText()
-                        .label("Power Mode")
-                        .build())
+                .addField("unitStatusPowerMode", createPowerMode())
                 .addField("pendingPowerMode", createCategory()
                         .label("Pending Power Mode")
+                        .definition(SWEHelper.getPropertyUri("pending_power_mode"))
                         .build())
                 .addField("shorePowerLatch", createBoolean()
                         .label("Shore Power Latch")
+                        .definition(SWEHelper.getPropertyUri("shore_power_latch"))
                         .build())
-                .addField("armState", createText()
-                        .label("Arm State")
-                        .build())
+                .addField("unitStatusArmState", createArmState())
                 .addField("pendingArmState", createCategory()
                         .label("Pending Arm State")
+                        .definition(SWEHelper.getPropertyUri("pending_arm_state"))
                         .build())
+                .build();
+    }
+    public Text createPowerMode(){
+        return createText()
+                .label("Power Mode")
+                .definition(SWEHelper.getPropertyUri("power_mode"))
+                .build();
+    }
+    public Text createArmState(){
+        return createText()
+                .label("Arm State")
+                .definition(SWEHelper.getPropertyUri("arm_state"))
                 .build();
     }
 
@@ -460,6 +428,7 @@ public class TSTARHelper extends GeoPosHelper {
     public Boolean createHasRecentAlarm(){
         return createBoolean()
                 .label("Has Recent Alarm")
+                .definition(SWEHelper.getPropertyUri("has_recent_alarm"))
                 .build();
     }
 
@@ -467,6 +436,7 @@ public class TSTARHelper extends GeoPosHelper {
         return createRecord()
                 .addField("sensorConfigsCount", createCount()
                         .label("Sensor Configs Count")
+                        .definition(SWEHelper.getPropertyUri("sensor_configs_count"))
                         .id("sensorConfigsCountId"))
                 .addField("sensorConfigs", createArray()
                         .label("Sensors Configs")
@@ -485,7 +455,7 @@ public class TSTARHelper extends GeoPosHelper {
                                         .definition(SWEHelper.getPropertyUri("config_node_id")))
                                 .addField("configLuxSensitivity", createCategory()
                                         .label("Lux Sensitivity")
-                                        .definition(SWEHelper.getPropertyUri("configLuxSensitivity")))
+                                        .definition(SWEHelper.getPropertyUri("config_lux_sensitivity")))
                                 .addField("configMotionSensitivity", createCategory()
                                         .label("Motion Sensitivity")
                                         .definition(SWEHelper.getPropertyUri("config_motion_sensitivity")))))
@@ -511,11 +481,11 @@ public class TSTARHelper extends GeoPosHelper {
                 .addField("provisioningId", createCategory()
                         .label("ID")
                         .definition(SWEHelper.getPropertyUri("provisioning_id")))
-                .addField("generatedTimestamp", createGeneratedTimestamp())
-                .addField("claimedTimestamp", createTime()
-                        .asForecastTimeIsoUTC()
-                        .label("Claimed Timestamp")
-                        .definition(SWEHelper.getPropertyUri("claimed_timestamp")))
+                .addField("unitProvisioningGeneratedTimestamp", createGeneratedTimestamp())
+                .addField("unitProvisioningClaimedTimestamp", createTimestamp())
+//                        .asForecastTimeIsoUTC()
+//                        .label("Claimed Timestamp")
+//                        .definition(SWEHelper.getPropertyUri("claimed_timestamp")))
                 .addField("unitCounter", createCount()
                         .label("Unit Counter")
                         .definition(SWEHelper.getPropertyUri("unit_counter")))
@@ -556,7 +526,7 @@ public class TSTARHelper extends GeoPosHelper {
     public DataComponent createUnitMessage() {
         return createRecord()
                 .label("Message")
-                .definition(SWEHelper.getPropertyUri("message_log_message"))
+                .definition(SWEHelper.getPropertyUri("unit_message"))
                 .description("Message received in message log containing high & low side data")
                 .addField("low", createLow())
                 .addField("high", createHigh())
@@ -567,14 +537,17 @@ public class TSTARHelper extends GeoPosHelper {
                 .label("Last Command")
                 .definition(SWEHelper.getPropertyUri("last_command"))
                 .addField("lastCommandId", createQuantity()
-                        .label("ID"))
+                        .label("ID")
+                        .definition(SWEHelper.getPropertyUri("last_command_id")))
                 .addField("lastCommandMeta", createMeta())
                 .addField("lastCommandChannel", createChannel())
                 .addField("message", createRecord()
                         .label("Message")
+                        .definition(SWEHelper.getPropertyUri("last_command_message"))
                         .addField("eventLogAck", createQuantity()
-                                .label("Event Log Ack")))
-                .addField("timestamp", createTimestamp())
+                                .label("Event Log Ack")
+                                .definition(SWEHelper.getPropertyUri("event_log_ack")))
+                .addField("lastCommandTimestamp", createTimestamp()))
                 .build();
     }
 
@@ -592,27 +565,23 @@ public class TSTARHelper extends GeoPosHelper {
                 .label("Unit Events")
                 .definition(SWEHelper.getPropertyUri("unit_events"))
                 .addField("eventGpsFailure", createBoolean()
-                        .label("EVENT GPS FAILURE"))
+                        .label("EVENT GPS FAILURE")
+                        .definition(SWEHelper.getPropertyUri("event_gps_failure")))
                 .addField("eventUnitMissing", createBoolean()
-                        .label("EVENT UNIT MISSING"))
+                        .label("EVENT UNIT MISSING")
+                        .definition(SWEHelper.getPropertyUri("event_unit_missing")))
                 .addField("eventImproperDisarm", createBoolean()
-                        .label("EVENT IMPROPER DISARM"))
+                        .label("EVENT IMPROPER DISARM")
+                        .definition(SWEHelper.getPropertyUri("event_improper_disarm")))
                 .addField("eventMainboardFailure", createBoolean()
-                        .label("EVENT MAINBOARD FAILURE"))
+                        .label("EVENT MAINBOARD FAILURE")
+                        .definition(SWEHelper.getPropertyUri("event_mainboard_failure")))
                 .addField("eventArmingNoCampaign", createBoolean()
-                        .label("EVENT ARMING NO CAMPAIGN"))
+                        .label("EVENT ARMING NO CAMPAIGN")
+                        .definition(SWEHelper.getPropertyUri("event_arming_no_campaign")))
                 .build();
     }
 
-    //TODO
-    // Check timestamp
-    public Time createUnitTimestamp() {
-        return createTime()
-                .name("unitTimestamp")
-                .label("Unit Timestamp")
-                .definition(SWEHelper.getPropertyUri("timestamp"))
-                .build();
-    }
 
 //_____________________________________________________________________________
 //    AUDIT LOG FIELDS
@@ -639,6 +608,14 @@ public class TSTARHelper extends GeoPosHelper {
                 .name("sourceIp")
                 .label("Source IP")
                 .definition(SWEHelper.getPropertyUri("source_ip"))
+                .build();
+    }
+
+    public Category createUserId() {
+        return createCategory()
+                .name("userId")
+                .label("User ID")
+                .definition(SWEHelper.getPropertyUri("user_id"))
                 .build();
     }
 
@@ -679,6 +656,14 @@ public class TSTARHelper extends GeoPosHelper {
                         .label("Campaign ID")
                         .definition(SWEHelper.getPropertyUri("audit_log_data_campaign_id"))
                         .build())
+                .build();
+    }
+    public Category createUserName() {
+        return createCategory()
+                .name("userName")
+                .label("User Name")
+                .definition(SWEHelper.getPropertyUri("user_name"))
+                .description("User name")
                 .build();
     }
 
@@ -744,15 +729,16 @@ public class TSTARHelper extends GeoPosHelper {
                 .addField("type", createText()
                         .label("Type")
                         .definition(SWEHelper.getPropertyUri("type")))
-                .addField("arrayCount", createCount()
-                        .id("arrayCountID"))
-                .addField("arrayData", createArray()
+                .addField("rawPacketArrayCount", createCount()
+                        .id("rawPacketArrayID")
+                        .definition(SWEHelper.getPropertyUri("raw_packet_array_count_id")))
+                .addField("rawPacketArray", createArray()
                         .label("Raw Packet")
                         .definition(SWEHelper.getPropertyUri("raw_packet"))
                         .description("Raw packet data")
-                        .withVariableSize("arrayCountID")
-                        .withElement("arrayElement", createQuantity()
-//                                .label("Values")
+                        .withVariableSize("rawPacketArrayID")
+                        .withElement("rawPacketValues", createQuantity()
+                                .label("Values")
                                 .definition(SWEHelper.getPropertyUri("raw_packet_values"))))
                 .build();
     }
@@ -762,9 +748,12 @@ public class TSTARHelper extends GeoPosHelper {
                 .label("Message")
                 .definition(SWEHelper.getPropertyUri("message_log_message"))
                 .description("Message received in message log containing high & low side data")
+                .addField("eventLogAck", createCategory()
+                        .label("Event Log Acknowledgement")
+                        .definition(SWEHelper.getPropertyUri("event_log_ack"))
+                        .optional(true))
                 .addField("low", createLow())
                 .addField("high", createHigh())
-                .addField("timestamp", createTimestamp())
                 .build();
     }
 
@@ -772,17 +761,65 @@ public class TSTARHelper extends GeoPosHelper {
         return createRecord()
                 .name("low")
                 .label("Low")
+                .optional(true)
                 .definition(SWEHelper.getPropertyUri("low"))
                 .description("Data contained in the low side message including gps & event log")
-                .addField("gps", createGps())
-                .addField("armState", createText().label("Arm State").build())
-                .addField("eventLog", createEventLog())
-                .addField("timestamp", createTimestamp())
-                .addField("powerMode", createText().label("Power Mode").build())
-                .addField("batteryVoltage", createQuantity().label("Battery Voltage").build())
-                .addField("eventLogLength", createQuantity().label("Event Log Length").build())
-                .addField("positionLogLength", createQuantity().label("Position Log Length").build())
-                .addField("checkinScheduleSec", createQuantity().label("Checkin Schdule Sec").build())
+                .addField("lowGps", createGps()) //DataComponent
+                .addField("armState", createArmState())
+                .addField("eventLog", createEventLog()) //DataComponent
+                .addField("lowTimestamp", createTimestamp())
+                .addField("powerMode", createPowerMode())
+                .addField("batteryVoltage", createQuantity()
+                        .label("Battery Voltage")
+                        .definition(SWEHelper.getPropertyUri("battery_voltage"))
+                        .build())
+                .addField("eventLogLength", createQuantity()
+                        .label("Event Log Length")
+                        .definition(SWEHelper.getPropertyUri("event_log_length"))
+                        .build())
+                .addField("positionLogLength", createQuantity()
+                        .label("Position Log Length")
+                        .definition(SWEHelper.getPropertyUri("position_log_length"))
+                        .build())
+                .addField("lowCheckinScheduleSec", createCheckinSechduleSec())
+                .build();
+    }
+    public DataComponent createGps() {
+        return createRecord()
+                .label("Gps")
+                .optional(true)
+                .definition(SWEHelper.getPropertyUri("gps"))
+                .addField("hdop", createQuantity()
+                        .label("hdop")
+                        .definition(SWEHelper.getPropertyUri("hdop")))
+                .addField("pdop", createQuantity()
+                        .label("pdop")
+                        .definition(SWEHelper.getPropertyUri("pdop")))
+                .addField("vdop", createQuantity()
+                        .label("vdop")
+                        .definition(SWEHelper.getPropertyUri("vdop")))
+                .addField("speed", createQuantity()
+                        .label("Speed")
+                        .definition(SWEHelper.getPropertyUri("speed")))
+                .addField("course", createQuantity()
+                        .label("Course")
+                        .definition(SWEHelper.getPropertyUri("course")))
+                .addField("altitude", createQuantity()
+                        .label("Altitude")
+                        .definition(SWEHelper.getPropertyUri("altitude")))
+                .addField("fixType", createFixType())
+                .addField("location", createLocationVectorLatLon()
+                        .definition(SWEHelper.getPropertyUri("gps_location")))
+                .addField("gpsTimestamp", createTimestamp())
+                .addField("num_satellites", createQuantity()
+                        .label("Num Satellites")
+                        .definition(SWEHelper.getPropertyUri("num_satellites")))
+                .build();
+    }
+    public Text createFixType(){
+        return createText()
+                .label("Fix Type")
+                .definition(SWEHelper.getPropertyUri("fix_type"))
                 .build();
     }
 
@@ -790,40 +827,11 @@ public class TSTARHelper extends GeoPosHelper {
         return createRecord()
                 .label("Event Log")
                 .description("")
-                .addField("fixType", createText().label("Fix Type"))
-                .addField("location", createLocationVectorLatLon())
-                .addField("sourceId", createCategory().label("Source ID"))
-                .addField("timestamp", createTimestamp())
-                .addField("eventType", createText().label("Event Type"))
-                .build();
-    }
-
-    public DataComponent createGps() {
-        return createRecord()
-                .name("GPS")
-                .label("Gps")
-                .definition(SWEHelper.getPropertyUri("gps"))
-                .addField("hdop", createQuantity()
-                        .label("hdop")
-                        .definition(SWEHelper.getPropertyUri("hdop")))
-                .addField("pdop", createQuantity().label("pdop")
-                        .definition(SWEHelper.getPropertyUri("pdop")))
-                .addField("vdop", createQuantity().label("vdop")
-                        .definition(SWEHelper.getPropertyUri("vdop")))
-                .addField("speed", createQuantity().label("Speed")
-                        .definition(SWEHelper.getPropertyUri("speed")))
-                .addField("course", createQuantity().label("Course")
-                        .definition(SWEHelper.getPropertyUri("course")))
-                .addField("altitude", createQuantity().label("Altitude")
-                        .definition(SWEHelper.getPropertyUri("altitude")))
-                .addField("fix_type", createText().label("Fix Type")
-                        .definition(SWEHelper.getPropertyUri("fix_type")))
-                .addField("location", createLocationVectorLatLon()
-                        .definition(SWEHelper.getPropertyUri("location")))
-                .addField("timestamp", createTimestamp())
-//                        .label("Timestamp"))
-                .addField("num_satellites", createQuantity()
-                        .definition(SWEHelper.getPropertyUri("num_satellites")))
+                .addField("eventLogFixType", createFixType())
+                .addField("eventLogLocation", createLocationVectorLatLon())
+                .addField("eventLogSourceId", createSourceId())
+                .addField("eventLogTimestamp", createTimestamp())
+                .addField("eventLogEventType", createEventType())
                 .build();
     }
 
@@ -831,6 +839,7 @@ public class TSTARHelper extends GeoPosHelper {
         return createRecord()
                 .name("high")
                 .label("High")
+                .optional(true)
                 .definition(SWEHelper.getPropertyUri("high"))
                 .addField("uiData", createUiData())
                 .addField("provisioning", createProvisioning())
@@ -842,7 +851,6 @@ public class TSTARHelper extends GeoPosHelper {
     }
     public DataComponent createUiData() {
         return createRecord()
-                .name("uiData")
                 .label("UI Data")
                 .definition(SWEHelper.getPropertyUri("ui_data"))
                 .addField("sensors", createSensorArray())
@@ -854,7 +862,8 @@ public class TSTARHelper extends GeoPosHelper {
         return createRecord()
                 .addField("sensorArrayCount", createCount()
                         .label("Sensor Array Count")
-                        .id("sensorArrayCountId"))
+                        .id("sensorArrayCountId")
+                        .definition(SWEHelper.getPropertyUri("sensor_array_count_id")))
                 .addField("sensorArray", createArray()
                         .label("Sensors")
                         .definition(SWEHelper.getPropertyUri("sensor_array"))
@@ -876,7 +885,6 @@ public class TSTARHelper extends GeoPosHelper {
 
     public Category createNodeId(){
         return createCategory()
-                .name("nodeId")
                 .label("Node ID")
                 .definition(SWEHelper.getPropertyUri("sensor_node_id"))
                 .build();
@@ -884,25 +892,78 @@ public class TSTARHelper extends GeoPosHelper {
 
     public Text createContainerImage() {
         return createText()
-                .name("containerImage")
                 .label("Container Image")
                 .definition(SWEHelper.getPropertyUri("container_image"))
-                .description("Description of container type e.g. Box-Truck-01 ")
+                .description("Description of container type, e.g. Box-Truck-01 ")
                 .build();
     }
 
     public DataComponent createProvisioning() {
         return createRecord()
-                .name("provisioning")
                 .label("Provisioning")
                 .definition(SWEHelper.getPropertyUri("provisioning"))
-                .addField("keyID", createCategory().label("Key ID").build())
+                .addField("keyID", createCategory()
+                        .label("Key ID")
+                        .definition(SWEHelper.getPropertyUri("key_id"))
+                        .build())
                 .addField("unitId", createUnitId())
                 .addField("unitName", createUnitName())
-                .addField("encryptionKey", createText().label("Encryption Key").build())
+                .addField("encryptionKey", createText()
+                        .label("Encryption Key")
+                        .definition(SWEHelper.getPropertyUri("encryption_key"))
+                        .build())
                 .build();
     }
 
+    public DataComponent createMainBoardData() {
+        return createRecord()
+                .name("mainBoardData")
+                .label("Main Board Data")
+                .definition(SWEHelper.getPropertyUri("main_board_data"))
+                .addField("mainBoardGps", createGps())
+                .addField("humidity", createCategory()
+                        .label("Humidity")
+                        .definition(SWEHelper.getPropertyUri("humidity"))
+                        .build())
+                .addField("pressure", createCategory()
+                        .label("Pressure")
+                        .definition(SWEHelper.getPropertyUri("pressure"))
+                        .build())
+                .addField("temperature", createTemperature())
+                .addField("powerSupply", createPowerSupply())
+                .addField("serialNumber", createSerialNumber())
+                .addField("zWaveSensors", createZWaveSensors())
+                .addField("hardwareVersion", createHardwareVersion())
+                .addField("softwareVersion", createSoftwareVersion())
+                .addField("eventLogOverruns", createQuantity()
+                        .label("Event Log Overruns")
+                        .definition(SWEHelper.getPropertyUri("event_log_overruns"))
+                        .build())
+                .addField("countdownToArming", createQuantity()
+                        .label("Countdown to Arming")
+                        .definition(SWEHelper.getPropertyUri("countdown_to_arming"))
+                        .build())
+                .addField("powerModeTimestamp", createQuantity()
+                        .label("Power Mode Timestamp")
+                        .definition(SWEHelper.getPropertyUri("power_mode_timestamp"))
+                        .build())
+                .addField("positionLogOverruns", createQuantity()
+                        .label("Position Log Overruns")
+                        .definition(SWEHelper.getPropertyUri("position_log_overruns"))
+                        .build())
+                .addField("countdownToModemOff", createQuantity()
+                        .label("Countdown to Modem Off")
+                        .definition(SWEHelper.getPropertyUri("countdown_to_modem_off"))
+                        .build())
+                .build();
+    }
+
+    public Category createTemperature(){
+        return createCategory()
+                .label("Temperature")
+                .definition(SWEHelper.getPropertyUri("temperature"))
+                .build();
+    }
     public Text createHardwareVersion(){
         return createText()
                 .label("Harware Version")
@@ -915,51 +976,21 @@ public class TSTARHelper extends GeoPosHelper {
                 .definition(SWEHelper.getPropertyUri("software_version"))
                 .build();
     }
-
     public Text createSerialNumber(){
         return createText()
                 .label("Serial Number")
                 .definition(SWEHelper.getPropertyUri("serial_number"))
                 .build();
     }
-    public DataComponent createMainBoardData() {
-        return createRecord()
-                .name("mainBoardData")
-                .label("Main Board Data")
-                .definition(SWEHelper.getPropertyUri("main_board_data"))
-                .addField("gps", createGps())
-                .addField("humidity", createCategory().label("Humidity").build())
-                .addField("pressure", createCategory().label("Pressure").build())
-                .addField("temperature", createCategory().label("Temperature").build())
-                .addField("powerSupply", createPowerSupply())
-                .addField("serialNumber", createSerialNumber())
-                .addField("zWaveSensors", createZWaveSensors())
-                .addField("hardwareVersion", createHardwareVersion())
-                .addField("softwareVersion", createSoftwareVersion())
-                .addField("eventLogOverruns", createQuantity()
-                        .label("Event Log Overruns")
-                        .build())
-                .addField("countdownToArming", createQuantity()
-                        .label("Countdown to Arming")
-                        .build())
-                .addField("powerModeTimestamp", createQuantity()
-                        .label("Power Mode Timestamp")
-                        .build())
-                .addField("positionLogOverruns", createQuantity()
-                        .label("Position Log Overruns")
-                        .build())
-                .addField("countdownToModemOff", createQuantity()
-                        .label("Countdown to Modem Off")
-                        .build())
-                .build();
-    }
 
+    //Category builder for createPowerSupply() fields
     public Category createPowerSupplyCat(String label, String propName){
         return createCategory()
                 .label(label)
                 .definition(SWEHelper.getPropertyUri(propName))
                 .build();
     }
+    //Boolean builder for createPowerSupply() fields
     public Boolean createPowerSupplyBool(String label, String propName){
         return createBoolean()
                 .label(label)
@@ -980,19 +1011,18 @@ public class TSTARHelper extends GeoPosHelper {
                 .addField("cmpin", createPowerSupplyCat("cmpin", "cmpin"))
                 .addField("idchg", createPowerSupplyCat("idchg", "idchg"))
                 .addField("sysovp", createPowerSupplyCat("sysovp", "sysovp"))
-                .addField("in_vindpm", createPowerSupplyBool("in_vindpm", "in_vindpm"))
-                .addField("timestamp", createTimestamp())
-                .addField("acoc_fault", createPowerSupplyBool("acoc_fault", "acoc_fault"))
-                .addField("acov_fault", createPowerSupplyBool("acov_fault", "acov_fault"))
-                .addField("batoc_fault", createPowerSupplyBool("batoc_fault","batoc_fault"))
-                .addField("pre_charging", createPowerSupplyBool("Pre Charging","pre_charging"))
-                .addField("fast_charging", createPowerSupplyBool("Fast Charging","fast_charging"))
-                .addField("fault_latch_off", createPowerSupplyBool("Fault Latch Off","fault_latch_off"))
+                .addField("inVindpm", createPowerSupplyBool("in_vindpm", "in_vindpm"))
+                .addField("powerSupplyTimestamp", createTimestamp())
+                .addField("acocFault", createPowerSupplyBool("acoc_fault", "acoc_fault"))
+                .addField("acovFault", createPowerSupplyBool("acov_fault", "acov_fault"))
+                .addField("batocFault", createPowerSupplyBool("batoc_fault","batoc_fault"))
+                .addField("preCharging", createPowerSupplyBool("Pre Charging","pre_charging"))
+                .addField("fastCharging", createPowerSupplyBool("Fast Charging","fast_charging"))
+                .addField("faultLatchOff", createPowerSupplyBool("Fault Latch Off","fault_latch_off"))
                 .addField("statusRegister", createPowerSupplyCat("Status Register", "status_register"))
                 .addField("prochotRegister", createPowerSupplyCat("Prochot Register","prochot_register"))
                 .addField("externalConnected", createPowerSupplyBool("External Connected","external_connected"))
                 .build();
-
     }
 
     public DataComponent createZWaveSensors() {
@@ -1002,7 +1032,8 @@ public class TSTARHelper extends GeoPosHelper {
                 .definition(SWEHelper.getPropertyUri("zwave_sensors"))
                 .addField("zWaveSensorCount", createCount()
                         .label("Sensor Count")
-                        .id("zWaveSensorCount"))
+                        .id("zWaveSensorCount")
+                        .definition(SWEHelper.getPropertyUri("zwave_sensor_count")))
                 .addField("zWaveSensorArray", createArray()
                         .label("Zwave Sensor Array")
                         .definition(SWEHelper.getPropertyUri("zwave_sensor_array"))
@@ -1010,41 +1041,39 @@ public class TSTARHelper extends GeoPosHelper {
                         .withElement("zWaveSensorArrayComponents", createRecord()
                                 .addField("rssi", createCategory()
                                         .label("rssi")
-                                        .definition(SWEHelper.getPropertyUri("rssi"))
-                                        .build())
+                                        .definition(SWEHelper.getPropertyUri("rssi")))
                                 .addField("nodeId", createNodeId())
                                 .addField("luxHigh", createBoolean()
                                         .label("Lux High")
-                                        .definition(SWEHelper.getPropertyUri("lux"))
-                                        .build())
+                                        .definition(SWEHelper.getPropertyUri("lux")))
                                 .addField("security", createBoolean()
                                         .label("Security")
-                                        .build())
+                                        .definition(SWEHelper.getPropertyUri("security")))
                                 .addField("batteryLow", createBoolean()
                                         .label("Battery Low")
-                                        .build())
+                                        .definition(SWEHelper.getPropertyUri("battery_low")))
                                 .addField("sensorType", createCategory()
                                         .label("Sensor Type")
-                                        .build())
+                                        .definition(SWEHelper.getPropertyUri("sensor_type")))
                                 .addField("contactOpen", createBoolean()
                                         .label("Contact Open")
-                                        .build())
+                                        .definition(SWEHelper.getPropertyUri("contact_open")))
                                 .addField("batteryLevel", createQuantity()
                                         .label("Battery Level")
-                                        .definition(SWEHelper.getPropertyUri("battery_level"))
-                                        .build())
+                                        .definition(SWEHelper.getPropertyUri("battery_level")))
                                 .addField("motionTrigger", createBoolean()
                                         .label("Motion Triggered")
-                                        .build())
+                                        .definition(SWEHelper.getPropertyUri("motion_triggered")))
                                 .addField("sensorMissing", createBoolean()
                                         .label("Sensor Missing")
-                                        .build())
+                                        .definition(SWEHelper.getPropertyUri("sensor_missing")))
                                 .addField("tamperTrigger", createBoolean()
                                         .label("Tamper Triggered")
-                                        .build())
+                                        .definition(SWEHelper.getPropertyUri("tamper_trigger")))
                                 .addField("lastReportTimestamp", createTimestamp())
                                 .addField("heartbeatIntervalSec", createQuantity()
-                                        .label("Heartbeat Interval (Seconds)"))))
+                                        .label("Heartbeat Interval (Seconds)")
+                                        .definition(SWEHelper.getPropertyUri("heartbeat_interval_sec")))))
                 .build();
     }
 
@@ -1055,9 +1084,7 @@ public class TSTARHelper extends GeoPosHelper {
                 .addField("uptime", createQuantity()
                         .label("Uptime")
                         .definition(SWEHelper.getPropertyUri("uptime")))
-                .addField("temperature", createQuantity()
-                        .label("Temperature")
-                        .definition(SWEHelper.getPropertyUri("temperature")))
+                .addField("temperature", createTemperature())
                 .addField("lastCheckin", createCategory()
                         .label("Last Checkin")
                         .definition(SWEHelper.getPropertyUri("last_checkin")))

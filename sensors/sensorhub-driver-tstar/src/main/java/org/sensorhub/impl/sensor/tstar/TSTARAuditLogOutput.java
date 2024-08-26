@@ -33,15 +33,15 @@ public class TSTARAuditLogOutput extends AbstractSensorOutput<TSTARDriver> {
                 .label(SENSOR_OUTPUT_NAME)
                 .definition(SWEHelper.getPropertyUri("AuditLogData"))
                 .addField("id", tstarHelper.createAuditLogId())
-                .addField("timestamp", tstarHelper.createTimestamp())
+                .addField("auditLogTimestamp", tstarHelper.createTimestamp())
                 .addField("action", tstarHelper.createAction())
-                .addField("source_ip", tstarHelper.createSourceIp())
-                .addField("user_id", tstarHelper.createUserId())
-                .addField("target_table", tstarHelper.createTargetTable())
-                .addField("target_id", tstarHelper.createTargetId())
-                .addField("target_name", tstarHelper.createTargetName())
-                .addField("audit_log_data", tstarHelper.createAuditLogData())
-                .addField("user_name", tstarHelper.createUserName())
+                .addField("sourceIp", tstarHelper.createSourceIp())
+                .addField("userId", tstarHelper.createUserId())
+                .addField("targetTable", tstarHelper.createTargetTable())
+                .addField("targetId", tstarHelper.createTargetId())
+                .addField("targetName", tstarHelper.createTargetName())
+                .addField("auditLogData", tstarHelper.createAuditLogData())
+                .addField("userName", tstarHelper.createUserName())
                 .build();
 
         dataEncoding = tstarHelper.newTextEncoding(",", "\n");
@@ -60,17 +60,20 @@ public class TSTARAuditLogOutput extends AbstractSensorOutput<TSTARDriver> {
         latestRecordTime = System.currentTimeMillis() / 1000;
         setAuditLogTime(auditLog);
 
-        dataBlock.setStringValue(0, auditLog.id);
-        dataBlock.setLongValue(1, auditLogTimestamp);
-        dataBlock.setStringValue(2, auditLog.action);
-        dataBlock.setStringValue(3, auditLog.source_ip);
-        dataBlock.setIntValue(4, auditLog.user_id);
-        dataBlock.setStringValue(5, auditLog.target_table);
-        dataBlock.setStringValue(6, auditLog.target_id);
-        dataBlock.setStringValue(7, auditLog.target_name);
-        dataBlock.setStringValue(8, auditLog.data.id);
-        dataBlock.setIntValue(9, auditLog.data.campaign_id);
-        dataBlock.setStringValue(10, auditLog.user_name);
+        int i = 0;
+        dataBlock.setStringValue(i++, auditLog.id);
+        dataBlock.setLongValue(i++, auditLogTimestamp);
+        dataBlock.setStringValue(i++, auditLog.action);
+        dataBlock.setStringValue(i++, auditLog.source_ip);
+        dataBlock.setIntValue(i++, auditLog.user_id);
+        dataBlock.setStringValue(i++, auditLog.target_table);
+        dataBlock.setStringValue(i++, auditLog.target_id);
+        dataBlock.setStringValue(i++, auditLog.target_name);
+        try {
+            dataBlock.setStringValue(i++, auditLog.data.id);
+            dataBlock.setIntValue(i++, auditLog.data.campaign_id);
+        } catch (NullPointerException e){}
+        dataBlock.setStringValue(i++, auditLog.user_name);
 
         // update latest record and send event
         latestRecord = dataBlock;

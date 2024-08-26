@@ -59,52 +59,7 @@ public class TSTARMessageHandler {
         log.info(msg);
         socket.sendMessage(msg);
     }
-//    public static class CustomDeserializer implements JsonDeserializer<MessageLog.MsgLogMeta> {
-//        @Override
-//        public MessageLog.MsgLogMeta deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
-//            List<String> keywords = null;
-//            Gson gson = new Gson();
-//            MessageLog.MsgLogMeta meta = gson.fromJson(json, MessageLog.MsgLogMeta.class);
-//            JsonObject jsonObject = json.getAsJsonObject();
-//
-//            if (jsonObject.has("keywords")) {
-//                JsonElement elem = jsonObject.get("keywords");
-//                if (elem != null && !elem.isJsonNull()) {
-//
-//                    if (jsonObject.get("keywords").isJsonArray()) {
-//                        keywords = gson.fromJson(jsonObject.get("keywords"), new TypeToken<List<String>>() {
-//                        }.getType());
-//                    } else {
-//                        String keywordString = gson.fromJson(jsonObject.get("keywords"), String.class);
-//                        keywords = new ArrayList<String>();
-//                        list.addAll(Arrays.asList(keywordString.split(",")));
-//                    }
-//                }
-//            }
-//            meta.setKeywords(keywords);
-//        }
-//    }
-//    public static class MessageLogDeserilizer implements JsonDeserializer {
-//        @Override
-//        public MessageLog deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
-//
-//            Gson gson = new Gson();
-//            MessageLog messageLog = gson.fromJson(json, MessageLog.class);
-//            JsonObject jsonObject = json.getAsJsonObject();
-//            if (jsonObject.has("meta")) {
-//                JsonElement elem = jsonObject.get("meta");
-//                if (elem != null && !elem.isJsonNull()) {
-//
-//                    Gson gsonDeserializer = new GsonBuilder()
-//                            .registerTypeAdapter(MessageLog.MsgLogMeta.class, new CustomDeserializer())
-//                            .create();
-//                    gsonDeserializer.fromJson(jsonObject.get("meta"), MessageLog.class);
-//                }
-//            }
-//
-//            return messageLog;
-//        }
-//    }
+
     public void handleMsg(String msg) throws IOException {
         System.out.println("Received message in client: " + msg);
 

@@ -33,8 +33,8 @@ public class TSTARUnitLogOutput extends AbstractSensorOutput<TSTARDriver> {
                 .label(SENSOR_OUTPUT_NAME)
                 .definition(SWEHelper.getPropertyUri("UnitLogData"))
                 .addField("id",tstarHelper.createUnitLogId())
-                .addField("unit_id", tstarHelper.createUnitId())
-                .addField("timestamp", tstarHelper.createTimestamp())
+                .addField("unitId", tstarHelper.createUnitId())
+                .addField("unitLogTimestamp", tstarHelper.createTimestamp())
                 .addField("level", tstarHelper.createLevel())
                 .addField("msg", tstarHelper.createUnitLogMsg())
                 .build();

@@ -31,15 +31,15 @@ public class TSTARPositionOutput extends AbstractSensorOutput<TSTARDriver> {
                 .label(SENSOR_OUTPUT_NAME)
                 .definition(SWEHelper.getPropertyUri("PositionData"))
                 .addField("id", tstarHelper.createPositionLogId())
-                .addField("unit-id", tstarHelper.createUnitId())
+                .addField("unitId", tstarHelper.createUnitId())
                 .addField("location", tstarHelper.createLocationVectorLatLon())
                 .addField("position", tstarHelper.createPosition())
                 .addField("course", tstarHelper.createCourse())
                 .addField("speed", tstarHelper.createSpeed())
-                .addField("generated_timestamp", tstarHelper.createGeneratedTimestamp())
-                .addField("received_timestamp", tstarHelper.createReceivedTimestamp())
-                .addField("campaign-id", tstarHelper.createCampaignId())
-                .addField("channel", tstarHelper.createChannel())
+                .addField("positionGeneratedTimestamp", tstarHelper.createGeneratedTimestamp())
+                .addField("positionReceivedTimestamp", tstarHelper.createReceivedTimestamp())
+                .addField("campaignId", tstarHelper.createCampaignId())
+                .addField("positionChannel", tstarHelper.createChannel())
                 .build();
 
         // set encoding to CSV

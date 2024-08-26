@@ -37,17 +37,17 @@ public class TSTAREventOutput extends AbstractSensorOutput<TSTARDriver>{
                 .label(SENSOR_OUTPUT_NAME)
                 .definition(SWEHelper.getPropertyUri("EventData"))
                 .addField("id", tstarHelper.createEventId())
-                .addField("event_type", tstarHelper.createEventType())
+                .addField("eventType", tstarHelper.createEventType())
                 .addField("alarm", tstarHelper.createAlarm())
-                .addField("campaign_id", tstarHelper.createCampaignId())
-                .addField("unit-id", tstarHelper.createUnitId())
-                .addField("generated_timestamp", tstarHelper.createGeneratedTimestamp())
-                .addField("received_timestamp", tstarHelper.createReceivedTimestamp())
-                .addField("acknowledged_by", tstarHelper.createAcknowledgedBy()) //Fields: user_id, name
+                .addField("campaignId", tstarHelper.createCampaignId())
+                .addField("unitId", tstarHelper.createUnitId())
+                .addField("eventGeneratedTimestamp", tstarHelper.createGeneratedTimestamp())
+                .addField("eventReceivedTimestamp", tstarHelper.createReceivedTimestamp())
+                .addField("acknowledgedBy", tstarHelper.createAcknowledgedBy()) //Fields: user_id, name
                 .addField("location", tstarHelper.createLocationVectorLatLon())
-                .addField("ack_timestamp", tstarHelper.createAckTimestamp())
-                .addField("msg_data", tstarHelper.createMsgData()) //Fields: source_id, unit_name, sensor_name)
-                .addField("notification_sent", tstarHelper.createNotificationSent())
+                .addField("ackTimestamp", tstarHelper.createAckTimestamp())
+                .addField("msgData", tstarHelper.createMsgData()) //Fields: source_id, unit_name, sensor_name)
+                .addField("notificationSent", tstarHelper.createNotificationSent())
                 .build();
 
         // set encoding to CSV

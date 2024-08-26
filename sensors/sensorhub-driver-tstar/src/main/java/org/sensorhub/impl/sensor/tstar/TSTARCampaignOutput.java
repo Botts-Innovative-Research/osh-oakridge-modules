@@ -32,7 +32,7 @@ public class TSTARCampaignOutput extends AbstractSensorOutput<TSTARDriver> {
                 .name(getName())
                 .label(SENSOR_OUTPUT_NAME)
                 .definition(SWEHelper.getPropertyUri("CampaignData"))
-                .addField("samplingTime", tstarHelper.createTimestamp())
+                .addField("campaignSamplingTime", tstarHelper.createTimestamp())
                 .addField("campaignId", tstarHelper.createCampaignId())
                 .addField("campaignName", tstarHelper.createCampaignName())
                 .addField("lastActivity", tstarHelper.createLastActivity())

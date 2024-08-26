@@ -29,6 +29,7 @@ public class MessageLog {
     public static class Message {
         public Low low;
         public High high;
+        public int event_log_ack;
     }
     // Meta Nested: ChannelInfo
     public static class ChannelInfo {
@@ -106,7 +107,7 @@ public class MessageLog {
         public int pressure;
         public int temperature;
         public PowerSupply power_supply;
-        public int serial_number;
+        public String serial_number;
         public ZwaveSensors[] zwave_sensors;
         public String hardware_version;
         public String software_version;
