@@ -1,18 +1,16 @@
 package org.sensorhub.impl.sensor.tstar;
 
-import com.google.gson.*;
-import com.google.gson.reflect.TypeToken;
-import org.checkerframework.checker.units.qual.C;
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import org.eclipse.jetty.websocket.client.WebSocketClient;
 import org.sensorhub.impl.sensor.tstar.responses.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.lang.reflect.Type;
 import java.net.URI;
-import java.util.ArrayList;
-import java.util.List;
 
 public class TSTARMessageHandler {
     TSTARAuditLogOutput auditLogOutput;
@@ -64,7 +62,6 @@ public class TSTARMessageHandler {
         System.out.println("Received message in client: " + msg);
 
             JsonElement jElement = new Gson().fromJson(msg, JsonElement.class);
-            JsonElement content = jElement.getAsJsonObject().get("data");
             JsonPrimitive changeType = jElement.getAsJsonObject().getAsJsonPrimitive("changeType");
 
 
@@ -99,9 +96,6 @@ public class TSTARMessageHandler {
                     break;
                 }
                 case "MESSAGE_LOG": {
-//                    Gson gson = new Gson().newBuilder().registerTypeAdapter(MessageLog.MsgLogMeta.class,
-//                            new TypeAdapter<MessageLog.class>() {
-//                    })
                     MessageLog messageLog = new Gson().fromJson(dataStr, MessageLog.class);
                     messageLogOutput.parse(messageLog);
                     break;

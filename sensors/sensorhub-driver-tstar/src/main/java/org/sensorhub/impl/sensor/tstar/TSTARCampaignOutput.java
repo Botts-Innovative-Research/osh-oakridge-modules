@@ -94,7 +94,7 @@ public class TSTARCampaignOutput extends AbstractSensorOutput<TSTARDriver> {
         }
 
     public void setCampaignTime(Campaign campaign){
-        // parse UTC  to epoch time for 'last_activity'
+
         SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
 
         Date lastActivity = campaign.last_activity;

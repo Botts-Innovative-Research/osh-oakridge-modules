@@ -8,12 +8,10 @@ import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.sensor.tstar.responses.Unit;
 import org.vast.data.DataArrayImpl;
-import org.vast.data.DataBlockMixed;
 import org.vast.swe.SWEHelper;
 
-import java.lang.reflect.Array;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.Date;
 
 
 public class TSTARUnitOutput extends AbstractSensorOutput<TSTARDriver> {

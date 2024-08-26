@@ -17,22 +17,22 @@ public class TSTARConfig extends SensorConfig
     @DisplayInfo(label="HTTP", desc="HTTP configuration")
     public HTTPConfig http = new HTTPConfig();
 
+    @DisplayInfo(label = "Username")
+    public String username;
+
+    @DisplayInfo(label = "Password")
+    public String password;
+
     protected String authToken;
-    protected String campaignId;
+    public String campaignId;
 
     public TSTARConfig() throws IOException {
-        http.user = "admin@gearsornl.com";
-        http.password = "imAgearHEADnow";
-        http.remoteHost = "127.0.0.1";
+        http.user = "";
+        http.password = "";
+        http.remoteHost = "";
         http.remotePort = 10024;
     }
 
-    public String getCampaignId() {
-        return campaignId;
-    }
-    public String getAuthToken() {
-        return authToken;
-    }
 
 
 }
