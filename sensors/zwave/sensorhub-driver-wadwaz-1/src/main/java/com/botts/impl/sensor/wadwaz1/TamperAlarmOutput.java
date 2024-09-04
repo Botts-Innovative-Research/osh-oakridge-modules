@@ -123,12 +123,13 @@ public class TamperAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
 
         if (key == 7 && Objects.equals(value, "255") && event == 3) {
             isTamperAlarm = true;
+        } else if (key == 7 && Objects.equals(value, "0") && event == 2) {
+            isTamperAlarm = false;
+        } else if (key == 48 && Objects.equals(value, "255")){
+            isTamperAlarm = true;
+        }else if (key == 48 && Objects.equals(value, "0")){
+            isTamperAlarm = false;
         }
-//    public void onNewMessage(String alarmType, String alarmValue, Boolean isTamperAlarm) {
-//
-//        if (Objects.equals(alarmType, "BURGLAR") && Objects.equals(alarmValue, "255")) {
-//            isTamperAlarm = true;
-//        }
 
         boolean processSets = true;
 

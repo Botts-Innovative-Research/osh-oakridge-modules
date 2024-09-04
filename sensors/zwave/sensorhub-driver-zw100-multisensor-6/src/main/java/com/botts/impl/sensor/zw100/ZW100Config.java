@@ -14,6 +14,7 @@
 package com.botts.impl.sensor.zw100;
 
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommServiceConfig;
+import org.openhab.core.thing.ThingTypeUID;
 import org.sensorhub.api.comm.CommProviderConfig;
 import org.sensorhub.api.sensor.PositionConfig.LLALocation;
 import org.sensorhub.api.config.DisplayInfo;
@@ -47,6 +48,8 @@ public class ZW100Config extends SensorConfig {
 
     @DisplayInfo(desc="ZW100 Location")
     public PositionConfig positionConfig = new PositionConfig();
+    @DisplayInfo(desc = "ZW100 ThingTypeUID")
+    public String thingTypeUID = "zwave:aeon_zw100_00_000";
 
     @Override
     public LLALocation getLocation(){return positionConfig.location;}
@@ -84,21 +87,7 @@ public class ZW100Config extends SensorConfig {
         @DisplayInfo (desc = "UV Threshold")
         public int UVThreshold = 2;
 
-
-
     }
-
     @DisplayInfo(label = "ZW100 Config")
     public ZW100SensorDriverConfigurations zw100SensorDriverConfigurations = new ZW100SensorDriverConfigurations();
-
-
-//    @DisplayInfo(desc = "Node ID value")
-//    public int nodeID = 26;
-//
-//    @DisplayInfo(desc = "ZController ID value")
-//    public int controllerID = 1;
-//
-//    @DisplayInfo(desc = "ZW100 Configurations")
-//    ZwaveCommServiceConfig.ZW100SensorDriverConfigurations sensorDriverConfiguration;
-
 }

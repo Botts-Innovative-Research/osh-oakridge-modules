@@ -47,25 +47,26 @@ public class WADWAZ1Config extends SensorConfig {
     @DisplayInfo(desc = "Serial number or unique identifier")
     public String serialNumber = "sensor001";
 
-    @DisplayInfo(desc = "Communication settings to connect to data stream")
-    public CommProviderConfig<?> commSettings;
-
     @DisplayInfo(desc="WADWAZ1 Location")
     public PositionConfig positionConfig = new PositionConfig();
 
-    @Override
-    public LLALocation getLocation(){return positionConfig.location;}
+
+
+    //    @Override
+//    public LLALocation getLocation(){return positionConfig.location;}
 
     public class WADWAZSensorDriverConfigurations extends SensorDriverConfig {
         @DisplayInfo(desc = "Node ID value")
-        public int nodeID;
+        public int nodeID = 99;
+        @DisplayInfo(desc = "ReInitialize the node: only set true on first run after adding including the device in " +
+                "the zWave network")
+        public boolean reInitNode = false;
         @DisplayInfo(desc = "ZController ID value")
         public int controllerID = 1;
-        @DisplayInfo (desc = "Wake Up Interval of Sensor in Seconds; Min: 600")
+        @DisplayInfo (desc = "Wake Up Interval of Sensor in Seconds; minInterval = 600; intervals must set in 200 second increments")
         public int wakeUpTime = 600;
     }
-
     @DisplayInfo(label = "WADWAZ Config")
-    public WADWAZSensorDriverConfigurations wadwazSensorDriverConfigurations =
-            new WADWAZSensorDriverConfigurations();
+    public WADWAZSensorDriverConfigurations wadwazSensorDriverConfigurations = new WADWAZSensorDriverConfigurations();
+
 }

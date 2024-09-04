@@ -5,26 +5,25 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.sensorhub.impl.zwave.comms;
 
-import com.google.common.collect.Lists;
+import org.openhab.binding.zwave.handler.ZWaveSerialHandler;
 import org.openhab.binding.zwave.internal.protocol.*;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveMultiInstanceCommandClass;
-import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveSecurityCommandClass;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeSerializer;
+import org.openhab.core.thing.Bridge;
+import org.openhab.core.thing.Thing;
+import org.openhab.core.thing.ThingTypeUID;
+import org.openhab.core.thing.internal.BridgeImpl;
+import org.openhab.core.thing.type.BridgeType;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.module.IModule;
-import org.sensorhub.api.sensor.ISensorDriver;
-import org.sensorhub.api.sensor.SensorConfig;
 import org.sensorhub.api.service.IServiceModule;
 import org.sensorhub.impl.comm.UARTConfig;
 import org.sensorhub.impl.module.AbstractModule;
-import org.sensorhub.impl.module.ModuleRegistry;
 import org.slf4j.LoggerFactory;
 
-import java.sql.Driver;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -42,7 +41,11 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 
     UARTConfig uartConfig = new UARTConfig();
     RxtxZWaveIoHandler ioHandler;
-    ZWaveController zController;
+    public ZWaveController zController;
+    public ZWaveNode node;
+    public String thingUID;
+    public Thing thing;
+    public Bridge bridge;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -50,13 +53,26 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         super.doInit();
 
         logger = LoggerFactory.getLogger(ZwaveCommService.class);
+//
+        uartConfig.baudRate = config.baudRate;
+        uartConfig.portName = config.portName;
 
-        uartConfig.baudRate = 115200;
-        uartConfig.portName = "COM7";
+        ThingTypeUID bridgeUID = new ThingTypeUID("zwave:serial_zstick");
+        Bridge controller = new BridgeImpl(bridgeUID,"zwave-serial_zstick-40a62c8264");
+
 
         ioHandler = new RxtxZWaveIoHandler(uartConfig);
         ioHandler.start(msg -> zController.incomingPacket(msg));
         zController = new ZWaveController(ioHandler);
+
+
+//        try {
+//            ioHandler.start(msg -> zController.incomingPacket(msg));
+//        } catch (NullPointerException nullPointerException){
+//            if (this.zController == null){
+//                logger.info("Restart the Comm Service");
+//            }
+//        }
 
 
 //        try {
@@ -145,6 +161,7 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         //adds an event listener and sends the incoming events to the subscribed messageListeners
         zController.addEventListener(new ZWaveEventListener() {
 
+
             public void ZWaveIncomingEvent(ZWaveEvent event) {
                 logger.info("EVENT: " + event);
 
@@ -152,7 +169,7 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
                 event.getNodeId();
 
                 Collection<ZWaveNode> nodeList = zController.getNodes();
-                config.adminPanelNodeList.setCommSubscribers(nodeList);
+                config.nodeList.setCommSubscribers(nodeList);
 
                 messageListeners.forEach(listener -> listener.onNewDataPacket(event.getNodeId(), event));
 

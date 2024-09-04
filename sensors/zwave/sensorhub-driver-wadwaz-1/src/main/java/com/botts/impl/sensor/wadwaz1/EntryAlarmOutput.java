@@ -127,6 +127,7 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
             isEntry = false;
         }
 
+
         boolean processSets = true;
 
         long lastSetTimeMillis = System.currentTimeMillis();

@@ -58,6 +58,9 @@ public class WAPIRZ1Config extends SensorConfig {
     public class WAPIRZSensorDriverConfigurations extends SensorDriverConfig {
         @DisplayInfo(desc = "Node ID value")
         public int nodeID = 21;
+        @DisplayInfo(desc = "ReInitialize the node: only set true on first run after adding including the device in " +
+                "the zWave network")
+        public boolean reInitNode = false;
         @DisplayInfo(desc = "ZController ID value")
         public int controllerID = 1;
         @DisplayInfo(desc = "After motion is detected sensor cannot be re-triggered by motion again for " +
