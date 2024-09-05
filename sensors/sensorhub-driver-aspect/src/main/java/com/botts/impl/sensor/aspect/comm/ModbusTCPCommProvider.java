@@ -5,6 +5,7 @@ import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.module.AbstractModule;
 
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 
 /**
  * Communication provider for Modbus TCP/IP connections.
@@ -16,19 +17,20 @@ public class ModbusTCPCommProvider extends AbstractModule<ModbusTCPCommProviderC
     TCPMasterConnection tcpMasterConnection;
 
     @Override
-    protected void doStart() throws SensorHubException, InterruptedException {
+    protected void doStart() throws SensorHubException, InterruptedException, UnknownHostException {
         var config = this.config.protocol;
         var retry = config.retryAttempts + 1;
 
+        InetAddress address = InetAddress.getByName(config.remoteHost);
+        tcpMasterConnection = new TCPMasterConnection(address);
+        tcpMasterConnection.setPort(config.remotePort);
         while (retry > 0 && !tcpMasterConnection.isConnected()) {
             try {
-                InetAddress address = InetAddress.getByName(config.remoteHost);
-                tcpMasterConnection = new TCPMasterConnection(address);
-                tcpMasterConnection.setPort(config.remotePort);
                 tcpMasterConnection.connect();
             } catch (Exception e) {
+                if (retry == 1) {
                 throw new SensorHubException("Cannot connect to remote host "
-                        + config.remoteHost + ":" + config.remotePort + " via Modbus TCP", e);
+                        + config.remoteHost + ":" + config.remotePort + " via Modbus TCP", e);}
             }
             Thread.sleep(config.retryDelay);
             --retry;

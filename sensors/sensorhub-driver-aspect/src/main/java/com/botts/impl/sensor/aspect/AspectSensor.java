@@ -78,7 +78,6 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
 
     @Override
     protected void doStart() throws SensorHubException {
-        sensorLocationOutput.setLocationOutput(config.getLocation());
 
         // Initialize comm provider
         if (commProvider == null) {
@@ -100,7 +99,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
                 deviceDescriptionRegisters.readRegisters(1);
             } catch (Exception e) {
                 commProvider = null;
-                throw new SensorHubException("Error while initializing communications ", e);
+//                throw new SensorHubException("Error while initializing communications ", e);
             }
         }
 
@@ -134,5 +133,12 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         } else {
             return commProvider.isStarted();
         }
+    }
+
+    @Override
+    public synchronized void updateConfig(AspectConfig config) throws SensorHubException {
+        super.updateConfig(config);
+
+        sensorLocationOutput.setLocationOutput(config.getLocation());
     }
 }
