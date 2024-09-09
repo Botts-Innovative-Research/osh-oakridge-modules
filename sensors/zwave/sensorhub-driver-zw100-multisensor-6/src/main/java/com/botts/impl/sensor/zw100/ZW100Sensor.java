@@ -23,10 +23,10 @@ import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueE
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
+import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStageAdvancer;
 import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveCommandClassTransactionPayload;
-import org.openhab.core.thing.Thing;
-import org.openhab.core.thing.ThingTypeUID;
-import org.openhab.core.thing.ThingUID;
+//import com.vaadin.ui.Notification;
+//import com.vaadin.ui.Window;
 import org.openhab.core.thing.internal.ThingImpl;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.module.ModuleEvent;
@@ -37,8 +37,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.sensorML.SMLHelper;
 
-
-import java.util.Collection;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
@@ -62,6 +60,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
     public ZWaveEvent message;
     public ZWaveController zController;
 
+    // SENSOR DATA
     int alarmKey;
     String alarmValue;
     int alarmEvent;
@@ -74,20 +73,14 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
     Boolean isVibration;
     Boolean isMotion;
 
+    // OUTPUTS
     MotionOutput motionOutput;
-
     RelativeHumidityOutput relativeHumidityOutput;
-
     TemperatureOutput temperatureOutput;
-
     LuminanceOutput luminanceOutput;
-
     UltravioletOutput ultravioletOutput;
-
     VibrationAlarmOutput vibrationAlarmOutput;
-
     BatteryOutput batteryOutput;
-
     LocationOutput locationOutput;
 
     @Override
@@ -176,16 +169,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                         zController = commService.getzController();
                         zController.getNodes();
 
-//                        zController.reinitialiseNode(configNodeId);
-
-
-//                        try {
-//                            if (zController.getNode(configNodeId) != null) {
-//                                zController.getNode(configNodeId).initialiseNode();
-//                            }
-//                        } catch (Exception e){
-//                            logger.info("Node not initialized");
-//                        }
                     })
 
                     .thenRun(() -> setState(ModuleEvent.ModuleState.INITIALIZED))
@@ -220,7 +203,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 //                    });
         }
 
-
 //        ThingTypeUID x = new ThingTypeUID(config.thingTypeUID);
 
 //        ThingUID ZW100ThingUID = new ThingUID("zwave", "zwave:serial_zstick:40a62c8264");
@@ -233,20 +215,15 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
     @Override
     public void doStart() throws SensorHubException {
+
         ZWaveNode node = zController.getNode(configNodeId);
-        node.getNodeState();
 
-//        ZWaveNode configNode = zController.getNode(configNodeId);
-//        ZWaveNodeInitStage initStage = configNode.getNodeInitStage();
-//        logger.info(configNode.toString());
-//        logger.info(initStage.toString());
     }
-
 
     @Override
     public void doStop() throws SensorHubException {
 
-//        messageHandler.stopProcessing();
+        //Handle stopping the node
     }
 
     @Override
@@ -264,8 +241,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
     // Sorts data based on message type and sends information to outputs
     @Override
     public void onNewDataPacket(int id, ZWaveEvent message) {
-
-            if (id == configNodeId) {
+         if (id == configNodeId) {
 
                 ZWaveNode node = zController.getNode(id);
                 node.getNodeInitStage();
@@ -280,7 +256,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
                         handleAlarmData(alarmKey, alarmValue, alarmEvent);
 
-                    } else if (message instanceof ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) {
+                        } else if (message instanceof ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) {
 
                         multiSensorType =
                                 ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) message).getSensorType().getLabel();
@@ -296,17 +272,15 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
                         handleCommandClassData(commandClassType, commandClassValue);
 
-//                motionOutput.onNewMessage(commandClassType, commandClassValue, false);
-
                     } else if (message instanceof ZWaveInitializationStateEvent) {
                         logger.info(message.toString());
 
                         // Using Node Advancer -> check command class before running config commands (determine which init
                         // stages pertain to specific commands?)
 
-//                        if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.DONE && commService.getZWaveNode(configNodeId) != null && commService.getZWaveNode(zControllerId) != null) {
                       if (node.getNodeInitStage() == GET_CONFIGURATION) {
-                            //&& (commService.getZWaveNode(configNodeId).getNodeInitStage() == ZWaveNodeInitStage.DONE ) && (commService.getZWaveNode(zControllerId) != null)
+
+                          logger.info("Put multi-sensor into config mode");
 
                             // Run configuration commands on the first build after the multi-sensor is added to the network.
                             // Multisensor must be in config mode before starting the node on OSH. To access config mode:
@@ -314,11 +288,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                             //         LED should start blinking yellow. To exit press trigger button once
                             //      2. Power the multisensor by USB
 
-//                    ZWaveNode zWaveNode = commService.getZWaveNode(configNodeId);
-
-
-//                            ZWaveConfigurationCommandClass zWaveConfigurationCommandClass =
-//                                    (ZWaveConfigurationCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_CONFIGURATION);
                           ZWaveConfigurationCommandClass zWaveConfigurationCommandClass =
                                   (ZWaveConfigurationCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_CONFIGURATION);
 
@@ -366,7 +335,8 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                             ZWaveCommandClassTransactionPayload setMotionSensitivity =
                                     zWaveConfigurationCommandClass.setConfigMessage(motionSensorSensitivity);
                             commService.sendConfigurations(setMotionSensitivity);
-//                    logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(4),0).toString());
+
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(4),0).toString());
 
                             //Get report every 240 seconds/ 4 min (on battery)
                             ZWaveConfigurationParameter sensorReportInterval = new ZWaveConfigurationParameter(111,
@@ -404,7 +374,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                                     zWaveConfigurationCommandClass.setConfigMessage(relHumThreshold);
                             commService.sendConfigurations(configRelHumThreshold);
 
-
                             //Luminance Threshold
                             ZWaveConfigurationParameter luminanceThreshold = new ZWaveConfigurationParameter(43, config.zw100SensorDriverConfigurations.luminanceThreshold
                                     , 2);
@@ -412,13 +381,11 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                                     zWaveConfigurationCommandClass.setConfigMessage(luminanceThreshold);
                             commService.sendConfigurations(configLuminanceThreshold);
 
-
                             //Battery Threshold: The unit is %
                             ZWaveConfigurationParameter batteryThreshold = new ZWaveConfigurationParameter(44, config.zw100SensorDriverConfigurations.batteryThreshold, 1);
                             ZWaveCommandClassTransactionPayload configBatteryThreshold =
                                     zWaveConfigurationCommandClass.setConfigMessage(batteryThreshold);
                             commService.sendConfigurations(configBatteryThreshold);
-
 
                             //UV Threshold
                             ZWaveConfigurationParameter uvThreshold = new ZWaveConfigurationParameter(45, config.zw100SensorDriverConfigurations.UVThreshold, 1);
@@ -432,7 +399,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 //                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(111));
 //                    logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(111),0).toString());
 
-                            if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.DONE) {
+                            if (node.getNodeInitStage() == ZWaveNodeInitStage.DONE) {
                                 logger.info(commService.getZWaveNode(configNodeId).getNodeInitStage().name());
                                 logger.info("INITIALIZATION COMPLETE");
                             }
@@ -440,7 +407,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                     }
                 }
             }
-//    }
+
     public void handleAlarmData(int key, String value, int event) {
         handleMotionData(key, value, event);
         handleVibrationData(key, value, event);
@@ -472,8 +439,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
             isMotion = false;
         } else if (key == 7 && Objects.equals(value, "0") && event == 8){
             isMotion = false;
-        } else {
-            isMotion = isMotion;
         }
 
         if (isMotion != null) {
@@ -483,7 +448,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
     // Sorts multi-sensor data based on sensorType (as opposed to CC key)
     public void handleMultiSensorData(String sensorType, String sensorValue) {
 
-        logger.info(sensorValue);
         System.out.println("zw " + sensorType);
         System.out.println("zw " + sensorValue);
 

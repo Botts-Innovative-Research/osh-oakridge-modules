@@ -17,6 +17,7 @@ import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingTypeUID;
 import org.openhab.core.thing.internal.BridgeImpl;
+import org.openhab.core.thing.internal.ThingImpl;
 import org.openhab.core.thing.type.BridgeType;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.service.IServiceModule;
@@ -44,8 +45,9 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
     public ZWaveController zController;
     public ZWaveNode node;
     public String thingUID;
+    public ThingTypeUID bridgeUID;
     public Thing thing;
-    public Bridge bridge;
+    public Bridge controller;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -57,9 +59,9 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         uartConfig.baudRate = config.baudRate;
         uartConfig.portName = config.portName;
 
-        ThingTypeUID bridgeUID = new ThingTypeUID("zwave:serial_zstick");
-        Bridge controller = new BridgeImpl(bridgeUID,"zwave-serial_zstick-40a62c8264");
-
+        bridgeUID = new ThingTypeUID("zwave:serial_zstick");
+        controller = new BridgeImpl(bridgeUID,"zwave-serial_zstick-40a62c8264");
+        thing = new ThingImpl(bridgeUID, "ZController");
 
         ioHandler = new RxtxZWaveIoHandler(uartConfig);
         ioHandler.start(msg -> zController.incomingPacket(msg));
@@ -161,7 +163,6 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         //adds an event listener and sends the incoming events to the subscribed messageListeners
         zController.addEventListener(new ZWaveEventListener() {
 
-
             public void ZWaveIncomingEvent(ZWaveEvent event) {
                 logger.info("EVENT: " + event);
 
@@ -182,7 +183,6 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
             }
         });
 }
-
 
     public synchronized void registerListener(IMessageListener listener) {
         // registers drivers to the comm service
@@ -211,79 +211,10 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         }
     }
 
-
-    public ZWaveNode createZWaveNode(ZWaveController zController, int configNodeId) {
-        boolean serializedOk = false;
-        ZWaveNode node = null;
-
-        ZWaveNodeSerializer nodeSerializer = new ZWaveNodeSerializer();
-        node = nodeSerializer.deserializeNode(zController.getHomeId(), configNodeId);
-
-        if (node != null) {
-            if (node.getManufacturer() != Integer.MAX_VALUE && node.getHomeId() == zController.getHomeId() && node.getNodeId() == configNodeId) {
-                serializedOk = true;
-                logger.debug("NODE {}: Restore from config: Ok.", configNodeId);
-                node.setRestoredFromConfigfile(zController);
-                Iterator var4 = node.getCommandClasses(0).iterator();
-
-                while(var4.hasNext()) {
-                    ZWaveCommandClass commandClass = (ZWaveCommandClass)var4.next();
-                    commandClass.initialise(node, zController, (ZWaveEndpoint)null);
-                    if (commandClass instanceof ZWaveEventListener) {
-                        zController.addEventListener((ZWaveEventListener)commandClass);
-                    }
-
-                    if (commandClass instanceof ZWaveMultiInstanceCommandClass) {
-                        for(int endpointNumber = 1; endpointNumber < node.getEndpointCount(); ++endpointNumber) {
-                            ZWaveEndpoint endPoint = node.getEndpoint(endpointNumber);
-                            Iterator var8 = endPoint.getCommandClasses().iterator();
-
-                            while(var8.hasNext()) {
-                                ZWaveCommandClass endpointCommandClass = (ZWaveCommandClass)var8.next();
-                                endpointCommandClass.initialise(node, zController, endPoint);
-                                if (endpointCommandClass instanceof ZWaveEventListener) {
-                                    zController.addEventListener((ZWaveEventListener)endpointCommandClass);
-                                }
-                            }
-                        }
-                    }
-//
-//                    if (commandClass instanceof ZWaveSecurityCommandClass) {
-//                        ((ZWaveSecurityCommandClass)commandClass).setNetworkKey(zController.networkSecurityKey);
-//                    }
-                }
-            } else {
-                logger.warn("NODE {}: Restore from config: Error. Data invalid, ignoring config.", configNodeId);
-                node = null;
-            }
-        }
-
-        if (node == null) {
-            node = new ZWaveNode(zController.getHomeId(), configNodeId, zController);
-        }
-
-        if (configNodeId == zController.getOwnNodeId()) {
-            node.setDeviceId(zController.getDeviceId());
-            node.setDeviceType(zController.getDeviceType());
-            node.setManufacturer(zController.getManufactureId());
-        }
-
-        if (!zController.getNodes().contains(node)) {
-            zController.getNodes().add(node);
-            if (serializedOk) {
-                ZWaveEvent zEvent = new ZWaveInitializationStateEvent(node.getNodeId(), ZWaveNodeInitStage.DISCOVERY_COMPLETE);
-                zController.notifyEventListeners(zEvent);
-            }
-        }
-        return node;
-    }
-
-
     public void sendConfigurations(ZWaveMessagePayloadTransaction transaction){
         //method to implement zController inherent method of sendTransaction()
         zController.sendTransaction(transaction);
     }
-
 
     public ZWaveNode getZWaveNode(int nodeID){
         //method to implement zController inherent method of getNode()
@@ -294,17 +225,4 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         return zController;
     }
 
-    // Write a method that identifies other drivers that are using it
-    // Create variable driverList to hold list of subscribed drivers
-    //  1. If sensorDriver.commService = moduleRegistry.getModuleByType(this)
-        //  then driverList.add(sensorDriver)
-
-
-//    public ZwaveCommServiceConfig.AdminPanelNodeList getModuleList() {
-//        return (ZwaveCommServiceConfig.AdminPanelNodeList) commSubscribers;
-//    }
-
-//    public synchronized void registerDriver(String module) {
-//            commSubscribers.add(module);
-//    }
 }

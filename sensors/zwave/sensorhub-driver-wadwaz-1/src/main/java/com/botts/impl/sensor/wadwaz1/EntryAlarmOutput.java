@@ -118,23 +118,13 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-
-    public void onNewMessage(int key, String value) {
-
-        if (key == 32 && Objects.equals(value, "255")) {
-            isEntry = true;
-        } else if (key == 32 && Objects.equals(value, "0")){
-            isEntry = false;
-        }
-
+    public void onNewMessage(boolean isEntry) {
 
         boolean processSets = true;
 
         long lastSetTimeMillis = System.currentTimeMillis();
 
         try {
-
-//            while (processSets) {
 
                 DataBlock dataBlock;
                 if (latestRecord == null) {
@@ -170,11 +160,6 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
 
                 eventHandler.publish(new DataEvent(latestRecordTime, EntryAlarmOutput.this, dataBlock));
 
-//                synchronized (processingLock) {
-//
-//                    processSets = !stopProcessing;
-//                }
-//            }
 
         } catch (Exception e) {
 

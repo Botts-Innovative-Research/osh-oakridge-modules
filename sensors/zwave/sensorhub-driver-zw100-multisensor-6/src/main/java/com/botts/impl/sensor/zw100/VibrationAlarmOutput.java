@@ -161,8 +161,6 @@ public class VibrationAlarmOutput extends AbstractSensorOutput<ZW100Sensor>{
 
         try {
 
-//            while (processSets) {
-
                 DataBlock dataBlock;
                 if (latestRecord == null) {
 
@@ -197,12 +195,6 @@ public class VibrationAlarmOutput extends AbstractSensorOutput<ZW100Sensor>{
                 latestRecordTime = System.currentTimeMillis();
 
                 eventHandler.publish(new DataEvent(latestRecordTime, VibrationAlarmOutput.this, dataBlock));
-
-//                synchronized (processingLock) {
-//
-//                    processSets = !stopProcessing;
-//                }
-//            }
 
         } catch (Exception e) {
 

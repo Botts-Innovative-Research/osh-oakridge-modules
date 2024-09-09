@@ -77,7 +77,7 @@ public class ZW100Config extends SensorConfig {
         public int selectiveReporting = 1;
         @DisplayInfo (desc = "Temperature Threshold: value contains one decimal point, e.g. if the value is set to " +
                 "20, the threshold value =2.0°F")
-        public int temperatureThreshold = 2;
+        public int temperatureThreshold = 20;
         @DisplayInfo (desc = "Humidity Threshold: Unit in %")
         public int humidityThreshold = 2;
         @DisplayInfo (desc = "Luminance Threshold")

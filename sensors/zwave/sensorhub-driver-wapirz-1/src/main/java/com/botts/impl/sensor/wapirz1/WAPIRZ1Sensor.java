@@ -15,24 +15,15 @@ package com.botts.impl.sensor.wapirz1;
 
 import com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
-import org.openhab.binding.zwave.handler.ZWaveControllerHandler;
-import org.openhab.binding.zwave.internal.ZWaveConfigProvider;
-import org.openhab.binding.zwave.internal.protocol.*;
-import org.openhab.binding.zwave.internal.protocol.commandclass.*;
+import net.opengis.sensorml.v20.PhysicalSystem;
+import org.openhab.binding.zwave.internal.protocol.ZWaveController;
+import org.openhab.binding.zwave.internal.protocol.ZWaveNode;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveMultiLevelSensorCommandClass;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
-import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
-import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStageAdvancer;
-import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeSerializer;
-import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveCommandClassTransactionPayload;
-
-import net.opengis.sensorml.v20.PhysicalSystem;
-import org.openhab.core.thing.*;
-import org.openhab.core.thing.binding.ThingHandler;
-import org.openhab.core.thing.type.ThingType;
 import org.sensorhub.api.common.SensorHubException;
-
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
@@ -59,9 +50,8 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
     public ZWaveEvent message;
     public ZWaveController zController;
     public ZWaveNode node;
-    public ThingType thingType;
-    private static ThingRegistry thingRegistry;
-    public ZWaveConfigProvider zWaveConfigProvider;
+
+    // SENSOR DATA
     int key;
     String value;
     int event;
@@ -71,6 +61,8 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
     String commandClassMessage;
     boolean isMotion;
     boolean isTamperAlarm;
+
+    // OUTPUTS
     MotionOutput motionOutput;
     TemperatureOutput temperatureOutput;
     BatteryOutput batteryOutput;
@@ -87,12 +79,12 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
 
             if (!sensorDescription.isSetDescription()) {
 
-                sensorDescription.setDescription("WAPIRZ-1 ...");
+                sensorDescription.setDescription("Linear/GoControl WAPIRZ-1 Z-Wave Motion Detector (with Temperature Device Handler");
 
                 SMLHelper smlWADWAZHelper = new SMLHelper();
                 smlWADWAZHelper.edit((PhysicalSystem) sensorDescription)
                         .addIdentifier(smlWADWAZHelper.identifiers.modelNumber("WAPIRZ-1"))
-                        .addClassifier(smlWADWAZHelper.classifiers.sensorType(""));
+                        .addClassifier(smlWADWAZHelper.classifiers.sensorType("Motion Detector"));
             }
         }
     }
@@ -138,8 +130,6 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
         commService = moduleRegistry.getModuleByType(ZwaveCommService.class);
 
 
-
-
         if (commService == null) {
 
             throw new SensorHubException("CommService needs to be configured");
@@ -148,10 +138,9 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
 
             moduleRegistry.waitForModule(commService.getLocalID(), ModuleEvent.ModuleState.STARTED)
                     .thenRun(() -> commService.registerListener(this));
-//                    .thenRun(() -> logger.info("Comm service started"));
 
             CompletableFuture.runAsync(() -> {
-//                        zController = commService.getzController();
+                        zController = commService.getzController();
 //                        if(config.wapirzSensorDriverConfigurations.reInitNode) {
 //                            zController.reinitialiseNode(configNodeId);
 //                        }
@@ -195,22 +184,24 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
     @Override
     public void doStart() throws SensorHubException {
 
-        locationOutput.setLocationOutput(config.getLocation());
+        ZWaveNode node = zController.getNode(configNodeId);
+//        locationOutput.setLocationOutput(config.getLocation());
 
 
-        zController = commService.getzController();
-        if(config.wapirzSensorDriverConfigurations.reInitNode) {
-            zController.reinitialiseNode(configNodeId);
-        }
+//        zController = commService.getzController();
+//        if(config.wapirzSensorDriverConfigurations.reInitNode) {
+//            zController.reinitialiseNode(configNodeId);
+//        }
 
-        node = new ZWaveNode(zController.getHomeId(), configNodeId, zController);
+//        node = new ZWaveNode(zController.getHomeId(), configNodeId, zController);
     }
 
 
     @Override
     public void doStop() throws SensorHubException {
 
-//        messageHandler.stopProcessing();
+        //Handle stopping the node
+
     }
 
     @Override
@@ -230,9 +221,10 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
 
         if (id == configNodeId) {
 
+            ZWaveNode node = zController.getNode(id);
+            node.getNodeInitStage();
+
             this.message = message;
-            
-            thingType = ZWaveConfigProvider.getThingType(node);
 
             if (message instanceof ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) {
                 key =
@@ -282,43 +274,43 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
 //                    ZWaveNodeInitStageAdvancer stageAdvancer = new ZWaveNodeInitStageAdvancer(node,zController);
 //                    stageAdvancer.startInitialisation();
 //                }
+//                if (node.getNodeInitStage() == SET_WAKEUP) {
+//                    // Set wakeup time to minimum interval of  600s
+//                    ZWaveWakeUpCommandClass wakeupCommandClass =
+//                            (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId)
+//                                    .getCommandClass
+//                                            (ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
+//
+//                    if (wakeupCommandClass != null) {
+//                        ZWaveCommandClassTransactionPayload wakeUp =
+//                                wakeupCommandClass.setInterval(17, config.wapirzSensorDriverConfigurations.wakeUpTime);
+//
+//                        commService.sendConfigurations(wakeUp);
+//                        commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
+//                    }
+//                }
 
-                    if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.DONE && commService.getZWaveNode(zControllerId) != null && commService.getZWaveNode(configNodeId) != null) {
-//                    commService.getZWaveNode(configNodeId) = zController.getNode(nodeID);
-
-                        ZWaveBatteryCommandClass zWaveBatteryCommandClass =
-                                (ZWaveBatteryCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
-
-                        commService.sendConfigurations(zWaveBatteryCommandClass.getValueMessage());
-
-                        ZWaveConfigurationCommandClass zWaveConfigurationCommandClass =
-                                (ZWaveConfigurationCommandClass) commService.getZWaveNode(configNodeId)
-                                        .getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_CONFIGURATION);
-
-//                      Config_1_1
-                        ZWaveConfigurationParameter reTriggerWait = new ZWaveConfigurationParameter(1,
-                                config.wapirzSensorDriverConfigurations.reTriggerWait, 1);
-                        ZWaveCommandClassTransactionPayload configReTriggerWait =
-                                zWaveConfigurationCommandClass.setConfigMessage(reTriggerWait);
-                        commService.sendConfigurations(configReTriggerWait);
-                        commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage
-                                (1));
-
-
-//                      Set wakeup time to minimum interval of  600s
-                        ZWaveWakeUpCommandClass wakeupCommandClass =
-                                (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId)
-                                        .getCommandClass
-                                                (ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
-
-                        if (wakeupCommandClass != null) {
-                            ZWaveCommandClassTransactionPayload wakeUp =
-                                    wakeupCommandClass.setInterval(17, config.wapirzSensorDriverConfigurations.wakeUpTime);
-
-                            commService.sendConfigurations(wakeUp);
-                            commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
-                        }
-                    }
+//                if (node.getNodeInitStage() == DONE) {
+//
+//                        ZWaveBatteryCommandClass zWaveBatteryCommandClass =
+//                                (ZWaveBatteryCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
+//
+//                        commService.sendConfigurations(zWaveBatteryCommandClass.getValueMessage());
+//
+//                        ZWaveConfigurationCommandClass zWaveConfigurationCommandClass =
+//                                (ZWaveConfigurationCommandClass) commService.getZWaveNode(configNodeId)
+//                                        .getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_CONFIGURATION);
+//
+////                      Config_1_1
+//                        ZWaveConfigurationParameter reTriggerWait = new ZWaveConfigurationParameter(1,
+//                                config.wapirzSensorDriverConfigurations.reTriggerWait, 1);
+//                        ZWaveCommandClassTransactionPayload configReTriggerWait =
+//                                zWaveConfigurationCommandClass.setConfigMessage(reTriggerWait);
+//                        commService.sendConfigurations(configReTriggerWait);
+//                        commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage
+//                                (1));
+//
+//                    }
             }
         }
     }
@@ -352,12 +344,14 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
         if (Objects.equals(commandClassType, "COMMAND_CLASS_BATTERY")) {
             commandClassMessage = commandClassValue;
         }
-        batteryOutput.onNewMessage(commandClassMessage);
 
         if (Objects.equals(commandClassType, "COMMAND_CLASS_BASIC") && commandClassValue == "0") {
             isMotion = false;
         }
-        motionOutput.onNewMessage(isMotion);
+        if (commandClassValue != null) {
+            batteryOutput.onNewMessage(commandClassMessage);
+            motionOutput.onNewMessage(isMotion);
+        }
     }
 
 }

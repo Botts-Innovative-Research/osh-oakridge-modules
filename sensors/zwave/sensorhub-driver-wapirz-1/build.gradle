@@ -1,3 +1,4 @@
+
 description = 'WAPIRZ-1 Motion Detector'
 ext.details = "Linear/GoControl WAPIRZ-1 Z-Wave Motion Detector (with Temperature Device Handler)"
 version = '1.0.0'

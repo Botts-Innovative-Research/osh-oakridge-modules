@@ -23,8 +23,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.swe.helper.GeoPosHelper;
 
-import java.util.Objects;
-
 /**
  * Output specification and provider for {@link WADWAZ1Sensor}.
  *
@@ -119,25 +117,13 @@ public class TamperAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    public void onNewMessage(int key, String value, int event, Boolean isTamperAlarm) {
-
-        if (key == 7 && Objects.equals(value, "255") && event == 3) {
-            isTamperAlarm = true;
-        } else if (key == 7 && Objects.equals(value, "0") && event == 2) {
-            isTamperAlarm = false;
-        } else if (key == 48 && Objects.equals(value, "255")){
-            isTamperAlarm = true;
-        }else if (key == 48 && Objects.equals(value, "0")){
-            isTamperAlarm = false;
-        }
+    public void onNewMessage(boolean isTamperAlarm) {
 
         boolean processSets = true;
 
         long lastSetTimeMillis = System.currentTimeMillis();
 
         try {
-
-//            while (processSets) {
 
                 DataBlock dataBlock;
                 if (latestRecord == null) {
@@ -172,12 +158,6 @@ public class TamperAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
                 latestRecordTime = System.currentTimeMillis();
 
                 eventHandler.publish(new DataEvent(latestRecordTime, TamperAlarmOutput.this, dataBlock));
-
-//                synchronized (processingLock) {
-//
-//                    processSets = !stopProcessing;
-//                }
-//            }
 
         } catch (Exception e) {
 

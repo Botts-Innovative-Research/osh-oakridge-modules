@@ -2,9 +2,12 @@ description = 'WADWAZ-1 Window Door Sensor'
 ext.details = "Radio Frequency (Z-Wave) Controlled Wireless Door / Window Sensor"
 version = '1.0.0'
 
+
+
 repositories {
     maven {
-        url "https://openhab.jfrog.io/artifactory/libs-release"
+        { url "https://openhab.jfrog.io/artifactory/libs-release" }
+//        { url "https://maven.vaadin.com/vaadin-addons" }
     }
 }
 
@@ -14,6 +17,7 @@ dependencies {
     implementation project(':sensorhub-comm-rxtx')
     implementation project (':sensorhub-zwave-comms')
 
+//    implementation 'com.vaadin:vaadin-server:8.14.3'
     implementation 'org.openhab.addons.bundles:org.openhab.binding.zwave:4.1.1'
     implementation 'org.openhab.core.bundles:org.openhab.core:4.1.1'
     implementation 'org.openhab.core.bundles:org.openhab.core.config.core:4.1.1'

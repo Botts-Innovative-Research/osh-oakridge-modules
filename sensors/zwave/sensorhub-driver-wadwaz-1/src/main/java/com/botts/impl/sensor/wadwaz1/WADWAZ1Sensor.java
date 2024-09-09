@@ -15,33 +15,19 @@ package com.botts.impl.sensor.wadwaz1;
 
 import com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
-import com.botts.sensorhub.impl.zwave.comms.ZwaveCommServiceConfig;
 import net.opengis.sensorml.v20.PhysicalSystem;
-import org.openhab.binding.zwave.discovery.ZWaveDiscoveryService;
-import org.openhab.binding.zwave.handler.ZWaveControllerHandler;
-import org.openhab.binding.zwave.handler.ZWaveThingHandler;
-import org.openhab.binding.zwave.internal.ZWaveConfigProvider;
 import org.openhab.binding.zwave.internal.protocol.ZWaveController;
 import org.openhab.binding.zwave.internal.protocol.ZWaveNode;
-import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass;
-import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveBatteryCommandClass;
-import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass;
-import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveWakeUpCommandClass;
+import org.openhab.binding.zwave.internal.protocol.commandclass.*;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
-import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
-import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStageAdvancer;
 import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveCommandClassTransactionPayload;
-import org.openhab.core.thing.*;
-import org.openhab.core.thing.binding.ThingFactory;
-import org.openhab.core.thing.binding.ThingHandler;
-import org.openhab.core.thing.binding.ThingTypeProvider;
+import org.openhab.core.thing.Thing;
+import org.openhab.core.thing.ThingTypeUID;
 import org.openhab.core.thing.internal.ThingImpl;
-import org.openhab.core.thing.type.ChannelTypeRegistry;
-import org.openhab.core.thing.type.ThingType;
-import org.openhab.core.thing.type.ThingTypeRegistry;
 import org.sensorhub.api.common.SensorHubException;
+
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
@@ -49,11 +35,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.sensorML.SMLHelper;
 
-import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
+
+import static org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage.DONE;
+import static org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage.SET_WAKEUP;
 
 
 /**
@@ -66,23 +52,13 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 
     private static final Logger logger = LoggerFactory.getLogger(WADWAZ1Sensor.class);
     public ZwaveCommService commService;
-    public int configNodeId;
-    public int zControllerId;
-
+    private int configNodeId;
+    private int zControllerId;
     public ZWaveEvent message;
     public ZWaveController zController;
-    public ZWaveNode node;
-    public ThingType thingType;
-    public ThingTypeUID thingTypeUID = new ThingTypeUID("zwave","linear_wadwaz1_00_000");
-    private static ThingRegistry thingRegistry;
-    private ThingImpl thingImpl;
+//    public ThingTypeUID thingTypeUID = new ThingTypeUID("zwave","linear_wadwaz1_00_000");
 
-    public Thing thing;
-    public ZWaveThingHandler zWaveThingHandler;
-    public ZWaveControllerHandler zWaveControllerHandler;
-    public Bridge bridge;
-    public ThingTypeRegistry thingTypeRegistry;
-
+    // SENSOR DATA
     int key;
     String value;
     int event;
@@ -91,8 +67,10 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
     String commandClassType;
     String commandClassValue;
     String commandClassMessage;
+    Boolean isEntryAlarm;
+    Boolean isTamperAlarm;
 
-
+    // OUTPUTS
     EntryAlarmOutput entryAlarmOutput;
     BatteryOutput batteryOutput;
     TamperAlarmOutput tamperAlarmOutput;
@@ -147,24 +125,12 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
         addOutput(locationOutput, false);
         locationOutput.doInit();
 
+
         initAsync = true;
 
         ModuleRegistry moduleRegistry = getParentHub().getModuleRegistry();
 
         commService = moduleRegistry.getModuleByType(ZwaveCommService.class);
-
-        Thing wadwaz = new ThingImpl(thingTypeUID,"WADWAZ-1");
-        ZWaveThingHandler handler = new ZWaveThingHandler(wadwaz);
-//        ThingUID thingUID = new ThingUID(thingTypeUID, "WADWAZ-1");
-
-        handler.initialize();
-
-//        zWaveThingHandler = new ZWaveThingHandler(thingImpl);
-//        Thing wadwaz = zWaveThingHandler.getThing();
-
-//        thingTypeRegistry.getThingTypes();
-//        thingTypeRegistry.getThingTypes("zwave");
-
 
 
         if (commService == null) {
@@ -175,13 +141,10 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 
             moduleRegistry.waitForModule(commService.getLocalID(), ModuleEvent.ModuleState.STARTED)
                     .thenRun(() -> commService.registerListener(this));
-//                    .thenRun(() -> logger.info("Comm service started"));
 
             CompletableFuture.runAsync(() -> {
-//                        zController = commService.getzController();
-//                        if(config.wadwazSensorDriverConfigurations.reInitNode) {
-//                            zController.reinitialiseNode(configNodeId);
-//                        }
+                        zController = commService.getzController();
+
                     })
 
                     .thenRun(() -> setState(ModuleEvent.ModuleState.INITIALIZED))
@@ -217,22 +180,23 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 //                        return null;
 //                    });
         }
-
-
     }
 
 
     @Override
     public void doStart() throws SensorHubException {
-        zController = commService.getzController();
 
+//        ZWaveNode node = zController.getNode(configNodeId);
+//        ThingTypeUID thingTypeUID = new ThingTypeUID("zwave","linear_wadwaz1_00_000");
+//        Thing thing = new ThingImpl(thingTypeUID, "Wadwaz");
+//        thing.setBridgeUID(commService.thing.getBridgeUID());
     }
-
 
     @Override
     public void doStop() throws SensorHubException {
 
-//        messageHandler.stopProcessing();
+        //Handle stopping the node
+
     }
 
     @Override
@@ -252,21 +216,10 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 
         if (id == configNodeId) {
 
+            ZWaveNode node = zController.getNode(id);
+            node.getNodeInitStage();
+
             this.message = message;
-
-                    if (zController != null && node == null) {
-                        node = new ZWaveNode(zController.getHomeId(), configNodeId, zController);
-                        node = zController.getNode(configNodeId);
-                        node.initialiseNode();
-                    }
-
-                        if (node != null && node.getNodeInitStage() == ZWaveNodeInitStage.DONE){
-                        int nodeManufacturer = node.getManufacturer();
-                        node.getNodeId();
-
-//                        thingType = ZWaveConfigProvider.getThingType(node);
-                    }
-
 
             if (message instanceof ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) {
 
@@ -274,16 +227,8 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
                 key = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmType().getKey();
                 value = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getValue().toString();
 
-//                System.out.println("wadwaz " + key);
-//                System.out.println("wadwaz " + value);
-//                System.out.println("wadwaz " + event);
-
-                tamperAlarmOutput.onNewMessage(key, value, event, false);
-
-//                alarmType = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmType().name();
-//                alarmValue = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getValue().toString();
-//
-//                tamperAlarmOutput.onNewMessage(alarmType, alarmValue, false);
+                handleTamperAlarm(key, value, event);
+                handleEntryAlarm(key, value, event);
 
             } else if (message instanceof ZWaveCommandClassValueEvent) {
 
@@ -298,40 +243,70 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 
                 handleCommandClassData(commandClassType, commandClassValue);
 
-                entryAlarmOutput.onNewMessage(key, value);
+            } else if (message instanceof ZWaveBinarySensorCommandClass.ZWaveBinarySensorValueEvent) {
+
+                ((ZWaveBinarySensorCommandClass.ZWaveBinarySensorValueEvent) message).getValue();
+                ((ZWaveBinarySensorCommandClass.ZWaveBinarySensorValueEvent) message).getSensorType();
 
             } else if (message instanceof ZWaveInitializationStateEvent) {
 
+                if (node.getNodeInitStage() == SET_WAKEUP) {
 
-//                if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.STATIC_END) {
-//                    ZWaveWakeUpCommandClass wakeupCommandClass =
-//                            (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
-//                    if (wakeupCommandClass != null) {
-//                        ZWaveCommandClassTransactionPayload wakeUp =
-//                                wakeupCommandClass.setInterval(configNodeId,
-//                                        config.wadwazSensorDriverConfigurations.wakeUpTime);
-//
-//                        //minInterval = 600; intervals must set in 200 second increments
-//                        commService.sendConfigurations(wakeUp);
-//                        commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
-////                    System.out.println(((ZWaveWakeUpCommandClass) wadwazNode.getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP)).getInterval());
-//                    }
-//                }
+                    ZWaveWakeUpCommandClass wakeupCommandClass =
+                            (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
+                    if (wakeupCommandClass != null) {
+                        ZWaveCommandClassTransactionPayload wakeUp =
+                                wakeupCommandClass.setInterval(configNodeId,
+                                        config.wadwazSensorDriverConfigurations.wakeUpTime);
 
-//                if (((ZWaveInitializationStateEvent) message).getStage() == ZWaveNodeInitStage.DONE) {
-//                && commService.getZWaveNode(zControllerId) != null && commService.getZWaveNode(configNodeId) != null) {
+                        //minInterval = 600; intervals must set in 200 second increments
+                        commService.sendConfigurations(wakeUp);
+                        commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
+//                    System.out.println(((ZWaveWakeUpCommandClass) wadwazNode.getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP)).getInterval());
+                    }
+                }
 
-//                    ZWaveBatteryCommandClass battery =
-//                            (ZWaveBatteryCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
-//                    ZWaveCommandClassTransactionPayload batteryCheck = battery.getValueMessage();
-//                    commService.sendConfigurations(batteryCheck);
-//                    System.out.println("THIS IS THE BATTERY CHECK");
+                if (node.getNodeInitStage() == DONE) {
 
-//                }
+                    ZWaveBatteryCommandClass battery =
+                            (ZWaveBatteryCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
+                    ZWaveCommandClassTransactionPayload batteryCheck = battery.getValueMessage();
+                    commService.sendConfigurations(batteryCheck);
+                    System.out.println("THIS IS THE BATTERY CHECK");
+
+                }
             }
         }
     }
 
+    public void handleTamperAlarm(int key, String value, int event){
+        if (key == 7 && Objects.equals(value, "255") && event == 3) {
+            isTamperAlarm = true;
+        } else if (key == 7 && Objects.equals(value, "0") && event == 2) {
+            isTamperAlarm = false;
+        } else if (key == 48 && Objects.equals(value, "255")){
+            isTamperAlarm = true;
+        } else if (key == 48 && Objects.equals(value, "0")){
+            isTamperAlarm = false;
+        }
+
+        if (isTamperAlarm != null){
+                tamperAlarmOutput.onNewMessage(isTamperAlarm);
+        }
+    }
+
+    public void handleEntryAlarm(int key, String value, int event) {
+        if (key == 32 && Objects.equals(value, "255")) {
+            isEntryAlarm = true;
+        } else if (key == 32 && Objects.equals(value, "0")){
+            isEntryAlarm = false;
+        }
+
+        if (isEntryAlarm != null) {
+            entryAlarmOutput.onNewMessage(isEntryAlarm);
+
+        }
+    }
     public void handleCommandClassData(String commandClassType, String commandClassValue){
 
         //Command Class Types
@@ -340,6 +315,11 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 
             batteryOutput.onNewMessage(commandClassMessage);
         }
+
+//        handleEntryAlarm(key, value, event);
+        //        if (key == 128 ){   //key 128 = "COMMAND_CLASS_BATTERY"
+//            battery = batteryLevel;
+//        }
     }
 }
 
