@@ -280,7 +280,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
                       if (node.getNodeInitStage() == GET_CONFIGURATION) {
 
-                          logger.info("Put multi-sensor into config mode");
+                          reportStatus("Put multi-sensor into config mode");
 
                             // Run configuration commands on the first build after the multi-sensor is added to the network.
                             // Multisensor must be in config mode before starting the node on OSH. To access config mode:

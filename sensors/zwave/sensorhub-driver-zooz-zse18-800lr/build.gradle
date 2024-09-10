@@ -1,6 +1,7 @@
 
-description = 'WAPIRZ-1 Motion Detector'
-ext.details = "Linear/GoControl WAPIRZ-1 Z-Wave Motion Detector (with Temperature Device Handler)"
+description = 'Zooz ZSE19-800LR Motion Detector'
+ext.details = "ZooZ Bright Ideas ZSE18 800 series long range sensor with motion " +
+        "detection, vibration sensor, and low battery alerts"
 version = '1.0.0'
 
 
@@ -35,7 +36,7 @@ test {
 osgi {
     manifest {
         attributes ('Bundle-Vendor': 'Botts Inc')
-        attributes ('Bundle-Activator': 'com.botts.impl.sensor.wapirz1.WAPIRZ1Activator')
+        attributes ('Bundle-Activator': 'com.botts.impl.sensor.zse18.ZSE18Activator')
     }
 }
 
