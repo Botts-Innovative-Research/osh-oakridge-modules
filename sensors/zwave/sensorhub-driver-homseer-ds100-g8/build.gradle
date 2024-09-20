@@ -1,6 +1,6 @@
-description = 'ZW100-Multisensor-6'
-ext.details = "Sensor utilizing z-wave technology to monitor motion, temperature, relative humidity, UV index, " +
-        "luminance, and vibration (tamper alarm)"
+
+description = 'HomeSeer DS100 G8 Window/Door Sensor'
+ext.details = "Battery operated long range Z-Wave sensor"
 version = '1.0.0'
 
 
@@ -20,13 +20,6 @@ dependencies {
     implementation 'org.openhab.core.bundles:org.openhab.core:4.1.1'
     implementation 'org.openhab.core.bundles:org.openhab.core.config.core:4.1.1'
     implementation 'org.openhab.core.bundles:org.openhab.core.thing:4.1.1'
-    implementation 'org.openhab.core.bundles:org.openhab.core.thing.xml:3.4.5'
-    implementation 'org.openhab.core.bundles:org.openhab.core.io.transport.serial:4.1.1'
-    implementation 'org.openhab.core.bundles:org.openhab.core.binding.xml:3.4.5'
-//    implementation 'org.openhab.core.bundles:org.openhab.core.serial:3.4.5'
-
-
-
 }
 
 
@@ -42,7 +35,7 @@ test {
 osgi {
     manifest {
         attributes ('Bundle-Vendor': 'Botts Inc')
-        attributes ('Bundle-Activator': 'com.botts.impl.sensor.zw100.ZW100Activator')
+        attributes ('Bundle-Activator': 'com.botts.impl.sensor.ds100.DS100Activator')
     }
 }
 

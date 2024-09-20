@@ -25,6 +25,9 @@ public class ZwaveCommServiceConfig extends ServiceConfig {
     @DisplayInfo(label = "Baud Rate", desc = "Baud rate")
     public int baudRate = 115200;
 
+    @DisplayInfo(label = "Is master controller")
+    public boolean masterController = true;
+
     @DisplayInfo(desc="Controller Location")
     public PositionConfig positionConfig = new PositionConfig();
 

@@ -11,14 +11,13 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package com.botts.impl.sensor.zse18;
+package com.botts.impl.sensor.ds100;
 
 import com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
 import net.opengis.sensorml.v20.PhysicalSystem;
 import org.openhab.binding.zwave.internal.protocol.ZWaveConfigurationParameter;
 import org.openhab.binding.zwave.internal.protocol.ZWaveController;
-import org.openhab.binding.zwave.internal.protocol.ZWaveEndpoint;
 import org.openhab.binding.zwave.internal.protocol.ZWaveNode;
 import org.openhab.binding.zwave.internal.protocol.commandclass.*;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
@@ -36,6 +35,8 @@ import org.vast.sensorML.SMLHelper;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
+import static org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass.AlarmType.ACCESS_CONTROL;
+import static org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass.AlarmType.BURGLAR;
 import static org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage.*;
 
 /**
@@ -44,9 +45,9 @@ import static org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNo
  * @author Cardy
  * @since 09/09/24
  */
-public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IMessageListener {
+public class DS100Sensor extends AbstractSensorModule<DS100Config> implements IMessageListener {
 
-    private static final Logger logger = LoggerFactory.getLogger(ZSE18Sensor.class);
+    private static final Logger logger = LoggerFactory.getLogger(DS100Sensor.class);
 
     private ZwaveCommService commService;
     private int configNodeId;
@@ -62,12 +63,12 @@ public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IM
     String commandClassType;
     String commandClassValue;
     String commandClassMessage;
-    Boolean isVibration;
-    Boolean isMotion;
+    Boolean isEntryAlarm;
+    Boolean isTamperAlarm;
 
     // OUTPUTS
-    MotionOutput motionOutput;
-    VibrationOutput vibrationOutput;
+    EntryAlarmOutput entryAlarmOutput;
+    TamperAlarmOutput tamperAlarmOutput;
     BatteryOutput batteryOutput;
     LocationOutput locationOutput;
 
@@ -81,13 +82,12 @@ public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IM
 
             if (!sensorDescription.isSetDescription()) {
 
-                sensorDescription.setDescription("ZooZ Bright Ideas ZSE18 800 series long range sensor with motion " +
-                                "detection, vibration sensor, and low battery alerts");
+                sensorDescription.setDescription("HomeSeer DS100 G8 long range z-wave window door sensor");
 
                 SMLHelper smlWADWAZHelper = new SMLHelper();
                 smlWADWAZHelper.edit((PhysicalSystem) sensorDescription)
-                        .addIdentifier(smlWADWAZHelper.identifiers.modelNumber("ZSE18-800LR"))
-                        .addClassifier(smlWADWAZHelper.classifiers.sensorType("Motion Detector"));
+                        .addIdentifier(smlWADWAZHelper.identifiers.modelNumber("DS100-G8"))
+                        .addClassifier(smlWADWAZHelper.classifiers.sensorType("Window/Door Sensor"));
             }
         }
     }
@@ -95,27 +95,27 @@ public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IM
     @Override
     public void doInit() throws SensorHubException {
 
-        configNodeId = config.zse18SensorDriverConfigurations.nodeID;
-        zControllerId = config.zse18SensorDriverConfigurations.controllerID;
+        configNodeId = config.ds100SensorDriverConfigurations.nodeID;
+        zControllerId = config.ds100SensorDriverConfigurations.controllerID;
 
         super.doInit();
 
         // Generate identifiers
-        generateUniqueID("[urn:osh:sensor:zse18]", config.serialNumber);
-        generateXmlID("[ZSE18]", config.serialNumber);
+        generateUniqueID("[urn:osh:sensor:ds100]", config.serialNumber);
+        generateXmlID("[DS100]", config.serialNumber);
 
         // Create and initialize output
-        motionOutput = new MotionOutput(this);
-        addOutput(motionOutput, false);
-        motionOutput.doInit();
+        entryAlarmOutput = new EntryAlarmOutput(this);
+        addOutput(entryAlarmOutput, false);
+        entryAlarmOutput.doInit();
 
         batteryOutput = new BatteryOutput(this);
         addOutput(batteryOutput, false);
         batteryOutput.doInit();
 
-        vibrationOutput = new VibrationOutput(this);
-        addOutput(vibrationOutput, false);
-        vibrationOutput.doInit();
+        tamperAlarmOutput = new TamperAlarmOutput(this);
+        addOutput(tamperAlarmOutput, false);
+        tamperAlarmOutput.doInit();
 
         locationOutput = new LocationOutput(this);
         addOutput(locationOutput, false);
@@ -188,7 +188,7 @@ public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IM
         if (id == configNodeId) {
 
             ZWaveNode node = zController.getNode(id);
-//            node.getNodeInitStage();
+            node.getNodeInitStage();
 
             this.message = message;
 
@@ -198,9 +198,13 @@ public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IM
                 key = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmType().getKey();
                 value = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getValue().toString();
 
-                handleAlarmData(key, value, event);
+                handleTamperAlarm(key, value, event);
+                handleEntryAlarm(key, value, event);
 
             } else if (message instanceof ZWaveCommandClassValueEvent) {
+
+                key = ((ZWaveCommandClassValueEvent) message).getCommandClass().getKey();
+                value = ((ZWaveCommandClassValueEvent) message).getValue().toString();
 
                 commandClassType = ((ZWaveCommandClassValueEvent) message).getCommandClass().name();
                 commandClassValue = ((ZWaveCommandClassValueEvent) message).getValue().toString();
@@ -209,10 +213,24 @@ public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IM
 
             } else if (message instanceof ZWaveInitializationStateEvent) {
 
-                if (node.getNodeInitStage() == STATIC_VALUES) {
+                if (node.getNodeInitStage() == SET_WAKEUP) {
 
-                    reportStatus("Put ZSE18 motion sensor into config mode");
-//                    logger.info("Put multi-sensor into config mode");
+                    ZWaveWakeUpCommandClass wakeupCommandClass =
+                            (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
+                    if (wakeupCommandClass != null) {
+                        ZWaveCommandClassTransactionPayload wakeUp =
+                                wakeupCommandClass.setInterval(configNodeId,
+                                        config.ds100SensorDriverConfigurations.wakeUpTime);
+
+                        //minInterval = 600; intervals must set in 200 second increments
+                        commService.sendConfigurations(wakeUp);
+                        commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
+//                    System.out.println(((ZWaveWakeUpCommandClass) wadwazNode.getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP)).getInterval());
+                    }
+                } else if (node.getNodeInitStage() == STATIC_VALUES) {
+
+                    reportStatus("Put DS100 window/door sensor into config mode");
+
 //                    ZWaveEndpoint endpoint = commService.node.getEndpoint(0);
 //                    ZWaveConfigurationCommandClass commandClass = new ZWaveConfigurationCommandClass(node,
 //                            zController, endpoint);
@@ -220,136 +238,70 @@ public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IM
                     ZWaveConfigurationCommandClass zWaveConfigurationCommandClass =
                             (ZWaveConfigurationCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_CONFIGURATION);
 
-                    // Param 12: PIR Sensor Sensitivity
-                    ZWaveConfigurationParameter pirSensitivity = new ZWaveConfigurationParameter(12,
-                            config.zse18SensorDriverConfigurations.pirSensitivity, 1);
-                    ZWaveCommandClassTransactionPayload pirSensitivityCommand =
-                            zWaveConfigurationCommandClass.setConfigMessage(pirSensitivity);
-                    commService.sendConfigurations(pirSensitivityCommand);
-
                     // Param 14: BASIC SET reports
                     ZWaveConfigurationParameter basicSetReports = new ZWaveConfigurationParameter(14,
-                            config.zse18SensorDriverConfigurations.basicSetReports, 1);
+                            config.ds100SensorDriverConfigurations.basicSetReports, 1);
                     ZWaveCommandClassTransactionPayload basicSetReportsCommand =
                             zWaveConfigurationCommandClass.setConfigMessage(basicSetReports);
                     commService.sendConfigurations(basicSetReportsCommand);
 
                     //Param 15: Reverse BASIC SET
                     ZWaveConfigurationParameter reverseBasicSetReports = new ZWaveConfigurationParameter(15,
-                            config.zse18SensorDriverConfigurations.reverseBasicSetReports, 1);
+                            config.ds100SensorDriverConfigurations.reverseBasicSetReports, 1);
                     ZWaveCommandClassTransactionPayload reverseBasicSetReportsCommand =
                             zWaveConfigurationCommandClass.setConfigMessage(reverseBasicSetReports);
                     commService.sendConfigurations(reverseBasicSetReportsCommand);
 
-                    //Param 17: Vibration Sensor
-                    ZWaveConfigurationParameter enableVibrationSensor = new ZWaveConfigurationParameter(17,
-                            config.zse18SensorDriverConfigurations.enableVibrationSensor, 1);
-                    ZWaveCommandClassTransactionPayload enableVibrationSensorCommand =
-                            zWaveConfigurationCommandClass.setConfigMessage(enableVibrationSensor);
-                    commService.sendConfigurations(enableVibrationSensorCommand);
-
-                    // Param 18: Trigger Interval
-                    ZWaveConfigurationParameter triggerInterval = new ZWaveConfigurationParameter(18,
-                            config.zse18SensorDriverConfigurations.triggerInterval, 2);
-                    ZWaveCommandClassTransactionPayload triggerIntervalCommand =
-                            zWaveConfigurationCommandClass.setConfigMessage(triggerInterval);
-                    commService.sendConfigurations(triggerIntervalCommand);
-
-                    // Param 19: Notification (Alarm) or Binary Reports
-                    ZWaveConfigurationParameter binarySensorReports = new ZWaveConfigurationParameter(19,
-                            config.zse18SensorDriverConfigurations.binarySensorReports, 1);
-                    ZWaveCommandClassTransactionPayload binarySensorReportsCommand =
-                            zWaveConfigurationCommandClass.setConfigMessage(binarySensorReports);
-                    commService.sendConfigurations(binarySensorReportsCommand);
-
-                    // Param 20: LED Indicator
-                    ZWaveConfigurationParameter ledIndicator = new ZWaveConfigurationParameter(20,
-                            config.zse18SensorDriverConfigurations.ledIndicator, 1);
-                    ZWaveCommandClassTransactionPayload ledIndicatorCommand =
-                            zWaveConfigurationCommandClass.setConfigMessage(ledIndicator);
-                    commService.sendConfigurations(ledIndicatorCommand);
-
                     // Param 32: Low Battery Alert
                     ZWaveConfigurationParameter lowBatteryAlert = new ZWaveConfigurationParameter(32,
-                            config.zse18SensorDriverConfigurations.lowBatteryAlert, 1);
+                            config.ds100SensorDriverConfigurations.lowBatteryAlert, 1);
                     ZWaveCommandClassTransactionPayload lowBatteryAlertCommand =
                             zWaveConfigurationCommandClass.setConfigMessage(lowBatteryAlert);
                     commService.sendConfigurations(lowBatteryAlertCommand);
 
-                    // Param 254: Lock Advanced Settings
-                    ZWaveConfigurationParameter lockSettings = new ZWaveConfigurationParameter(254,
-                            config.zse18SensorDriverConfigurations.lockSettings, 1);
-                    ZWaveCommandClassTransactionPayload lockSettingsCommand =
-                            zWaveConfigurationCommandClass.setConfigMessage(lockSettings);
-                    commService.sendConfigurations(lockSettingsCommand);
-
                     clearStatus();
 
-                    //Set wakeup time to 240s
-                    ZWaveWakeUpCommandClass wakeupCommandClass = (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId).getCommandClass
-                            (ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
 
-                    if (wakeupCommandClass != null) {
-                        ZWaveCommandClassTransactionPayload wakeUp =
-                                wakeupCommandClass.setInterval(configNodeId,
-                                        config.zse18SensorDriverConfigurations.wakeUpTime);
-
-                        commService.sendConfigurations(wakeUp);
-                        commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
-//                            logger.info("INTERVAL MESSAGE: _____" + commService.getZWaveNode(zControllerId).sendTransaction(wakeupCommandClass.getIntervalMessage(),0));
-                    }
-                }
-                if (node.getNodeInitStage() == DONE) {
+                } else if (node.getNodeInitStage() == DONE) {
 
                     clearStatus();
+                        ZWaveBatteryCommandClass battery =
+                                (ZWaveBatteryCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
+                        ZWaveCommandClassTransactionPayload batteryCheck = battery.getValueMessage();
+                        commService.sendConfigurations(batteryCheck);
+                        System.out.println("THIS IS THE BATTERY CHECK");
 
-                    ZWaveBatteryCommandClass zWaveBatteryCommandClass =
-                            (ZWaveBatteryCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
-
-                    commService.sendConfigurations(zWaveBatteryCommandClass.getValueMessage());
-
-                    reportStatus("ZSE18 Initialization Complete");
+                    reportStatus("DS100 Initialization Complete");
 
                 }
             }
         }
     }
 
-    public void handleAlarmData(int key, String value, int event) {
-        handleMotionData(key, value, event);
-        handleVibrationData(key, value, event);
-    }
-
-    public void handleVibrationData(int key, String value, int event) {
-        //key == 32; COMMAND_CLASS_BASIC
-        //key == 7; BURGLAR
-
+    public void handleTamperAlarm(int key, String value, int event){
         if (key == 7 && Objects.equals(value, "255") && event == 3) {
-            isVibration = true;
-        } else if (key == 7 && Objects.equals(value, "255") && event == 0) {
-            isVibration = false;
+            isTamperAlarm = true;
+        } else if (key == 7 && Objects.equals(value, "255") && event == 0){
+            isTamperAlarm = false;
+        } else if (key == 32 && Objects.equals(value, "255") && event == 0) {
+            isTamperAlarm = false;
         }
 
-        if (isVibration != null) {
-            vibrationOutput.onNewMessage(isVibration);
+        if (isTamperAlarm != null){
+            tamperAlarmOutput.onNewMessage(isTamperAlarm);
         }
     }
-    public void handleMotionData(int key, String value, int event) {
 
-        if (key == 32 && Objects.equals(value, "255")){
-            isMotion = true;
-        } else if (key == 32 && Objects.equals(value, "0")){
-            isMotion = false;
-        } else if (key == 7 && Objects.equals(value, "255") && event == 8){
-            isMotion = true;
-        } else if (key == 7 && Objects.equals(value, "255") && event == 0){
-            isMotion = false;
-        } else if (key == 7 && Objects.equals(value, "0") && event == 8){
-            isMotion = false;
+    public void handleEntryAlarm(int key, String value, int event) {
+        if (key == 6 && Objects.equals(value, "255") && event == 22) {
+            isEntryAlarm = true;
+        } else if (key == 6 && Objects.equals(value, "255") && event == 23) {
+            isEntryAlarm = false;
         }
 
-        if (isMotion != null) {
-            motionOutput.onNewMessage(isMotion);
+        if (isEntryAlarm != null) {
+            entryAlarmOutput.onNewMessage(isEntryAlarm);
+
         }
     }
     public void handleCommandClassData(String sensorType, String sensorValue) {

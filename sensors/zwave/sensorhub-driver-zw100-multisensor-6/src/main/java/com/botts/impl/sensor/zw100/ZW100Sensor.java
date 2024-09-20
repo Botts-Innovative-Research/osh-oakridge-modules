@@ -16,9 +16,11 @@ package com.botts.impl.sensor.zw100;
 import  com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
 import net.opengis.sensorml.v20.PhysicalSystem;
+import org.eclipse.jetty.client.ProxyProtocolClientConnectionFactory;
 import org.openhab.binding.zwave.handler.ZWaveThingHandler;
 import org.openhab.binding.zwave.internal.protocol.*;
 import org.openhab.binding.zwave.internal.protocol.commandclass.*;
+import org.openhab.binding.zwave.internal.protocol.event.ZWaveAssociationEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
@@ -27,9 +29,16 @@ import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitS
 import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveCommandClassTransactionPayload;
 //import com.vaadin.ui.Notification;
 //import com.vaadin.ui.Window;
+import org.openhab.core.thing.Bridge;
+import org.openhab.core.thing.Thing;
+import org.openhab.core.thing.ThingTypeUID;
+import org.openhab.core.thing.ThingUID;
+import org.openhab.core.thing.internal.BridgeImpl;
 import org.openhab.core.thing.internal.ThingImpl;
+import org.openhab.core.types.Command;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.module.ModuleEvent;
+import org.sensorhub.impl.module.AbstractModule;
 import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 
@@ -37,12 +46,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.sensorML.SMLHelper;
 
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
+import static org.openhab.binding.zwave.ZWaveBindingConstants.ZWAVE_THING_UID;
 import static org.openhab.binding.zwave.internal.protocol.ZWaveNodeState.ALIVE;
 import static org.openhab.binding.zwave.internal.protocol.ZWaveNodeState.INITIALIZING;
-import static org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage.GET_CONFIGURATION;
+import static org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass.CommandClass.*;
+import static org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage.*;
 
 /**
  * Sensor driver providing sensor description, output registration, initialization and shutdown of driver and outputs.
@@ -59,6 +70,10 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
     public ZWaveEvent message;
     public ZWaveController zController;
+    public ThingUID thingUID;
+    public ThingTypeUID thingTypeUID;
+    public Thing thing;
+    public Bridge controller;
 
     // SENSOR DATA
     int alarmKey;
@@ -82,6 +97,10 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
     VibrationAlarmOutput vibrationAlarmOutput;
     BatteryOutput batteryOutput;
     LocationOutput locationOutput;
+
+    public ZWaveAssociationGroup associationGroup;
+    public ZWaveAssociation association;
+    Object associationEvent;
 
     @Override
     protected void updateSensorDescription() {
@@ -113,7 +132,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
         super.doInit();
 
         // Generate identifiers
-        generateUniqueID("[urn:osh:sensor:zw100]", config.serialNumber);
+            generateUniqueID("[urn:osh:sensor:zw100]", config.serialNumber);
         generateXmlID("[ZW100]", config.serialNumber);
 
         // Create and initialize output
@@ -203,14 +222,22 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 //                    });
         }
 
-//        ThingTypeUID x = new ThingTypeUID(config.thingTypeUID);
+//        controller = commService.controller;
+//        thingTypeUID = new ThingTypeUID("zwave", "aeon_zw100_00_000");
+////        thingTypeUID = ZWAVE_THING_UID;
+////        thingUID = new ThingUID("aeon_zw100_00_000:sensor:node_" + configNodeId);
+//
+//        thing = new ThingImpl(thingTypeUID, "node_" + configNodeId);
+////        thing.setBridgeUID(commService.controller.getBridgeUID());
+//        thing.setProperty("node_id=2", null);
+//        thing.setBridgeUID(controller.getBridgeUID());
+//
+//        ZWaveThingHandler zWaveThingHandler = new ZWaveThingHandler(thing);
+//        thing.setHandler(zWaveThingHandler);
+//        zWaveThingHandler.initialize();
+//        zWaveThingHandler.handleConfigurationUpdate(thing.getConfiguration().getProperties());
 
-//        ThingUID ZW100ThingUID = new ThingUID("zwave", "zwave:serial_zstick:40a62c8264");
-//        Thing ZW100 = new ThingImpl(x, "zwave-device-40a62c8264-node" + configNodeId);
 
-//        ZWaveThingHandler handler = new ZWaveThingHandler(ZW100);
-
-//        handler.initialize();
     }
 
     @Override
@@ -238,49 +265,138 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
         }
     }
 
+
     // Sorts data based on message type and sends information to outputs
     @Override
     public void onNewDataPacket(int id, ZWaveEvent message) {
          if (id == configNodeId) {
 
-                ZWaveNode node = zController.getNode(id);
-                node.getNodeInitStage();
+             ZWaveNode node = zController.getNode(id);
+             node.getNodeInitStage();
 
-                this.message = message;
+             this.message = message;
+
+//             if ( association == null) {
+//                 associationGroup = new ZWaveAssociationGroup(1);
+//                 association = new ZWaveAssociation(node.getNodeId());
+//
+//                if (!associationGroup.isAssociated(association)) {
+//                 associationGroup.addAssociation(association);
+//                 logger.info("ZW100 Sensor associated with the controller");
+//                 }
+//             }
+
 
 //                if (node.getNodeInitStage().isStaticComplete()){
-                    if (message instanceof ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) {
-                        alarmKey = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmType().getKey();
-                        alarmValue = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getValue().toString();
-                        alarmEvent = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmEvent();
+             if (message instanceof ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) {
+                 alarmKey = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmType().getKey();
+                 alarmValue = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getValue().toString();
+                 alarmEvent = ((ZWaveAlarmCommandClass.ZWaveAlarmValueEvent) message).getAlarmEvent();
 
-                        handleAlarmData(alarmKey, alarmValue, alarmEvent);
+                 handleAlarmData(alarmKey, alarmValue, alarmEvent);
 
-                        } else if (message instanceof ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) {
+             } else if (message instanceof ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) {
 
-                        multiSensorType =
-                                ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) message).getSensorType().getLabel();
-                        multiSensorValue =
-                                ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) message).getValue().toString();
+                 multiSensorType =
+                         ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) message).getSensorType().getLabel();
+                 multiSensorValue =
+                         ((ZWaveMultiLevelSensorCommandClass.ZWaveMultiLevelSensorValueEvent) message).getValue().toString();
 
-                        handleMultiSensorData(multiSensorType, multiSensorValue);
+                 handleMultiSensorData(multiSensorType, multiSensorValue);
 
-                    } else if (message instanceof ZWaveCommandClassValueEvent) {
+             } else if (message instanceof ZWaveCommandClassValueEvent) {
 
-                        commandClassType = ((ZWaveCommandClassValueEvent) message).getCommandClass().name();
-                        commandClassValue = ((ZWaveCommandClassValueEvent) message).getValue().toString();
+                 commandClassType = ((ZWaveCommandClassValueEvent) message).getCommandClass().name();
+                 commandClassValue = ((ZWaveCommandClassValueEvent) message).getValue().toString();
 
-                        handleCommandClassData(commandClassType, commandClassValue);
+                 handleCommandClassData(commandClassType, commandClassValue);
 
-                    } else if (message instanceof ZWaveInitializationStateEvent) {
+             } else if (message instanceof ZWaveAssociationEvent) {
+                 associationEvent = ((ZWaveAssociationEvent)message).getValue();
+
+             } else if (message instanceof ZWaveInitializationStateEvent) {
                         logger.info(message.toString());
 
                         // Using Node Advancer -> check command class before running config commands (determine which init
                         // stages pertain to specific commands?)
 
-                      if (node.getNodeInitStage() == GET_CONFIGURATION) {
+                        if (node.getNodeInitStage() == SET_ASSOCIATION) {
 
-                          reportStatus("Put multi-sensor into config mode");
+                            ZWaveAssociationCommandClass zWaveAssociationCommandClass =
+                                    (ZWaveAssociationCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_ASSOCIATION);
+
+                            if (zWaveAssociationCommandClass != null) {
+                                association = new ZWaveAssociation(commService.getzController().getOwnNodeId(), 1);
+                            } else {
+                                association = new ZWaveAssociation(commService.getzController().getOwnNodeId());
+                            }
+//                            associationGroup = new ZWaveAssociationGroup(1);
+//                            association = new ZWaveAssociation(zController.getOwnNodeId());
+
+                            ZWaveCommandClassTransactionPayload setAssociation =
+                                    commService.getZWaveNode(configNodeId).setAssociation(1, association);
+                            commService.sendConfigurations(setAssociation);
+
+                            ZWaveAssociationGroupInfoCommandClass zWaveAssociationGroupInfoCommandClass =
+                                    (ZWaveAssociationGroupInfoCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(COMMAND_CLASS_ASSOCIATION_GRP_INFO);
+
+
+//                            ZWaveMultiInstanceCommandClass zWaveMultiInstanceCommandClass =
+//                                    (ZWaveMultiInstanceCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(COMMAND_CLASS_MULTI_CHANNEL);
+//                                zWaveMultiInstanceCommandClass.
+
+                            ZWavePlusCommandClass zWavePlusCommandClass =
+                                    (ZWavePlusCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(COMMAND_CLASS_ZWAVEPLUS_INFO);
+                            zWavePlusCommandClass.getValueMessage();
+
+
+//                            ZWaveCommandClassTransactionPayload setAssociation =
+//                                    commService.getZWaveNode(zControllerId).setAssociation(1, association);
+//                            commService.sendConfigurations(setAssociation);
+//
+//                                commService.getZWaveNode(configNodeId).getAssociation(1).getDestinationNode();
+//                                    (ZWaveAssociationGroupInfoCommandClass) commService.getZWaveNode(configNodeId).setAssociation(1, association)
+
+//                            zWaveAssociationGroupInfoCommandClass.initialize(true);
+
+                        }
+
+                        if (node.getNodeInitStage() == SET_LIFELINE) {
+
+                            ZWaveMultiAssociationCommandClass zWaveMultiAssociationCommandClass =
+                                    (ZWaveMultiAssociationCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(COMMAND_CLASS_MULTI_CHANNEL_ASSOCIATION);
+
+                            ZWaveAssociationCommandClass zWaveAssociationCommandClass =
+                                    (ZWaveAssociationCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_ASSOCIATION);
+
+                            if (zWaveMultiAssociationCommandClass != null && zWaveAssociationCommandClass != null) {
+                                association = new ZWaveAssociation(commService.getzController().getOwnNodeId(), 1);
+                            } else {
+                                association = new ZWaveAssociation(commService.getzController().getOwnNodeId());
+                            }
+
+                            ZWaveCommandClassTransactionPayload setAssociation =
+                                    commService.getZWaveNode(configNodeId).setAssociation(1, association);
+                            commService.sendConfigurations(setAssociation);
+
+
+
+                           if (zWaveAssociationCommandClass != null) {
+                               ZWaveCommandClassTransactionPayload associationMsg =
+//                                    zWaveAssociationCommandClass.setAssociationMessage(1, configNodeId);
+                                       zWaveAssociationCommandClass.getAssociationMessage(1);
+                               commService.sendConfigurations(associationMsg);
+                               logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveAssociationCommandClass.getAssociationMessage(1), 0).toString());
+                           }
+
+//
+//                            Collection<ZWaveAssociationGroup> associations =
+//                                    commService.getZWaveNode(configNodeId).getAssociationGroups().values();
+//                            logger.info(associations.toString());
+
+                        } if (node.getNodeInitStage() == STATIC_VALUES) {
+
+                            reportStatus("Put ZW100 multi-sensor into config mode");
 
                             // Run configuration commands on the first build after the multi-sensor is added to the network.
                             // Multisensor must be in config mode before starting the node on OSH. To access config mode:
@@ -288,10 +404,43 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                             //         LED should start blinking yellow. To exit press trigger button once
                             //      2. Power the multisensor by USB
 
-                          ZWaveConfigurationCommandClass zWaveConfigurationCommandClass =
-                                  (ZWaveConfigurationCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_CONFIGURATION);
+
+
+                            Collection<ZWaveCommandClass> commandClasses =
+                                    commService.getZWaveNode(configNodeId).getCommandClasses(0);
+
+
+                            ZWaveConfigurationCommandClass zWaveConfigurationCommandClass =
+                                    (ZWaveConfigurationCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(COMMAND_CLASS_CONFIGURATION);
+
+                            //ASSOCIATION GROUP COMMANDS
+
+                            ZWaveAssociationCommandClass zWaveAssociationCommandClass =
+                                    (ZWaveAssociationCommandClass)commService.getZWaveNode(configNodeId).getCommandClass(COMMAND_CLASS_ASSOCIATION);
+
+                            ZWaveCommandClassTransactionPayload getAssociations =
+                                    zWaveAssociationCommandClass.getAssociationMessage(1);
+                            commService.sendConfigurations(getAssociations);
+                            logger.info("ASSOCIATION MESSAGE ______________________");
+
+
+                            ZWaveAssociationGroupInfoCommandClass zWaveAssociationGroupInfoCommandClass =
+                                    (ZWaveAssociationGroupInfoCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(COMMAND_CLASS_ASSOCIATION_GRP_INFO);
+
+                            ZWaveCommandClassTransactionPayload commandListMessage =
+                                    zWaveAssociationGroupInfoCommandClass.getCommandListMessage(1);
+                            commService.sendConfigurations(commandListMessage);
+                            logger.info("COMMAND LIST MESSAGE ______________________");
+
+                            ZWaveCommandClassTransactionPayload infoMessage =
+                                    zWaveAssociationGroupInfoCommandClass.getInfoMessage(1);
+                            commService.sendConfigurations(infoMessage);
+
+
+
 
                             //CONFIGURATION COMMANDS
+
 
                             //Unlock Configurations
 //                    ZWaveConfigurationParameter configUnlock = new ZWaveConfigurationParameter(252, 1, 1);
@@ -302,7 +451,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
                             //Set wakeup time to 240s
                             ZWaveWakeUpCommandClass wakeupCommandClass = (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId).getCommandClass
-                                    (ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
+                                    (COMMAND_CLASS_WAKE_UP);
 
                             if (wakeupCommandClass != null) {
                                 ZWaveCommandClassTransactionPayload wakeUp =
@@ -310,33 +459,55 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
                                 commService.sendConfigurations(wakeUp);
                                 commService.sendConfigurations(wakeupCommandClass.getIntervalMessage());
-//                            logger.info("INTERVAL MESSAGE: _____" + commService.getZWaveNode(zControllerId).sendTransaction(wakeupCommandClass.getIntervalMessage(),0));
+                            logger.info("INTERVAL MESSAGE: _____" + commService.getZWaveNode(zControllerId).sendTransaction(wakeupCommandClass.getIntervalMessage(),0));
                             }
 
-                            //Which command would be sent when the motion sensor triggered.
+
+
+                            //Parameter 2: Stay Awake in Battery Mode
+
+                            //
+                            //
+
+                            //Parameter 3: Motion Sensor reset timeout - Multisensor will send BASIC SET CC(0x00)
+                            // to the associated nodes if no motion is triggered again in x seconds
+                            // Default: 4 minutes
+                            // Allowed values: Range: 10-3600.
+                            ZWaveConfigurationParameter motionSensorReset = new ZWaveConfigurationParameter(3,
+                                    config.zw100SensorDriverConfigurations.motionSensorReset, 2);
+                            ZWaveCommandClassTransactionPayload configMotionReset =
+                                    zWaveConfigurationCommandClass.setConfigMessage(motionSensorReset);
+                            commService.sendConfigurations(configMotionReset);
+                            System.out.println("Basic set no motion after 10 seconds");
+                            commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(3));
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(3), 0).toString());
+
+
+                            //Parameter 4: Motion sensor sensitivity - Sensitivity level of PIR sensor
+                            // (1=minimum, 5=maximum)
+                            ZWaveConfigurationParameter motionSensorSensitivity = new ZWaveConfigurationParameter(4,
+                                    config.zw100SensorDriverConfigurations.motionSensitivity, 1);
+                            ZWaveCommandClassTransactionPayload setMotionSensitivity =
+                                    zWaveConfigurationCommandClass.setConfigMessage(motionSensorSensitivity);
+                            commService.sendConfigurations(setMotionSensitivity);
+                            System.out.println("Motion sensitivity set to max");
+                            commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(4));
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(4), 0).toString());
+
+
+                            //Parameter 5: Motion Sensor Triggered Command - Which command would be sent when the
+                            // motion sensor triggered.
                             // 1 = send Basic Set CC.
                             // 2 = send Sensor Binary Report CC.
                             ZWaveConfigurationParameter motionCommand = new ZWaveConfigurationParameter(5, config.zw100SensorDriverConfigurations.motionCommand, 1);
                             ZWaveCommandClassTransactionPayload motionSensorTriggeredCommand =
                                     zWaveConfigurationCommandClass.setConfigMessage(motionCommand);
                             commService.sendConfigurations(motionSensorTriggeredCommand);
-//                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(5));
+                            System.out.println("Motion sensor set to Basic Set");
+                            commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(5));
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(5), 0).toString());
 
-                            //The Multisensor will send BASIC SET CC(0x00) to the associated nodes if no motion is
-                            // triggered again in 10 seconds
-                            ZWaveConfigurationParameter motionSensorReset = new ZWaveConfigurationParameter(3, config.zw100SensorDriverConfigurations.motionSensorReset, 2);
-                            ZWaveCommandClassTransactionPayload configMotionReset =
-                                    zWaveConfigurationCommandClass.setConfigMessage(motionSensorReset);
-                            commService.sendConfigurations(configMotionReset);
 
-                            //Set motion sensor sensitivity
-                            ZWaveConfigurationParameter motionSensorSensitivity = new ZWaveConfigurationParameter(4,
-                                    config.zw100SensorDriverConfigurations.motionSensitivity, 1);
-                            ZWaveCommandClassTransactionPayload setMotionSensitivity =
-                                    zWaveConfigurationCommandClass.setConfigMessage(motionSensorSensitivity);
-                            commService.sendConfigurations(setMotionSensitivity);
-
-                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(4),0).toString());
 
                             //Get report every 240 seconds/ 4 min (on battery)
                             ZWaveConfigurationParameter sensorReportInterval = new ZWaveConfigurationParameter(111,
@@ -344,6 +515,8 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                             ZWaveCommandClassTransactionPayload setSensorReportInterval =
                                     zWaveConfigurationCommandClass.setConfigMessage(sensorReportInterval);
                             commService.sendConfigurations(setSensorReportInterval);
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(111), 0).toString());
+
 //                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(111));
 
                             //Set the default unit of the automatic temperature report in parameter 101-103
@@ -351,58 +524,103 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                             ZWaveCommandClassTransactionPayload setTempUnit =
                                     zWaveConfigurationCommandClass.setConfigMessage(tempUnit);
                             commService.sendConfigurations(setTempUnit);
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(64), 0).toString());
 
-                            //Enable selective reporting only when measurements reach a certain threshold or
-                            // percentage set
+
+                            //Parameter 40: Selective Reporting - Enable selective reporting only when measurements
+                            // reach a certain threshold or percentage set
                             ZWaveConfigurationParameter selectiveReporting = new ZWaveConfigurationParameter(40, config.zw100SensorDriverConfigurations.selectiveReporting, 1);
                             ZWaveCommandClassTransactionPayload configSelectiveReporting =
                                     zWaveConfigurationCommandClass.setConfigMessage(selectiveReporting);
                             commService.sendConfigurations(configSelectiveReporting);
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(40), 0).toString());
 
-                            //Temperature Threshold: value contains one decimal point, e.g. if the value is set to 20,
-                            // the threshold value =2.0°F
+
+                            //Parameter 41: Temperature Threshold - value contains one decimal point, e.g. if the
+                            // value is set to 20, the threshold value = 2.0°F
                             ZWaveConfigurationParameter temperatureThreshold = new ZWaveConfigurationParameter(41,
                                     config.zw100SensorDriverConfigurations.temperatureThreshold, 4);
                             ZWaveCommandClassTransactionPayload configTempThreshold =
                                     zWaveConfigurationCommandClass.setConfigMessage(temperatureThreshold);
                             commService.sendConfigurations(configTempThreshold);
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(41), 0).toString());
 
-                            //Humidity Threshold: Unit in %
+
+                            //Parameter 42: Humidity Threshold - Unit in %
                             ZWaveConfigurationParameter relHumThreshold = new ZWaveConfigurationParameter(42, config.zw100SensorDriverConfigurations.humidityThreshold,
                                     1);
                             ZWaveCommandClassTransactionPayload configRelHumThreshold =
                                     zWaveConfigurationCommandClass.setConfigMessage(relHumThreshold);
                             commService.sendConfigurations(configRelHumThreshold);
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(42), 0).toString());
 
-                            //Luminance Threshold
+
+                            //Parameter 43: Luminance Threshold
                             ZWaveConfigurationParameter luminanceThreshold = new ZWaveConfigurationParameter(43, config.zw100SensorDriverConfigurations.luminanceThreshold
                                     , 2);
                             ZWaveCommandClassTransactionPayload configLuminanceThreshold =
                                     zWaveConfigurationCommandClass.setConfigMessage(luminanceThreshold);
                             commService.sendConfigurations(configLuminanceThreshold);
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(43), 0).toString());
 
-                            //Battery Threshold: The unit is %
+
+                            //Parameter 44: Battery Threshold - Unit in %
                             ZWaveConfigurationParameter batteryThreshold = new ZWaveConfigurationParameter(44, config.zw100SensorDriverConfigurations.batteryThreshold, 1);
                             ZWaveCommandClassTransactionPayload configBatteryThreshold =
                                     zWaveConfigurationCommandClass.setConfigMessage(batteryThreshold);
                             commService.sendConfigurations(configBatteryThreshold);
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(44), 0).toString());
 
-                            //UV Threshold
+
+                            //Parameter 45: Ultraviolet Threshold
                             ZWaveConfigurationParameter uvThreshold = new ZWaveConfigurationParameter(45, config.zw100SensorDriverConfigurations.UVThreshold, 1);
                             ZWaveCommandClassTransactionPayload configUvThreshold =
                                     zWaveConfigurationCommandClass.setConfigMessage(uvThreshold);
                             commService.sendConfigurations(configUvThreshold);
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(45), 0).toString());
 
+                            //Parameter 46: Send Alarm Report if low temperature
+                            ZWaveConfigurationParameter lowTempAlarmReport = new ZWaveConfigurationParameter(46,
+                                    config.zw100SensorDriverConfigurations.lowTemperatureReport,
+                                    1);
+                            ZWaveCommandClassTransactionPayload configLowTempAlarmReport =
+                                    zWaveConfigurationCommandClass.setConfigMessage((lowTempAlarmReport));
+                            commService.sendConfigurations((configLowTempAlarmReport));
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(46), 0).toString());
+
+                            //Group 1 Report
+                            ZWaveConfigurationParameter reportGroup1 = new ZWaveConfigurationParameter(101, 241, 4);
+                            ZWaveCommandClassTransactionPayload setReportGroup1 =
+                                    zWaveConfigurationCommandClass.setConfigMessage(reportGroup1);
+                            commService.sendConfigurations(setReportGroup1);
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(101), 0).toString());
+                            clearStatus();
 
                             //getConfigMessage with the associated parameter # will return the configuration information:
 
 //                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(111));
 //                    logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(111),0).toString());
 
-                            if (node.getNodeInitStage() == ZWaveNodeInitStage.DONE) {
-                                logger.info(commService.getZWaveNode(configNodeId).getNodeInitStage().name());
-                                logger.info("INITIALIZATION COMPLETE");
-                            }
+
+//                        } else if (node.getNodeInitStage() == DYNAMIC_VALUES) {
+//                            ZWaveAssociationGroupInfoCommandClass zWaveAssociationGroupInfoCommandClass =
+//                                    (ZWaveAssociationGroupInfoCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(COMMAND_CLASS_ASSOCIATION_GRP_INFO);
+//
+//                            zWaveAssociationGroupInfoCommandClass.initialize(true);
+
+                        } else if (node.getNodeInitStage() == ZWaveNodeInitStage.DONE) {
+
+                            clearStatus();
+//
+                            ZWaveBatteryCommandClass battery =
+                                    (ZWaveBatteryCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_BATTERY);
+                            ZWaveCommandClassTransactionPayload batteryCheck = battery.getValueMessage();
+                            commService.sendConfigurations(batteryCheck);
+                            System.out.println("THIS IS THE BATTERY CHECK");
+
+                            reportStatus("ZW100 Initialization Complete");
+
+
                         }
                     }
                 }

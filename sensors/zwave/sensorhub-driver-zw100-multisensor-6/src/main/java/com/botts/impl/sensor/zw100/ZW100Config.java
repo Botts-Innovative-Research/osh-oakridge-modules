@@ -56,7 +56,7 @@ public class ZW100Config extends SensorConfig {
 
     public class ZW100SensorDriverConfigurations extends SensorDriverConfig {
         @DisplayInfo(desc = "Node ID value")
-        public int nodeID = 26;
+        public int nodeID = 2;
         @DisplayInfo(desc = "ZController ID value")
         public int controllerID = 1;
         @DisplayInfo (desc = "Wake Up Interval of Sensor in Seconds")
@@ -86,6 +86,9 @@ public class ZW100Config extends SensorConfig {
         public int batteryThreshold = 2;
         @DisplayInfo (desc = "UV Threshold")
         public int UVThreshold = 2;
+
+        @DisplayInfo (desc = "Low Temperature Alarm Report")
+        public int lowTemperatureReport;
 
     }
     @DisplayInfo(label = "ZW100 Config")

@@ -5,20 +5,27 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.sensorhub.impl.zwave.comms;
 
+import org.checkerframework.checker.nullness.qual.Nullable;
+import org.openhab.binding.zwave.ZWaveBindingConstants;
+import org.openhab.binding.zwave.handler.ZWaveControllerHandler;
 import org.openhab.binding.zwave.handler.ZWaveSerialHandler;
+import org.openhab.binding.zwave.handler.ZWaveThingHandler;
 import org.openhab.binding.zwave.internal.protocol.*;
+import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAssociationGroupInfoCommandClass;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass;
 import org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveMultiInstanceCommandClass;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeSerializer;
-import org.openhab.core.thing.Bridge;
-import org.openhab.core.thing.Thing;
-import org.openhab.core.thing.ThingTypeUID;
+import org.openhab.core.config.core.Configuration;
+import org.openhab.core.thing.*;
+import org.openhab.core.thing.binding.BaseBridgeHandler;
+import org.openhab.core.thing.binding.BaseThingHandler;
 import org.openhab.core.thing.internal.BridgeImpl;
 import org.openhab.core.thing.internal.ThingImpl;
 import org.openhab.core.thing.type.BridgeType;
+import org.openhab.core.types.Command;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.service.IServiceModule;
 import org.sensorhub.impl.comm.UARTConfig;
@@ -27,6 +34,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.openhab.binding.zwave.ZWaveBindingConstants.*;
 
 
 public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> implements IServiceModule<ZwaveCommServiceConfig>,
@@ -43,12 +52,19 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
     UARTConfig uartConfig = new UARTConfig();
     RxtxZWaveIoHandler ioHandler;
     public ZWaveController zController;
-    public ZWaveNode node;
-    public String thingUID;
+//    public ZWaveNode node;
+    public ThingUID thingUID;
     public ThingTypeUID bridgeUID;
     public Thing thing;
     public Bridge controller;
-
+    public ZWaveAssociationGroup associationGroup;
+    public ZWaveAssociation association;
+    boolean masterController;
+    public ZWaveControllerHandler controllerHandler;
+    public BaseBridgeHandler baseBridgeHandler;
+    public BaseThingHandler baseThingHandler;
+    public ZWaveThingHandler handler;
+    public ZWaveController zWaveController;
     @Override
     protected void doInit() throws SensorHubException {
 
@@ -58,40 +74,59 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 //
         uartConfig.baudRate = config.baudRate;
         uartConfig.portName = config.portName;
+        config.masterController = this.masterController;
 
-        bridgeUID = new ThingTypeUID("zwave:serial_zstick");
-        controller = new BridgeImpl(bridgeUID,"zwave-serial_zstick-40a62c8264");
-        thing = new ThingImpl(bridgeUID, "ZController");
 
-        ioHandler = new RxtxZWaveIoHandler(uartConfig);
-        ioHandler.start(msg -> zController.incomingPacket(msg));
-        zController = new ZWaveController(ioHandler);
+//        bridgeUID = new ThingTypeUID("zwave", "aeon_zw090_00_000");
+        bridgeUID = CONTROLLER_SERIAL;
+        thingUID = new ThingUID(bridgeUID, "controller");
+        controller = new BridgeImpl(bridgeUID, thingUID);
+        controller.setBridgeUID(thingUID);
+        thing = new ThingImpl(bridgeUID, "controller");
+        thing.setBridgeUID(controller.getBridgeUID());
+        thing.setProperty("node_id=1", null);
 
+
+//        Configuration configuration = new Configuration();
+//        configuration.put(CONFIGURATION_NODEID + "=1", null);
+        controller.getConfiguration().put(CONFIGURATION_NODEID, 1);
+
+        thing.getConfiguration().put(CONFIGURATION_NODEID, 1);
+
+
+        Map<String, String> config = new HashMap();
+        config.put("masterController", "true");
+        config.put("sucNode", "1");
+
+
+        ioHandler = new RxtxZWaveIoHandler(uartConfig, controller);
+        zWaveController = ioHandler.controller;
+        ioHandler.controllerHandler.initialize();
+        ioHandler.start(msg -> zWaveController.incomingPacket(msg));
+//        zController = new ZWaveController(ioHandler, config);
+
+
+
+        handler = new ZWaveThingHandler(controller);
+//        thing.setHandler(handler);
+        handler.initialize();
+
+        handler.getConfigStatus();
 
 //        try {
 //            ioHandler.start(msg -> zController.incomingPacket(msg));
-//        } catch (NullPointerException nullPointerException){
-//            if (this.zController == null){
-//                logger.info("Restart the Comm Service");
+//        } catch (NullPointerException nullPointerException) {
+//            if (this.zController == null) {
+//                ioHandler.stop();
+//                initialized = false;
+//                System.out.println("Restart the comm service");
+//            } else {
+//                zController = new ZWaveController(ioHandler);
+//                workerThread = new Thread(this, this.getClass().getSimpleName());
+//                initialized = true;
 //            }
 //        }
 
-
-//        try {
-//            ioHandler.start(msg -> zController.incomingPacket(msg));
-//        } catch (NullPointerException e) {
-//            while (zController == null){
-//                try {
-//                    wait(5000);
-//                    ioHandler.start(msg -> zController.incomingPacket(msg));
-//
-//                } catch (InterruptedException ex) {
-//                    throw new RuntimeException(ex);
-//                }
-//            }
-//        } finally {
-//            zController = new ZWaveController(ioHandler);
-//        }
 
         workerThread = new Thread(this, this.getClass().getSimpleName());
 
@@ -111,6 +146,8 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         doWork.set(true);
 
         workerThread.start();
+
+
     }
 
     @Override
@@ -161,6 +198,8 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
     @Override
     public void run() {
         //adds an event listener and sends the incoming events to the subscribed messageListeners
+
+//        logger.info("The controller is master: " + zController.isMasterController());
         zController.addEventListener(new ZWaveEventListener() {
 
             public void ZWaveIncomingEvent(ZWaveEvent event) {
@@ -174,6 +213,41 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 
                 messageListeners.forEach(listener -> listener.onNewDataPacket(event.getNodeId(), event));
 
+//                nodeList.forEach(node -> zController.getNode(node.getNodeId()).setAssociationGroup(group));
+
+
+                associationGroup = new ZWaveAssociationGroup(1);
+
+//                association = new ZWaveAssociation(zController.getOwnNodeId());
+//                if (!associationGroup.isAssociated(association)) {
+//                    associationGroup.addAssociation(association);
+//                    logger.info("These are the association group command classes: " + associationGroup.getCommandClasses());
+//                }
+
+
+//                if (setAssociation(2) != null && !associationGroup.isAssociated(setAssociation(2))){
+//                    associationGroup.addAssociation(setAssociation(2));
+//                    logger.info("Node 2 associated with the controller: " + associationGroup.getAssociations());
+//                }
+
+
+//                    nodeList.forEach(node -> {
+//                                if (!associationGroup.isAssociated(setAssociation(node.getNodeId()))) {
+//                                    associationGroup.addAssociation(setAssociation(node.getNodeId()));
+//                                }
+//                            });
+
+
+
+//                List<ZWaveAssociation> associations = new ArrayList<>();
+//                associations.forEach(messageListeners -> messageListeners.getNode());
+//                associationGroup.setAssociations();
+//                if (group.getAssociationCnt() != 5) {
+//                    nodeList.forEach(node -> setAssociations(node.getNodeId()));
+//                }
+//                group.getAssociations();
+//                group.getCommandClasses();
+
                 Runtime.getRuntime().addShutdownHook(new Thread() {
                     public void run() {
                         zController.shutdown();
@@ -183,6 +257,11 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
             }
         });
 }
+//    public void setAssociations(int nodeId) {
+//
+//        ZWaveAssociation association = new ZWaveAssociation(nodeId);
+//        group.addAssociation(association);
+//    }
 
     public synchronized void registerListener(IMessageListener listener) {
         // registers drivers to the comm service
@@ -225,4 +304,11 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         return zController;
     }
 
+    public ZWaveAssociationGroup getAssociationGroup() {
+        return associationGroup;
+    }
+
+    public ZWaveAssociation setAssociation(int nodeID){
+        return new ZWaveAssociation(nodeID);
+    }
 }

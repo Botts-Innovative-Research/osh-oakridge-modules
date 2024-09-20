@@ -11,7 +11,7 @@
  Copyright (C) 2020-2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package com.botts.impl.sensor.wadwaz1;
+package com.botts.impl.sensor.ds100;
 
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -24,17 +24,18 @@ import org.slf4j.LoggerFactory;
 import org.vast.swe.helper.GeoPosHelper;
 
 /**
- * Output specification and provider for {@link WADWAZ1Sensor}.
+ * Output specification and provider for {@link DS100Sensor}.
  *
  * @author cardy
- * @since 11/14/23
+ * @since 09/09/24
  */
-public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
+public class TamperAlarmOutput extends AbstractSensorOutput<DS100Sensor> {
 
-    private static final String SENSOR_OUTPUT_NAME = "WADWAZ1 Entry Alarm";
-    private static final Logger logger = LoggerFactory.getLogger(EntryAlarmOutput.class);
+    private static final String SENSOR_OUTPUT_NAME = "DS100 Tamper Alarm";
 
-    private DataRecord entryAlarmData;
+    private static final Logger logger = LoggerFactory.getLogger(TamperAlarmOutput.class);
+
+    private DataRecord tamperAlarmData;
     private DataEncoding dataEncoding;
 
     private Boolean stopProcessing = false;
@@ -45,14 +46,14 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
     private final long[] timingHistogram = new long[MAX_NUM_TIMING_SAMPLES];
     private final Object histogramLock = new Object();
 
-    boolean isEntry;
-
     /**
      * Constructor
      *
      * @param parentSensor Sensor driver providing this output
      */
-    public EntryAlarmOutput(WADWAZ1Sensor parentSensor) {super(SENSOR_OUTPUT_NAME, parentSensor);
+    TamperAlarmOutput(DS100Sensor parentSensor) {
+
+        super(SENSOR_OUTPUT_NAME, parentSensor);
 
         logger.debug("Output created");
     }
@@ -66,32 +67,50 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
         logger.debug("Initializing Output");
 
         // Get an instance of SWE Factory suitable to build components
-        GeoPosHelper entryAlarmHelper = new GeoPosHelper();
+        GeoPosHelper tamperAlarmHelper = new GeoPosHelper();
 
-        String strEntryAlarm = "Entry Alarm";
+        String strTamperAlarmStatus = "Tamper Alarm Status";
 
-        entryAlarmData = entryAlarmHelper.createRecord()
+        tamperAlarmData = tamperAlarmHelper.createRecord()
                 .name(getName())
-                .label(strEntryAlarm)
-                .definition("http://sensorml.com/ont/swe/property/Entry")
-                .addField("Sampling Time", entryAlarmHelper.createTime().asSamplingTimeIsoUTC())
-                .addField(strEntryAlarm,
-                        entryAlarmHelper.createBoolean()
-                                .name("entry-alarm")
-                                .label(strEntryAlarm + " Status")
-                                .definition("http://sensorml.com/ont/swe/property/Entry")
-                                .description("Status of Entry Alarm"))
+                .label("Tamper Alarm")
+                .definition("http://sensorml.com/ont/swe/property/Alarm")
+                .addField("Sampling Time", tamperAlarmHelper.createTime().asSamplingTimeIsoUTC())
+                .addField(strTamperAlarmStatus,
+                        tamperAlarmHelper.createBoolean()
+                                .name("tamper-alarm-status")
+                                .label(strTamperAlarmStatus)
+                                .definition("http://sensorml.com/ont/swe/property/Alarm")
+                                .description("Status of Tamper Alarm"))
                 .build();
 
-        dataEncoding = entryAlarmHelper.newTextEncoding(",", "\n");
+        dataEncoding = tamperAlarmHelper.newTextEncoding(",", "\n");
 
         logger.debug("Initializing Output Complete");
     }
 
+    /**
+     * Terminates processing data for output
+     */
+    public void doStop() {
+
+        synchronized (processingLock) {
+
+            stopProcessing = true;
+        }
+
+    }
+
+    /**
+     * Check to validate data processing is still running
+     *
+     * @return true if worker thread is active, false otherwise
+     */
+
     @Override
     public DataComponent getRecordDescription() {
 
-        return entryAlarmData;
+        return tamperAlarmData;
     }
 
     @Override
@@ -115,8 +134,7 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
 
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
-
-    public void onNewMessage(boolean isEntry) {
+    public void onNewMessage(boolean isTamperAlarm) {
 
         boolean processSets = true;
 
@@ -124,40 +142,40 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
 
         try {
 
-                DataBlock dataBlock;
-                if (latestRecord == null) {
+            DataBlock dataBlock;
+            if (latestRecord == null) {
 
-                    dataBlock = entryAlarmData.createDataBlock();
+                dataBlock = tamperAlarmData.createDataBlock();
 
-                } else {
+            } else {
 
-                    dataBlock = latestRecord.renew();
-                }
+                dataBlock = latestRecord.renew();
+            }
 
-                synchronized (histogramLock) {
+            synchronized (histogramLock) {
 
-                    int setIndex = setCount % MAX_NUM_TIMING_SAMPLES;
+                int setIndex = setCount % MAX_NUM_TIMING_SAMPLES;
 
-                    // Get a sampling time for latest set based on previous set sampling time
-                    timingHistogram[setIndex] = System.currentTimeMillis() - lastSetTimeMillis;
+                // Get a sampling time for latest set based on previous set sampling time
+                timingHistogram[setIndex] = System.currentTimeMillis() - lastSetTimeMillis;
 
-                    // Set latest sampling time to now
-                    lastSetTimeMillis = timingHistogram[setIndex];
-                }
+                // Set latest sampling time to now
+                lastSetTimeMillis = timingHistogram[setIndex];
+            }
 
-                ++setCount;
+            ++setCount;
 
-                double time = System.currentTimeMillis() / 1000.;
+            double time = System.currentTimeMillis() / 1000.;
 
-                dataBlock.setDoubleValue(0, time);
-                dataBlock.setBooleanValue(1, isEntry);
 
-                latestRecord = dataBlock;
+            dataBlock.setDoubleValue(0, time);
+            dataBlock.setBooleanValue(1, isTamperAlarm);
 
-                latestRecordTime = System.currentTimeMillis();
+            latestRecord = dataBlock;
 
-                eventHandler.publish(new DataEvent(latestRecordTime, EntryAlarmOutput.this, dataBlock));
+            latestRecordTime = System.currentTimeMillis();
 
+            eventHandler.publish(new DataEvent(latestRecordTime, TamperAlarmOutput.this, dataBlock));
 
         } catch (Exception e) {
 
@@ -173,3 +191,4 @@ public class EntryAlarmOutput extends AbstractSensorOutput<WADWAZ1Sensor> {
         }
     }
 }
+
