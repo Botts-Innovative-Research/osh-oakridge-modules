@@ -61,6 +61,11 @@ public class ZW100Config extends SensorConfig {
         public int controllerID = 1;
         @DisplayInfo (desc = "Wake Up Interval of Sensor in Seconds")
         public int wakeUpTime = 240;
+
+        @DisplayInfo (desc = "Stay awake for 10 minutes at power on Enable/Disable waking up for 10 minutes when re-power on (battery mode) the MultiSensor" +
+                "Value = 0, disable." +
+                "Value = 1, enable.")
+        public int stayAwake = 1;
         @DisplayInfo (desc = "Which command would be sent when the motion sensor triggered." +
                 "1 = send Basic Set CC." +
                 "2 = send Sensor Binary Report CC.")

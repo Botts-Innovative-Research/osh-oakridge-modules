@@ -48,6 +48,7 @@ import org.vast.sensorML.SMLHelper;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.openhab.binding.zwave.ZWaveBindingConstants.ZWAVE_THING_UID;
 import static org.openhab.binding.zwave.internal.protocol.ZWaveNodeState.ALIVE;
@@ -243,14 +244,12 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
     @Override
     public void doStart() throws SensorHubException {
 
-        ZWaveNode node = zController.getNode(configNodeId);
-
     }
 
     @Override
     public void doStop() throws SensorHubException {
 
-        //Handle stopping the node
+        doStop();
     }
 
     @Override
@@ -317,6 +316,14 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
              } else if (message instanceof ZWaveInitializationStateEvent) {
                         logger.info(message.toString());
 
+                        if (node.getNodeInitStage() == IDENTIFY_NODE) {
+                            reportStatus("Node: " + configNodeId + " - ZW100 beginning initialization");
+                        } else if (node.getNodeInitStage() == REQUEST_NIF){
+                            clearStatus();
+                            reportStatus("Put ZW100 multisensor into config mode");
+                        }
+
+
                         // Using Node Advancer -> check command class before running config commands (determine which init
                         // stages pertain to specific commands?)
 
@@ -341,10 +348,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                                     (ZWaveAssociationGroupInfoCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(COMMAND_CLASS_ASSOCIATION_GRP_INFO);
 
 
-//                            ZWaveMultiInstanceCommandClass zWaveMultiInstanceCommandClass =
-//                                    (ZWaveMultiInstanceCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(COMMAND_CLASS_MULTI_CHANNEL);
-//                                zWaveMultiInstanceCommandClass.
-
                             ZWavePlusCommandClass zWavePlusCommandClass =
                                     (ZWavePlusCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(COMMAND_CLASS_ZWAVEPLUS_INFO);
                             zWavePlusCommandClass.getValueMessage();
@@ -356,8 +359,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 //
 //                                commService.getZWaveNode(configNodeId).getAssociation(1).getDestinationNode();
 //                                    (ZWaveAssociationGroupInfoCommandClass) commService.getZWaveNode(configNodeId).setAssociation(1, association)
-
-//                            zWaveAssociationGroupInfoCommandClass.initialize(true);
 
                         }
 
@@ -380,7 +381,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                             commService.sendConfigurations(setAssociation);
 
 
-
                            if (zWaveAssociationCommandClass != null) {
                                ZWaveCommandClassTransactionPayload associationMsg =
 //                                    zWaveAssociationCommandClass.setAssociationMessage(1, configNodeId);
@@ -389,25 +389,18 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                                logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveAssociationCommandClass.getAssociationMessage(1), 0).toString());
                            }
 
-//
 //                            Collection<ZWaveAssociationGroup> associations =
 //                                    commService.getZWaveNode(configNodeId).getAssociationGroups().values();
 //                            logger.info(associations.toString());
 
                         } if (node.getNodeInitStage() == STATIC_VALUES) {
 
-                            reportStatus("Put ZW100 multi-sensor into config mode");
 
                             // Run configuration commands on the first build after the multi-sensor is added to the network.
                             // Multisensor must be in config mode before starting the node on OSH. To access config mode:
                             //      1. If powered on battery, hold trigger button until yellow LED shows, then release.
                             //         LED should start blinking yellow. To exit press trigger button once
                             //      2. Power the multisensor by USB
-
-
-
-                            Collection<ZWaveCommandClass> commandClasses =
-                                    commService.getZWaveNode(configNodeId).getCommandClasses(0);
 
 
                             ZWaveConfigurationCommandClass zWaveConfigurationCommandClass =
@@ -462,12 +455,19 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                             logger.info("INTERVAL MESSAGE: _____" + commService.getZWaveNode(zControllerId).sendTransaction(wakeupCommandClass.getIntervalMessage(),0));
                             }
 
-
-
                             //Parameter 2: Stay Awake in Battery Mode
+                            // Stay awake for 10 minutes at power on Enable/Disable waking up for 10 minutes when re-power on (battery mode) the MultiSensor
+                            // Value = 0, disable
+                            // Value = 1, enable
 
-                            //
-                            //
+                            ZWaveConfigurationParameter stayAwake = new ZWaveConfigurationParameter(2,
+                                    config.zw100SensorDriverConfigurations.stayAwake, 1);
+                            ZWaveCommandClassTransactionPayload configStayAwake =
+                                    zWaveConfigurationCommandClass.setConfigMessage(stayAwake);
+                            commService.sendConfigurations(configStayAwake);
+                            System.out.println("Stay awake for 10 mins after powered on: enabled");
+                            logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(2), 0).toString());
+
 
                             //Parameter 3: Motion Sensor reset timeout - Multisensor will send BASIC SET CC(0x00)
                             // to the associated nodes if no motion is triggered again in x seconds
@@ -508,8 +508,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                             logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(5), 0).toString());
 
 
-
-                            //Get report every 240 seconds/ 4 min (on battery)
+                            //Get report every x seconds - min = 240sec/4 min (on battery)
                             ZWaveConfigurationParameter sensorReportInterval = new ZWaveConfigurationParameter(111,
                                     config.zw100SensorDriverConfigurations.sensorReport, 4);
                             ZWaveCommandClassTransactionPayload setSensorReportInterval =
@@ -517,7 +516,6 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                             commService.sendConfigurations(setSensorReportInterval);
                             logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(111), 0).toString());
 
-//                    commService.sendConfigurations(zWaveConfigurationCommandClass.getConfigMessage(111));
 
                             //Set the default unit of the automatic temperature report in parameter 101-103
                             ZWaveConfigurationParameter tempUnit = new ZWaveConfigurationParameter(64, config.zw100SensorDriverConfigurations.temperatureUnit, 1);
@@ -579,6 +577,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                             commService.sendConfigurations(configUvThreshold);
                             logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(45), 0).toString());
 
+
                             //Parameter 46: Send Alarm Report if low temperature
                             ZWaveConfigurationParameter lowTempAlarmReport = new ZWaveConfigurationParameter(46,
                                     config.zw100SensorDriverConfigurations.lowTemperatureReport,
@@ -588,7 +587,8 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                             commService.sendConfigurations((configLowTempAlarmReport));
                             logger.info(commService.getZWaveNode(zControllerId).sendTransaction(zWaveConfigurationCommandClass.getConfigMessage(46), 0).toString());
 
-                            //Group 1 Report
+
+                            //Parameter 101: Group 1 Periodic Reports
                             ZWaveConfigurationParameter reportGroup1 = new ZWaveConfigurationParameter(101, 241, 4);
                             ZWaveCommandClassTransactionPayload setReportGroup1 =
                                     zWaveConfigurationCommandClass.setConfigMessage(reportGroup1);
@@ -620,6 +620,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
                             reportStatus("ZW100 Initialization Complete");
 
+                            CompletableFuture.delayedExecutor(60, TimeUnit.SECONDS).execute(this::clearStatus);
 
                         }
                     }

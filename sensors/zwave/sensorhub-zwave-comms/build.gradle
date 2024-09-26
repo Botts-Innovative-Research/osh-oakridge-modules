@@ -24,6 +24,8 @@ dependencies {
   implementation 'org.openhab.core.bundles:org.openhab.core.config.core:4.1.1'
   implementation 'org.openhab.core.bundles:org.openhab.core.thing:4.1.1'
   implementation 'org.openhab.core.bundles:org.openhab.core.thing.xml:3.4.5'
+  implementation 'org.openhab.core.bundles:org.openhab.core.io.transport.serial:4.1.1'
+
 //  implementation 'org.openhab.core.bundles:org.openhab.core.serial:3.4.5'
   implementation 'org.openhab.core.bundles:org.openhab.core.binding.xml:3.4.5'
 

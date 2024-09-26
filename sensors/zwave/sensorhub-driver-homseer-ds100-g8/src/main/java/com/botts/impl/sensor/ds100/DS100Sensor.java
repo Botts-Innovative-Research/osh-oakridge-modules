@@ -34,6 +34,7 @@ import org.vast.sensorML.SMLHelper;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass.AlarmType.ACCESS_CONTROL;
 import static org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveAlarmCommandClass.AlarmType.BURGLAR;
@@ -188,7 +189,6 @@ public class DS100Sensor extends AbstractSensorModule<DS100Config> implements IM
         if (id == configNodeId) {
 
             ZWaveNode node = zController.getNode(id);
-            node.getNodeInitStage();
 
             this.message = message;
 
@@ -213,7 +213,9 @@ public class DS100Sensor extends AbstractSensorModule<DS100Config> implements IM
 
             } else if (message instanceof ZWaveInitializationStateEvent) {
 
-                if (node.getNodeInitStage() == SET_WAKEUP) {
+                if (node.getNodeInitStage() == IDENTIFY_NODE) {
+                    reportStatus("Node: " + configNodeId + " - DS100 motion sensor beginning initialization");
+                } else if (node.getNodeInitStage() == SET_WAKEUP) {
 
                     ZWaveWakeUpCommandClass wakeupCommandClass =
                             (ZWaveWakeUpCommandClass) commService.getZWaveNode(configNodeId).getCommandClass(ZWaveCommandClass.CommandClass.COMMAND_CLASS_WAKE_UP);
@@ -229,7 +231,6 @@ public class DS100Sensor extends AbstractSensorModule<DS100Config> implements IM
                     }
                 } else if (node.getNodeInitStage() == STATIC_VALUES) {
 
-                    reportStatus("Put DS100 window/door sensor into config mode");
 
 //                    ZWaveEndpoint endpoint = commService.node.getEndpoint(0);
 //                    ZWaveConfigurationCommandClass commandClass = new ZWaveConfigurationCommandClass(node,
@@ -272,6 +273,8 @@ public class DS100Sensor extends AbstractSensorModule<DS100Config> implements IM
                         System.out.println("THIS IS THE BATTERY CHECK");
 
                     reportStatus("DS100 Initialization Complete");
+
+                    CompletableFuture.delayedExecutor(60, TimeUnit.SECONDS).execute(this::clearStatus);
 
                 }
             }

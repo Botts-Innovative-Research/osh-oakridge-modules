@@ -18,7 +18,6 @@ import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
 import net.opengis.sensorml.v20.PhysicalSystem;
 import org.openhab.binding.zwave.internal.protocol.ZWaveConfigurationParameter;
 import org.openhab.binding.zwave.internal.protocol.ZWaveController;
-import org.openhab.binding.zwave.internal.protocol.ZWaveEndpoint;
 import org.openhab.binding.zwave.internal.protocol.ZWaveNode;
 import org.openhab.binding.zwave.internal.protocol.commandclass.*;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
@@ -35,6 +34,7 @@ import org.vast.sensorML.SMLHelper;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage.*;
 
@@ -188,7 +188,6 @@ public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IM
         if (id == configNodeId) {
 
             ZWaveNode node = zController.getNode(id);
-//            node.getNodeInitStage();
 
             this.message = message;
 
@@ -209,9 +208,11 @@ public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IM
 
             } else if (message instanceof ZWaveInitializationStateEvent) {
 
+                if (node.getNodeInitStage() == IDENTIFY_NODE) {
+                    reportStatus("Node: " + configNodeId + " - ZSE18 motion sensor beginning initialization");
+                }
                 if (node.getNodeInitStage() == STATIC_VALUES) {
 
-                    reportStatus("Put ZSE18 motion sensor into config mode");
 //                    logger.info("Put multi-sensor into config mode");
 //                    ZWaveEndpoint endpoint = commService.node.getEndpoint(0);
 //                    ZWaveConfigurationCommandClass commandClass = new ZWaveConfigurationCommandClass(node,
@@ -310,6 +311,7 @@ public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IM
 
                     reportStatus("ZSE18 Initialization Complete");
 
+                    CompletableFuture.delayedExecutor(60, TimeUnit.SECONDS).execute(this::clearStatus);
                 }
             }
         }

@@ -1,54 +1,41 @@
 package com.botts.sensorhub.impl.zwave.comms;
 
-import gnu.io.CommPort;
-import gnu.io.CommPortIdentifier;
-import gnu.io.NoSuchPortException;
-import gnu.io.PortInUseException;
-import gnu.io.SerialPort;
-import gnu.io.UnsupportedCommOperationException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.function.Consumer;
-
-import org.openhab.binding.zwave.handler.ZWaveControllerHandler;
+import gnu.io.*;
 import org.openhab.binding.zwave.internal.protocol.SerialMessage;
-import org.openhab.binding.zwave.internal.protocol.ZWaveController;
 import org.openhab.binding.zwave.internal.protocol.ZWaveIoHandler;
-import org.openhab.core.thing.Bridge;
 import org.sensorhub.impl.comm.UARTConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.function.Consumer;
 
 
-public class RxtxZWaveIoHandler extends ZWaveControllerHandler implements ZWaveIoHandler
+
+public class RxtxZWaveIoHandler implements ZWaveIoHandler
 {
     static final Logger log = LoggerFactory.getLogger(RxtxZWaveIoHandler.class);
 
     final UARTConfig config;
-    SerialPort serialPort;
-    InputStream is;
-    OutputStream os;
-    Thread receiveThread;
+    public SerialPort serialPort;
+    public InputStream is;
+    public OutputStream os;
+    public Thread receiveThread;
     Consumer<SerialMessage> onReceive;
-    ZWaveControllerHandler controllerHandler;
-
-    public ZWaveController controller;
 
 
-    public RxtxZWaveIoHandler(UARTConfig config, Bridge thing)
+    public RxtxZWaveIoHandler(UARTConfig config)
     {
-        super(thing);
         this.config = config;
 
-        Map<String, String> controllerConfig = new HashMap();
-        controllerConfig.put("masterController", "true");
-        controllerConfig.put("sucNode", "1");
 
-        this.controller = new ZWaveController(this, controllerConfig);
+//        Map<String, String> controllerConfig = new HashMap();
+//        controllerConfig.put("masterController", "true");
+//        controllerConfig.put("sucNode", "1");
+//
+//        this.controller = new ZWaveController(this, controllerConfig);
 
     }
 
@@ -167,8 +154,8 @@ public class RxtxZWaveIoHandler extends ZWaveControllerHandler implements ZWaveI
         receiveThread = new Thread() {
             private static final int SOF = 0x01;
             private static final int ACK = 0x06;
-            private static final int NAK = 0x15;
-            private static final int CAN = 0x18;
+            private static final int NAK = 0x21; //15?
+            private static final int CAN = 0x24; //18?
             private static final int SEARCH_SOF = 0;
             private static final int SEARCH_LEN = 1;
             private static final int SEARCH_DAT = 2;
