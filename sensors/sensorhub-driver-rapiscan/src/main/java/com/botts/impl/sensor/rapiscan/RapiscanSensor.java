@@ -229,7 +229,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
         synchronized (this) {
             while (isRunning) {
                 if(messageHandler.getTimeSinceLastMessage() < config.commSettings.connection.reconnectPeriod) {
-                    getLogger().debug("TCP currently connected");
+//                    getLogger().debug("TCP currently connected");
                     this.connectionStatusOutput.onNewMessage(true);
                 }
                 else {
@@ -241,7 +241,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
 //                        throw new RuntimeException(e);
 //                    }
                     this.connectionStatusOutput.onNewMessage(false);
-                    getLogger().debug("TCP disconnected");
+//                    getLogger().debug("TCP disconnected");
                 }
                 try {
                     Thread.sleep(1000);
