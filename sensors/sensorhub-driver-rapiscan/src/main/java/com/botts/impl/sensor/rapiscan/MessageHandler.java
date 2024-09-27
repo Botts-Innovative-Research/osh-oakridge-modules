@@ -49,8 +49,8 @@ public class MessageHandler {
 
     public long getTimeSinceLastMessage() {
         long now = System.currentTimeMillis();
-        System.out.printf("\nTime since last message: %d seconds", (now - timeSinceLastMessage)/1000);
-        parentSensor.getLogger().debug("Time since last message: {} seconds", (now - timeSinceLastMessage)/1000);
+//        System.out.printf("\nTime since last message: %d seconds", (now - timeSinceLastMessage)/1000);
+//        parentSensor.getLogger().debug("Time since last message: {} seconds", (now - timeSinceLastMessage)/1000);
         return (now - timeSinceLastMessage);
     }
 
