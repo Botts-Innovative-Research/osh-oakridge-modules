@@ -24,6 +24,16 @@ public class ModbusTCPConfig implements ICommConfig {
     @Required
     public int remotePort = 502;
 
+    @DisplayInfo(desc = "How many attempts to retry connection to Modbus Gateway")
+    @ValueRange(max = 1000)
+    @Required
+    public int retryAttempts = 50;
+
+    @DisplayInfo(desc = "How much time between attempts to retry connection to Modbus Gateway")
+    @ValueRange(max = 10000000)
+    @Required
+    public int retryDelay = 1000;
+
 
 //    @DisplayInfo(desc = "Unit ID")
 //    @Required

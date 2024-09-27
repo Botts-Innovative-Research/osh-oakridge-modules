@@ -12,8 +12,8 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
 public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
-    private static final String SENSOR_OUTPUT_NAME = "neutronScan";
-    private static final String SENSOR_OUTPUT_LABEL = "Neutron Scan";
+    private static final String SENSOR_OUTPUT_NAME = "neutronCount";
+    private static final String SENSOR_OUTPUT_LABEL = "Neutron Count";
     private static final int MAX_NUM_TIMING_SAMPLES = 10;
 
     protected DataRecord dataRecord;
@@ -40,7 +40,7 @@ public class NeutronOutput extends AbstractSensorOutput<AspectSensor> {
         dataRecord = radHelper.createRecord()
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
-                .definition(RADHelper.getRadUri("neutron-scan"))
+                .definition(RADHelper.getRadUri("neutron-count"))
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(neutronAlarm.getName(), neutronAlarm)
                 .addField(neutronCount.getName(), neutronCount)

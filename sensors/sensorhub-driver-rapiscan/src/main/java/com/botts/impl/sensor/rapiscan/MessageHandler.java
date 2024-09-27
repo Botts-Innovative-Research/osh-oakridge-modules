@@ -45,6 +45,14 @@ public class MessageHandler {
     //    FileWriter fw;
     //    CSVWriter writer;
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
+    private long timeSinceLastMessage;
+
+    public long getTimeSinceLastMessage() {
+        long now = System.currentTimeMillis();
+        System.out.printf("\nTime since last message: %d seconds", (now - timeSinceLastMessage)/1000);
+        parentSensor.getLogger().debug("Time since last message: {} seconds", (now - timeSinceLastMessage)/1000);
+        return (now - timeSinceLastMessage);
+    }
 
     public MessageHandler(InputStream msgIn, RapiscanSensor parentSensor) {
         this.parentSensor = parentSensor;
@@ -53,10 +61,7 @@ public class MessageHandler {
         occupancyGammaBatch = new LinkedList<>();
         occupancyNeutronBatch = new LinkedList<>();
 
-//        File dailyFileDirectory = new File("./dailyfiles");
-//        if(!dailyFileDirectory.exists()) {
-//            dailyFileDirectory.mkdirs();
-//        }
+        timeSinceLastMessage = System.currentTimeMillis();
 
         // Setup boolean
         Thread messageReader = new Thread(() -> {
@@ -86,6 +91,8 @@ public class MessageHandler {
                         parentSensor.getDailyFileOutput().onNewMessage(msgLine);
 
                         onNewMainChar(csvList.get(0)[0], csvList.get(0));
+
+                        timeSinceLastMessage = System.currentTimeMillis();
 
                         System.out.println(msgLine);
                         msgLine = bufferedReader.readLine();

@@ -18,15 +18,26 @@ public class ModbusTCPCommProvider extends AbstractModule<ModbusTCPCommProviderC
     @Override
     protected void doStart() throws SensorHubException {
         var config = this.config.protocol;
+        var retry = config.retryAttempts + 1;
 
-        try {
-            InetAddress address = InetAddress.getByName(config.remoteHost);
-            tcpMasterConnection = new TCPMasterConnection(address);
-            tcpMasterConnection.setPort(config.remotePort);
-            tcpMasterConnection.connect();
-        } catch (Exception e) {
-            throw new SensorHubException("Cannot connect to remote host "
-                    + config.remoteHost + ":" + config.remotePort + " via Modbus TCP", e);
+        while (retry > 0 && !tcpMasterConnection.isConnected()) {
+            try {
+                InetAddress address = InetAddress.getByName(config.remoteHost);
+                tcpMasterConnection = new TCPMasterConnection(address);
+                tcpMasterConnection.setPort(config.remotePort);
+                tcpMasterConnection.connect();
+            } catch (Exception e) {
+                throw new SensorHubException("Cannot connect to remote host "
+                        + config.remoteHost + ":" + config.remotePort + " via Modbus TCP", e);
+            }
+
+
+            try {
+                Thread.sleep(config.retryDelay);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            --retry;
         }
     }
 
