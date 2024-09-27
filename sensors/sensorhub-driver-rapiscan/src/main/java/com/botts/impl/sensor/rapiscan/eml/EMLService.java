@@ -69,12 +69,17 @@ public class EMLService implements IEventListener {
 
         synchronized (this) {
             try {
-                String[] streamArray = new String[this.scanDataList.size() + 2];
-                streamArray[0] = this.latestGammaBackground != null ? this.latestGammaBackground : "";
-                streamArray[1] = this.latestNeutronBackground != null ? this.latestNeutronBackground : "";
-                for(int i = 2; i < streamArray.length; i++) {
+                if(this.latestGammaBackground != null)
+                    this.scanDataList.add(0, this.latestGammaBackground);
+                if(this.latestNeutronBackground != null)
+                    this.scanDataList.add(0, this.latestNeutronBackground);
+
+                String[] streamArray = new String[this.scanDataList.size()];
+                for(int i = 0; i < streamArray.length; i++) {
                     streamArray[i] = this.scanDataList.get(i);
                 }
+
+
                 Stream<String> stream = Stream.of(streamArray);
                 results = ernieLane.process(stream);
                 System.out.println("ERNIE Results");
