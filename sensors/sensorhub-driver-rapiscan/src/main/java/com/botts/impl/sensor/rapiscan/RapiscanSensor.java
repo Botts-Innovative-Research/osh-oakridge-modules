@@ -62,6 +62,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
     private SetupNeutronOutput setupNeutronOutput;
     private GammaThresholdOutput gammaThresholdOutput;
     private DailyFileOutput dailyFileOutput;
+    private ConnectionStatusOutput connectionStatusOutput;
 
     private EMLAnalysisOutput emlAnalysisOutput;
     private EMLScanContextualOutput emlScanContextualOutput;
@@ -150,6 +151,10 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
         setupNeutronOutput = new SetupNeutronOutput(this);
         addOutput(setupNeutronOutput, false);
         setupNeutronOutput.init();
+
+        connectionStatusOutput = new ConnectionStatusOutput(this);
+        addOutput(connectionStatusOutput,false);
+        connectionStatusOutput.init();
     }
 
     @Override
@@ -224,18 +229,18 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
         synchronized (this) {
             while (isRunning) {
                 if(messageHandler.getTimeSinceLastMessage() < config.commSettings.connection.reconnectPeriod) {
-                    System.out.println("\nTCP currently connected");
                     getLogger().debug("TCP currently connected");
+                    this.connectionStatusOutput.onNewMessage(true);
                 }
                 else {
-                    try {
-                        // TODO: Retry connection after it gets dropped
-                        stop();
-                        reportError("Connection dropped", new SensorHubException("Rapiscan connection not received after " + config.commSettings.connection.reconnectPeriod/1000 + " seconds"));
-                    } catch (SensorHubException e) {
-                        throw new RuntimeException(e);
-                    }
-                    System.out.println("\nTCP disconnected");
+//                    try {
+//                        // TODO: Retry connection after it gets dropped
+//                        stop();
+//                        reportError("Connection dropped", new SensorHubException("Rapiscan connection not received after " + config.commSettings.connection.reconnectPeriod/1000 + " seconds"));
+//                    } catch (SensorHubException e) {
+//                        throw new RuntimeException(e);
+//                    }
+                    this.connectionStatusOutput.onNewMessage(false);
                     getLogger().debug("TCP disconnected");
                 }
                 try {
