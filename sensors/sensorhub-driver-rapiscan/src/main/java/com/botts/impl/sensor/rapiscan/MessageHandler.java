@@ -84,7 +84,6 @@ public class MessageHandler {
 
                         timeSinceLastMessage = System.currentTimeMillis();
 
-                        System.out.println(msgLine);
                         msgLine = bufferedReader.readLine();
 
                         synchronized (isProcessing) {
