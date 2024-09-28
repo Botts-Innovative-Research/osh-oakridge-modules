@@ -136,7 +136,9 @@ public class MessageHandler {
                 parentSensor.getGammaOutput().onNewMessage(csvLine, System.currentTimeMillis(), BACKGROUND, null);
                 // Send latest Gamma Background to threshold calculator and EML service
                 parentSensor.getGammaThresholdOutput().onNewBackground(csvLine);
-                parentSensor.getEmlService().setLatestGammaBackground(csvLine);
+
+                if(parentSensor.getConfiguration().emlConfig.emlEnabled)
+                    parentSensor.getEmlService().setLatestGammaBackground(csvLine);
                 break;
             case "GH":
                 parentSensor.getGammaOutput().onNewMessage(csvLine, System.currentTimeMillis(), FAULT_GH, null);
@@ -146,7 +148,9 @@ public class MessageHandler {
                 break;
             case "NB":
                 parentSensor.getNeutronOutput().onNewMessage(csvLine, System.currentTimeMillis(), BACKGROUND);
-                parentSensor.getEmlService().setLatestNeutronBackground(csvLine);
+
+                if(parentSensor.getConfiguration().emlConfig.emlEnabled)
+                    parentSensor.getEmlService().setLatestNeutronBackground(csvLine);
                 break;
             case "NH":
                 parentSensor.getNeutronOutput().onNewMessage(csvLine, System.currentTimeMillis(), FAULT_NH);
