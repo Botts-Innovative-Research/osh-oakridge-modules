@@ -249,7 +249,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
     @Override
     public void doStop() throws SensorHubException {
 
-        doStop();
+   
     }
 
     @Override
