@@ -1,0 +1,53 @@
+
+description = 'Zooz ZSE19-800LR Motion Detector'
+ext.details = "ZooZ Bright Ideas ZSE18 800 series long range sensor with motion " +
+        "detection, vibration sensor, and low battery alerts"
+version = '1.0.0'
+
+
+repositories {
+    maven {
+        url "https://openhab.jfrog.io/artifactory/libs-release"
+    }
+}
+
+dependencies {
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    testImplementation('junit:junit:4.13.1')
+    implementation project(':sensorhub-comm-rxtx')
+    implementation project (':sensorhub-zwave-comms')
+
+    implementation 'org.openhab.addons.bundles:org.openhab.binding.zwave:4.1.1'
+    implementation 'org.openhab.core.bundles:org.openhab.core:4.1.1'
+    implementation 'org.openhab.core.bundles:org.openhab.core.config.core:4.1.1'
+    implementation 'org.openhab.core.bundles:org.openhab.core.thing:4.1.1'
+}
+
+
+// exclude tests requiring connection to the sensor
+// these have to be run manually
+//      If tests are to be excluded list them here as follows
+//          exclude '**/TestNameClass.class'
+test {
+    useJUnit()
+}
+
+// add info to OSGi manifest
+osgi {
+    manifest {
+        attributes ('Bundle-Vendor': 'Botts Inc')
+        attributes ('Bundle-Activator': 'com.botts.impl.sensor.zse18.ZSE18Activator')
+    }
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'Cardy2'
+            name 'Cardy'
+            organization 'Botts Innovative Research'
+            organizationUrl 'http://www.botts-inc.com'
+        }
+    }
+}

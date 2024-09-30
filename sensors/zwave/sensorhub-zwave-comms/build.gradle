@@ -1,0 +1,58 @@
+description = 'Z-Wave Comms Service'
+ext.details = 'Communications Service for Z-Wave'
+
+version= '1.0'
+
+
+repositories {
+  mavenCentral()
+  maven {
+    url "https://openhab.jfrog.io/artifactory/libs-release"
+  }
+}
+
+dependencies {
+  implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+  implementation 'org.sensorhub:sensorhub-service-swe:' + oshCoreVersion
+
+  implementation 'com.thoughtworks.xstream:xstream:1.4.20'
+  implementation 'com.neuronrobotics:nrjavaserial:5.2.1'
+
+
+  implementation 'org.openhab.addons.bundles:org.openhab.binding.zwave:4.1.1'
+  implementation 'org.openhab.core.bundles:org.openhab.core:4.1.1'
+  implementation 'org.openhab.core.bundles:org.openhab.core.config.core:4.1.1'
+  implementation 'org.openhab.core.bundles:org.openhab.core.thing:4.1.1'
+  implementation 'org.openhab.core.bundles:org.openhab.core.thing.xml:3.4.5'
+  implementation 'org.openhab.core.bundles:org.openhab.core.io.transport.serial:4.1.1'
+
+//  implementation 'org.openhab.core.bundles:org.openhab.core.serial:3.4.5'
+  implementation 'org.openhab.core.bundles:org.openhab.core.binding.xml:3.4.5'
+
+//  implementation 'org.openhab.core.bundles:org.openhab.core.io.transport.serial:4.1.1'
+
+  implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+//  implementation project(':sensorhub-comm-rxtx')
+}
+
+
+// add info to OSGI manifest
+osgi {
+  manifest {
+    attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
+    attributes('Bundle-Activator': 'com.botts.sensorhub.impl.zwave.comms.ZwaveCommServiceActivator')
+  }
+}
+
+// add info to maven pom
+ext.pom >>= {
+  developers {
+    developer {
+      id 'Cardy2'
+      name 'Cardy'
+      organization 'Botts Innovative Research, Inc.'
+      organizationUrl 'http://www.botts-inc.com'
+    }
+  }
+}
