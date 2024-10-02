@@ -34,9 +34,8 @@ public class ModbusTCPConfig implements ICommConfig {
     @Required
     public int retryDelay = 1000;
 
-
-//    @DisplayInfo(desc = "Unit ID")
-//    @Required
-//    public int unitID = 1;
+    @DisplayInfo(label = "Connection Timeout", desc = "Timeout before retrying connection")
+    @Required
+    public int connectionTimeout = 5000;
 
 }
