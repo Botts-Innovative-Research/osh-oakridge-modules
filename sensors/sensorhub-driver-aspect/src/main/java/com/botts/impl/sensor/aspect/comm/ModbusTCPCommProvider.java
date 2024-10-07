@@ -22,15 +22,16 @@ public class ModbusTCPCommProvider extends AbstractModule<ModbusTCPCommProviderC
         int count = 0;
         int retryAttempts = config.retryAttempts;
 
-        while (!tcpMasterConnection.isConnected()) {
+        while (true) {
             try {
                 InetAddress address = InetAddress.getByName(config.remoteHost);
                 tcpMasterConnection = new TCPMasterConnection(address);
                 tcpMasterConnection.setPort(config.remotePort);
                 tcpMasterConnection.setTimeout(config.connectionTimeout);
-                getLogger().debug("Attempting TCP Modbus connection");
+                System.out.println("Attempting TCP Modbus connection");
                 tcpMasterConnection.connect();
-                getLogger().debug("TCP Modbus connection established");
+                System.out.println("TCP Modbus connection established");
+                break;
             } catch (Exception e) {
                 if(++count >= retryAttempts)
                     throw new SensorHubException("Cannot connect to remote host "
