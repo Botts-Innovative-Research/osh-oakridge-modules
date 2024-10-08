@@ -78,6 +78,14 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public Boolean createIsAdjudicated() {
+        return createBoolean()
+                .name("isAdjudicated")
+                .label("Is Adjudicated")
+                .definition(getRadUri("is-adjudicated"))
+                .build();
+    }
+
     public Text createAspectMessageFile(){
         return createText()
                 .name("aspectMessage")

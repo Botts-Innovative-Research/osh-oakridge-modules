@@ -14,6 +14,7 @@ package com.botts.impl.sensor.aspect;
 
 
 import com.botts.impl.sensor.aspect.comm.IModbusTCPCommProvider;
+import com.botts.impl.sensor.aspect.control.AdjudicationControl;
 import com.botts.impl.sensor.aspect.output.*;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import org.sensorhub.api.common.SensorHubException;
@@ -38,6 +39,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     SpeedOutput speedOutput;
     SensorLocationOutput sensorLocationOutput;
     DailyFileOutput dailyFileOutput;
+    AdjudicationControl adjudicationControl;
     public int laneID;
 //    String laneName;
 
@@ -74,6 +76,10 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         dailyFileOutput = new DailyFileOutput(this);
         addOutput(dailyFileOutput, false);
         dailyFileOutput.init();
+
+        adjudicationControl = new AdjudicationControl(this);
+        addControlInput(adjudicationControl);
+        adjudicationControl.init();
     }
 
     @Override
