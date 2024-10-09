@@ -87,8 +87,6 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
 
     @Override
     protected void doStart() throws SensorHubException {
-        sensorLocationOutput.setLocationOutput(config.getLocation());
-
         // Initialize comm provider
         if (commProvider == null) {
             // We need to recreate comm provider here because it can be changed by UI
