@@ -12,6 +12,9 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.aspect;
 
+import com.botts.impl.sensor.aspect.comm.IModbusTCPCommProvider;
+import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProvider;
+import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProviderConfig;
 import org.sensorhub.api.comm.CommProviderConfig;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.sensor.PositionConfig;
@@ -34,7 +37,7 @@ public class AspectConfig extends SensorConfig {
     public String serialNumber = "sensor001";
 
     @DisplayInfo(desc = "Communication settings to connect to the data stream")
-    public CommProviderConfig<?> commSettings;
+    public ModbusTCPCommProviderConfig commSettings;
 
     @DisplayInfo(desc = "RPM Location")
     public PositionConfig positionConfig = new PositionConfig();

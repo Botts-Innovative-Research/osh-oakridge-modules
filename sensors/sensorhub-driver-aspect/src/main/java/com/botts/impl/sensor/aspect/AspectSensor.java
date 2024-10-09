@@ -22,6 +22,8 @@ import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.ConnectException;
+
 /**
  * Sensor driver for the Aspect sensor providing sensor description, output registration,
  * initialization and shutdown of the driver and outputs.
@@ -41,6 +43,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     DailyFileOutput dailyFileOutput;
     AdjudicationControl adjudicationControl;
     public int laneID;
+    public int primaryDeviceAddress = -1;
 //    String laneName;
 
     @Override
@@ -101,9 +104,26 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
 
                 commProvider = (IModbusTCPCommProvider<?>) commModule;
                 commProvider.start();
+
                 var connection = commProvider.getConnection();
                 var deviceDescriptionRegisters = new DeviceDescriptionRegisters(connection);
-                deviceDescriptionRegisters.readRegisters(1);
+
+                getLogger().info("Attempting device search...");
+
+                for(int i = config.commSettings.protocol.addressRange.from; i < config.commSettings.protocol.addressRange.to; i++) {
+                    try{
+                        getLogger().info("Scanning for devices. Current address: #{}", i);
+                        deviceDescriptionRegisters.readRegisters(i);
+                        primaryDeviceAddress = i;
+                        getLogger().info("Found device at address #" + i);
+                        break;
+                    } catch (Exception e) {
+                        if(primaryDeviceAddress != -1 || i == config.commSettings.protocol.addressRange.to)
+                            throw new ConnectException("No devices found");
+                    }
+                }
+
+                deviceDescriptionRegisters.readRegisters(primaryDeviceAddress);
             } catch (Exception e) {
                 commProvider = null;
                 throw new SensorHubException("Error while initializing communications ", e);
@@ -111,7 +131,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         }
 
         // Start message handler
-        messageHandler = new MessageHandler(commProvider.getConnection(), gammaOutput, neutronOutput, occupancyOutput, speedOutput, dailyFileOutput);
+        messageHandler = new MessageHandler(commProvider.getConnection(), gammaOutput, neutronOutput, occupancyOutput, speedOutput, dailyFileOutput, primaryDeviceAddress);
         messageHandler.start();
     }
 

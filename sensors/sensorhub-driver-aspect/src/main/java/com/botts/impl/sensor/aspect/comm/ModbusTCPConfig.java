@@ -38,4 +38,18 @@ public class ModbusTCPConfig implements ICommConfig {
     @Required
     public int connectionTimeout = 5000;
 
+    @DisplayInfo(label = "Find device within address range")
+    @Required
+    public AddressRange addressRange = new AddressRange();
+
+    public static class AddressRange {
+        @DisplayInfo(label = "From")
+        @Required
+        public int from = 1;
+
+        @DisplayInfo(label = "To")
+        @Required
+        public int to = 32;
+    }
+
 }
