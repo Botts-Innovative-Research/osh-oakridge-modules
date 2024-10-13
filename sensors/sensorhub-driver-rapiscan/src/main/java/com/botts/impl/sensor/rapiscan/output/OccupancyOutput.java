@@ -38,6 +38,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
         var neutronAlarm = radHelper.createNeutronAlarm();
         var maxGamma = radHelper.createMaxGamma();
         var maxNeutron = radHelper.createMaxNeutron();
+        var isAdjudicated = radHelper.createIsAdjudicated();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
@@ -54,6 +55,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
                 .addField(neutronAlarm.getName(), neutronAlarm)
                 .addField(maxGamma.getName(), maxGamma)
                 .addField(maxNeutron.getName(), maxNeutron)
+                .addField(isAdjudicated.getName(), isAdjudicated)
                 .build();
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
@@ -78,6 +80,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
         dataBlock.setBooleanValue(index++, isNeutronAlarm);
         dataBlock.setIntValue(index++, gammaMax);
         dataBlock.setIntValue(index++, neutronMax);
+        dataBlock.setBooleanValue(index, false);
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));
 

@@ -1,6 +1,7 @@
 package com.botts.impl.sensor.rapiscan.eml;
 
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
+import com.botts.impl.sensor.rapiscan.output.GammaThresholdOutput;
 import gov.llnl.ernie.analysis.AnalysisException;
 import gov.llnl.ernie.api.ERNIE_lane;
 import gov.llnl.ernie.api.Results;
@@ -21,6 +22,8 @@ public class EMLService implements IEventListener {
     private ERNIE_lane ernieLane;
     RapiscanSensor parentSensor;
     List<String> scanDataList;
+    String latestGammaBackground;
+    String latestNeutronBackground;
 
     public EMLService(RapiscanSensor parentSensor) {
         this.parentSensor = parentSensor;
@@ -46,6 +49,16 @@ public class EMLService implements IEventListener {
         );
     }
 
+    public void setLatestGammaBackground(String [] scanData) {
+        String scanJoined = String.join(",", scanData);
+        this.latestGammaBackground = scanJoined;
+    }
+
+    public void setLatestNeutronBackground(String [] scanData) {
+        String scanJoined = String.join(",", scanData);
+        this.latestNeutronBackground = scanJoined;
+    }
+
     public void addScanDataLine(String[] scanData) {
         String scanJoined = String.join(",", scanData);
         this.scanDataList.add(scanJoined);
@@ -56,10 +69,17 @@ public class EMLService implements IEventListener {
 
         synchronized (this) {
             try {
+                if(this.latestGammaBackground != null)
+                    this.scanDataList.add(0, this.latestGammaBackground);
+                if(this.latestNeutronBackground != null)
+                    this.scanDataList.add(0, this.latestNeutronBackground);
+
                 String[] streamArray = new String[this.scanDataList.size()];
                 for(int i = 0; i < streamArray.length; i++) {
                     streamArray[i] = this.scanDataList.get(i);
                 }
+
+
                 Stream<String> stream = Stream.of(streamArray);
                 results = ernieLane.process(stream);
                 System.out.println("ERNIE Results");

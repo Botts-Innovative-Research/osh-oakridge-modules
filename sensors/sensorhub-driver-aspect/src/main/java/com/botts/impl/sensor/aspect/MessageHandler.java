@@ -39,14 +39,16 @@ public class MessageHandler implements Runnable {
     LinkedList<Integer> occupancyNeutronBatch;
     int maxNeutron = 0;
     int maxGamma = 0;
+    int deviceAddress = -1;
 
-    public MessageHandler(TCPMasterConnection tcpMasterConnection, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, SpeedOutput speedOutput, DailyFileOutput dailyFileOutput) {
+    public MessageHandler(TCPMasterConnection tcpMasterConnection, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, SpeedOutput speedOutput, DailyFileOutput dailyFileOutput, int deviceAddress) {
         this.tcpMasterConnection = tcpMasterConnection;
         this.gammaOutput = gammaOutput;
         this.neutronOutput = neutronOutput;
         this.occupancyOutput = occupancyOutput;
         this.speedOutput = speedOutput;
         this.dailyFileOutput = dailyFileOutput;
+        this.deviceAddress = deviceAddress;
 
         occupancyGammaBatch = new LinkedList<>();
         occupancyNeutronBatch = new LinkedList<>();
@@ -66,12 +68,12 @@ public class MessageHandler implements Runnable {
     public void run() {
         try {
             DeviceDescriptionRegisters deviceDescriptionRegisters = new DeviceDescriptionRegisters(tcpMasterConnection);
-            deviceDescriptionRegisters.readRegisters(1);
+            deviceDescriptionRegisters.readRegisters(deviceAddress);
 
 
             MonitorRegisters monitorRegisters = new MonitorRegisters(tcpMasterConnection, deviceDescriptionRegisters.getMonitorRegistersBaseAddress(), deviceDescriptionRegisters.getMonitorRegistersNumberOfRegisters());
             while (!Thread.currentThread().isInterrupted()) {
-                monitorRegisters.readRegisters(1);
+                monitorRegisters.readRegisters(deviceAddress);
 
                 double timestamp = System.currentTimeMillis() / 1000d;
                 dailyFileOutput.getDailyFile(monitorRegisters);
@@ -85,7 +87,6 @@ public class MessageHandler implements Runnable {
                 if (checkOccupancyRecord(monitorRegisters, timestamp)) {
                     occupancyOutput.setData(monitorRegisters, timestamp, startTime, endTime, gammaAlarm, neutronAlarm, maxGamma, maxNeutron);
                 }
-                System.out.println("monitor registers: "+ monitorRegisters);
                 sleep(500);
             }
         } catch (Exception e) {

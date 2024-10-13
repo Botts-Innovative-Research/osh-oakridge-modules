@@ -14,12 +14,15 @@ package com.botts.impl.sensor.aspect;
 
 
 import com.botts.impl.sensor.aspect.comm.IModbusTCPCommProvider;
+import com.botts.impl.sensor.aspect.control.AdjudicationControl;
 import com.botts.impl.sensor.aspect.output.*;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.net.ConnectException;
 
 /**
  * Sensor driver for the Aspect sensor providing sensor description, output registration,
@@ -38,7 +41,9 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     SpeedOutput speedOutput;
     SensorLocationOutput sensorLocationOutput;
     DailyFileOutput dailyFileOutput;
+    AdjudicationControl adjudicationControl;
     public int laneID;
+    public int primaryDeviceAddress = -1;
 //    String laneName;
 
     @Override
@@ -74,12 +79,14 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         dailyFileOutput = new DailyFileOutput(this);
         addOutput(dailyFileOutput, false);
         dailyFileOutput.init();
+
+        adjudicationControl = new AdjudicationControl(this);
+        addControlInput(adjudicationControl);
+        adjudicationControl.init();
     }
 
     @Override
     protected void doStart() throws SensorHubException {
-        sensorLocationOutput.setLocationOutput(config.getLocation());
-
         // Initialize comm provider
         if (commProvider == null) {
             // We need to recreate comm provider here because it can be changed by UI
@@ -95,9 +102,26 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
 
                 commProvider = (IModbusTCPCommProvider<?>) commModule;
                 commProvider.start();
+
                 var connection = commProvider.getConnection();
                 var deviceDescriptionRegisters = new DeviceDescriptionRegisters(connection);
-                deviceDescriptionRegisters.readRegisters(1);
+
+                getLogger().info("Attempting device search...");
+
+                for(int i = config.commSettings.protocol.addressRange.from; i < config.commSettings.protocol.addressRange.to; i++) {
+                    try{
+                        getLogger().info("Scanning for devices. Current address: #{}", i);
+                        deviceDescriptionRegisters.readRegisters(i);
+                        primaryDeviceAddress = i;
+                        getLogger().info("Found device at address #" + i);
+                        break;
+                    } catch (Exception e) {
+                        if(primaryDeviceAddress != -1 || i == config.commSettings.protocol.addressRange.to)
+                            throw new ConnectException("No devices found");
+                    }
+                }
+
+                deviceDescriptionRegisters.readRegisters(primaryDeviceAddress);
             } catch (Exception e) {
                 commProvider = null;
                 throw new SensorHubException("Error while initializing communications ", e);
@@ -105,7 +129,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         }
 
         // Start message handler
-        messageHandler = new MessageHandler(commProvider.getConnection(), gammaOutput, neutronOutput, occupancyOutput, speedOutput, dailyFileOutput);
+        messageHandler = new MessageHandler(commProvider.getConnection(), gammaOutput, neutronOutput, occupancyOutput, speedOutput, dailyFileOutput, primaryDeviceAddress);
         messageHandler.start();
     }
 
