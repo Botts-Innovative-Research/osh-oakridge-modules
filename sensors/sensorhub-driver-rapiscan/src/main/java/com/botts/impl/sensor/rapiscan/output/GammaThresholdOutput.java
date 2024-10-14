@@ -74,7 +74,7 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> i
         double sqrtBackgroundSum = Math.sqrt(latestBackgroundSum);
 
         // Return equation for threshold calculation
-        dataBlock.setDoubleValue(index++, (latestBackgroundSum + (nVal * sqrtBackgroundSum))/4); // divided by 4 total detectors
+        dataBlock.setDoubleValue(index++, latestBackgroundSum + (nVal * sqrtBackgroundSum));
         // Set sigma to 0 since we are not in an occupancy
         dataBlock.setDoubleValue(index, sqrtBackgroundSum);
 

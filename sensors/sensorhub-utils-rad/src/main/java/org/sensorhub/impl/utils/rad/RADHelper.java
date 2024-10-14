@@ -534,19 +534,19 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-    public Count createGammaGrossCount(int countID){
+    public Count createGammaCount(int countID){
         return createCount()
-                .name("gammaGrossCount" + countID)
-                .label("Gamma Gross Count " + countID)
-                .definition(getRadUri("gamma-gross-count"))
+                .name("gammaCount" + countID)
+                .label("Gamma Count " + countID)
+                .definition(getRadUri("gamma-count"))
                 .build();
     }
 
-    public Count createGammaGrossCountPerInterval(int countID){
+    public Count createGammaCountPerInterval(int countID){
         return createCount()
-                .name("gammaGrossCountPerInterval" + countID)
-                .label("Gamma Gross Count (200ms) " + countID)
-                .definition(getRadUri("gamma-gross-count-per-interval"))
+                .name("gammaCountPerInterval" + countID)
+                .label("Gamma Count (200ms) " + countID)
+                .definition(getRadUri("gamma-count-per-interval"))
                 .value(0)
                 .build();
     }
@@ -559,11 +559,11 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-    public Count createNeutronGrossCount(int countID){
+    public Count createNeutronCount(int countID){
         return createCount()
-                .name("neutronGrossCount" + countID)
-                .label("Neutron Gross Count " + countID)
-                .definition(getRadUri("neutron-gross-count"))
+                .name("neutronCount" + countID)
+                .label("Neutron Count " + countID)
+                .definition(getRadUri("neutron-count"))
                 .build();
     }
 

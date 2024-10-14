@@ -12,8 +12,8 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
 public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
-    private static final String SENSOR_OUTPUT_NAME = "gammaCount";
-    private static final String SENSOR_OUTPUT_LABEL = "Gamma Count";
+    private static final String SENSOR_OUTPUT_NAME = "gammaCounts";
+    private static final String SENSOR_OUTPUT_LABEL = "Gamma Counts";
     private static final int MAX_NUM_TIMING_SAMPLES = 10;
 
     protected DataRecord dataRecord;
@@ -41,7 +41,7 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
         dataRecord = radHelper.createRecord()
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
-                .definition(RADHelper.getRadUri("gamma-count"))
+                .definition(RADHelper.getRadUri("gamma-counts"))
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(gammaAlarmState.getName(), gammaAlarmState)
                 .addField(gammaCount.getName(), gammaCount)
