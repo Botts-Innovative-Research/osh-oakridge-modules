@@ -58,7 +58,7 @@ public class ZSE18Config extends SensorConfig {
 
     public class ZSE18SensorDriverConfigurations extends SensorDriverConfig {
         @DisplayInfo(desc = "Node ID value")
-        public int nodeID = 5;
+        public int nodeID = 4;
         @DisplayInfo(desc = "ReInitialize the node: only set true on first run after adding including the device in " +
                 "the zWave network")
         public boolean reInitNode = false;

@@ -54,11 +54,13 @@ public class ZwaveCommServiceConfig extends ServiceConfig {
 
                 switch (sensorId){
                     case 8193: sensorName = "WADWAZ";
-                    break;
-                    case 8194: sensorName = "WAPIRZ";
-                    break;
-                    case 258: sensorName = "ZW100";
-                    break;
+                        break;
+                    case 769: sensorName = "Zooz ZSE19 Motion Sensor";
+                        break;
+                    case 258: sensorName = "ZW100 Multisensor";
+                        break;
+                    case 257: sensorName = "Z-Controller";
+                        break;
                     default: sensorName = "Unknown";
                 }
 
