@@ -40,6 +40,7 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
         var neutronBkg = radHelper.createNeutronBackground();;
         var maxGamma = radHelper.createMaxGamma();
         var maxNeutron = radHelper.createMaxNeutron();
+        var isAdjudicated = radHelper.createIsAdjudicated();
 
         dataRecord = radHelper.createRecord()
                 .name(getName())
@@ -54,6 +55,7 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
                 .addField(neutronAlarm.getName(), neutronAlarm)
                 .addField(maxGamma.getName(), maxGamma)
                 .addField(maxNeutron.getName(), maxNeutron)
+                .addField(isAdjudicated.getName(), isAdjudicated)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
@@ -89,6 +91,7 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
         dataBlock.setBooleanValue(6, neutronAlarm);
         dataBlock.setIntValue(7, maxGamma);
         dataBlock.setIntValue(8, maxNeutron);
+        dataBlock.setBooleanValue(9, false);
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

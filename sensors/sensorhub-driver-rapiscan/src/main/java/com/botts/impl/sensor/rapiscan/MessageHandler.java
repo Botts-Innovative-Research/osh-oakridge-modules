@@ -45,6 +45,14 @@ public class MessageHandler {
     //    FileWriter fw;
     //    CSVWriter writer;
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
+    private long timeSinceLastMessage;
+
+    public long getTimeSinceLastMessage() {
+        long now = System.currentTimeMillis();
+//        System.out.printf("\nTime since last message: %d seconds", (now - timeSinceLastMessage)/1000);
+//        parentSensor.getLogger().debug("Time since last message: {} seconds", (now - timeSinceLastMessage)/1000);
+        return (now - timeSinceLastMessage);
+    }
 
     public MessageHandler(InputStream msgIn, RapiscanSensor parentSensor) {
         this.parentSensor = parentSensor;
@@ -53,24 +61,13 @@ public class MessageHandler {
         occupancyGammaBatch = new LinkedList<>();
         occupancyNeutronBatch = new LinkedList<>();
 
-//        File dailyFileDirectory = new File("./dailyfiles");
-//        if(!dailyFileDirectory.exists()) {
-//            dailyFileDirectory.mkdirs();
-//        }
+        timeSinceLastMessage = System.currentTimeMillis();
 
         // Setup boolean
         Thread messageReader = new Thread(() -> {
             boolean continueProcessing = true;
 
-//            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd");
-//            String dateStamp = dateFormat.format(new Date());
-//            String fileName = "./dailyfiles/dailyfile_" + dateStamp + "_" + System.currentTimeMillis() + ".csv";
-
-//            File dailyFile = new File(fileName);
-
             try {
-//                fw = new FileWriter(dailyFile);
-//                writer = new CSVWriter(fw);
 
                 while (continueProcessing) {
                     BufferedReader bufferedReader;
@@ -81,13 +78,12 @@ public class MessageHandler {
                         reader = new CSVReader(new StringReader(msgLine));
                         csvList = reader.readAll();
 
-//                        writer.writeNext(new String[]{msgLine, Instant.now().toString()});
-
                         parentSensor.getDailyFileOutput().onNewMessage(msgLine);
 
                         onNewMainChar(csvList.get(0)[0], csvList.get(0));
 
-                        System.out.println(msgLine);
+                        timeSinceLastMessage = System.currentTimeMillis();
+
                         msgLine = bufferedReader.readLine();
 
                         synchronized (isProcessing) {
@@ -107,11 +103,6 @@ public class MessageHandler {
         synchronized (isProcessing) {
             isProcessing.set(false);
         }
-//        try {
-//            writer.close();
-//        } catch (IOException e) {
-//            throw new RuntimeException(e);
-//        }
     }
 
     public int[] getGammaForegroundCountsPerSecond() {
@@ -135,7 +126,7 @@ public class MessageHandler {
     void onNewMainChar(String mainChar, String[] csvLine) {
 
         // Add scan data for EML service. Background and other data gives EML context, so we must show EML everything until end of occupancy
-        if (parentSensor.getConfiguration().emlConfig.emlEnabled) {
+        if (parentSensor.getConfiguration().emlConfig.emlEnabled && !mainChar.equals("GB") && !mainChar.equals("NB")) {
             parentSensor.getEmlService().addScanDataLine(csvLine);
         }
 
@@ -143,8 +134,11 @@ public class MessageHandler {
             // ------------------- NOT OCCUPIED
             case "GB":
                 parentSensor.getGammaOutput().onNewMessage(csvLine, System.currentTimeMillis(), BACKGROUND, null);
-                // Send latest Gamma Background to threshold calculator
+                // Send latest Gamma Background to threshold calculator and EML service
                 parentSensor.getGammaThresholdOutput().onNewBackground(csvLine);
+
+                if(parentSensor.getConfiguration().emlConfig.emlEnabled)
+                    parentSensor.getEmlService().setLatestGammaBackground(csvLine);
                 break;
             case "GH":
                 parentSensor.getGammaOutput().onNewMessage(csvLine, System.currentTimeMillis(), FAULT_GH, null);
@@ -154,6 +148,9 @@ public class MessageHandler {
                 break;
             case "NB":
                 parentSensor.getNeutronOutput().onNewMessage(csvLine, System.currentTimeMillis(), BACKGROUND);
+
+                if(parentSensor.getConfiguration().emlConfig.emlEnabled)
+                    parentSensor.getEmlService().setLatestNeutronBackground(csvLine);
                 break;
             case "NH":
                 parentSensor.getNeutronOutput().onNewMessage(csvLine, System.currentTimeMillis(), FAULT_NH);
@@ -240,6 +237,7 @@ public class MessageHandler {
                 occupancyGammaBatch.clear();
 
                 if (parentSensor.getConfiguration().emlConfig.emlEnabled) {
+                    // TODO: Make better determination of whether occupancy ended
                     var results = parentSensor.getEmlService().processCurrentOccupancy();
                     parentSensor.getEmlScanContextualOutput().handleScanContextualMessage(results);
                     parentSensor.getEmlContextualOutput().handleContextualMessage(results);

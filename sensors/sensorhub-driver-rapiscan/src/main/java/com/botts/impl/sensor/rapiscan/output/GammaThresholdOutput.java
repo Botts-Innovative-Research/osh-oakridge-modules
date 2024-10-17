@@ -97,9 +97,12 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> i
             getLogger().error("No available n sigma value. Please set in module config or wait for RPM to update.");
         }
 
+        double latestThreshold = 0;
+
         if(latestRecord == null) {
             dataBlock = dataStruct.createDataBlock();
         } else {
+            latestThreshold = latestRecord.getDoubleValue(1);
             dataBlock = latestRecord.renew();
         }
 
@@ -114,7 +117,7 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> i
                 / Math.sqrt(latestBackgroundSum);
 
         dataBlock.setLongValue(0, System.currentTimeMillis()/1000);
-//        dataBlock.setDoubleValue(1, latestBackgroundSum); Threshold should be set from before. If it's not, then this will never be called
+        dataBlock.setDoubleValue(1, latestThreshold); //Threshold should be set from before. If it's not, then this will never be called
         dataBlock.setDoubleValue(2, sigmaVal);
 
         latestRecord = dataBlock;
