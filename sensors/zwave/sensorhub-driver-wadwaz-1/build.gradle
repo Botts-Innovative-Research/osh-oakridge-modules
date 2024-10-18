@@ -14,7 +14,6 @@ repositories {
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     testImplementation('junit:junit:4.13.1')
-    implementation project(':sensorhub-comm-rxtx')
     implementation project (':sensorhub-zwave-comms')
 
 //    implementation 'com.vaadin:vaadin-server:8.14.3'

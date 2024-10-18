@@ -13,7 +13,6 @@ repositories {
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     testImplementation('junit:junit:4.13.1')
-    implementation project(':sensorhub-comm-rxtx')
     implementation project (':sensorhub-zwave-comms')
 
     implementation 'org.openhab.addons.bundles:org.openhab.binding.zwave:4.1.1'

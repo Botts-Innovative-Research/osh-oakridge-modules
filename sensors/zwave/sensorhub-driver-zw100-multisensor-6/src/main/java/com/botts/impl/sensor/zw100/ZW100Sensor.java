@@ -320,7 +320,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                             reportStatus("Node: " + configNodeId + " - ZW100 beginning initialization");
                         } else if (node.getNodeInitStage() == REQUEST_NIF){
                             clearStatus();
-                            reportStatus("Put ZW100 multisensor into config mode");
+                            reportStatus("Put ZW100 multi-sensor into config mode");
                         }
 
 

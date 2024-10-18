@@ -58,7 +58,7 @@ public class DS100Config extends SensorConfig {
 
     public class DS100SensorDriverConfigurations extends SensorDriverConfig {
         @DisplayInfo(desc = "Node ID value")
-        public int nodeID = 6;
+        public int nodeID = 3;
         @DisplayInfo(desc = "ReInitialize the node: only set true on first run after adding including the device in " +
                 "the zWave network")
         public boolean reInitNode = false;
