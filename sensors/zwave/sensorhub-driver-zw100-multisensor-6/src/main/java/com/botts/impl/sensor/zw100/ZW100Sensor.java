@@ -16,8 +16,6 @@ package com.botts.impl.sensor.zw100;
 import  com.botts.sensorhub.impl.zwave.comms.IMessageListener;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommService;
 import net.opengis.sensorml.v20.PhysicalSystem;
-import org.eclipse.jetty.client.ProxyProtocolClientConnectionFactory;
-import org.openhab.binding.zwave.handler.ZWaveThingHandler;
 import org.openhab.binding.zwave.internal.protocol.*;
 import org.openhab.binding.zwave.internal.protocol.commandclass.*;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveAssociationEvent;
@@ -25,7 +23,6 @@ import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueE
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveInitializationStateEvent;
 import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage;
-import org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStageAdvancer;
 import org.openhab.binding.zwave.internal.protocol.transaction.ZWaveCommandClassTransactionPayload;
 //import com.vaadin.ui.Notification;
 //import com.vaadin.ui.Window;
@@ -33,12 +30,8 @@ import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingTypeUID;
 import org.openhab.core.thing.ThingUID;
-import org.openhab.core.thing.internal.BridgeImpl;
-import org.openhab.core.thing.internal.ThingImpl;
-import org.openhab.core.types.Command;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.module.ModuleEvent;
-import org.sensorhub.impl.module.AbstractModule;
 import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 
@@ -50,9 +43,6 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-import static org.openhab.binding.zwave.ZWaveBindingConstants.ZWAVE_THING_UID;
-import static org.openhab.binding.zwave.internal.protocol.ZWaveNodeState.ALIVE;
-import static org.openhab.binding.zwave.internal.protocol.ZWaveNodeState.INITIALIZING;
 import static org.openhab.binding.zwave.internal.protocol.commandclass.ZWaveCommandClass.CommandClass.*;
 import static org.openhab.binding.zwave.internal.protocol.initialization.ZWaveNodeInitStage.*;
 
@@ -66,8 +56,10 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
     private static final Logger logger = LoggerFactory.getLogger(ZW100Sensor.class);
     public ZwaveCommService commService;
+    public ModuleRegistry moduleRegistry;
     private int configNodeId;
     private int zControllerId;
+    public ZWaveTransactionManager zWaveTransactionManager;
 
     public ZWaveEvent message;
     public ZWaveController zController;
@@ -171,7 +163,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
         initAsync = true;
 
-        ModuleRegistry moduleRegistry = getParentHub().getModuleRegistry();
+        moduleRegistry = getParentHub().getModuleRegistry();
 
         commService = moduleRegistry.getModuleByType(ZwaveCommService.class);
 
@@ -188,6 +180,7 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
                         zController = commService.getzController();
                         zController.getNodes();
+                        zWaveTransactionManager = new ZWaveTransactionManager(zController);
 
                     })
 
@@ -248,8 +241,12 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
 
     @Override
     public void doStop() throws SensorHubException {
-
-   
+        if (commService != null){
+            commService.unregisterListener(this);
+        }
+        if (zWaveTransactionManager != null){
+            zWaveTransactionManager.shutdown();
+        }
     }
 
     @Override
@@ -264,10 +261,10 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
         }
     }
 
-
     // Sorts data based on message type and sends information to outputs
     @Override
     public void onNewDataPacket(int id, ZWaveEvent message) {
+
          if (id == configNodeId) {
 
              ZWaveNode node = zController.getNode(id);
@@ -626,6 +623,18 @@ public class ZW100Sensor extends AbstractSensorModule<ZW100Config> implements IM
                     }
                 }
             }
+
+//    @Override
+//    public boolean commsIsStopped(boolean stopped) {
+//        if (stopped) {
+//            try {
+//                doStop();
+//            } catch (SensorHubException e) {
+//                throw new RuntimeException(e);
+//            }
+//        }
+//        return stopped;
+//    }
 
     public void handleAlarmData(int key, String value, int event) {
         handleMotionData(key, value, event);

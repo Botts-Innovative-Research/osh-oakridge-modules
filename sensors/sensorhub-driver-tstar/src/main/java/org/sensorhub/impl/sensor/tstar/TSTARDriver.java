@@ -15,6 +15,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
 
 public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
 
@@ -29,7 +31,6 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
     public HttpClient httpClient;
     TSTARMessageHandler messageHandler;
 
-
     //Outputs
     TSTARAuditLogOutput auditLogOutput;
     TSTARCampaignOutput campaignOutput;
@@ -40,10 +41,18 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
     TSTARUnitLogOutput unitLogOutput;
 
 
-    public TSTARDriver() {
-        httpClient = HttpClient.newHttpClient();
-    }
+    public TSTARDriver() { }
 
+    public void buildHttpClient() throws NoSuchAlgorithmException, KeyManagementException {
+
+//        SSLContext sslContext = SSLContext.getInstance("SSL");
+//        sslContext.init(null, null, new SecureRandom());
+
+        httpClient = HttpClient.newBuilder()
+//                .sslContext(sslContext)
+//                .version(HTTP_1_1)
+                .build();
+    }
 
     public String getAuthToken(String username, String password) throws URISyntaxException, IOException,
             InterruptedException {
@@ -56,8 +65,7 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
                 .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .build();
 
-        HttpResponse<String> response = HttpClient.newBuilder()
-                .build()
+        HttpResponse<String> response = httpClient
                 .send(request, HttpResponse.BodyHandlers.ofString());
 
         String responseBody = response.body();
@@ -69,6 +77,7 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
         authToken = config.authToken;
         return authToken;
     }
+
     public String getCampaigns() throws URISyntaxException,
             IOException,
             InterruptedException {
@@ -79,8 +88,7 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
                 .GET()
                 .build();
 
-        HttpResponse<String> response = HttpClient.newBuilder()
-                .build()
+        HttpResponse<String> response = httpClient
                 .send(request, HttpResponse.BodyHandlers.ofString());
 
         String responseBody = response.body();
@@ -103,7 +111,13 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
     }
     @Override
     public void doInit() {
+        TSTARConfig config = getConfiguration();
 
+        try {
+            buildHttpClient();
+        } catch (NoSuchAlgorithmException | KeyManagementException e) {
+            throw new RuntimeException(e);
+        }
         // generate IDs
         generateUniqueID("urn:osh:sensor:tstar:", config.serialNumber);
         generateXmlID("TSTAR_", config.serialNumber);
@@ -136,15 +150,10 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
         addOutput(unitLogOutput, false);
         unitLogOutput.init();
 
-
         try {
-            getAuthToken(config.username, config.password);
+            getAuthToken(config.http.user, config.http.password);
             getCampaigns();
-        } catch (URISyntaxException e) {
-            throw new RuntimeException(e);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        } catch (InterruptedException e) {
+        } catch (URISyntaxException | IOException | InterruptedException e) {
             throw new RuntimeException(e);
         }
     }
@@ -173,7 +182,11 @@ public class TSTARDriver extends AbstractSensorModule<TSTARConfig> {
         }
     }
     @Override
-    public void doStop() {}
+    public void doStop() {
+        if (messageHandler != null){
+            messageHandler.closeSocket();
+        }
+    }
 
     @Override
     public boolean isConnected() {return false;}

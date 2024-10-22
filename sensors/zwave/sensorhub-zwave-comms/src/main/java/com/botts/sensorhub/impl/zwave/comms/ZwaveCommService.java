@@ -23,6 +23,7 @@ import org.sensorhub.impl.module.AbstractModule;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.openhab.binding.zwave.ZWaveBindingConstants.*;
@@ -43,6 +44,7 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
     RxtxZWaveIoHandler ioHandler;
 //    com.botts.sensorhub.impl.zwave.comms.ZWaveSerialHandler serialHandler;
     public ZWaveController zController;
+    public ZWaveTransactionManager zWaveTransactionManager;
     public ThingUID thingUID;
     public ThingTypeUID bridgeUID;
     public Thing thing;
@@ -90,6 +92,8 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
 //        serialHandler.initialize();
         zController = new ZWaveController(ioHandler, config);
 
+        zWaveTransactionManager = new ZWaveTransactionManager(zController);
+
         workerThread = new Thread(this, this.getClass().getSimpleName());
 
         initialized = true;
@@ -99,62 +103,54 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
     protected void doStart() throws SensorHubException {
 
         if (!initialized) {
-
             doInit();
         }
 
         super.doStart();
 
         doWork.set(true);
-
         workerThread.start();
-
-
     }
 
     @Override
     protected void doStop() throws SensorHubException {
 
-        super.doStop();
+//        CompletableFuture.runAsync(() -> {
+//            messageListeners.forEach(listener -> notifyListenersCommsDoStop(true, listener));
+//        });
+
+        if (zWaveTransactionManager != null){
+            zWaveTransactionManager.shutdown();
+        }
 
         if (ioHandler != null) {
-
             try {
-
                 ioHandler.stop();
-
             } catch (Exception e) {
-
                 logger.error("Uncaught exception attempting to stop comms module", e);
-
             } finally {
-
                 ioHandler = null;
             }
         }
-
         doWork.set(false);
 
         if (workerThread != null && workerThread.isAlive()) {
-
             try {
-
                 // Wait for thread to end
                 workerThread.join(5000);
-
             } catch (InterruptedException e) {
-
                 getLogger().error("Thread {} interrupted", workerThread.getName());
-
                 workerThread.interrupt();
             }
-
             workerThread = null;
         }
 
         messageListeners.clear();
 
         initialized = false;
+
+        super.doStop();
+
     }
 
     @Override
@@ -162,6 +158,7 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         //adds an event listener and sends the incoming events to the subscribed messageListeners
 
 //        logger.info("The controller is master: " + zController.isMasterController());
+
         zController.addEventListener(new ZWaveEventListener() {
 
             public void ZWaveIncomingEvent(ZWaveEvent event) {
@@ -252,6 +249,16 @@ public class ZwaveCommService extends AbstractModule<ZwaveCommServiceConfig> imp
         }
     }
 
+//    public void notifyListenersCommsDoStop(boolean stopped, IMessageListener listener){
+//        if (messageListeners.contains(listener)){
+//            listener.commsIsStopped(stopped);
+//        }
+//    }
+//    public void notifyAllListeners(boolean stopped){
+//        CompletableFuture.runAsync(() -> {
+//            messageListeners.forEach(listener -> notifyListenersCommsDoStop(stopped, listener));
+//        });
+//    }
     public void sendConfigurations(ZWaveMessagePayloadTransaction transaction){
         //method to implement zController inherent method of sendTransaction()
         zController.sendTransaction(transaction);

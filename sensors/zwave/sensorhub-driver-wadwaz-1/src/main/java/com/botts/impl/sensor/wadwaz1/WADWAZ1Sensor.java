@@ -56,6 +56,8 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
     private int zControllerId;
     public ZWaveEvent message;
     public ZWaveController zController;
+    public ZWaveTransactionManager zWaveTransactionManager;
+
 //    public ThingTypeUID thingTypeUID = new ThingTypeUID("zwave","linear_wadwaz1_00_000");
 
     // SENSOR DATA
@@ -144,6 +146,7 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 
             CompletableFuture.runAsync(() -> {
                         zController = commService.getzController();
+                        zWaveTransactionManager = new ZWaveTransactionManager(zController);
 
                     })
 
@@ -194,9 +197,12 @@ public class WADWAZ1Sensor extends AbstractSensorModule<WADWAZ1Config> implement
 
     @Override
     public void doStop() throws SensorHubException {
-
-        //Handle stopping the node
-
+        if (commService != null){
+            commService.unregisterListener(this);
+        }
+        if (zWaveTransactionManager != null){
+            zWaveTransactionManager.shutdown();
+        }
     }
 
     @Override

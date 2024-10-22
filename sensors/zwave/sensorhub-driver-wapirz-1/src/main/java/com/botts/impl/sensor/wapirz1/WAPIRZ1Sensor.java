@@ -49,6 +49,8 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
     private int zControllerId;
     public ZWaveEvent message;
     public ZWaveController zController;
+    public ZWaveTransactionManager zWaveTransactionManager;
+
     public ZWaveNode node;
 
     // SENSOR DATA
@@ -141,6 +143,8 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
 
             CompletableFuture.runAsync(() -> {
                         zController = commService.getzController();
+                        zWaveTransactionManager = new ZWaveTransactionManager(zController);
+
 //                        if(config.wapirzSensorDriverConfigurations.reInitNode) {
 //                            zController.reinitialiseNode(configNodeId);
 //                        }
@@ -199,9 +203,12 @@ public class WAPIRZ1Sensor extends AbstractSensorModule<WAPIRZ1Config> implement
 
     @Override
     public void doStop() throws SensorHubException {
-
-        //Handle stopping the node
-
+        if (commService != null){
+            commService.unregisterListener(this);
+        }
+        if (zWaveTransactionManager != null){
+            zWaveTransactionManager.shutdown();
+        }
     }
 
     @Override

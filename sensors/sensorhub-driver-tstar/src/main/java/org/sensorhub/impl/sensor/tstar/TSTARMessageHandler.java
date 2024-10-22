@@ -57,6 +57,9 @@ public class TSTARMessageHandler {
         log.info(msg);
         socket.sendMessage(msg);
     }
+    public void closeSocket(){
+        socket.session.close();
+    }
 
     public void handleMsg(String msg) throws IOException {
         System.out.println("Received message in client: " + msg);

@@ -19,6 +19,7 @@ import net.opengis.sensorml.v20.PhysicalSystem;
 import org.openhab.binding.zwave.internal.protocol.ZWaveConfigurationParameter;
 import org.openhab.binding.zwave.internal.protocol.ZWaveController;
 import org.openhab.binding.zwave.internal.protocol.ZWaveNode;
+import org.openhab.binding.zwave.internal.protocol.ZWaveTransactionManager;
 import org.openhab.binding.zwave.internal.protocol.commandclass.*;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveCommandClassValueEvent;
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
@@ -53,6 +54,8 @@ public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IM
     private int zControllerId;
     public ZWaveEvent message;
     public ZWaveController zController;
+    public ZWaveTransactionManager zWaveTransactionManager;
+
     public ZWaveNode node;
 
     // SENSOR DATA
@@ -140,6 +143,7 @@ public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IM
 
             CompletableFuture.runAsync(() -> {
                         zController = commService.getzController();
+                        zWaveTransactionManager = new ZWaveTransactionManager(zController);
 
                     })
 
@@ -165,9 +169,12 @@ public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IM
 
     @Override
     public void doStop() throws SensorHubException {
-
-        //Handle stopping the node
-
+        if (commService != null){
+            commService.unregisterListener(this);
+        }
+        if (zWaveTransactionManager != null){
+            zWaveTransactionManager.shutdown();
+        }
     }
 
     @Override
@@ -316,6 +323,18 @@ public class ZSE18Sensor extends AbstractSensorModule<ZSE18Config> implements IM
             }
         }
     }
+
+//    @Override
+//    public boolean commsIsStopped(boolean stopped) {
+//        if (stopped) {
+//            try {
+//                doStop();
+//            } catch (SensorHubException e) {
+//                throw new RuntimeException(e);
+//            }
+//        }
+//        return stopped;
+//    }
 
     public void handleAlarmData(int key, String value, int event) {
         handleMotionData(key, value, event);

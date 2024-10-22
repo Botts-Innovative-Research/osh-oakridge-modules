@@ -56,6 +56,7 @@ public class WADWAZ1Config extends SensorConfig {
 //    public LLALocation getLocation(){return positionConfig.location;}
 
     public class WADWAZSensorDriverConfigurations extends SensorDriverConfig {
+        @DisplayInfo.Required
         @DisplayInfo(desc = "Node ID value")
         public int nodeID = 99;
         @DisplayInfo(desc = "ReInitialize the node: only set true on first run after adding including the device in " +

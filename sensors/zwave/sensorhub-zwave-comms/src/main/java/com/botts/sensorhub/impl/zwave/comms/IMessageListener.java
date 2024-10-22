@@ -7,8 +7,15 @@ package com.botts.sensorhub.impl.zwave.comms;
 
 import org.openhab.binding.zwave.internal.protocol.event.ZWaveEvent;
 
+
 public interface IMessageListener {
 
     void onNewDataPacket(int id, ZWaveEvent message);
+
+//    public default boolean commsIsStopped(boolean stopped){
+//        return stopped;
+//    }
+
+
 
 }

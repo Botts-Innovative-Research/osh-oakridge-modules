@@ -55,6 +55,8 @@ public class ZW100Config extends SensorConfig {
     public LLALocation getLocation(){return positionConfig.location;}
 
     public class ZW100SensorDriverConfigurations extends SensorDriverConfig {
+
+        @DisplayInfo.Required
         @DisplayInfo(desc = "Node ID value")
         public int nodeID = 2;
         @DisplayInfo(desc = "ZController ID value")

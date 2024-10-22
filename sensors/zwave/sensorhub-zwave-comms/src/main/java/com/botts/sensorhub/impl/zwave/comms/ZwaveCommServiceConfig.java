@@ -37,6 +37,7 @@ public class ZwaveCommServiceConfig extends ServiceConfig {
     public int controllerID = 1;
 
 
+
     public class NodeList {
 
         public void setCommSubscribers(Collection<ZWaveNode> nodeList) {

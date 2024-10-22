@@ -17,16 +17,22 @@ public class TSTARConfig extends SensorConfig
     @DisplayInfo(label="HTTP", desc="HTTP configuration")
     public HTTPConfig http = new HTTPConfig();
 
-    @DisplayInfo(label = "Username")
-    public String username;
-
-    @DisplayInfo(label = "Password")
-    public String password;
+//    @DisplayInfo.Required
+//    @DisplayInfo (label = "Username")
+//    public String username;
+//
+//    @DisplayInfo.Required
+//    @DisplayInfo(label = "Password")
+//    public String password;
 
     protected String authToken;
+
+    @DisplayInfo.Required
+    @DisplayInfo (label = "Campaign ID")
     public String campaignId;
 
     public TSTARConfig() throws IOException {
+
         http.user = "";
         http.password = "";
         http.remoteHost = "";
