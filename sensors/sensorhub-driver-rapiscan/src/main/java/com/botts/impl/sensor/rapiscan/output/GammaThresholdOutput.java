@@ -35,6 +35,8 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> i
         var samplingTime = radHelper.createPrecisionTimeStamp();
         var threshold = radHelper.createThreshold();
         var sigma = radHelper.createSigmaValue();
+        var nSigma = radHelper.createNSigma();
+        var latestBackground = radHelper.createLatestGammaBackground();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
@@ -43,6 +45,8 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> i
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(threshold.getName(), threshold)
                 .addField(sigma.getName(), sigma)
+                .addField(nSigma.getName(), nSigma)
+                .addField(latestBackground.getName(), latestBackground)
                 .build();
         dataEncoding = new TextEncodingImpl(",", "\n");
 
@@ -76,7 +80,9 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> i
         // Return equation for threshold calculation
         dataBlock.setDoubleValue(index++, latestBackgroundSum + (nVal * sqrtBackgroundSum));
         // Set sigma to 0 since we are not in an occupancy
-        dataBlock.setDoubleValue(index, sqrtBackgroundSum);
+        dataBlock.setDoubleValue(index++, sqrtBackgroundSum);
+        dataBlock.setDoubleValue(index++, nVal);
+        dataBlock.setIntValue(index, latestBackgroundSum);
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), GammaThresholdOutput.this, dataBlock));
@@ -119,6 +125,8 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> i
         dataBlock.setLongValue(0, System.currentTimeMillis()/1000);
         dataBlock.setDoubleValue(1, latestThreshold); //Threshold should be set from before. If it's not, then this will never be called
         dataBlock.setDoubleValue(2, sigmaVal);
+        dataBlock.setDoubleValue(3, nVal);
+        dataBlock.setIntValue(4, latestBackgroundSum);
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), GammaThresholdOutput.this, dataBlock));
