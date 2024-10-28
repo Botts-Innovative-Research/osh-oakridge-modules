@@ -15,14 +15,8 @@ public class RapiscanProcessConfig extends ProcessConfig {
 
     @DisplayInfo.Required
     @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.SYSTEM_UID)
-    @DisplayInfo(label = "Rapiscan Datastream Source", desc = "Datasource to read occupancy data")
-    public String datastreamUID;
-
-    @DisplayInfo.Required
-    @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.MODULE_ID)
-    @DisplayInfo.ModuleType(IDatabase.class)
-    @DisplayInfo(label = "Input Database", desc = "Module ID of system database to query")
-    public String databaseModuleID;
+    @DisplayInfo(label = "Parent System (Containing RPM)", desc = "Parent system to read occupancy data from subsystem RPM")
+    public String systemUID;
 
 
 }

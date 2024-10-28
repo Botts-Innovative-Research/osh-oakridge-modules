@@ -110,10 +110,19 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
             return false;
 
         outputData.clear();
-        db.getDataStreamStore().values().forEach(ds -> {
-            var dsTopicId = EventUtils.getDataStreamDataTopicID(ds);
-            outputData.add(dsTopicId, ds.getRecordStructure().copy());
+
+        db.getSystemDescStore().values().forEach(sys -> {
+            var systemOutputBuilder = fac.createRecord();
+            var systemDatastreams = db.getDataStreamStore().select(new DataStreamFilter.Builder()
+                    .withSystems(
+                            new SystemFilter.Builder().withUniqueIDs(sys.getUniqueIdentifier()).build()).build())
+                    .collect(Collectors.toList());
+            for(var ds : systemDatastreams)
+                systemOutputBuilder.addField(ds.getOutputName(), ds.getRecordStructure());
+
+            outputData.add(sys.getUniqueIdentifier(), systemOutputBuilder.build());
         });
+
 
         return !outputData.isEmpty();
     }
@@ -124,13 +133,10 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         DataComponent gammaAlarm = occupancyInput.getComponent(gammaAlarmName);
         DataComponent neutronAlarm = occupancyInput.getComponent(neutronAlarmName);
 
-        if(gammaAlarm.getData().getBooleanValue() || neutronAlarm.getData().getBooleanValue()) {
-            return true;
-        }
-        return false;
+        return gammaAlarm.getData().getBooleanValue() || neutronAlarm.getData().getBooleanValue();
     }
 
-    private List<IObsData> getPastData(String outputName) {
+    private List<IObsData> getPastData(String systemUID, String outputName) {
         DataComponent occupancyInput = inputData.getComponent(OCCUPANCY_NAME);
 
         DataComponent startTime = occupancyInput.getComponent(startTimeName);
@@ -145,8 +151,14 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
 
         var db = hub.getSystemDriverRegistry().getDatabase(inputSystemID);
 
+        SystemFilter systemFilter = new SystemFilter.Builder()
+                .withUniqueIDs(systemUID)
+                .includeMembers(false)
+                .build();
+
         DataStreamFilter dsFilter = new DataStreamFilter.Builder()
                 .withOutputNames(outputName)
+                .withSystems(systemFilter)
                 .build();
         ObsFilter filter = new ObsFilter.Builder()
                 .withDataStreams(dsFilter)
@@ -165,11 +177,11 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         if(isTriggered()) {
             int size = outputData.size();
             for(int i = 0; i < size; i++) {
-                DataComponent item = outputData.getComponent(i);
-                String itemName = item.getName();
+                DataComponent system = outputData.getComponent(i);
+                String itemName = system.getName();
 
-                for(IObsData data : getPastData(itemName)) {
-                    item.setData(data.getResult());
+                for(IObsData data : getPastData(system.getName(), itemName)) {
+                    system.setData(data.getResult());
                     try {
                         publishData();
                         publishData(itemName);
@@ -177,6 +189,21 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
                         throw new RuntimeException(e);
                     }
                 }
+
+                for (int j = 0; j < system.getComponentCount(); j++) {
+                    var output = system.getComponent(i);
+
+                    for(IObsData data : getPastData(system.getName(), output.getName())) {
+                        output.setData(data.getResult());
+                        try {
+                            publishData();
+                            publishData(itemName);
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                }
+
             }
         }
     }
