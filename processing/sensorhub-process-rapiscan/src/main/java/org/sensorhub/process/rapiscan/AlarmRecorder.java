@@ -120,7 +120,9 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
             for(var ds : systemDatastreams)
                 systemOutputBuilder.addField(ds.getOutputName(), ds.getRecordStructure());
 
-            outputData.add(sys.getUniqueIdentifier(), systemOutputBuilder.build());
+            var systemOutput = systemOutputBuilder.build();
+            if(systemOutput.getComponentCount() > 0)
+                outputData.add(sys.getUniqueIdentifier(), systemOutput);
         });
 
 
@@ -155,7 +157,6 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
                 .withUniqueIDs(systemUID)
                 .includeMembers(false)
                 .build();
-
         DataStreamFilter dsFilter = new DataStreamFilter.Builder()
                 .withOutputNames(outputName)
                 .withSystems(systemFilter)
@@ -164,6 +165,11 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
                 .withDataStreams(dsFilter)
                 .withPhenomenonTimeDuring(start, end)
                 .build();
+
+        long sysCount = db.getSystemDescStore().selectEntries(systemFilter).count();
+        long ds = db.getDataStreamStore().selectEntries(dsFilter).count();
+        long obs = db.getObservationStore().selectEntries(filter).count();
+        long allObs = db.getObservationStore().selectEntries(new ObsFilter.Builder().withDataStreams(dsFilter).build()).count();
 
         return db.getObservationStore().select(filter).collect(Collectors.toList());
     }
@@ -178,30 +184,20 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
             int size = outputData.size();
             for(int i = 0; i < size; i++) {
                 DataComponent system = outputData.getComponent(i);
-                String itemName = system.getName();
-
-                for(IObsData data : getPastData(system.getName(), itemName)) {
-                    system.setData(data.getResult());
-                    try {
-                        publishData();
-                        publishData(itemName);
-                    } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
 
                 for (int j = 0; j < system.getComponentCount(); j++) {
                     var output = system.getComponent(i);
 
                     for(IObsData data : getPastData(system.getName(), output.getName())) {
                         output.setData(data.getResult());
-                        try {
-                            publishData();
-                            publishData(itemName);
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
                     }
+                }
+
+                try {
+                    publishData();
+                    publishData(system.getName());
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
                 }
 
             }
