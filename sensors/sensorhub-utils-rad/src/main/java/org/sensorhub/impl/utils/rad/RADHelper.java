@@ -168,6 +168,15 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public Quantity createLatestGammaBackground() {
+        return createQuantity()
+                .name("latestGammaBackground")
+                .label("Latest Gamma Background")
+                .definition(getRadUri("latest-gamma-background"))
+                .description("Latest gamma background used in threshold and sigma calculations")
+                .build();
+    }
+
     public Quantity createGammaVariance() {
         return createQuantity()
                 .name("gammaVariance")
