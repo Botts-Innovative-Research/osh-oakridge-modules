@@ -2,18 +2,12 @@ package org.sensorhub.process.rapiscan;
 
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
-import org.sensorhub.api.common.BigId;
-import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.data.IDataProducerModule;
 import org.sensorhub.api.data.IObsData;
-import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
-import org.sensorhub.api.event.EventUtils;
 import org.sensorhub.api.processing.OSHProcessInfo;
 import org.sensorhub.impl.processing.ISensorHubProcess;
-import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.utils.Async;
 import org.vast.process.ExecutableProcessImpl;
@@ -51,7 +45,7 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
 
         paramData.add(SYSTEM_INPUT_PARAM, systemInputParam = fac.createText()
                 .label("Parent System Input")
-                .description("Parent system (Lane) that contains one RPM datastream, typically Rapiscan or Aspect. ")
+                .description("Parent system (Lane) that contains one RPM datastream, typically Rapiscan or Aspect.")
                 .definition(SWEHelper.getPropertyUri("System"))
                 .value("")
                 .build());
@@ -111,20 +105,10 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
 
         outputData.clear();
 
-        db.getSystemDescStore().values().forEach(sys -> {
-            var systemOutputBuilder = fac.createRecord();
-            var systemDatastreams = db.getDataStreamStore().select(new DataStreamFilter.Builder()
-                    .withSystems(
-                            new SystemFilter.Builder().withUniqueIDs(sys.getUniqueIdentifier()).build()).build())
-                    .collect(Collectors.toList());
-            for(var ds : systemDatastreams)
-                systemOutputBuilder.addField(ds.getOutputName(), ds.getRecordStructure());
-
-            var systemOutput = systemOutputBuilder.build();
-            if(systemOutput.getComponentCount() > 0)
-                outputData.add(sys.getUniqueIdentifier(), systemOutput);
+        db.getDataStreamStore().values().forEach(ds -> {
+            var struct = ds.getRecordStructure().clone();
+            outputData.add(ds.getSystemID().getUniqueID() + ":" + ds.getOutputName(), struct);
         });
-
 
         return !outputData.isEmpty();
     }
@@ -138,7 +122,11 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         return gammaAlarm.getData().getBooleanValue() || neutronAlarm.getData().getBooleanValue();
     }
 
-    private List<IObsData> getPastData(String systemUID, String outputName) {
+    private List<IObsData> getPastData(String fullOutputName) {
+        int separator = fullOutputName.lastIndexOf(':');
+        String systemUID = fullOutputName.substring(0, separator);
+        String outputName = fullOutputName.substring(separator + 1);
+
         DataComponent occupancyInput = inputData.getComponent(OCCUPANCY_NAME);
 
         DataComponent startTime = occupancyInput.getComponent(startTimeName);
@@ -166,11 +154,6 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
                 .withPhenomenonTimeDuring(start, end)
                 .build();
 
-        long sysCount = db.getSystemDescStore().selectEntries(systemFilter).count();
-        long ds = db.getDataStreamStore().selectEntries(dsFilter).count();
-        long obs = db.getObservationStore().selectEntries(filter).count();
-        long allObs = db.getObservationStore().selectEntries(new ObsFilter.Builder().withDataStreams(dsFilter).build()).count();
-
         return db.getObservationStore().select(filter).collect(Collectors.toList());
     }
 
@@ -183,21 +166,17 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         if(isTriggered()) {
             int size = outputData.size();
             for(int i = 0; i < size; i++) {
-                DataComponent system = outputData.getComponent(i);
+                DataComponent output = outputData.getComponent(i);
+                String fullOutputName = output.getName();
 
-                for (int j = 0; j < system.getComponentCount(); j++) {
-                    var output = system.getComponent(i);
-
-                    for(IObsData data : getPastData(system.getName(), output.getName())) {
-                        output.setData(data.getResult());
+                for(IObsData data : getPastData(fullOutputName)) {
+                    output.setData(data.getResult());
+                    try {
+                        publishData();
+                        publishData(fullOutputName);
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
                     }
-                }
-
-                try {
-                    publishData();
-                    publishData(system.getName());
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
                 }
 
             }
