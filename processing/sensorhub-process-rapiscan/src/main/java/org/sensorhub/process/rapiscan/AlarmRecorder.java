@@ -2,17 +2,12 @@ package org.sensorhub.process.rapiscan;
 
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
-import org.sensorhub.api.common.BigId;
-import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.data.IDataProducerModule;
 import org.sensorhub.api.data.IObsData;
-import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.api.processing.OSHProcessInfo;
 import org.sensorhub.impl.processing.ISensorHubProcess;
-import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.utils.Async;
 import org.vast.process.ExecutableProcessImpl;
@@ -28,13 +23,9 @@ import java.util.stream.Collectors;
 public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubProcess {
     public static final OSHProcessInfo INFO = new OSHProcessInfo("alarmrecorder", "Alarm data recording process", null, AlarmRecorder.class);
     ISensorHub hub;
-    Text dbInputParam;
-    String inputDatabaseID;
-    public static final String DATABASE_INPUT_PARAM = "databaseInput";
-    Text dsInputParam;
-    String inputDatastreamID;
-    public static final String DATASTREAM_INPUT_PARAM = "datastreamInput";
-    // TODO: Possibly replace occupancy name with string from RADHelper
+    Text systemInputParam;
+    String inputSystemID;
+    public static final String SYSTEM_INPUT_PARAM = "systemInput";
     public static final String OCCUPANCY_NAME = "occupancy";
     private final String gammaAlarmName;
     private final String neutronAlarmName;
@@ -47,58 +38,47 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
 
         fac = new RADHelper();
 
-
         gammaAlarmName = fac.createGammaAlarm().getName();
         neutronAlarmName = fac.createNeutronAlarm().getName();
         startTimeName = fac.createOccupancyStartTime().getName();
         endTimeName = fac.createOccupancyEndTime().getName();
 
-        paramData.add(DATASTREAM_INPUT_PARAM, dsInputParam = fac.createText()
-                .label("Rapiscan Datastream Input")
-                .description("Rapiscan datastream to use occupancy data")
-                .definition(SWEHelper.getPropertyUri("Datastream"))
+        paramData.add(SYSTEM_INPUT_PARAM, systemInputParam = fac.createText()
+                .label("Parent System Input")
+                .description("Parent system (Lane) that contains one RPM datastream, typically Rapiscan or Aspect.")
+                .definition(SWEHelper.getPropertyUri("System"))
                 .value("")
                 .build());
 
-        paramData.add(DATABASE_INPUT_PARAM, dbInputParam = fac.createText()
-                .label("Database Input")
-                .description("Database to query historical results")
-                .definition(SWEHelper.getPropertyUri("Database"))
-                .value("")
-                .build());
     }
 
     @Override
     public void notifyParamChange() {
         super.notifyParamChange();
-        populateIDs();
+        inputSystemID = systemInputParam.getData().getStringValue();
 
-        if(!Objects.equals(inputDatastreamID, "") && !Objects.equals(inputDatabaseID, "")) {
+        if(!Objects.equals(inputSystemID, "")) {
             try {
                 Async.waitForCondition(this::checkDatastreamInput, 500, 10000);
                 Async.waitForCondition(this::checkDatabaseInput, 500, 10000);
             } catch (TimeoutException e) {
-                if(processInfo == null) {
-                    throw new IllegalStateException("Rapiscan datastream " + inputDatastreamID + " not found", e);
-                } else {
-                    throw new IllegalStateException("Rapiscan datastream " + inputDatastreamID + " has no data", e);
-                }
+                if(processInfo == null)
+                    throw new IllegalStateException("RPM datastream " + inputSystemID + " not found", e);
+                else
+                    throw new IllegalStateException("RPM datastream " + inputSystemID + " has no data", e);
             }
         }
     }
 
-    private void populateIDs() {
-        inputDatabaseID = dbInputParam.getData().getStringValue();
-        inputDatastreamID = dsInputParam.getData().getStringValue();
-    }
-
+    // Ensure system contains a rapiscan datastream
     private boolean checkDatastreamInput() {
         // Clear old inputs
         inputData.clear();
 
         // Get systems with input UID
         var sysFilter = new SystemFilter.Builder()
-                .withUniqueIDs(inputDatastreamID)
+                .withUniqueIDs(inputSystemID)
+                .includeMembers(true)
                 .build();
 
         var db = hub.getDatabaseRegistry().getFederatedDatabase();
@@ -119,14 +99,15 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
     }
 
     private boolean checkDatabaseInput() {
-        var db = hub.getDatabaseRegistry().getObsDatabaseByModuleID(inputDatabaseID);
-        if(db == null) {
+        var db = hub.getSystemDriverRegistry().getDatabase(inputSystemID);
+        if(db == null)
             return false;
-        }
 
         outputData.clear();
+
         db.getDataStreamStore().values().forEach(ds -> {
-            outputData.add(ds.getOutputName(), ds.getRecordStructure().copy());
+            var struct = ds.getRecordStructure().clone();
+            outputData.add(ds.getSystemID().getUniqueID() + ":" + ds.getOutputName(), struct);
         });
 
         return !outputData.isEmpty();
@@ -138,13 +119,14 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         DataComponent gammaAlarm = occupancyInput.getComponent(gammaAlarmName);
         DataComponent neutronAlarm = occupancyInput.getComponent(neutronAlarmName);
 
-        if(gammaAlarm.getData().getBooleanValue() || neutronAlarm.getData().getBooleanValue()) {
-            return true;
-        }
-        return false;
+        return gammaAlarm.getData().getBooleanValue() || neutronAlarm.getData().getBooleanValue();
     }
 
-    private List<IObsData> getPastData(String outputName) {
+    private List<IObsData> getPastData(String fullOutputName) {
+        int separator = fullOutputName.lastIndexOf(':');
+        String systemUID = fullOutputName.substring(0, separator);
+        String outputName = fullOutputName.substring(separator + 1);
+
         DataComponent occupancyInput = inputData.getComponent(OCCUPANCY_NAME);
 
         DataComponent startTime = occupancyInput.getComponent(startTimeName);
@@ -157,40 +139,46 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         // TODO: Check if EML time exists
         Instant end = Instant.ofEpochSecond(endFromUTC);
 
-        IObsSystemDatabase inputDB = hub.getDatabaseRegistry().getObsDatabaseByModuleID(inputDatabaseID);
+        var db = hub.getSystemDriverRegistry().getDatabase(inputSystemID);
 
+        SystemFilter systemFilter = new SystemFilter.Builder()
+                .withUniqueIDs(systemUID)
+                .includeMembers(false)
+                .build();
         DataStreamFilter dsFilter = new DataStreamFilter.Builder()
                 .withOutputNames(outputName)
+                .withSystems(systemFilter)
                 .build();
         ObsFilter filter = new ObsFilter.Builder()
                 .withDataStreams(dsFilter)
                 .withPhenomenonTimeDuring(start, end)
                 .build();
 
-        return inputDB.getObservationStore().select(filter).collect(Collectors.toList());
+        return db.getObservationStore().select(filter).collect(Collectors.toList());
     }
 
     @Override
     public void execute() throws ProcessException {
-        if(inputDatabaseID == null || inputDatastreamID == null) {
-            populateIDs();
+        if(inputSystemID == null) {
+            inputSystemID = systemInputParam.getData().getStringValue();
         }
         // TODO: Use radhelper to get names of occupancy inputs such as start time, end time, alarms
         if(isTriggered()) {
             int size = outputData.size();
             for(int i = 0; i < size; i++) {
-                DataComponent item = outputData.getComponent(i);
-                String itemName = item.getName();
+                DataComponent output = outputData.getComponent(i);
+                String fullOutputName = output.getName();
 
-                for(IObsData data : getPastData(itemName)) {
-                    item.setData(data.getResult());
+                for(IObsData data : getPastData(fullOutputName)) {
+                    output.setData(data.getResult());
                     try {
                         publishData();
-                        publishData(itemName);
+                        publishData(fullOutputName);
                     } catch (InterruptedException e) {
                         throw new RuntimeException(e);
                     }
                 }
+
             }
         }
     }

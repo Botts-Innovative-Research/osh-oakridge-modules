@@ -5,6 +5,8 @@ import net.opengis.swe.v20.AbstractSWEIdentifiable;
 import net.opengis.swe.v20.DataComponent;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.datastore.obs.DataStreamFilter;
+import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.processing.ProcessingException;
 import org.sensorhub.api.sensor.ISensorModule;
@@ -21,6 +23,7 @@ import org.vast.sensorML.SMLUtils;
 import java.io.*;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 // Based on SMLProcessImpl
 public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcessConfig> {
@@ -72,14 +75,33 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
         ProcessHelper processHelper = new ProcessHelper();
         processHelper.getAggregateProcess().setUniqueIdentifier(processUniqueID);
 
+        var sysFilter = new SystemFilter.Builder()
+                .withUniqueIDs(config.systemUID)
+                .includeMembers(true)
+                .build();
+
+        var db = getParentHub().getDatabaseRegistry().getFederatedDatabase();
+        var matchingDs = db.getDataStreamStore().select(new DataStreamFilter.Builder()
+                .withSystems(sysFilter)
+                .withCurrentVersion()
+                .withOutputNames(AlarmRecorder.OCCUPANCY_NAME)
+                .withLimit(1)
+                .build());
+
+        var dsList = matchingDs.collect(Collectors.toList());
+        if(dsList.size() != 1)
+            throw new SensorHubException("Unable to find RPM datastream in system");
+        var rpmDs = dsList.get(0);
+
+        String datastreamUID = rpmDs.getSystemID().getUniqueID();
+
         AlarmRecorder process = new AlarmRecorder();
 
-        OshAsserts.checkValidUID(config.datastreamUID);
+        OshAsserts.checkValidUID(datastreamUID);
 
-        processHelper.addDataSource("source0", config.datastreamUID);
+        processHelper.addDataSource("source0", datastreamUID);
 
-        process.getParameterList().getComponent(AlarmRecorder.DATABASE_INPUT_PARAM).getData().setStringValue(config.databaseModuleID);
-        process.getParameterList().getComponent(AlarmRecorder.DATASTREAM_INPUT_PARAM).getData().setStringValue(config.datastreamUID);
+        process.getParameterList().getComponent(AlarmRecorder.SYSTEM_INPUT_PARAM).getData().setStringValue(config.systemUID);
 
         process.setParentHub(getParentHub());
         process.notifyParamChange();
@@ -91,9 +113,17 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
         processHelper.addConnection("components/source0/outputs/" + AlarmRecorder.OCCUPANCY_NAME
                 ,"components/process0/inputs/" + AlarmRecorder.OCCUPANCY_NAME);
 
-        for(AbstractSWEIdentifiable output : process.getOutputList()) {
-            DataComponent component = (DataComponent) output;
-            processHelper.addConnection("components/process0/outputs/" + component.getName(), "outputs/" + component.getName());
+        for(AbstractSWEIdentifiable systemOutput : process.getOutputList()) {
+            DataComponent systemComponent = (DataComponent) systemOutput;
+            if(systemComponent.getComponentCount() > 0)
+                processHelper.addConnection("components/process0/outputs/" + systemComponent.getName(),
+                        "outputs/" + systemComponent.getName());
+
+//            for(int i = 0; i < systemComponent.getComponentCount(); i++) {
+//                var output = systemComponent.getComponent(i);
+//                processHelper.addConnection("components/process0/outputs/" + systemComponent.getName() + "/" + output.getName(),
+//                        "outputs/" + systemComponent.getName() + "/" + output.getName());
+//            }
         }
 
         try {
@@ -106,7 +136,7 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
         }
     }
 
-    protected void initChain() throws SensorHubException
+    protected void  initChain() throws SensorHubException
     {
         //useThreads = processDescription.getInputList().isEmpty();
 
