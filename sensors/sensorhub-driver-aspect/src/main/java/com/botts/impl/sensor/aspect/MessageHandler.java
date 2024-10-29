@@ -71,7 +71,7 @@ public class MessageHandler implements Runnable {
             deviceDescriptionRegisters.readRegisters(deviceAddress);
 
 
-            MonitorRegisters monitorRegisters = new MonitorRegisters(tcpMasterConnection, deviceDescriptionRegisters.getMonitorRegistersBaseAddress(), deviceDescriptionRegisters.getMonitorRegistersNumberOfRegisters());
+            MonitorRegisters monitorRegisters = new MonitorRegisters(tcpMasterConnection, 100, 21);
             while (!Thread.currentThread().isInterrupted()) {
                 monitorRegisters.readRegisters(deviceAddress);
 
