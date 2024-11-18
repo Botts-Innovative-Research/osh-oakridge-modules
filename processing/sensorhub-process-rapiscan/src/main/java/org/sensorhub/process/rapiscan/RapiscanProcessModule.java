@@ -3,6 +3,7 @@ package org.sensorhub.process.rapiscan;
 import net.opengis.OgcPropertyList;
 import net.opengis.swe.v20.AbstractSWEIdentifiable;
 import net.opengis.swe.v20.DataComponent;
+import net.opengis.swe.v20.DataEncoding;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
@@ -33,6 +34,7 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
     protected int errorCount = 0;
     protected boolean useThreads = true;
     String processUniqueID;
+    AlarmRecorder alarmProcess;
 
 
     public RapiscanProcessModule()
@@ -95,25 +97,25 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
 
         String datastreamUID = rpmDs.getSystemID().getUniqueID();
 
-        AlarmRecorder process = new AlarmRecorder();
+        this.alarmProcess = new AlarmRecorder();
 
         OshAsserts.checkValidUID(datastreamUID);
 
         processHelper.addDataSource("source0", datastreamUID);
 
-        process.getParameterList().getComponent(AlarmRecorder.SYSTEM_INPUT_PARAM).getData().setStringValue(config.systemUID);
+        alarmProcess.getParameterList().getComponent(AlarmRecorder.SYSTEM_INPUT_PARAM).getData().setStringValue(config.systemUID);
 
-        process.setParentHub(getParentHub());
-        process.notifyParamChange();
+        alarmProcess.setParentHub(getParentHub());
+        alarmProcess.notifyParamChange();
 
-        processHelper.addOutputList(process.getOutputList());
+        processHelper.addOutputList(alarmProcess.getOutputList());
 
-        processHelper.addProcess("process0", process);
+        processHelper.addProcess("process0", alarmProcess);
 
         processHelper.addConnection("components/source0/outputs/" + AlarmRecorder.OCCUPANCY_NAME
                 ,"components/process0/inputs/" + AlarmRecorder.OCCUPANCY_NAME);
 
-        for(AbstractSWEIdentifiable systemOutput : process.getOutputList()) {
+        for(AbstractSWEIdentifiable systemOutput : alarmProcess.getOutputList()) {
             DataComponent systemComponent = (DataComponent) systemOutput;
             if(systemComponent.getComponentCount() > 0)
                 processHelper.addConnection("components/process0/outputs/" + systemComponent.getName(),
@@ -159,7 +161,7 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
         }
 
         // advertise process inputs and outputs
-        refreshIOList(processDescription.getOutputList(), outputs);
+        refreshIOList(processDescription.getOutputList(), outputs, alarmProcess.getOutputEncodingMap());
 
         setState(ModuleEvent.ModuleState.INITIALIZED);
     }
@@ -171,7 +173,7 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
     }
 
 
-    protected void refreshIOList(OgcPropertyList<AbstractSWEIdentifiable> ioList, Map<String, DataComponent> ioMap) throws ProcessingException
+    protected void refreshIOList(OgcPropertyList<AbstractSWEIdentifiable> ioList, Map<String, DataComponent> ioMap, Map<String, DataEncoding> encodingMap) throws ProcessingException
     {
         ioMap.clear();
         if (ioMap == inputs)
@@ -186,6 +188,7 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
             AbstractSWEIdentifiable ioDesc = ioList.get(i);
 
             DataComponent ioComponent = SMLHelper.getIOComponent(ioDesc);
+            DataEncoding ioEncoding = encodingMap.get(ioName);
             ioMap.put(ioName, ioComponent);
 
             if(ioMap == inputs) {
@@ -193,7 +196,7 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
             } else if(ioMap == parameters) {
                 // TODO set control interfaces
             } else if(ioMap == outputs) {
-                outputInterfaces.put(ioName, new RapiscanOutputInterface(this, ioDesc));
+                outputInterfaces.put(ioName, new RapiscanOutputInterface(this, ioDesc, ioEncoding));
             }
         }
     }

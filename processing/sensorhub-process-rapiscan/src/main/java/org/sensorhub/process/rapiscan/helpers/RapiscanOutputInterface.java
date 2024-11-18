@@ -1,9 +1,7 @@
 package org.sensorhub.process.rapiscan.helpers;
 
-import net.opengis.swe.v20.AbstractSWEIdentifiable;
-import net.opengis.swe.v20.DataBlock;
-import net.opengis.swe.v20.DataComponent;
-import net.opengis.swe.v20.DataEncoding;
+import net.opengis.swe.v20.*;
+import org.isotc211.v2005.gco.Binary;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.api.data.IDataProducer;
 import org.sensorhub.api.data.IStreamingDataInterface;
@@ -13,6 +11,8 @@ import org.sensorhub.api.processing.IProcessModule;
 import org.sensorhub.api.processing.ProcessingException;
 import org.sensorhub.impl.event.BasicEventHandler;
 import org.sensorhub.process.rapiscan.RapiscanProcessModule;
+import org.vast.data.BinaryComponentImpl;
+import org.vast.data.BinaryEncodingImpl;
 import org.vast.process.DataQueue;
 import org.vast.process.ProcessException;
 import org.vast.sensorML.SMLHelper;
@@ -60,11 +60,14 @@ public class RapiscanOutputInterface implements IStreamingDataInterface {
     };
 
 
-    public RapiscanOutputInterface(RapiscanProcessModule parentProcess, AbstractSWEIdentifiable outputDescriptor) throws ProcessingException
+    public RapiscanOutputInterface(RapiscanProcessModule parentProcess, AbstractSWEIdentifiable outputDescriptor, DataEncoding encoding) throws ProcessingException
     {
         this.parentProcess = parentProcess;
         this.outputDef = SMLHelper.getIOComponent(outputDescriptor);
         this.outputEncoding = SMLHelper.getIOEncoding(outputDescriptor);
+        if(encoding != null)
+            this.outputEncoding = encoding;
+
         this.eventHandler = new BasicEventHandler();
 
         try
