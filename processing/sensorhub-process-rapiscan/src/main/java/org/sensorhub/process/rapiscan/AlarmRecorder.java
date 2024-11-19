@@ -22,6 +22,9 @@ import java.util.Objects;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
+/**
+ * Executable process that takes system UID as input, and outputs all driver outputs from input system, when occupancy is detected.
+ */
 public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubProcess {
     public static final OSHProcessInfo INFO = new OSHProcessInfo("alarmrecorder", "Alarm data recording process", null, AlarmRecorder.class);
     ISensorHub hub;
@@ -41,6 +44,7 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
 
         fac = new RADHelper();
 
+        // Get latest output names from RADHelper. We should do this for occupancy too, but it's not likely to change.
         gammaAlarmName = fac.createGammaAlarm().getName();
         neutronAlarmName = fac.createNeutronAlarm().getName();
         startTimeName = fac.createOccupancyStartTime().getName();
@@ -55,6 +59,9 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         outputEncodingMap = new HashMap<>();
     }
 
+    /**
+     * Get new system UID input and ensure it has data streams and is connected to a database.
+     */
     @Override
     public void notifyParamChange() {
         super.notifyParamChange();
@@ -62,19 +69,23 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
 
         if(!Objects.equals(inputSystemID, "")) {
             try {
-                Async.waitForCondition(this::checkDatastreamInput, 500, 10000);
+                Async.waitForCondition(this::checkDataStreamInput, 500, 10000);
                 Async.waitForCondition(this::checkDatabaseInput, 500, 10000);
             } catch (TimeoutException e) {
                 if(processInfo == null)
-                    throw new IllegalStateException("RPM datastream " + inputSystemID + " not found", e);
+                    throw new IllegalStateException("RPM data stream " + inputSystemID + " not found", e);
                 else
-                    throw new IllegalStateException("RPM datastream " + inputSystemID + " has no data", e);
+                    throw new IllegalStateException("RPM data stream " + inputSystemID + " has no data", e);
             }
         }
     }
 
-    // Ensure system contains a rapiscan datastream
-    private boolean checkDatastreamInput() {
+    /**
+     * Ensure the input system has an RPM data stream with "occupancy" output.
+     * Also adds process input as "occupancy" output, if exists.
+     * @return true if occupancy output exists
+     */
+    private boolean checkDataStreamInput() {
         // Clear old inputs
         inputData.clear();
 
@@ -101,6 +112,11 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         return !inputData.isEmpty();
     }
 
+    /**
+     * Ensure input system is a member of a database, so we can get historical records.
+     * Also creates process outputs from input system's data stream outputs.
+     * @return true if system has database
+     */
     private boolean checkDatabaseInput() {
         var db = hub.getSystemDriverRegistry().getDatabase(inputSystemID);
         if(db == null)
@@ -119,6 +135,10 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         return !outputData.isEmpty();
     }
 
+    /**
+     * Check if occupancy had gamma or neutron alarm.
+     * @return true if an alarm was triggered during the latest occupancy
+     */
     private boolean isTriggered() {
         DataComponent occupancyInput = inputData.getComponent(OCCUPANCY_NAME);
 
@@ -128,6 +148,11 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         return gammaAlarm.getData().getBooleanValue() || neutronAlarm.getData().getBooleanValue();
     }
 
+    /**
+     * Retrieve past data for the specified process output.
+     * @param fullOutputName process output name in the format "{systemUID}:{outputName}"  (e.g. urn:osh:sensor:testsensor1:myOutput)
+     * @return list of observations for time specified during occupancy startTime and endTime
+     */
     private List<IObsData> getPastData(String fullOutputName) {
         int separator = fullOutputName.lastIndexOf(':');
         String systemUID = fullOutputName.substring(0, separator);
@@ -163,12 +188,15 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         return db.getObservationStore().select(filter).collect(Collectors.toList());
     }
 
+    /**
+     * Executes whenever we receive a new occupancy.
+     * If occupancy has alarm, we retrieve historical records and publish those as process outputs.
+     */
     @Override
-    public void execute() throws ProcessException {
+    public void execute() {
         if(inputSystemID == null) {
             inputSystemID = systemInputParam.getData().getStringValue();
         }
-        // TODO: Use radhelper to get names of occupancy inputs such as start time, end time, alarms
         if(isTriggered()) {
             int size = outputData.size();
             for(int i = 0; i < size; i++) {
@@ -189,13 +217,17 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
         }
     }
 
+    /**
+     * Get the encodings for driver outputs
+     * @return map of <output name, output encoding>
+     */
+    public Map<String, DataEncoding> getOutputEncodingMap() {
+        return outputEncodingMap;
+    }
+
     @Override
     public void setParentHub(ISensorHub hub) {
         this.hub = hub;
-    }
-
-    public Map<String, DataEncoding> getOutputEncodingMap() {
-        return outputEncodingMap;
     }
 
 }

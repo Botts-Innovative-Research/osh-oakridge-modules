@@ -36,11 +36,12 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
     String processUniqueID;
     AlarmRecorder alarmProcess;
 
-
+    /**
+     * Standalone processing module to be recognized by OSH module provider, accessible in the OSH Admin UI.
+     */
     public RapiscanProcessModule()
     {
         wrapperProcess = new AggregateProcessImpl();
-
         wrapperProcess.setUniqueIdentifier(UUID.randomUUID().toString());
         initAsync = true;
     }
@@ -73,6 +74,12 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
         }
     }
 
+    /**
+     * Build SensorML process description via ProcessHelper.
+     * @return process chain implementation to be executed
+     * @throws ProcessException if not able to read process
+     * @throws SensorHubException if no RPM data streams
+     */
     public AggregateProcessImpl buildProcess() throws ProcessException, SensorHubException {
         ProcessHelper processHelper = new ProcessHelper();
         processHelper.getAggregateProcess().setUniqueIdentifier(processUniqueID);
@@ -95,13 +102,13 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
             throw new SensorHubException("Unable to find RPM datastream in system");
         var rpmDs = dsList.get(0);
 
-        String datastreamUID = rpmDs.getSystemID().getUniqueID();
+        String dataStreamUID = rpmDs.getSystemID().getUniqueID();
 
         this.alarmProcess = new AlarmRecorder();
 
-        OshAsserts.checkValidUID(datastreamUID);
+        OshAsserts.checkValidUID(dataStreamUID);
 
-        processHelper.addDataSource("source0", datastreamUID);
+        processHelper.addDataSource("source0", dataStreamUID);
 
         alarmProcess.getParameterList().getComponent(AlarmRecorder.SYSTEM_INPUT_PARAM).getData().setStringValue(config.systemUID);
 
@@ -132,25 +139,17 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
         }
     }
 
-    protected void  initChain() throws SensorHubException
-    {
-        //useThreads = processDescription.getInputList().isEmpty();
-
+    protected void  initChain() throws SensorHubException {
         // make process executable
-        try
-        {
+        try {
             //smlUtils.makeProcessExecutable(wrapperProcess, true);
             wrapperProcess = (AggregateProcessImpl)smlUtils.getExecutableInstance((AggregateProcessImpl)processDescription, useThreads);
             wrapperProcess.setInstanceName("chain");
             wrapperProcess.setParentLogger(getLogger());
             wrapperProcess.init();
-        }
-        catch (SMLException e)
-        {
+        } catch (SMLException e) {
             throw new ProcessingException("Cannot prepare process chain for execution", e);
-        }
-        catch (ProcessException e)
-        {
+        } catch (ProcessException e) {
             throw new ProcessingException(e.getMessage(), e.getCause());
         }
 
@@ -167,8 +166,14 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
     }
 
 
-    protected void refreshIOList(OgcPropertyList<AbstractSWEIdentifiable> ioList, Map<String, DataComponent> ioMap, Map<String, DataEncoding> encodingMap) throws ProcessingException
-    {
+    /**
+     * Add output interface connections
+     * @param ioList list of all process components
+     * @param ioMap map of all inputs/outputs
+     * @param encodingMap map of data encodings
+     * @throws ProcessingException if unable to get IO component
+     */
+    protected void refreshIOList(OgcPropertyList<AbstractSWEIdentifiable> ioList, Map<String, DataComponent> ioMap, Map<String, DataEncoding> encodingMap) throws ProcessingException {
         ioMap.clear();
         if (ioMap == inputs)
             controlInterfaces.clear();
@@ -195,7 +200,10 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
         }
     }
 
-
+    /**
+     * Begin processing chain
+     * @throws SensorHubException if unable to start process or invalid process
+     */
     @Override
     protected void doStart() throws SensorHubException
     {
