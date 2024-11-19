@@ -64,9 +64,10 @@ public class RapiscanOutputInterface implements IStreamingDataInterface {
     {
         this.parentProcess = parentProcess;
         this.outputDef = SMLHelper.getIOComponent(outputDescriptor);
-        this.outputEncoding = SMLHelper.getIOEncoding(outputDescriptor);
         if(encoding != null)
             this.outputEncoding = encoding;
+        else
+            this.outputEncoding = SMLHelper.getIOEncoding(outputDescriptor);
 
         this.eventHandler = new BasicEventHandler();
 

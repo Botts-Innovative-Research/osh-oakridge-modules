@@ -120,12 +120,6 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
             if(systemComponent.getComponentCount() > 0)
                 processHelper.addConnection("components/process0/outputs/" + systemComponent.getName(),
                         "outputs/" + systemComponent.getName());
-
-//            for(int i = 0; i < systemComponent.getComponentCount(); i++) {
-//                var output = systemComponent.getComponent(i);
-//                processHelper.addConnection("components/process0/outputs/" + systemComponent.getName() + "/" + output.getName(),
-//                        "outputs/" + systemComponent.getName() + "/" + output.getName());
-//            }
         }
 
         try {
