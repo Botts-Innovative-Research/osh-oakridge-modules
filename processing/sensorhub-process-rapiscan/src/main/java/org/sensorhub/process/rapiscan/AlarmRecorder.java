@@ -15,7 +15,9 @@ import org.vast.process.ProcessException;
 import org.vast.swe.SWEHelper;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
@@ -32,6 +34,7 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
     private final String startTimeName;
     private final String endTimeName;
     private final RADHelper fac;
+    private Map<String, DataEncoding> outputEncodingMap;
 
     public AlarmRecorder() {
         super(INFO);
@@ -49,7 +52,7 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
                 .definition(SWEHelper.getPropertyUri("System"))
                 .value("")
                 .build());
-
+        outputEncodingMap = new HashMap<>();
     }
 
     @Override
@@ -107,7 +110,10 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
 
         db.getDataStreamStore().values().forEach(ds -> {
             var struct = ds.getRecordStructure().clone();
-            outputData.add(ds.getSystemID().getUniqueID() + ":" + ds.getOutputName(), struct);
+            var encoding = ds.getRecordEncoding();
+            String fullOutputName = ds.getSystemID().getUniqueID() + ":" + ds.getOutputName();
+            outputData.add(fullOutputName, struct);
+            outputEncodingMap.put(fullOutputName, encoding);
         });
 
         return !outputData.isEmpty();
@@ -187,4 +193,9 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
     public void setParentHub(ISensorHub hub) {
         this.hub = hub;
     }
+
+    public Map<String, DataEncoding> getOutputEncodingMap() {
+        return outputEncodingMap;
+    }
+
 }
