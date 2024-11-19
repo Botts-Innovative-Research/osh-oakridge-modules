@@ -28,7 +28,9 @@ public class RapiscanOutputInterface implements IStreamingDataInterface {
     double avgSamplingPeriod = 1.0;
     int avgSampleCount = 0;
 
-
+    /**
+     * Output queue used to publish process outputs as data events
+     */
     protected DataQueue outputQueue = new DataQueue()
     {
         @Override
@@ -59,7 +61,13 @@ public class RapiscanOutputInterface implements IStreamingDataInterface {
         }
     };
 
-
+    /**
+     * Output interface to facilitate connection between process outputs and output queue
+     * @param parentProcess OSH process module
+     * @param outputDescriptor output to connect to data queue
+     * @param encoding data encoding retrieved from data stream info
+     * @throws ProcessingException if unable to connect output and process
+     */
     public RapiscanOutputInterface(RapiscanProcessModule parentProcess, AbstractSWEIdentifiable outputDescriptor, DataEncoding encoding) throws ProcessingException
     {
         this.parentProcess = parentProcess;

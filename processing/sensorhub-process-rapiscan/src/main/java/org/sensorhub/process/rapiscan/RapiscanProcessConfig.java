@@ -18,5 +18,4 @@ public class RapiscanProcessConfig extends ProcessConfig {
     @DisplayInfo(label = "Parent System (Containing RPM)", desc = "Parent system to read occupancy data from subsystem RPM")
     public String systemUID;
 
-
 }
