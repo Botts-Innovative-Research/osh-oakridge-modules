@@ -174,11 +174,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
         if (commProviderModule == null) {
 
             // we need to recreate comm provider here because it can be changed by UI
-            try {
-                tryConnection();
-            } catch (Exception e) {
-                throw new SensorException("error during  start of Sensor: {}", e);
-            }
+            tryConnection();
         }
     }
 
@@ -203,16 +199,17 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
 
                 // added check to stop module if comm module is not started
                 if(!commProviderModule.isStarted())
-                    throw new SensorHubException("Comm Provider failed to start. Check IP Address and try again." );
+                    throw new SensorHubException("Comm Provider failed to start. Check communication settings.");
 
                 // Connect to input stream
                 InputStream msgIn = new BufferedInputStream(commProviderModule.getInputStream());
                 messageHandler = new MessageHandler(msgIn, this);
-            } catch (Exception e) {
+
+            } catch (SensorHubException | IOException e ) {
                 commProviderModule.stop();
                 commProviderModule = null;
                 messageHandler = null;
-                throw new SensorHubException("error during  start of Sensor: {}", e);
+                throw new SensorHubException("Error initializing sensor during start: ", e);
             }
         }
     }
@@ -223,7 +220,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
             try {
                 isRunning = false;
                 commProviderModule.stop();
-                this.stop();
             } catch (Exception e) {
                 logger.error("Uncaught exception attempting to stop comm module", e);
             } finally {
