@@ -14,18 +14,15 @@
 package com.botts.impl.sensor.rapiscan;
 
 import com.botts.impl.sensor.rapiscan.control.AdjudicationControl;
-import com.botts.impl.sensor.rapiscan.eml.*;
+import com.botts.impl.sensor.rapiscan.eml.EMLService;
 import com.botts.impl.sensor.rapiscan.eml.outputs.EMLAnalysisOutput;
 import com.botts.impl.sensor.rapiscan.eml.outputs.EMLContextualOutput;
 import com.botts.impl.sensor.rapiscan.eml.outputs.EMLScanContextualOutput;
-import com.botts.impl.sensor.rapiscan.output.GammaThresholdOutput;
 import com.botts.impl.sensor.rapiscan.output.*;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.module.ModuleEvent;
-import org.sensorhub.api.sensor.SensorException;
-import org.sensorhub.impl.SensorHub;
-import org.sensorhub.impl.comm.TCPCommProvider;
+import org.sensorhub.impl.comm.RobustIPConnection;
+import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,7 +38,7 @@ import java.io.InputStream;
  * @author Drew Botts
  * @since Oct 16, 2023
  */
-public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> implements Runnable {
+public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> implements Runnable{
 
     private static final Logger logger = LoggerFactory.getLogger(RapiscanSensor.class);
 
@@ -70,15 +67,18 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
     private EMLScanContextualOutput emlScanContextualOutput;
     private EMLContextualOutput emlContextualOutput;
 
-    private Thread tcpConnectionThread;
+    RobustConnection connection;
     private boolean isRunning;
-
-    private long reconnectAttempts;
-    private long count = 0;
+    private Thread tcpConnectionThread;
 
     @Override
     public void doInit() throws SensorHubException {
         super.doInit();
+
+
+        tryConnection();
+
+
 
         // Generate identifiers
         generateUniqueID("urn:osh:sensor:rapiscan:", config.serialNumber);
@@ -99,6 +99,49 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
             // Register EMLService as a listener to SetupGammaOutput
             setupGammaOutput.registerListener(emlService);
         }
+    }
+
+
+    public void tryConnection() throws SensorHubException {
+        logger.debug("Attempting to connect to RPM...");
+        connection = new RobustIPConnection(this, config.commSettings.connection, "Rapiscan Portal Monitor") {
+
+            @Override
+            public boolean tryConnect() throws IOException {
+
+                try {
+                    if (config.commSettings == null)
+                        throw new SensorHubException("No communication settings specified");
+
+                    var moduleReg = getParentHub().getModuleRegistry();
+
+                    commProviderModule = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
+                    commProviderModule.start();
+
+                    // added check to stop module if comm module is not started
+                    if(!commProviderModule.isStarted())
+                        throw new SensorHubException("Comm Provider failed to start. Check communication settings.");
+
+                    return true;
+
+                } catch (SensorHubException e) {
+                    reportError("Cannot connect to Rapiscan Portal Monitor", e , true);
+                    return false;
+                }
+            }
+        };
+        connection.waitForConnection();
+    }
+
+
+    public void initMsgHandler() throws SensorHubException, IOException{
+        if(commProviderModule == null || !commProviderModule.isStarted()){
+            throw new SensorHubException("Comm provider is not initialized or not started");
+        }
+
+        // Connect to input stream
+        InputStream msgIn = new BufferedInputStream(commProviderModule.getInputStream());
+        messageHandler = new MessageHandler(msgIn, this);
     }
 
     public void createEMLOutputs(){
@@ -168,15 +211,17 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
 
     @Override
     protected void doStart() throws SensorHubException {
-        reconnectAttempts = config.commSettings.connection.reconnectAttempts;
 
-        // Initialize comm provider
-        if (commProviderModule == null) {
+        connection.waitForConnection();
 
-            // we need to recreate comm provider here because it can be changed by UI
-            tryConnection();
+        try{
+            initMsgHandler();
+        }catch(IOException e){
+            throw new SensorHubException("Error initializing message handler ", e);
         }
+
     }
+
 
     @Override
     protected void afterStart() {
@@ -186,82 +231,32 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
         tcpConnectionThread.start();
     }
 
-    public void tryConnection() throws SensorHubException {
-        synchronized (this) {
-            try {
-                if (config.commSettings == null)
-                    throw new SensorHubException("No communication settings specified");
+    @Override
+    public boolean isConnected(){
+        if(connection == null) return false;
 
-                var moduleReg = getParentHub().getModuleRegistry();
-
-                commProviderModule = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
-                commProviderModule.start();
-
-                // added check to stop module if comm module is not started
-                if(!commProviderModule.isStarted())
-                    throw new SensorHubException("Comm Provider failed to start. Check communication settings.");
-
-                // Connect to input stream
-                InputStream msgIn = new BufferedInputStream(commProviderModule.getInputStream());
-                messageHandler = new MessageHandler(msgIn, this);
-
-            } catch (SensorHubException | IOException e ) {
-                commProviderModule.stop();
-                commProviderModule = null;
-                messageHandler = null;
-                throw new SensorHubException("Error initializing sensor during start: ", e);
-            }
-        }
+        return connection.isConnected();
     }
 
     @Override
     public void doStop() {
+        isRunning = false;
+        if(connection != null) connection.cancel();
+
         if (commProviderModule != null) {
             try {
-                isRunning = false;
                 commProviderModule.stop();
             } catch (Exception e) {
                 logger.error("Uncaught exception attempting to stop comm module", e);
             } finally {
                 commProviderModule = null;
-                messageHandler = null;
+
             }
         }
+        messageHandler = null;
+
     }
 
-    @Override
-    public boolean isConnected() {
-        return commProviderModule != null && commProviderModule.isStarted();
-    }
-
-    // Heartbeat connection retry
-    @Override
-    public void run() {
-        synchronized (this) {
-            while (isRunning) {
-                if(messageHandler.getTimeSinceLastMessage() < config.commSettings.connection.reconnectPeriod) {
-//                    getLogger().debug("TCP currently connected");
-                    this.connectionStatusOutput.onNewMessage(true);
-                }
-                else {
-//                    try {
-//                        // TODO: Retry connection after it gets dropped
-//                        stop();
-//                        reportError("Connection dropped", new SensorHubException("Rapiscan connection not received after " + config.commSettings.connection.reconnectPeriod/1000 + " seconds"));
-//                    } catch (SensorHubException e) {
-//                        throw new RuntimeException(e);
-//                    }
-                    this.connectionStatusOutput.onNewMessage(false);
-//                    getLogger().debug("TCP disconnected");
-                }
-                try {
-                    Thread.sleep(1000);
-                } catch (Exception e) {
-                    logger.debug("Couldn't sleep");
-                }
-            }
-        }
-    }
 
     @Override
     public synchronized void updateConfig(RapiscanConfig config) throws SensorHubException {
@@ -322,4 +317,34 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
         return dailyFileOutput;
     }
 
+    @Override
+    public void run() {
+        synchronized (this) {
+            while (isRunning) {
+                if(messageHandler.getTimeSinceLastMessage() < config.commSettings.connection.reconnectPeriod) {
+                    this.connectionStatusOutput.onNewMessage(true);
+                }
+                else {
+                    // TODO: Retry connection after it gets dropped
+                    this.connectionStatusOutput.onNewMessage(false);
+                    connection.cancel();
+
+                    if(!connection.isConnected() || connection == null){
+                        System.out.println("Connection to RPM lost. Attempting to reconnect...");
+
+                        connection.reconnect();
+//                            tryConnection();
+                    }
+
+
+//                    getLogger().debug("TCP disconnected");
+                }
+                try {
+                    Thread.sleep(1000);
+                } catch (Exception e) {
+                    logger.debug("Couldn't sleep");
+                }
+            }
+        }
+    }
 }
