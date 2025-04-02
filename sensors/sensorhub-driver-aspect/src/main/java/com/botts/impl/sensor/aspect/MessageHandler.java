@@ -19,14 +19,9 @@ import static java.lang.Thread.sleep;
  * @author Michael Elmore
  * @since December 2023
  */
-public class MessageHandler implements Runnable {
+public class MessageHandler {
+    private final AspectSensor parentSensor;
     private static final Logger log = LoggerFactory.getLogger(MessageHandler.class);
-    private final TCPMasterConnection tcpMasterConnection;
-    private final GammaOutput gammaOutput;
-    private final NeutronOutput neutronOutput;
-    private final OccupancyOutput occupancyOutput;
-    private final SpeedOutput speedOutput;
-    private final DailyFileOutput dailyFileOutput;
     Thread thread;
 
     int occupancyCount = -1;
@@ -41,60 +36,62 @@ public class MessageHandler implements Runnable {
     int maxGamma = 0;
     int deviceAddress = -1;
 
-    public MessageHandler(TCPMasterConnection tcpMasterConnection, GammaOutput gammaOutput, NeutronOutput neutronOutput, OccupancyOutput occupancyOutput, SpeedOutput speedOutput, DailyFileOutput dailyFileOutput, int deviceAddress) {
-        this.tcpMasterConnection = tcpMasterConnection;
-        this.gammaOutput = gammaOutput;
-        this.neutronOutput = neutronOutput;
-        this.occupancyOutput = occupancyOutput;
-        this.speedOutput = speedOutput;
-        this.dailyFileOutput = dailyFileOutput;
+    private long timeSinceLastMessage;
+
+    public long getTimeSinceLastMessage() {
+        long now = System.currentTimeMillis();
+        return (now - timeSinceLastMessage);
+    }
+
+    public MessageHandler(AspectSensor parentSensor, int deviceAddress) {
+        this.parentSensor = parentSensor;
         this.deviceAddress = deviceAddress;
 
         occupancyGammaBatch = new LinkedList<>();
         occupancyNeutronBatch = new LinkedList<>();
 
-        thread = new Thread(this, "Message Handler");
-    }
+        timeSinceLastMessage = System.currentTimeMillis();
 
-    public void start() {
-        thread.start();
-    }
+//        thread = new Thread(this, "Message Handler");
 
-    public void stop() {
-        thread.interrupt();
-    }
+        Thread msgReader = new Thread(()->{
 
-    @Override
-    public void run() {
-        try {
-            DeviceDescriptionRegisters deviceDescriptionRegisters = new DeviceDescriptionRegisters(tcpMasterConnection);
-            deviceDescriptionRegisters.readRegisters(deviceAddress);
+            try {
+                DeviceDescriptionRegisters deviceDescriptionRegisters = new DeviceDescriptionRegisters(parentSensor.commProviderModule.getConnection());
+                deviceDescriptionRegisters.readRegisters(deviceAddress);
 
 
-            MonitorRegisters monitorRegisters = new MonitorRegisters(tcpMasterConnection, 100, 21);
-            while (!Thread.currentThread().isInterrupted()) {
-                monitorRegisters.readRegisters(deviceAddress);
+                MonitorRegisters monitorRegisters = new MonitorRegisters(parentSensor.commProviderModule.getConnection(), 100, 21);
+                while (!Thread.currentThread().isInterrupted()) {
+                    monitorRegisters.readRegisters(deviceAddress);
 
-                double timestamp = System.currentTimeMillis() / 1000d;
-                dailyFileOutput.getDailyFile(monitorRegisters);
-                dailyFileOutput.onNewMessage();
+                    double timestamp = System.currentTimeMillis() / 1000d;
 
-                gammaOutput.setData(monitorRegisters, timestamp);
-                neutronOutput.setData(monitorRegisters, timestamp);
-                speedOutput.setData(monitorRegisters, timestamp);
+                    parentSensor.dailyFileOutput.getDailyFile(monitorRegisters);
+                    parentSensor.dailyFileOutput.onNewMessage();
+
+                    parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
+                    parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
+                    parentSensor.speedOutput.setData(monitorRegisters, timestamp);
 
 
-                if (checkOccupancyRecord(monitorRegisters, timestamp)) {
-                    occupancyOutput.setData(monitorRegisters, timestamp, startTime, endTime, gammaAlarm, neutronAlarm, maxGamma, maxNeutron);
+                    if (checkOccupancyRecord(monitorRegisters, timestamp)) {
+                        parentSensor.occupancyOutput.setData(monitorRegisters, timestamp, startTime, endTime, gammaAlarm, neutronAlarm, maxGamma, maxNeutron);
+                    }
+
                 }
-                sleep(500);
+            } catch (Exception e) {
+                StringWriter stringWriter = new StringWriter();
+                e.printStackTrace(new PrintWriter(stringWriter));
+                log.error("Error in worker thread: {} due to exception: {}", Thread.currentThread().getName(), stringWriter);
             }
-        } catch (Exception e) {
-            StringWriter stringWriter = new StringWriter();
-            e.printStackTrace(new PrintWriter(stringWriter));
-            log.error("Error in worker thread: {} due to exception: {}", Thread.currentThread().getName(), stringWriter);
-        }
+
+        });
+        msgReader.start();
     }
+
+
+
 
     /**
      * Checks whether to write the occupancy record and sets the start time, end time, and alarm flags

@@ -5,6 +5,7 @@ import org.sensorhub.api.comm.ICommNetwork;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.config.DisplayInfo.Required;
 import org.sensorhub.api.config.DisplayInfo.ValueRange;
+import org.sensorhub.impl.comm.RobustIPConnectionConfig;
 
 /**
  * Driver configuration options for the Modbus TCP/IP network protocol
@@ -24,19 +25,23 @@ public class ModbusTCPConfig implements ICommConfig {
     @Required
     public int remotePort = 502;
 
-    @DisplayInfo(desc = "How many attempts to retry connection to Modbus Gateway")
-    @ValueRange(max = 1000)
-    @Required
-    public int retryAttempts = 50;
+//    @DisplayInfo(desc = "How many attempts to retry connection to Modbus Gateway")
+//    @ValueRange(max = 1000)
+//    @Required
+//    public int retryAttempts = 50;
+//
+//    @DisplayInfo(desc = "How much time between attempts to retry connection to Modbus Gateway")
+//    @ValueRange(max = 10000000)
+//    @Required
+//    public int retryDelay = 1000;
+//
+//    @DisplayInfo(label = "Connection Timeout", desc = "Timeout before retrying connection")
+//    @Required
+//    public int connectionTimeout = 5000;
 
-    @DisplayInfo(desc = "How much time between attempts to retry connection to Modbus Gateway")
-    @ValueRange(max = 10000000)
-    @Required
-    public int retryDelay = 1000;
+    @DisplayInfo(label="Connection Options")
+    public RobustIPConnectionConfig connection = new RobustIPConnectionConfig();
 
-    @DisplayInfo(label = "Connection Timeout", desc = "Timeout before retrying connection")
-    @Required
-    public int connectionTimeout = 5000;
 
     @DisplayInfo(label = "Find device within address range")
     @Required

@@ -75,10 +75,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
     public void doInit() throws SensorHubException {
         super.doInit();
 
-
         tryConnection();
-
-
 
         // Generate identifiers
         generateUniqueID("urn:osh:sensor:rapiscan:", config.serialNumber);
@@ -104,14 +101,13 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
 
     public void tryConnection() throws SensorHubException {
         logger.debug("Attempting to connect to RPM...");
-        connection = new RobustIPConnection(this, config.commSettings.connection, "Rapiscan Portal Monitor") {
+        connection = new RobustIPConnection(this, config.commSettings.connection, "Radiation Portal Monitor - Rapiscan") {
 
             @Override
             public boolean tryConnect() throws IOException {
 
                 try {
-                    if (config.commSettings == null)
-                        throw new SensorHubException("No communication settings specified");
+                    if (config.commSettings == null) throw new SensorHubException("No communication settings specified");
 
                     var moduleReg = getParentHub().getModuleRegistry();
 
@@ -119,13 +115,12 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
                     commProviderModule.start();
 
                     // added check to stop module if comm module is not started
-                    if(!commProviderModule.isStarted())
-                        throw new SensorHubException("Comm Provider failed to start. Check communication settings.");
+                    if(!commProviderModule.isStarted()) throw new SensorHubException("Comm Provider failed to start. Check communication settings.");
 
                     return true;
 
                 } catch (SensorHubException e) {
-                    reportError("Cannot connect to Rapiscan Portal Monitor", e , true);
+                    reportError("Cannot connect to Rapiscan Radiation Portal Monitor", e , true);
                     return false;
                 }
             }
@@ -135,9 +130,9 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
 
 
     public void initMsgHandler() throws SensorHubException, IOException{
-        if(commProviderModule == null || !commProviderModule.isStarted()){
-            throw new SensorHubException("Comm provider is not initialized or not started");
-        }
+//        if(commProviderModule == null || !commProviderModule.isStarted()){
+//            throw new SensorHubException("Comm provider is not initialized or not started");
+//        }
 
         // Connect to input stream
         InputStream msgIn = new BufferedInputStream(commProviderModule.getInputStream());
@@ -317,32 +312,40 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
         return dailyFileOutput;
     }
 
+    public ConnectionStatusOutput getConnectionStatusOutput() {return connectionStatusOutput;}
+
     @Override
     public void run() {
+        long waitPeriod = -1;
+
         synchronized (this) {
             while (isRunning) {
-                if(messageHandler.getTimeSinceLastMessage() < config.commSettings.connection.reconnectPeriod) {
-                    this.connectionStatusOutput.onNewMessage(true);
-                }
-                else {
-                    // TODO: Retry connection after it gets dropped
-                    this.connectionStatusOutput.onNewMessage(false);
-                    connection.cancel();
+                try{
+                    long timeSinceMsg = messageHandler.getTimeSinceLastMessage();
+                    boolean isReceivingMsg = timeSinceMsg < config.commSettings.connection.reconnectPeriod;
 
-                    if(!connection.isConnected() || connection == null){
-                        System.out.println("Connection to RPM lost. Attempting to reconnect...");
+                    if(isReceivingMsg) {
+                        this.connectionStatusOutput.onNewMessage(true);
+                        waitPeriod = -1;
+                    }
+                    else {
+                        this.connectionStatusOutput.onNewMessage(false);
 
-                        connection.reconnect();
-//                            tryConnection();
+                        if(waitPeriod == -1) waitPeriod = System.currentTimeMillis();
+
+                        long timeDisconnected = System.currentTimeMillis() - waitPeriod;
+
+                        if(timeDisconnected > 5000){
+                            connection.cancel();
+                            connection.reconnect();
+                            waitPeriod = -1;
+                        }
                     }
 
-
-//                    getLogger().debug("TCP disconnected");
-                }
-                try {
                     Thread.sleep(1000);
+
                 } catch (Exception e) {
-                    logger.debug("Couldn't sleep");
+                    logger.debug("Error during connection check, "+ e);
                 }
             }
         }

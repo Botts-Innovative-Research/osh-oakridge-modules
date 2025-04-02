@@ -17,11 +17,14 @@ import com.botts.impl.sensor.aspect.comm.IModbusTCPCommProvider;
 import com.botts.impl.sensor.aspect.control.AdjudicationControl;
 import com.botts.impl.sensor.aspect.output.*;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
+import com.ghgande.j2mod.modbus.ModbusException;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.net.ConnectException;
 
 /**
@@ -31,10 +34,13 @@ import java.net.ConnectException;
  * @author Michael Elmore
  * @since December 2023
  */
-public class AspectSensor extends AbstractSensorModule<AspectConfig> {
+public class AspectSensor extends AbstractSensorModule<AspectConfig> implements Runnable{
     private static final Logger log = LoggerFactory.getLogger(AspectSensor.class);
-    IModbusTCPCommProvider<?> commProvider;
+
+    IModbusTCPCommProvider<?> commProviderModule;
+
     MessageHandler messageHandler;
+
     GammaOutput gammaOutput;
     NeutronOutput neutronOutput;
     OccupancyOutput occupancyOutput;
@@ -42,13 +48,21 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     SensorLocationOutput sensorLocationOutput;
     DailyFileOutput dailyFileOutput;
     AdjudicationControl adjudicationControl;
+    ConnectionStatusOutput connectionStatusOutput;
+
     public int laneID;
     public int primaryDeviceAddress = -1;
-//    String laneName;
+
+    RobustConnection connection;
+    private boolean isRunning;
+    private Thread tcpConnectionThread;
 
     @Override
     public void doInit() throws SensorHubException {
         super.doInit();
+
+        // connect to aspect rpm
+        tryConnection();
 
         // Generate identifiers
         generateUniqueID("urn:osh:sensor:aspect:", config.serialNumber);
@@ -56,6 +70,11 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
 
         laneID = config.laneId;
 
+        // add outputs
+        createOutputs();
+    }
+
+    public void createOutputs(){
         // Initialize outputs
         gammaOutput = new GammaOutput(this);
         addOutput(gammaOutput, false);
@@ -80,83 +99,174 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         addOutput(dailyFileOutput, false);
         dailyFileOutput.init();
 
+        connectionStatusOutput = new ConnectionStatusOutput(this);
+        addOutput(connectionStatusOutput, false);
+        connectionStatusOutput.init();
+
         adjudicationControl = new AdjudicationControl(this);
         addControlInput(adjudicationControl);
         adjudicationControl.init();
+
+
+    }
+
+    public void tryConnection() throws SensorHubException {
+
+        connection = new RobustConnection(this, config.commSettings.protocol.connection, "Radiation Portal Monitor - Aspect") {
+            @Override
+            public boolean tryConnect() throws IOException {
+                try {
+                    if(config.commSettings == null) throw new SensorHubException("No communication settings specified");
+
+                    var moduleReg = getParentHub().getModuleRegistry();
+
+                    commProviderModule = (IModbusTCPCommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
+                    commProviderModule.start();
+
+                    if(!commProviderModule.isStarted()) throw new SensorHubException("Comm Provider failed to start. Check communication settings.");
+
+                    return true;
+                } catch (SensorHubException e) {
+
+                    reportError("Cannot connect to Aspect Radiation Portal Monitor", e , true);
+                    return false;
+                }
+            }
+
+        };
+        connection.waitForConnection();
+    }
+
+
+    public void initMsgHandler() throws SensorHubException, IOException{
+//        if(commProviderModule == null || !commProviderModule.isStarted()){
+//            throw new SensorHubException("Comm provider is not initialized or not started");
+//        }
+
+        var deviceDescriptionRegisters = new DeviceDescriptionRegisters(commProviderModule.getConnection());
+        getLogger().info("Attempting device search...");
+        for(int i = config.commSettings.protocol.addressRange.from; i < config.commSettings.protocol.addressRange.to; i++) {
+            try{
+                getLogger().info("Scanning for devices. Current address: #{}", i);
+                deviceDescriptionRegisters.readRegisters(i);
+                primaryDeviceAddress = i;
+                getLogger().info("Found device at address #" + i);
+                break;
+            } catch (Exception e) {
+                if(primaryDeviceAddress != -1 || i == config.commSettings.protocol.addressRange.to)
+                    throw new ConnectException("No devices found");
+            }
+        }
+
+        try {
+            deviceDescriptionRegisters.readRegisters(primaryDeviceAddress);
+        } catch (ModbusException e) {
+            throw new RuntimeException(e);
+        }
+
+        // Start message handler
+        messageHandler = new MessageHandler(this, primaryDeviceAddress);
     }
 
     @Override
     protected void doStart() throws SensorHubException {
-        // Initialize comm provider
-        if (commProvider == null) {
-            // We need to recreate comm provider here because it can be changed by UI
-            try {
-                if (config.commSettings == null)
-                    throw new SensorHubException("No communication settings specified");
 
-                var moduleReg = getParentHub().getModuleRegistry();
+        connection.waitForConnection();
 
-                var commModule = moduleReg.loadSubModule(config.commSettings, true);
-                if (!(commModule instanceof IModbusTCPCommProvider<?>))
-                    throw new SensorHubException("Please select the Modbus TCP communication module.");
-
-                commProvider = (IModbusTCPCommProvider<?>) commModule;
-                commProvider.start();
-
-                var connection = commProvider.getConnection();
-                var deviceDescriptionRegisters = new DeviceDescriptionRegisters(connection);
-
-                getLogger().info("Attempting device search...");
-
-                for(int i = config.commSettings.protocol.addressRange.from; i < config.commSettings.protocol.addressRange.to; i++) {
-                    try{
-                        getLogger().info("Scanning for devices. Current address: #{}", i);
-                        deviceDescriptionRegisters.readRegisters(i);
-                        primaryDeviceAddress = i;
-                        getLogger().info("Found device at address #" + i);
-                        break;
-                    } catch (Exception e) {
-                        if(primaryDeviceAddress != -1 || i == config.commSettings.protocol.addressRange.to)
-                            throw new ConnectException("No devices found");
-                    }
-                }
-
-                deviceDescriptionRegisters.readRegisters(primaryDeviceAddress);
-            } catch (Exception e) {
-                commProvider = null;
-                throw new SensorHubException("Error while initializing communications ", e);
-            }
+        try{
+            initMsgHandler();
+        } catch (IOException e) {
+            throw new SensorHubException("Error initializing message handler ", e);
         }
 
-        // Start message handler
-        messageHandler = new MessageHandler(commProvider.getConnection(), gammaOutput, neutronOutput, occupancyOutput, speedOutput, dailyFileOutput, primaryDeviceAddress);
-        messageHandler.start();
+    }
+
+    @Override
+    protected void afterStart() {
+        // Begin heartbeat check
+        tcpConnectionThread = new Thread(this);
+        isRunning = true;
+        tcpConnectionThread.start();
     }
 
     @Override
     public void doStop() {
-        if (commProvider != null) {
+        if (commProviderModule != null) {
             try {
-                commProvider.stop();
+                commProviderModule.stop();
             } catch (Exception e) {
                 log.error("Uncaught exception attempting to stop comm module", e);
             } finally {
-                commProvider = null;
+                commProviderModule = null;
             }
         }
 
         if (messageHandler != null) {
-            messageHandler.stop();
             messageHandler = null;
         }
     }
 
+
     @Override
-    public boolean isConnected() {
-        if (commProvider == null) {
-            return false;
-        } else {
-            return commProvider.isStarted();
+    public boolean isConnected(){
+        if(connection == null) return false;
+
+        return connection.isConnected();
+    }
+
+    public ConnectionStatusOutput getConnectionStatusOutput() {return connectionStatusOutput;}
+    public DailyFileOutput getDailyFileOutput() {
+        return dailyFileOutput;
+    }
+    public GammaOutput getGammaOutput() {
+        return gammaOutput;
+    }
+    public NeutronOutput getNeutronOutput() {
+        return neutronOutput;
+    }
+    public OccupancyOutput getOccupancyOutput() {
+        return occupancyOutput;
+    }
+    public SpeedOutput getSpeedOutput() {
+        return speedOutput;
+    }
+
+
+    @Override
+    public void run() {
+
+        long waitPeriod = -1;
+        synchronized (this) {
+            while (isRunning) {
+                try{
+                    long timeSinceMsg = messageHandler.getTimeSinceLastMessage();
+
+                    boolean isReceivingMsg = timeSinceMsg < config.commSettings.protocol.connection.reconnectPeriod;
+                    if(isReceivingMsg){
+                        this.connectionStatusOutput.onNewMessage(true);
+                        waitPeriod = -1;
+                    }
+                    else {
+                        this.connectionStatusOutput.onNewMessage(false);
+
+                        if(waitPeriod == -1) waitPeriod = System.currentTimeMillis();
+
+                        long timeDisconnected = System.currentTimeMillis() - waitPeriod;
+
+                        if(timeDisconnected > 5000){
+                            connection.cancel();
+                            connection.reconnect();
+                            waitPeriod = -1;
+                        }
+                    }
+
+                    Thread.sleep(1000);
+                }catch(Exception e){
+                    log.debug("Error during connection check, "+ e);
+                }
+
+            }
         }
     }
+
 }
