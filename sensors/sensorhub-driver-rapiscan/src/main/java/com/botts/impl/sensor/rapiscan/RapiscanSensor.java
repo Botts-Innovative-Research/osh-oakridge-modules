@@ -101,20 +101,22 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
 
     public void tryConnection() throws SensorHubException {
         logger.debug("Attempting to connect to RPM...");
+
+        if (config.commSettings == null) throw new SensorHubException("No communication settings specified");
+
         connection = new RobustIPConnection(this, config.commSettings.connection, "Radiation Portal Monitor - Rapiscan") {
 
             @Override
             public boolean tryConnect() throws IOException {
 
                 try {
-                    if (config.commSettings == null) throw new SensorHubException("No communication settings specified");
-
                     var moduleReg = getParentHub().getModuleRegistry();
 
                     commProviderModule = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
                     commProviderModule.start();
 
-                    // added check to stop module if comm module is not started
+//                    if(!isConnected()) throw new SensorHubException("Comm Provider failed to start. Check communication settings.");
+//                     added check to stop module if comm module is not started
                     if(!commProviderModule.isStarted()) throw new SensorHubException("Comm Provider failed to start. Check communication settings.");
 
                     return true;
@@ -350,4 +352,33 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
             }
         }
     }
+//    public void run() {
+//
+//        synchronized (this) {
+//            while (isRunning) {
+//                try{
+//                    long timeSinceMsg = messageHandler.getTimeSinceLastMessage();
+//                    boolean isReceivingMsg = timeSinceMsg < config.commSettings.connection.reconnectPeriod;
+//
+//                    if(isReceivingMsg) {
+//                        this.connectionStatusOutput.onNewMessage(true);
+//
+//                    }
+//                    else {
+//                        this.connectionStatusOutput.onNewMessage(false);
+//
+//                        connection.cancel();
+//                        connection.reconnect();
+//                    }
+//
+//                    Thread.sleep(1000);
+//
+//                } catch (Exception e) {
+//                    logger.debug("Error during connection check, "+ e);
+//                }
+//            }
+//        }
+//    }
 }
+
+
