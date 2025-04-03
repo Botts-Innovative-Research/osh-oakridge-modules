@@ -337,7 +337,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
 
                         long timeDisconnected = System.currentTimeMillis() - waitPeriod;
 
-                        if(timeDisconnected > 5000){
+                        if(timeDisconnected > 5000){ //config.commSettings.connection.connectTimeout
                             connection.cancel();
                             connection.reconnect();
                             waitPeriod = -1;
@@ -352,33 +352,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
             }
         }
     }
-//    public void run() {
-//
-//        synchronized (this) {
-//            while (isRunning) {
-//                try{
-//                    long timeSinceMsg = messageHandler.getTimeSinceLastMessage();
-//                    boolean isReceivingMsg = timeSinceMsg < config.commSettings.connection.reconnectPeriod;
-//
-//                    if(isReceivingMsg) {
-//                        this.connectionStatusOutput.onNewMessage(true);
-//
-//                    }
-//                    else {
-//                        this.connectionStatusOutput.onNewMessage(false);
-//
-//                        connection.cancel();
-//                        connection.reconnect();
-//                    }
-//
-//                    Thread.sleep(1000);
-//
-//                } catch (Exception e) {
-//                    logger.debug("Error during connection check, "+ e);
-//                }
-//            }
-//        }
-//    }
 }
 
 
