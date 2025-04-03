@@ -112,7 +112,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> implements 
 
     public void tryConnection() throws SensorHubException {
 
-        connection = new RobustConnection(this, config.commSettings.protocol.connection, "Radiation Portal Monitor - Aspect") {
+        connection = new RobustConnection(this, config.commSettings.connection, "Radiation Portal Monitor - Aspect") {
             @Override
             public boolean tryConnect() throws IOException {
                 try {
@@ -241,7 +241,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> implements 
                 try{
                     long timeSinceMsg = messageHandler.getTimeSinceLastMessage();
 
-                    boolean isReceivingMsg = timeSinceMsg < config.commSettings.protocol.connection.reconnectPeriod;
+                    boolean isReceivingMsg = timeSinceMsg < config.commSettings.connection.reconnectPeriod;
                     if(isReceivingMsg){
                         this.connectionStatusOutput.onNewMessage(true);
                         waitPeriod = -1;

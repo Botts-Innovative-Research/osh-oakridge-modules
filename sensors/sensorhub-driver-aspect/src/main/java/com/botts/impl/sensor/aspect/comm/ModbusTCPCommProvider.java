@@ -22,14 +22,14 @@ public class ModbusTCPCommProvider extends AbstractModule<ModbusTCPCommProviderC
         var config = this.config.protocol;
 
         int count = 0;
-        int retryAttempts = config.connection.reconnectAttempts;
+        int retryAttempts = this.config.connection.reconnectAttempts;
 
         while (true) {
             try {
                 InetAddress address = InetAddress.getByName(config.remoteHost);
                 tcpMasterConnection = new TCPMasterConnection(address);
                 tcpMasterConnection.setPort(config.remotePort);
-                tcpMasterConnection.setTimeout(config.connection.connectTimeout);
+                tcpMasterConnection.setTimeout(this.config.connection.connectTimeout);
 
                 getLogger().info("Attempting TCP connection");
                 tcpMasterConnection.connect();
