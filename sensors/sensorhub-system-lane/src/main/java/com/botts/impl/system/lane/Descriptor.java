@@ -15,16 +15,15 @@
 
 package com.botts.impl.system.lane;
 
+import com.botts.impl.system.lane.config.LaneConfig;
 import org.sensorhub.api.module.IModule;
 import org.sensorhub.api.module.IModuleProvider;
 import org.sensorhub.api.module.ModuleConfig;
 import org.sensorhub.impl.module.JarModuleProvider;
 
 /**
- * Descriptor classes provide access to informative data on the OpenSensorHub driver
- *
- * @author Michael Elmore
- * @since December 2023
+ * @author Alex Almanza
+ * @since March 2025
  */
 public class Descriptor extends JarModuleProvider implements IModuleProvider {
 

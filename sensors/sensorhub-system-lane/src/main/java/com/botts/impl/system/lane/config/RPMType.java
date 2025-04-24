@@ -1,4 +1,4 @@
-/***************************** BEGIN LICENSE BLOCK ***************************
+/*******************************************************************************
 
  The contents of this file are subject to the Mozilla Public License, v. 2.0.
  If a copy of the MPL was not distributed with this file, You can obtain one
@@ -10,26 +10,16 @@
 
  The Initial Developer is Botts Innovative Research Inc. Portions created by the Initial
  Developer are Copyright (C) 2025 the Initial Developer. All Rights Reserved.
+ ******************************************************************************/
 
- ******************************* END LICENSE BLOCK ***************************/
-
-package com.botts.impl.system.lane;
-
-import org.sensorhub.api.config.DisplayInfo;
-import org.sensorhub.impl.sensor.SensorSystemConfig;
-
-import java.util.ArrayList;
-import java.util.List;
+package com.botts.impl.system.lane.config;
 
 /**
- * Configuration settings for the Lane Sensor System.
- *
  * @author Alex Almanza
- * @since March 2025
+ * @since April 23 2025
  */
-public class LaneConfig extends SensorSystemConfig {
+public enum RPMType {
 
-    @DisplayInfo(desc = "Additional options when creating an RPM lane.")
-    public List<LaneOptions> laneOptions = new ArrayList<>();
+    ASPECT, RAPISCAN
 
 }
