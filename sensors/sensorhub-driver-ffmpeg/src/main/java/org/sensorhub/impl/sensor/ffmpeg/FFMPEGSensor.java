@@ -34,18 +34,12 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> implements Runn
 
     private Thread reconnectThread;
 
-    private boolean manualStop = false;
     private int currentReconnect;
-
-    public FFMPEGSensor() {
-        currentReconnect = 0;
-    }
 
     @Override
     protected void doInit() throws SensorHubException {
         super.doInit();
         currentReconnect = 0;
-        manualStop = false;
 
         // We need the background thread here since we start reading the video data immediately in order to determine
         // the video size.
@@ -115,54 +109,6 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> implements Runn
         }
         handleReconnect();
 
-/*
-        int currentReconnect = 0;
-        long prevTime;
-        boolean reconnected = true;
-        while (!Thread.interrupted() && currentReconnect < config.connectionConfig.reconnectAttempts) {
-            reconnected = true;
-            prevTime = System.currentTimeMillis();
-            try {
-                super.doStop();
-            } catch (SensorHubException e) {
-                logger.info("Error stopping module from reconnect thread.");
-            }
-            try {
-                doStart();
-            } catch (SensorHubException e) {
-                logger.info("Reconnect {} failed.", currentReconnect + 1);
-                reconnected = false;
-            }
-
-            if (reconnected) {
-                currentReconnect = 0;
-                try {
-                    mpegTsProcessor.join();
-                } catch (InterruptedException e) {
-                    logger.info("Reconnect thread interrupted.");
-                    return;
-                }
-            } else {
-                currentReconnect++;
-                try {
-                    Thread.sleep(Math.max(0, prevTime - System.currentTimeMillis() + config.connectionConfig.reconnectPeriod));
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-        }
-
-
-        if (config.connectionConfig.reconnectAttempts > 0) {
-            logger.error("Reconnect failed after {} attempts.", currentReconnect);
-        }
-
-        try {
-            this.getParentHub().getModuleRegistry().stopModuleAsync(this);
-        } catch (SensorHubException e) {
-            throw new RuntimeException(e);
-        }
-*/
     }
 
     @Override
