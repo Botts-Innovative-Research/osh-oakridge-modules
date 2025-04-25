@@ -179,7 +179,7 @@ public class Video<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSensor
             }
 
             if (Boolean.TRUE.equals(ignoreDataTimestamp)){
-                dataBlock.setDoubleValue(0, System.currentTimeMillis()/1000);
+                dataBlock.setDoubleValue(0, (double) System.currentTimeMillis() /1000);
             } else {
 
                 double sampleTime = syncTime.getPrecisionTimeStamp() + (record.getPresentationTimestamp() - syncTime.getPresentationTimeStamp());

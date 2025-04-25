@@ -200,12 +200,11 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	            Asserts.checkArgument(config.connection.fps >= 0, "FPS must be >= 0");
 	            mpegTsProcessor = new MpegTsProcessor(config.connection.transportStreamPath, config.connection.fps, config.connection.loop);
 	        } else if ((null != config.connection.connectionString) && (!config.connection.connectionString.isBlank())) {
-	            mpegTsProcessor = new MpegTsProcessor(config.connection.connectionString);
+	            mpegTsProcessor = new MpegTsProcessor(config.connection.connectionString, config.connection.fps, false);
 	        } else {
 	        	throw new SensorHubException("Either the input file path or the connection string must be set");
 	        }
-            mpegTsProcessor.setReconnect(config.connectionConfig.reconnectAttempts, config.connectionConfig.connectTimeout,
-                    config.connectionConfig.reconnectPeriod);
+            mpegTsProcessor.setTimeout(config.connectionConfig.connectTimeout * 1000L);
 	        
 	        if (mpegTsProcessor.openStream()) {
 	        	logger.info("Stream opened for {}", getUniqueIdentifier());
@@ -223,7 +222,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	                mpegTsProcessor.setVideoDataBufferListener(videoOutput);
 	            }
 	        } else {
-	        	//throw new SensorHubException("Unable to open stream from data source");
+	        	throw new SensorHubException("Unable to open stream from data source");
                 //return false;
 	        }
 

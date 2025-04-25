@@ -18,19 +18,16 @@ import org.bytedeco.ffmpeg.avcodec.AVCodecContext;
 import org.bytedeco.ffmpeg.avcodec.AVCodecParameters;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avformat.AVFormatContext;
+import org.bytedeco.ffmpeg.avutil.AVDictionary;
 import org.bytedeco.ffmpeg.avutil.AVRational;
 import org.bytedeco.ffmpeg.global.avcodec;
 import org.bytedeco.ffmpeg.global.avformat;
 import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacpp.PointerPointer;
-import org.sensorhub.api.client.ClientException;
-import org.sensorhub.api.common.SensorHubException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Consumer;
 
 import static org.bytedeco.ffmpeg.global.avformat.av_read_frame;
 
@@ -106,11 +103,6 @@ public class MpegTsProcessor extends Thread {
     private static final Logger logger = LoggerFactory.getLogger(MpegTsProcessor.class);
 
     /**
-     * Callback function for stream end (blocking)
-     */
-    private Consumer<Boolean> streamEndCallback;
-
-    /**
      * Name of thread
      */
     private static final String WORKER_THREAD_NAME = "STREAM-PROCESSOR";
@@ -175,22 +167,19 @@ public class MpegTsProcessor extends Thread {
      * Time base units for data stream timing used to compute a timestamp for each packet extracted
      */
     private double dataStreamTimeBase;
-    
+
     /**
      * FPS to enforce when playing back from file.
      * 0 means the file will be played back as fast as possible
      */
     int fps;
-    
+
     /**
      * If true, play the video file continuously in a loop
      */
     volatile boolean loop;
 
-    private int maxReconnects;
-    private int reconnectPeriod;
-    private int connectTimeout;
-    
+    private long timeout = 5000000;
 
     /**
      * Constructor
@@ -202,15 +191,15 @@ public class MpegTsProcessor extends Thread {
 
         this(source, 0, false);
     }
-    
-    
+
+
     /**
      * Constructor with more options when playing back from file
      *
      * @param source A string representation of the file or url to use as the source of the transport stream to
      *               demux
      * @param fps The desired playback FPS (use 0 for decoding the TS file as fast as possible)
-     * @param loop 
+     * @param loop
      */
     public MpegTsProcessor(String source, int fps, boolean loop) {
 
@@ -219,7 +208,6 @@ public class MpegTsProcessor extends Thread {
         this.streamSource = source;
         this.fps = fps;
         this.loop = loop;
-        maxReconnects = 0;
     }
 
     /**
@@ -235,10 +223,13 @@ public class MpegTsProcessor extends Thread {
 
         avformat.avformat_network_init();
 
+        AVDictionary options = new AVDictionary();
+        avutil.av_dict_set(options, "timeout", Long.toString(timeout), 0);
+
         // Create a new AV Format Context for I/O
         avFormatContext = new AVFormatContext(null);
 
-        int returnCode = avformat.avformat_open_input(avFormatContext, streamSource, null, null);
+        int returnCode = avformat.avformat_open_input(avFormatContext, streamSource, null, options);
 
         // Attempt to open the stream, streamPath can be a file or URL
         if (returnCode == 0) {
@@ -266,7 +257,7 @@ public class MpegTsProcessor extends Thread {
     /**
      * Required to identify if the transport stream contains a video stream and/or a data stream.
      * Should be invoked after {@link MpegTsProcessor#openStream()} and used in conjunction
-     * with  {@link MpegTsProcessor#hasVideoStream()}
+     * with {@link MpegTsProcessor#hasDataStream()} {@link MpegTsProcessor#hasVideoStream()}
      * to determine what streams are available for consumption.
      */
     public void queryEmbeddedStreams() {
@@ -328,6 +319,10 @@ public class MpegTsProcessor extends Thread {
         return hasVideoStream;
     }
 
+    public void setTimeout(long timeout) {
+        this.timeout = timeout;
+    }
+
     /**
      * Required to identify if the transport stream contains a data stream.
      * Should be invoked after {@link MpegTsProcessor#queryEmbeddedStreams()} and used in conjunction
@@ -368,7 +363,7 @@ public class MpegTsProcessor extends Thread {
         double den = rational.den();
         return num/den;
     }
-    
+
     /**
      * Required to identify the width and height of the video frames.
      * Should be invoked after {@link MpegTsProcessor#queryEmbeddedStreams()} and
@@ -443,12 +438,6 @@ public class MpegTsProcessor extends Thread {
         this.videoDataBufferListener = videoDataBufferListener;
     }
 
-    public void setReconnect(int maxReconnects, int connectTimeout, int reconnectPeriod) {
-        this.maxReconnects = maxReconnects;
-        this.connectTimeout = connectTimeout;
-        this.reconnectPeriod = reconnectPeriod;
-    }
-
     /**
      * Starts the threaded process for demuxing the transport stream
      * Should only be invoked if stream is successfully opened.
@@ -499,41 +488,17 @@ public class MpegTsProcessor extends Thread {
     private void processStreamPackets() {
 
         AVPacket avPacket = null;
-        
+
         try {
             // Create an AV packet container to pass data to demuxer
             avPacket = new AVPacket();
-    
+
             // Read frames
             long startTime = System.currentTimeMillis();
             long frameCount = 0;
             int retCode;
-            while (!terminateProcessing.get()) {
+            while (!terminateProcessing.get() && (retCode = av_read_frame(avFormatContext, avPacket)) >= 0) {
 
-                // TODO: This is where reconnect code will go
-                // TODO: Remove all other reconnect methods/leftovers, previous attempts would create unnecessarily deep function call stacks
-                int currentReconnect = 0;
-                long prevTime = System.currentTimeMillis();
-                while ((retCode = av_read_frame(avFormatContext, avPacket)) < 0 && currentReconnect++ < maxReconnects) {
-                    try {
-                        logger.info("Reconnect attempt {}.", currentReconnect);
-                        if (avPacket != null) {
-                            avcodec.av_packet_unref(avPacket);
-                        }
-                        closeStream();
-                        openStream();
-                        // Wait at least reconnectPeriod ms until reconnect
-                        Thread.sleep(Math.max(0, prevTime - System.currentTimeMillis() + reconnectPeriod));
-                    } catch (InterruptedException e) {
-                        logger.error(e.getMessage());
-                        Thread.currentThread().interrupt();
-                    }
-                    prevTime = System.currentTimeMillis();
-                }
-                if (retCode < 0) {
-                    throw new ClientException("Stream ended, could not connect to stream after " + currentReconnect + " attempts.");
-                }
-    
                 // If it is a video or data frame and there is a listener registered
                 if ((avPacket.stream_index() == videoStreamId) && (null != videoDataBufferListener)) {
 
@@ -568,13 +533,12 @@ public class MpegTsProcessor extends Thread {
 //                    // Pass data buffer to interested listener
 //                    metadataDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * dataStreamTimeBase, dataBuffer));
 //                }
-    
+
                 // clear packet
                 avcodec.av_packet_unref(avPacket);
             }
-        } catch (ClientException e) {
-            throw new RuntimeException(e);
-        } finally {
+        }
+        finally {
             // fully deallocate packet
             if (avPacket != null)
             {
@@ -600,7 +564,6 @@ public class MpegTsProcessor extends Thread {
         }
     }
 
-
     /**
      * Closes the transport stream, releasing allocated resources including the codec context.
      */
@@ -618,7 +581,6 @@ public class MpegTsProcessor extends Thread {
             }
 
             streamOpened = false;
-
         }
     }
 
@@ -674,8 +636,6 @@ public class MpegTsProcessor extends Thread {
             throw new IllegalStateException(message);
         }
     }
-
-
 
 //    public String getCodecFormat() {
 ////        String codecFormat = avCodecContext.codec().long_name().getString(StandardCharsets.UTF_8);
