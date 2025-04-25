@@ -16,6 +16,8 @@ package org.sensorhub.impl.sensor.ffmpeg.config;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.api.sensor.SensorConfig;
+import org.sensorhub.impl.comm.RobustIPConnectionConfig;
+import org.sensorhub.impl.module.RobustConnectionConfig;
 
 /**
  * Configuration settings for the FFMPEG driver exposed via the OpenSensorHub Admin panel.
@@ -52,5 +54,7 @@ public class FFMPEGConfig extends SensorConfig {
     {
         return positionConfig.location;
     }
+
+    public RobustConnectionConfig connectionConfig = new RobustConnectionConfig();
 
 }

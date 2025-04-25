@@ -104,6 +104,7 @@ public class Video<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSensor
         }
 
 
+
         dataStruct = outputDef.getElementType();
         dataStruct.setLabel(SENSOR_OUTPUT_LABEL);
         dataStruct.setDescription(SENSOR_OUTPUT_DESCRIPTION);
