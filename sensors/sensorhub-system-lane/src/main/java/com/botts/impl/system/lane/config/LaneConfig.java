@@ -29,4 +29,7 @@ public class LaneConfig extends SensorSystemConfig {
     @DisplayInfo(desc = "Additional options when creating an RPM lane.")
     public LaneOptionsConfig laneOptionsConfig;
 
+    @DisplayInfo(label = "Delete Data on Lane Removal", desc = "Select this to automatically delete all records of this lane when the lane is deleted.")
+    public boolean autoDelete = true;
+
 }

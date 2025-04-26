@@ -16,6 +16,8 @@
 package com.botts.impl.system.lane;
 
 
+import com.botts.impl.process.occupancy.OccupancyProcessConfig;
+import com.botts.impl.process.occupancy.OccupancyProcessModule;
 import com.botts.impl.sensor.aspect.AspectConfig;
 import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProviderConfig;
@@ -24,19 +26,22 @@ import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.system.lane.config.LaneConfig;
 import com.botts.impl.system.lane.config.RPMConfig;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.event.Event;
+import org.sensorhub.api.event.EventUtils;
 import org.sensorhub.api.module.ModuleConfig;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.sensor.SensorConfig;
 import org.sensorhub.impl.comm.TCPCommProviderConfig;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
 import org.sensorhub.impl.module.AbstractModule;
+import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.processing.AbstractProcessModule;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
-import org.sensorhub.process.rapiscan.RapiscanProcessConfig;
-import org.sensorhub.process.rapiscan.RapiscanProcessModule;
+import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
+import org.sensorhub.utils.MsgUtils;
 import org.vast.util.Asserts;
 
 /**
@@ -53,7 +58,11 @@ public class LaneSystem extends SensorSystem {
 
     @Override
     protected void doInit() throws SensorHubException {
-        super.doInit();
+        // Register to receive module events from this module, so we know when it is being deleted
+        eventHandler.registerListener(this::handleEvent);
+//        getParentHub().getEventBus().newSubscription()
+//                .withTopicID(ModuleRegistry.EVENT_GROUP_ID)
+//                .subscribe(this::handleEvent);
 
         // generate unique ID
         if (config.uniqueID != null && !config.uniqueID.equals(AUTO_ID)) {
@@ -83,10 +92,13 @@ public class LaneSystem extends SensorSystem {
             if (member instanceof RapiscanSensor || member instanceof AspectSensor) {
                 existingRPMModule = (AbstractSensorModule<?>) member;
             }
-            if(member instanceof RapiscanProcessModule) {
+            if (member instanceof OccupancyProcessModule) {
                 existingProcessModule = (AbstractProcessModule<?>) member;
             }
         }
+
+        // Variable to signify asynchronous registration
+        boolean registeringProcessModule = false;
 
         // Lane database and process setup
         if (getLaneConfig().laneOptionsConfig != null) {
@@ -103,14 +115,15 @@ public class LaneSystem extends SensorSystem {
             if (dbConfig != null && !dbConfig.laneDatabaseId.isBlank()) {
                 String laneDbId = getLaneConfig().laneOptionsConfig.laneDatabaseConfig.laneDatabaseId;
                 // Start thread that waits for this system to be initialized before adding it to database
-                // TODO: Add config listener to remove old system from database config if system uid is updated
-                // TODO: Add config listener to swap to new database if lane database is changed
-                // TODO: Add listener to remove system/data from database if system is deleted
                 new Thread(() -> {
                     try {
+                        // Wait for initialized so that we have a system UID associated with this module
                         waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
-                        if (getParentHub().getModuleRegistry().getModuleById(laneDbId) instanceof SystemDriverDatabase)
-                            ((SystemDriverDatabase) getParentHub().getModuleRegistry().getModuleById(laneDbId)).getConfiguration().systemUIDs.add(this.getUniqueIdentifier());
+                        if (getParentHub().getModuleRegistry().getModuleById(laneDbId) instanceof SystemDriverDatabase dbModule) {
+                            var dbModuleConfig = dbModule.getConfiguration();
+                            dbModuleConfig.systemUIDs.add(this.getUniqueIdentifier());
+                            dbModule.updateConfig(dbModuleConfig);
+                        }
                     } catch (SensorHubException e) {
                         throw new RuntimeException(e);
                     }
@@ -120,23 +133,47 @@ public class LaneSystem extends SensorSystem {
             // Process creation / attachment
             if (getLaneConfig().laneOptionsConfig.createProcess && existingProcessModule == null) {
                 // Create process config
-                RapiscanProcessConfig processConfig = new RapiscanProcessConfig();
-                processConfig.moduleClass = RapiscanProcessModule.class.getCanonicalName();
+                OccupancyProcessConfig processConfig = new OccupancyProcessConfig();
+                processConfig.moduleClass = OccupancyProcessModule.class.getCanonicalName();
                 // This will be unique since serialNumber becomes prefixed. It's just easy to use the lane ID
                 processConfig.serialNumber = config.uniqueID;
                 processConfig.name = "Database Process";
+                processConfig.autoStart = true;
+                registeringProcessModule = true;
                 // Add process as submodule
-                existingProcessModule = (AbstractProcessModule<?>) registerSubmodule(processConfig);
+                new Thread(() -> {
+                    try {
+                        // Need to wait until lane is initialized so that the process can find the database
+                        waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
+                        existingProcessModule = (AbstractProcessModule<?>) registerSubmodule(processConfig);
+                        existingProcessModule.waitForState(ModuleEvent.ModuleState.LOADED, 10000);
+                        existingProcessModule.init();
+                    } catch (SensorHubException e) {
+                        throw new RuntimeException(e);
+                    }
+                }).start();
             }
         }
 
         String statusMsg = "Note: ";
-        if(existingRPMModule == null)
+        if (existingRPMModule == null)
             statusMsg += "No RPM driver found in lane.\n";
-        if(existingProcessModule == null)
+        if (existingProcessModule == null || !registeringProcessModule)
             statusMsg += "No database process module found in lane.\n";
-        if(!statusMsg.equalsIgnoreCase("Note: "))
+        if (!statusMsg.equalsIgnoreCase("Note: "))
             reportStatus(statusMsg);
+
+        // Init modules all modules except process module as it requires other modules to be started
+        for (var module: getMembers().values()) {
+            if (module != null) {
+                try {
+                    module.init();
+                }
+                catch (Exception e) {
+                    getLogger().error("Cannot initialize system component {}", MsgUtils.moduleString(module), e);
+                }
+            }
+        }
     }
 
     private AbstractModule<?> registerSubmodule(ModuleConfig config) throws SensorHubException {
@@ -154,23 +191,84 @@ public class LaneSystem extends SensorSystem {
             }
             eventHandler.publish(new ModuleEvent(this, ModuleEvent.Type.CONFIG_CHANGED));
         }).start();
+
         return newSubmodule;
     }
 
-    private void handleLaneEvent(Event event) {
-        if (event instanceof ModuleEvent) {
-            switch (((ModuleEvent) event).getType()) {
+    @Override
+    protected void handleEvent(Event e) {
+        super.handleEvent(e);
 
+        // TODO: Add config listener to remove old system from database config if system uid is updated
+        // TODO: Add config listener to swap to new database if lane database is changed
+        // TODO: Handle events for video drivers, RPM drivers, and process module
+
+        if (e instanceof ModuleEvent event) {
+
+            // In case lane is deleted, delete all data from database
+            if (event.getType() == ModuleEvent.Type.DELETED && getLaneConfig().autoDelete) {
+                String uid = getUniqueIdentifier();
+                if (uid != null && !uid.isBlank()) {
+                    // Get lane database
+                    var db = getParentHub().getSystemDriverRegistry().getDatabase(getUniqueIdentifier());
+                    if (db != null) {
+                        // Create transaction handler to delete system from lane database
+                        var eventBus = getParentHub().getEventBus();
+                        var transactionHandler = new SystemDatabaseTransactionHandler(eventBus, db);
+                        try {
+                            transactionHandler.getSystemHandler(uid).delete(true);
+                        } catch (DataStoreException ex) {
+                            throw new RuntimeException(ex);
+                        }
+                    }
+                }
             }
         }
     }
 
     @Override
-    protected void doStart() throws SensorHubException {
-        super.doStart();
+    public synchronized void updateConfig(SensorSystemConfig config) throws SensorHubException {
+        super.updateConfig(config);
 
-//        var submoduleTest = getMembers().get("");
-//        submoduleTest.registerListener(submoduleAddedListener);
+        // Listener
+    }
+
+    @Override
+    protected void setState(ModuleEvent.ModuleState newState) {
+        super.setState(newState);
+
+//        // Ensure that autoStart starts modules after Sensor System is enabled
+//        if (newState == ModuleEvent.ModuleState.STARTED) {
+//            // Get list of exclusive modules
+//            List<IModule<?>> otherModules = new ArrayList<>();
+//            for (var module : getMembers().values())
+//                if (module != null && module != existingProcessModule && module.getConfiguration().autoStart)
+//                    otherModules.add(module);
+//
+//            // Create list of asynchronous module actions
+//            List<CompletableFuture<Void>> asyncActions = new ArrayList<>();
+//            for (var module : otherModules) {
+//                asyncActions.add(CompletableFuture.runAsync(() -> {
+//                    try {
+//                        module.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
+//                        module.start();
+//                        module.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+//                    } catch (SensorHubException e) {
+//                        throw new RuntimeException(e);
+//                    }
+//                }));
+//            }
+//
+//            // Wait for all module actions to finish before starting excluded module's action
+//            CompletableFuture.allOf(asyncActions.toArray(new CompletableFuture[0])).thenRunAsync(() -> {
+//                try {
+//                    if (existingProcessModule.getConfiguration().autoStart)
+//                        existingProcessModule.start();
+//                } catch (SensorHubException e) {
+//                    throw new RuntimeException(e);
+//                }
+//            });
+//        }
     }
 
     private SensorConfig createRPMConfig(RPMConfig rpmConfig) {
@@ -209,6 +307,7 @@ public class LaneSystem extends SensorSystem {
 
         // Use label from config
         config.name = rpmConfig.rpmLabel;
+        config.autoStart = true;
 
         return config;
     }

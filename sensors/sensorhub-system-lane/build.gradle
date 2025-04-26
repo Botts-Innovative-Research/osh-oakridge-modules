@@ -7,7 +7,7 @@ dependencies {
     implementation project(':sensorhub-utils-rad')
     implementation project(':sensorhub-driver-aspect')
     implementation project(':sensorhub-driver-rapiscan')
-    implementation project(':sensorhub-process-rapiscan')
+    implementation project(':sensorhub-process-occupancy')
     testImplementation('junit:junit:4.13.1')
     implementation('junit:junit:4.13.1')
 }
