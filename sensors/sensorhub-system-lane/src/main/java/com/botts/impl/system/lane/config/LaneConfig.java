@@ -27,9 +27,6 @@ import org.sensorhub.impl.sensor.SensorSystemConfig;
 public class LaneConfig extends SensorSystemConfig {
 
     @DisplayInfo(desc = "Additional options when creating an RPM lane.")
-    public LaneDataConfig laneDataConfig;
-
-    @DisplayInfo(label = "Initial RPM Config", desc = "Config used for initial RPM setup")
-    public RPMConfig rpmConfig;
+    public LaneOptionsConfig laneOptionsConfig;
 
 }

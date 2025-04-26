@@ -16,23 +16,22 @@
 package com.botts.impl.system.lane.config;
 
 import org.sensorhub.api.config.DisplayInfo;
-import org.sensorhub.impl.database.system.SystemDriverDatabase;
 
 /**
- * Configuration settings for the Lane Sensor System's automatic process module setup.
+ * Additional configuration settings for the Lane Sensor System.
  *
  * @author Alex Almanza
- * @since April 2025
+ * @since March 2025
  */
-public class LaneProcessConfig {
+public class LaneOptionsConfig {
 
-    @DisplayInfo
-    @DisplayInfo.Required
+    @DisplayInfo(label = "Lane Database Config", desc = "Specify automatic database setup when creating this lane")
+    public LaneDatabaseConfig laneDatabaseConfig = new LaneDatabaseConfig();
+
+    @DisplayInfo(label = "Auto Create Process", desc = "Automatically create database process for this lane")
     public boolean createProcess = true;
 
-    @DisplayInfo.Required
-    @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.MODULE_ID)
-    @DisplayInfo.ModuleType(SystemDriverDatabase.class)
-    public String processDatabaseId;
+    @DisplayInfo(label = "Initial RPM Config", desc = "Config used for initial RPM setup")
+    public RPMConfig rpmConfig;
 
 }

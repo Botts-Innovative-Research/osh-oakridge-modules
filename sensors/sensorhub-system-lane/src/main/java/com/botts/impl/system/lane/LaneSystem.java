@@ -23,22 +23,24 @@ import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.system.lane.config.LaneConfig;
 import com.botts.impl.system.lane.config.RPMConfig;
-import com.botts.impl.system.lane.config.RPMType;
-import com.google.common.collect.BoundType;
-import com.google.common.collect.Range;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.event.Event;
+import org.sensorhub.api.module.ModuleConfig;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.sensor.SensorConfig;
-import org.sensorhub.api.utils.OshAsserts;
 import org.sensorhub.impl.comm.TCPCommProviderConfig;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
+import org.sensorhub.impl.module.AbstractModule;
+import org.sensorhub.impl.processing.AbstractProcessModule;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
+import org.sensorhub.process.rapiscan.RapiscanProcessConfig;
+import org.sensorhub.process.rapiscan.RapiscanProcessModule;
 import org.vast.util.Asserts;
 
 /**
- * Extended functionality of the SensorSystem class unique for OpenSource Central Alarm (OSCAR)
+ * Extended functionality of the SensorSystem class unique for Open Source Central Alarm (OSCAR)
  *
  * @author Alex Almanza
  * @since March 2025
@@ -46,7 +48,8 @@ import org.vast.util.Asserts;
 public class LaneSystem extends SensorSystem {
 
     private static final String URN_PREFIX = "urn:";
-    AbstractSensorModule<?> rpmModule = null;
+    AbstractSensorModule<?> existingRPMModule = null;
+    AbstractProcessModule<?> existingProcessModule = null;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -68,64 +71,41 @@ public class LaneSystem extends SensorSystem {
         if (config.name.length() > 12)
             throw new SensorHubException("Lane name must be 12 or less characters", new IllegalArgumentException("Module name must be 12 or less characters"));
 
-        // If we already have RPM submodules, don't set up new ones
-        boolean containsRpm = false;
-        for (var member : config.subsystems) {
-            if (member.config instanceof RapiscanConfig || member.config instanceof AspectConfig) {
-                containsRpm = true;
-                break;
-            }
-        }
+//        // If we already have RPM submodules, don't set up new ones
+//        for (var member : config.subsystems) {
+//            if (member.config instanceof RapiscanConfig || member.config instanceof AspectConfig) {
+//                break;
+//            }
+//        }
+
         // Check state members too in case config hasn't been updated
         for (var member : getMembers().values()) {
-            if(containsRpm)
-                break;
             if (member instanceof RapiscanSensor || member instanceof AspectSensor) {
-                rpmModule = (AbstractSensorModule<?>) member;
-                containsRpm = true;
-                break;
+                existingRPMModule = (AbstractSensorModule<?>) member;
             }
-        }
-
-        // If RPM exists, ensure that database & process are set up with correct UIDs
-        if (containsRpm) {
-
-        }
-        // If RPM does not exist, and RPM is specified in config, then set up submodule
-        else {
-            // RPM type and unique ID must be specified
-            if (getLaneConfig().rpmConfig != null) {
-                // Create Rapiscan or Aspect config, then add as submodule
-                var config = createRPMConfig(getLaneConfig().rpmConfig);
-                var newMember = new SensorSystemConfig.SystemMember();
-                newMember.config = config;
-                rpmModule = (AbstractSensorModule<?>) addSubsystem(newMember);
-
-                // Wait for loaded module, then notify listeners of config changed
-                // TODO: osh-core needs proper submodule event
-                new Thread(() -> {
-                    try {
-                        rpmModule.waitForState(ModuleEvent.ModuleState.LOADED, 10000);
-                    } catch (SensorHubException e) {
-                        throw new RuntimeException(e);
-                    }
-                    eventHandler.publish(new ModuleEvent(this, ModuleEvent.Type.CONFIG_CHANGED));
-                }).start();
-                containsRpm = true;
+            if(member instanceof RapiscanProcessModule) {
+                existingProcessModule = (AbstractProcessModule<?>) member;
             }
-
-
         }
 
         // Lane database and process setup
-        if (getLaneConfig().laneDataConfig != null) {
+        if (getLaneConfig().laneOptionsConfig != null) {
+            // Initial RPM config
+            var rpmConfig = getLaneConfig().laneOptionsConfig.rpmConfig;
+            if (rpmConfig != null && existingRPMModule == null) {
+                // Create Rapiscan or Aspect config, then add as submodule
+                var config = createRPMConfig(rpmConfig);
+                existingRPMModule = (AbstractSensorModule<?>) registerSubmodule(config);
+            }
+
             // Attach this system to database
-            String laneDbId = getLaneConfig().laneDataConfig.laneDatabaseConfig.laneDatabaseId;
-            if (!laneDbId.isBlank()) {
+            var dbConfig = getLaneConfig().laneOptionsConfig.laneDatabaseConfig;
+            if (dbConfig != null && !dbConfig.laneDatabaseId.isBlank()) {
+                String laneDbId = getLaneConfig().laneOptionsConfig.laneDatabaseConfig.laneDatabaseId;
                 // Start thread that waits for this system to be initialized before adding it to database
-                // TODO: Add config listener to remove old system from config if system uid is updated
+                // TODO: Add config listener to remove old system from database config if system uid is updated
                 // TODO: Add config listener to swap to new database if lane database is changed
-                // TODO: Add listener to remove system from database if system is deleted
+                // TODO: Add listener to remove system/data from database if system is deleted
                 new Thread(() -> {
                     try {
                         waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
@@ -137,8 +117,52 @@ public class LaneSystem extends SensorSystem {
                 }).start();
             }
 
+            // Process creation / attachment
+            if (getLaneConfig().laneOptionsConfig.createProcess && existingProcessModule == null) {
+                // Create process config
+                RapiscanProcessConfig processConfig = new RapiscanProcessConfig();
+                processConfig.moduleClass = RapiscanProcessModule.class.getCanonicalName();
+                // This will be unique since serialNumber becomes prefixed. It's just easy to use the lane ID
+                processConfig.serialNumber = config.uniqueID;
+                processConfig.name = "Database Process";
+                // Add process as submodule
+                existingProcessModule = (AbstractProcessModule<?>) registerSubmodule(processConfig);
+            }
         }
 
+        String statusMsg = "Note: ";
+        if(existingRPMModule == null)
+            statusMsg += "No RPM driver found in lane.\n";
+        if(existingProcessModule == null)
+            statusMsg += "No database process module found in lane.\n";
+        if(!statusMsg.equalsIgnoreCase("Note: "))
+            reportStatus(statusMsg);
+    }
+
+    private AbstractModule<?> registerSubmodule(ModuleConfig config) throws SensorHubException {
+        var newMember = new SensorSystemConfig.SystemMember();
+        newMember.config = config;
+        var newSubmodule = (AbstractModule<?>) addSubsystem(newMember);
+
+        // Wait for loaded module, then notify listeners of config changed
+        // TODO: osh-core needs proper submodule event
+        new Thread(() -> {
+            try {
+                existingRPMModule.waitForState(ModuleEvent.ModuleState.LOADED, 10000);
+            } catch (SensorHubException e) {
+                throw new RuntimeException(e);
+            }
+            eventHandler.publish(new ModuleEvent(this, ModuleEvent.Type.CONFIG_CHANGED));
+        }).start();
+        return newSubmodule;
+    }
+
+    private void handleLaneEvent(Event event) {
+        if (event instanceof ModuleEvent) {
+            switch (((ModuleEvent) event).getType()) {
+
+            }
+        }
     }
 
     @Override
