@@ -29,13 +29,7 @@ public class LaneConfig extends SensorSystemConfig {
     @DisplayInfo(desc = "Additional options when creating an RPM lane.")
     public LaneDataConfig laneDataConfig;
 
-    @DisplayInfo(label = "RPM Type", desc = "RPM module to generate for this lane")
-    public RPMType rpmType;
-
-    @DisplayInfo(label = "RPM Unique ID", desc = "RPM UID for new submodule if RPM type is specified. Please do not include osh UID prefix (i.e. urn:osh:sensor:rapiscan)")
-    public String rpmUniqueId;
-
-    @DisplayInfo(label = "RPM Label", desc = "Friendly name for RPM module")
-    public String rpmLabel;
+    @DisplayInfo(label = "Initial RPM Config", desc = "Config used for initial RPM setup")
+    public RPMConfig rpmConfig;
 
 }

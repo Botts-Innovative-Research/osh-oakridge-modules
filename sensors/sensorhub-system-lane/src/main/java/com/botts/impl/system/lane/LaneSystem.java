@@ -17,30 +17,25 @@ package com.botts.impl.system.lane;
 
 
 import com.botts.impl.sensor.aspect.AspectConfig;
-import com.botts.impl.sensor.aspect.AspectDescriptor;
 import com.botts.impl.sensor.aspect.AspectSensor;
+import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProviderConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanConfig;
-import com.botts.impl.sensor.rapiscan.RapiscanDescriptor;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.system.lane.config.LaneConfig;
+import com.botts.impl.system.lane.config.RPMConfig;
 import com.botts.impl.system.lane.config.RPMType;
+import com.google.common.collect.BoundType;
+import com.google.common.collect.Range;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.database.IObsSystemDatabaseModule;
-import org.sensorhub.api.event.IEventListener;
-import org.sensorhub.api.module.IModule;
-import org.sensorhub.api.module.IModuleProvider;
-import org.sensorhub.api.module.ModuleConfig;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.sensor.SensorConfig;
-import org.sensorhub.api.system.ISystemDriverDatabase;
+import org.sensorhub.api.utils.OshAsserts;
+import org.sensorhub.impl.comm.TCPCommProviderConfig;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
-import org.sensorhub.impl.processing.AbstractProcessModule;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
-import org.sensorhub.utils.MsgUtils;
-
-import java.util.UUID;
+import org.vast.util.Asserts;
 
 /**
  * Extended functionality of the SensorSystem class unique for OpenSource Central Alarm (OSCAR)
@@ -70,9 +65,8 @@ public class LaneSystem extends SensorSystem {
         }
 
         // Ensure name is at most 12 characters
-        if (config.name.length() > 12) {
-            reportError("Lane name must be 12 or less characters", new IllegalArgumentException("Module name must be 12 or less characters"));
-        }
+        if (config.name.length() > 12)
+            throw new SensorHubException("Lane name must be 12 or less characters", new IllegalArgumentException("Module name must be 12 or less characters"));
 
         // If we already have RPM submodules, don't set up new ones
         boolean containsRpm = false;
@@ -100,12 +94,23 @@ public class LaneSystem extends SensorSystem {
         // If RPM does not exist, and RPM is specified in config, then set up submodule
         else {
             // RPM type and unique ID must be specified
-            if (getLaneConfig().rpmType != null && getLaneConfig().rpmUniqueId != null && !getLaneConfig().rpmUniqueId.isBlank()) {
+            if (getLaneConfig().rpmConfig != null) {
                 // Create Rapiscan or Aspect config, then add as submodule
-                var config = createRPMConfig(getLaneConfig().rpmType);
+                var config = createRPMConfig(getLaneConfig().rpmConfig);
                 var newMember = new SensorSystemConfig.SystemMember();
                 newMember.config = config;
                 rpmModule = (AbstractSensorModule<?>) addSubsystem(newMember);
+
+                // Wait for loaded module, then notify listeners of config changed
+                // TODO: osh-core needs proper submodule event
+                new Thread(() -> {
+                    try {
+                        rpmModule.waitForState(ModuleEvent.ModuleState.LOADED, 10000);
+                    } catch (SensorHubException e) {
+                        throw new RuntimeException(e);
+                    }
+                    eventHandler.publish(new ModuleEvent(this, ModuleEvent.Type.CONFIG_CHANGED));
+                }).start();
                 containsRpm = true;
             }
 
@@ -144,32 +149,47 @@ public class LaneSystem extends SensorSystem {
 //        submoduleTest.registerListener(submoduleAddedListener);
     }
 
-    private SensorConfig createRPMConfig(RPMType rpmType) {
+    private SensorConfig createRPMConfig(RPMConfig rpmConfig) {
+        Asserts.checkNotNull(rpmConfig.rpmType);
+        Asserts.checkNotNullOrBlank(rpmConfig.rpmLabel, "Please specify an RPM driver label");
+        Asserts.checkNotNullOrBlank(rpmConfig.rpmUniqueId, "Please specify a unique RPM ID");
+        Asserts.checkNotNull(rpmConfig.remoteHost);
+
         // TODO: Make Rapiscan and Aspect drivers use common class/interface and common configs
         SensorConfig config;
-        // Create Aspect config
-        if (rpmType == RPMType.ASPECT) {
-            AspectConfig aspectConfig = new AspectConfig();
-            aspectConfig.serialNumber = getLaneConfig().rpmUniqueId;
-            aspectConfig.moduleClass = AspectSensor.class.getCanonicalName();
-            config = aspectConfig;
+        switch(rpmConfig.rpmType) {
+            // Create Aspect config
+            case ASPECT -> {
+                AspectConfig aspectConfig = new AspectConfig();
+                aspectConfig.serialNumber = rpmConfig.rpmUniqueId;
+                aspectConfig.moduleClass = AspectSensor.class.getCanonicalName();
+                // Setup communication config
+                var comm = aspectConfig.commSettings = new ModbusTCPCommProviderConfig();
+                comm.protocol.remoteHost = rpmConfig.remoteHost;
+                comm.protocol.remotePort = rpmConfig.remotePort;
+                config = aspectConfig;
+            }
+            // Create Rapiscan config
+            case RAPISCAN -> {
+                RapiscanConfig rapiscanConfig = new RapiscanConfig();
+                rapiscanConfig.serialNumber = rpmConfig.rpmUniqueId;
+                rapiscanConfig.moduleClass = RapiscanSensor.class.getCanonicalName();
+                // Setup communication config
+                var comm = rapiscanConfig.commSettings = new TCPCommProviderConfig();
+                comm.protocol.remoteHost = rpmConfig.remoteHost;
+                comm.protocol.remotePort = rpmConfig.remotePort;
+                config = rapiscanConfig;
+            }
+            default -> { return null; }
         }
-        // Create Rapiscan config
-        else if (rpmType == RPMType.RAPISCAN) {
-            RapiscanConfig rapiscanConfig = new RapiscanConfig();
-            rapiscanConfig.serialNumber = getLaneConfig().rpmUniqueId;
-            rapiscanConfig.moduleClass = RapiscanSensor.class.getCanonicalName();
-            config = rapiscanConfig;
-        } else return null;
 
-        // Use label from config if available
-        if (!getLaneConfig().rpmLabel.isBlank())
-            config.name = getLaneConfig().rpmLabel;
+        // Use label from config
+        config.name = rpmConfig.rpmLabel;
 
         return config;
     }
 
-    public LaneConfig getLaneConfig() {
+    private LaneConfig getLaneConfig() {
         return (LaneConfig) this.config;
     }
 
