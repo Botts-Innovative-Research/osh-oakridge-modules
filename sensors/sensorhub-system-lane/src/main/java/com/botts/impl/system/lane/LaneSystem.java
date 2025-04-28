@@ -27,6 +27,7 @@ import com.botts.impl.system.lane.config.LaneConfig;
 import com.botts.impl.system.lane.config.RPMConfig;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
+import org.sensorhub.api.database.IObsSystemDbAutoPurgePolicy;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.api.event.Event;
@@ -37,6 +38,7 @@ import org.sensorhub.api.sensor.SensorConfig;
 import org.sensorhub.api.system.SystemAddedEvent;
 import org.sensorhub.api.system.SystemEvent;
 import org.sensorhub.impl.comm.TCPCommProviderConfig;
+import org.sensorhub.impl.database.system.HistoricalObsAutoPurgeConfig;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
 import org.sensorhub.impl.module.AbstractModule;
 import org.sensorhub.impl.module.ModuleRegistry;
@@ -305,7 +307,21 @@ public class LaneSystem extends SensorSystem {
                 // If system has video datastreams
                 if(getParentHub().getDatabaseRegistry().getFederatedDatabase().getSystemDescStore().select(sysFilterBuilder.withDataStreams(videoDsFilter).build()).findAny().isPresent()) {
                     // Add to purge policy
-                    // TODO: Add to purge policy
+                    if(getLaneDatabaseID() != null) {
+                        try {
+                            if (getParentHub().getModuleRegistry().getModuleById(getLaneDatabaseID()) instanceof SystemDriverDatabase dbModule) {
+                                var dbModuleConfig = dbModule.getConfiguration();
+                                var purgePolicies = dbModuleConfig.autoPurgeConfig;
+                                if(purgePolicies != null && !purgePolicies.isEmpty()) {
+                                    // TODO Create new default purge policy and add to list
+                                }
+                                dbModule.updateConfig(dbModuleConfig);
+                            }
+                        } catch (SensorHubException ex) {
+                            throw new RuntimeException(ex);
+                        }
+                    }
+
                 }
             }
         }
