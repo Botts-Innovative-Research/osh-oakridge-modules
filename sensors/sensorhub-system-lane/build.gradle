@@ -25,7 +25,7 @@ test {
 osgi {
     manifest {
         attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
-        attributes('Bundle-Activator': 'com.botts.impl.sensor.system.lane.Activator')
+        attributes('Bundle-Activator': 'com.botts.impl.system.lane.Activator')
     }
 }
 
@@ -33,7 +33,7 @@ osgi {
 ext.pom >>= {
     developers {
         developer {
-            id 'alexalmanza'
+            id 'earocorn'
             name 'Alex Almanza'
             organization 'Botts Innovative Research, Inc.'
             organizationUrl 'https://www.botts-inc.com'
