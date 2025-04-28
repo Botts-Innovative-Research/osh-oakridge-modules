@@ -1,5 +1,5 @@
-description = 'Rapiscan Process'
-ext.details = 'Rapiscan data processing'
+description = 'Occupancy Data Process'
+ext.details = 'Occupancy data processing'
 version = '1.0.0'
 
 dependencies {
@@ -11,8 +11,8 @@ dependencies {
 // add info to OSGi manifest
 osgi {
   manifest {
-    attributes('Bundle-Vendor': 'Sensia Software LLC')
-    attributes('Bundle-Activator': 'org.sensorhub.process.rapiscan.Activator')
+    attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
+    attributes('Bundle-Activator': 'com.botts.impl.process.occupancy.Activator')
   }
 }
 
@@ -20,9 +20,9 @@ osgi {
 ext.pom >>= {
   developers {
     developer {
-      id 'alexalmanza'
+      id 'earocorn'
       name 'Alex Almanza'
-      organization 'Botts Innovative Research'
+      organization 'Botts Innovative Research, Inc.'
       organizationUrl 'http://www.botts-inc.com'
     }
   }

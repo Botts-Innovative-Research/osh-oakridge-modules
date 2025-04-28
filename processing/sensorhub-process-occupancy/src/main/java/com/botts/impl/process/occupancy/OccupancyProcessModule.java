@@ -1,4 +1,19 @@
-package org.sensorhub.process.rapiscan;
+/*******************************************************************************
+
+  The contents of this file are subject to the Mozilla Public License, v. 2.0.
+  If a copy of the MPL was not distributed with this file, You can obtain one
+  at http://mozilla.org/MPL/2.0/.
+
+  Software distributed under the License is distributed on an "AS IS" basis,
+  WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
+  for the specific language governing rights and limitations under the License.
+
+  The Initial Developer is Botts Innovative Research Inc. Portions created by the Initial
+  Developer are Copyright (C) 2025 the Initial Developer. All Rights Reserved.
+
+ ******************************************************************************/
+
+package com.botts.impl.process.occupancy;
 
 import net.opengis.OgcPropertyList;
 import net.opengis.swe.v20.AbstractSWEIdentifiable;
@@ -9,12 +24,13 @@ import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.api.module.ModuleEvent;
+import org.sensorhub.api.processing.OSHProcessInfo;
 import org.sensorhub.api.processing.ProcessingException;
-import org.sensorhub.api.sensor.ISensorModule;
 import org.sensorhub.api.utils.OshAsserts;
 import org.sensorhub.impl.processing.AbstractProcessModule;
-import org.sensorhub.process.rapiscan.helpers.ProcessHelper;
-import org.sensorhub.process.rapiscan.helpers.RapiscanOutputInterface;
+import com.botts.impl.process.occupancy.helpers.ProcessHelper;
+import com.botts.impl.process.occupancy.helpers.OccupancyDataOutputInterface;
+import org.sensorhub.impl.sensor.SensorSystem;
 import org.vast.process.ProcessException;
 import org.vast.sensorML.AggregateProcessImpl;
 import org.vast.sensorML.SMLException;
@@ -27,19 +43,20 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 // Based on SMLProcessImpl
-public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcessConfig> {
+public class OccupancyProcessModule extends AbstractProcessModule<OccupancyProcessConfig> {
 
     protected SMLUtils smlUtils;
     public AggregateProcessImpl wrapperProcess;
     protected int errorCount = 0;
     protected boolean useThreads = true;
     String processUniqueID;
-    AlarmRecorder alarmProcess;
+    OccupancyDataRecorder alarmProcess;
+    String parentSystemUniqueID;
 
     /**
      * Standalone processing module to be recognized by OSH module provider, accessible in the OSH Admin UI.
      */
-    public RapiscanProcessModule()
+    public OccupancyProcessModule()
     {
         wrapperProcess = new AggregateProcessImpl();
         wrapperProcess.setUniqueIdentifier(UUID.randomUUID().toString());
@@ -59,7 +76,7 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
     @Override
     protected void doInit() throws SensorHubException {
         try {
-            processUniqueID = "urn:osh:process:rapiscan:" + config.serialNumber;
+            processUniqueID = OSHProcessInfo.URI_PREFIX +  "occupancy:" + config.serialNumber;
             OshAsserts.checkValidUID(processUniqueID);
 
             processDescription = buildProcess();
@@ -75,17 +92,24 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
     }
 
     /**
-     * Build SensorML process description via ProcessHelper.
+     * Build SensorML process description via ProcessHelper. // TODO Change to use ProcessHelper in sensorhub-process-helpers
      * @return process chain implementation to be executed
      * @throws ProcessException if not able to read process
      * @throws SensorHubException if no RPM data streams
      */
     public AggregateProcessImpl buildProcess() throws ProcessException, SensorHubException {
+        String systemUID = config.systemUID;
+        if (systemUID == null || systemUID.isBlank()) {
+            if(getParentSystem() == null || getParentSystemUID() == null || getParentSystemUID().isBlank())
+                throw new SensorHubException("Please specify a system UID, or put process under parent system.");
+            systemUID = getParentSystemUID();
+        }
+
         ProcessHelper processHelper = new ProcessHelper();
         processHelper.getAggregateProcess().setUniqueIdentifier(processUniqueID);
 
         var sysFilter = new SystemFilter.Builder()
-                .withUniqueIDs(config.systemUID)
+                .withUniqueIDs(systemUID)
                 .includeMembers(true)
                 .build();
 
@@ -93,7 +117,7 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
         var matchingDs = db.getDataStreamStore().select(new DataStreamFilter.Builder()
                 .withSystems(sysFilter)
                 .withCurrentVersion()
-                .withOutputNames(AlarmRecorder.OCCUPANCY_NAME)
+                .withOutputNames(OccupancyDataRecorder.OCCUPANCY_NAME)
                 .withLimit(1)
                 .build());
 
@@ -104,13 +128,13 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
 
         String dataStreamUID = rpmDs.getSystemID().getUniqueID();
 
-        this.alarmProcess = new AlarmRecorder();
+        this.alarmProcess = new OccupancyDataRecorder();
 
         OshAsserts.checkValidUID(dataStreamUID);
 
         processHelper.addDataSource("source0", dataStreamUID);
 
-        alarmProcess.getParameterList().getComponent(AlarmRecorder.SYSTEM_INPUT_PARAM).getData().setStringValue(config.systemUID);
+        alarmProcess.getParameterList().getComponent(OccupancyDataRecorder.SYSTEM_INPUT_PARAM).getData().setStringValue(systemUID);
 
         alarmProcess.setParentHub(getParentHub());
         alarmProcess.notifyParamChange();
@@ -119,8 +143,8 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
 
         processHelper.addProcess("process0", alarmProcess);
 
-        processHelper.addConnection("components/source0/outputs/" + AlarmRecorder.OCCUPANCY_NAME
-                ,"components/process0/inputs/" + AlarmRecorder.OCCUPANCY_NAME);
+        processHelper.addConnection("components/source0/outputs/" + OccupancyDataRecorder.OCCUPANCY_NAME
+                ,"components/process0/inputs/" + OccupancyDataRecorder.OCCUPANCY_NAME);
 
         for(AbstractSWEIdentifiable systemOutput : alarmProcess.getOutputList()) {
             DataComponent systemComponent = (DataComponent) systemOutput;
@@ -195,7 +219,7 @@ public class RapiscanProcessModule extends AbstractProcessModule<RapiscanProcess
             } else if(ioMap == parameters) {
                 // TODO set control interfaces
             } else if(ioMap == outputs) {
-                outputInterfaces.put(ioName, new RapiscanOutputInterface(this, ioDesc, ioEncoding));
+                outputInterfaces.put(ioName, new OccupancyDataOutputInterface(this, ioDesc, ioEncoding));
             }
         }
     }

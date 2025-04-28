@@ -1,4 +1,19 @@
-package org.sensorhub.process.rapiscan;
+/*******************************************************************************
+
+  The contents of this file are subject to the Mozilla Public License, v. 2.0.
+  If a copy of the MPL was not distributed with this file, You can obtain one
+  at http://mozilla.org/MPL/2.0/.
+
+  Software distributed under the License is distributed on an "AS IS" basis,
+  WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
+  for the specific language governing rights and limitations under the License.
+
+  The Initial Developer is Botts Innovative Research Inc. Portions created by the Initial
+  Developer are Copyright (C) 2025 the Initial Developer. All Rights Reserved.
+
+ ******************************************************************************/
+
+package com.botts.impl.process.occupancy;
 
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
@@ -6,12 +21,12 @@ import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
+import org.sensorhub.api.event.EventUtils;
 import org.sensorhub.api.processing.OSHProcessInfo;
 import org.sensorhub.impl.processing.ISensorHubProcess;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.utils.Async;
 import org.vast.process.ExecutableProcessImpl;
-import org.vast.process.ProcessException;
 import org.vast.swe.SWEHelper;
 
 import java.time.Instant;
@@ -25,8 +40,8 @@ import java.util.stream.Collectors;
 /**
  * Executable process that takes system UID as input, and outputs all driver outputs from input system, when occupancy is detected.
  */
-public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubProcess {
-    public static final OSHProcessInfo INFO = new OSHProcessInfo("alarmrecorder", "Alarm data recording process", null, AlarmRecorder.class);
+public class OccupancyDataRecorder extends ExecutableProcessImpl implements ISensorHubProcess {
+    public static final OSHProcessInfo INFO = new OSHProcessInfo("alarmrecorder", "Alarm data recording process", null, OccupancyDataRecorder.class);
     ISensorHub hub;
     Text systemInputParam;
     String inputSystemID;
@@ -39,7 +54,7 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
     private final RADHelper fac;
     private Map<String, DataEncoding> outputEncodingMap;
 
-    public AlarmRecorder() {
+    public OccupancyDataRecorder() {
         super(INFO);
 
         fac = new RADHelper();
@@ -123,8 +138,11 @@ public class AlarmRecorder extends ExecutableProcessImpl implements ISensorHubPr
             return false;
 
         outputData.clear();
-
         db.getDataStreamStore().values().forEach(ds -> {
+            // Don't add process datastreams as outputs
+            if(ds.getSystemID().getUniqueID().contains(OSHProcessInfo.URI_PREFIX))
+                return;
+
             var struct = ds.getRecordStructure().clone();
             var encoding = ds.getRecordEncoding();
             String fullOutputName = ds.getSystemID().getUniqueID() + ":" + ds.getOutputName();

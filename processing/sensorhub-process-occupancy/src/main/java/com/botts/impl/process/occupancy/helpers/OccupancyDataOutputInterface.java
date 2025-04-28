@@ -1,7 +1,21 @@
-package org.sensorhub.process.rapiscan.helpers;
+/*******************************************************************************
+
+  The contents of this file are subject to the Mozilla Public License, v. 2.0.
+  If a copy of the MPL was not distributed with this file, You can obtain one
+  at http://mozilla.org/MPL/2.0/.
+
+  Software distributed under the License is distributed on an "AS IS" basis,
+  WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
+  for the specific language governing rights and limitations under the License.
+
+  The Initial Developer is Botts Innovative Research Inc. Portions created by the Initial
+  Developer are Copyright (C) 2025 the Initial Developer. All Rights Reserved.
+
+ ******************************************************************************/
+
+package com.botts.impl.process.occupancy.helpers;
 
 import net.opengis.swe.v20.*;
-import org.isotc211.v2005.gco.Binary;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.api.data.IDataProducer;
 import org.sensorhub.api.data.IStreamingDataInterface;
@@ -10,16 +24,14 @@ import org.sensorhub.api.event.IEventListener;
 import org.sensorhub.api.processing.IProcessModule;
 import org.sensorhub.api.processing.ProcessingException;
 import org.sensorhub.impl.event.BasicEventHandler;
-import org.sensorhub.process.rapiscan.RapiscanProcessModule;
-import org.vast.data.BinaryComponentImpl;
-import org.vast.data.BinaryEncodingImpl;
+import com.botts.impl.process.occupancy.OccupancyProcessModule;
 import org.vast.process.DataQueue;
 import org.vast.process.ProcessException;
 import org.vast.sensorML.SMLHelper;
 import org.vast.util.Asserts;
 
-public class RapiscanOutputInterface implements IStreamingDataInterface {
-    final IProcessModule parentProcess;
+public class OccupancyDataOutputInterface implements IStreamingDataInterface {
+    final IProcessModule<?> parentProcess;
     final IEventHandler eventHandler;
     DataComponent outputDef;
     DataEncoding outputEncoding;
@@ -56,7 +68,7 @@ public class RapiscanOutputInterface implements IStreamingDataInterface {
             // save last record and send event
             lastRecord = data;
             lastRecordTime = now;
-            DataEvent e = new DataEvent(now, RapiscanOutputInterface.this, data);
+            DataEvent e = new DataEvent(now, OccupancyDataOutputInterface.this, data);
             eventHandler.publish(e);
         }
     };
@@ -68,7 +80,7 @@ public class RapiscanOutputInterface implements IStreamingDataInterface {
      * @param encoding data encoding retrieved from data stream info
      * @throws ProcessingException if unable to connect output and process
      */
-    public RapiscanOutputInterface(RapiscanProcessModule parentProcess, AbstractSWEIdentifiable outputDescriptor, DataEncoding encoding) throws ProcessingException
+    public OccupancyDataOutputInterface(OccupancyProcessModule parentProcess, AbstractSWEIdentifiable outputDescriptor, DataEncoding encoding) throws ProcessingException
     {
         this.parentProcess = parentProcess;
         this.outputDef = SMLHelper.getIOComponent(outputDescriptor);
