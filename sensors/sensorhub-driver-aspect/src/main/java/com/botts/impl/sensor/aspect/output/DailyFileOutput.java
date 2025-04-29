@@ -77,7 +77,9 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
         }
         long timeStamp = System.currentTimeMillis()/1000;
 
-        for(int i=0; i<dailyfile.size(); i++){
+//        System.out.println("Daily File: " + dailyfile);
+
+        for(int i=0; i < dailyfile.size(); i++){
 
             dailyFileString.append(dailyfile.get(i));
             if(i< dailyfile.size()-1){

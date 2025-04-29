@@ -191,6 +191,13 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> implements 
 
     @Override
     public void doStop() {
+
+        // cancel reconnection loop
+        if(connection != null){
+            connection.cancel();
+        }
+
+        // stop comm module
         if (commProviderModule != null) {
             try {
                 commProviderModule.stop();
@@ -201,11 +208,21 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> implements 
             }
         }
 
+        // unsubscribe from message handler
         if (messageHandler != null) {
             messageHandler = null;
         }
+
+
     }
 
+    public void checkConnection(){
+        // if connection is lost then reconnect in here !!!
+        if(!commProviderModule.getConnection().isConnected()){
+            reportStatus("Aspect connection lost. Trying to reconnect...");
+            connection.reconnect();
+        }
+    }
 
     @Override
     public boolean isConnected(){
@@ -232,39 +249,60 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> implements 
     }
 
 
+//    @Override
+//    public void run() {
+//
+//        long waitPeriod = -1;
+//        synchronized (this) {
+//            while (isRunning) {
+//                try{
+//                    long timeSinceMsg = messageHandler.getTimeSinceLastMessage();
+//
+//                    boolean isReceivingMsg = timeSinceMsg < config.commSettings.connection.reconnectPeriod;
+//                    if(isReceivingMsg){
+//                        this.connectionStatusOutput.onNewMessage(true);
+//                        waitPeriod = -1;
+//                    }
+//                    else {
+//                        this.connectionStatusOutput.onNewMessage(false);
+//
+//                        if(waitPeriod == -1) waitPeriod = System.currentTimeMillis();
+//
+//                        long timeDisconnected = System.currentTimeMillis() - waitPeriod;
+//
+//                        if(timeDisconnected > 5000){
+//                            connection.cancel();
+//                            connection.reconnect();
+//                            waitPeriod = -1;
+//                        }
+//                    }
+//
+//                    Thread.sleep(1000);
+//                }catch(Exception e){
+//                    log.debug("Error during connection check, "+ e);
+//                }
+//
+//            }
+//        }
+//    }
+
     @Override
     public void run() {
-
-        long waitPeriod = -1;
         synchronized (this) {
             while (isRunning) {
-                try{
-                    long timeSinceMsg = messageHandler.getTimeSinceLastMessage();
-
-                    boolean isReceivingMsg = timeSinceMsg < config.commSettings.connection.reconnectPeriod;
-                    if(isReceivingMsg){
-                        this.connectionStatusOutput.onNewMessage(true);
-                        waitPeriod = -1;
-                    }
-                    else {
-                        this.connectionStatusOutput.onNewMessage(false);
-
-                        if(waitPeriod == -1) waitPeriod = System.currentTimeMillis();
-
-                        long timeDisconnected = System.currentTimeMillis() - waitPeriod;
-
-                        if(timeDisconnected > 5000){
-                            connection.cancel();
-                            connection.reconnect();
-                            waitPeriod = -1;
-                        }
-                    }
-
-                    Thread.sleep(1000);
-                }catch(Exception e){
-                    log.debug("Error during connection check, "+ e);
+                if(messageHandler.getTimeSinceLastMessage() < config.commSettings.connection.reconnectPeriod) {
+                    this.connectionStatusOutput.onNewMessage(true);
                 }
+                else {
+                    this.connectionStatusOutput.onNewMessage(false);
 
+                    checkConnection();
+                }
+                try {
+                    Thread.sleep(1000);
+                } catch (Exception e) {
+                    logger.debug("Couldn't sleep");
+                }
             }
         }
     }
