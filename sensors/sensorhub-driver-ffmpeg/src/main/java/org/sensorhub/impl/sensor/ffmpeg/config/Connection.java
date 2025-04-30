@@ -31,7 +31,7 @@ public class Connection {
     
     @DisplayInfo(label = "FPS", desc = "Number of frames per second to enforce during playback of a file."
         + " 0 means the stream will be played as fast as possible.")
-    public int fps = 0;
+    public int fps = 60;
     
     @DisplayInfo(desc = "Continuously loop video playback (only available when reading from file).")
     public boolean loop = false;

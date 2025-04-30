@@ -2,8 +2,11 @@ package org.sensorhub.impl.sensor.ffmpeg;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.function.Consumer;
 
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.event.Event;
+import org.sensorhub.api.event.IEventListener;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.DefaultLocationOutput;
 import org.sensorhub.impl.sensor.DefaultLocationOutputLLA;
@@ -38,6 +41,11 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
      * Background thread manager. Used for image decoding. At the moment, this is a single thread.
      */
     protected ScheduledExecutorService executor;
+
+    /**
+     *
+     */
+    protected int currentReconnect;
 
     /**
      * Sensor output for the video frames.
@@ -192,10 +200,11 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	            Asserts.checkArgument(config.connection.fps >= 0, "FPS must be >= 0");
 	            mpegTsProcessor = new MpegTsProcessor(config.connection.transportStreamPath, config.connection.fps, config.connection.loop);
 	        } else if ((null != config.connection.connectionString) && (!config.connection.connectionString.isBlank())) {
-	            mpegTsProcessor = new MpegTsProcessor(config.connection.connectionString);
+	            mpegTsProcessor = new MpegTsProcessor(config.connection.connectionString, config.connection.fps, false);
 	        } else {
 	        	throw new SensorHubException("Either the input file path or the connection string must be set");
 	        }
+            mpegTsProcessor.setTimeout(config.connectionConfig.connectTimeout * 1000L);
 	        
 	        if (mpegTsProcessor.openStream()) {
 	        	logger.info("Stream opened for {}", getUniqueIdentifier());
@@ -214,13 +223,12 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	            }
 	        } else {
 	        	throw new SensorHubException("Unable to open stream from data source");
+                //return false;
 	        }
-	
 
-
-		        
 	    	logger.info("MPEG TS stream for {} opened.", getUniqueIdentifier());
     	}
+        //return true;
     }
 
     /**
@@ -300,6 +308,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         isMJPEG = config.connection.isMJPEG;
         return isMJPEG;
     }
-    
+
+
 
 }
