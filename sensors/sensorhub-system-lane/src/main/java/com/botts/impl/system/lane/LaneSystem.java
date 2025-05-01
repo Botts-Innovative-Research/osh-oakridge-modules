@@ -277,7 +277,7 @@ public class LaneSystem extends SensorSystem {
                 var purgePolicies = dbModuleConfig.autoPurgeConfig;
                 if (purgePolicies != null && !purgePolicies.isEmpty()) {
                     // Check if first purge policy has correct purge period, and if it has other video drivers, then add it or skip it
-                    var firstPolicy = purgePolicies.getFirst();
+                    var firstPolicy = purgePolicies.get(0);
                     if (firstPolicy.purgePeriod != purgePeriodMinutes * 60)
                         firstPolicy.purgePeriod = purgePeriodMinutes * 60;
                     // Remove asterisk just in case it's there
