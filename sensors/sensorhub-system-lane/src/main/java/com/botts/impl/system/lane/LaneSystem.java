@@ -470,6 +470,8 @@ public class LaneSystem extends SensorSystem {
                 var comm = aspectConfig.commSettings = new ModbusTCPCommProviderConfig();
                 comm.protocol.remoteHost = rpmConfig.remoteHost;
                 comm.protocol.remotePort = rpmConfig.remotePort;
+                // Update connection timeout to be 5 seconds instead of 3 seconds by default
+                comm.connection.connectTimeout = 5000;
                 config = aspectConfig;
             }
             // Create Rapiscan config
@@ -481,6 +483,8 @@ public class LaneSystem extends SensorSystem {
                 var comm = rapiscanConfig.commSettings = new TCPCommProviderConfig();
                 comm.protocol.remoteHost = rpmConfig.remoteHost;
                 comm.protocol.remotePort = rpmConfig.remotePort;
+                // Update connection timeout to be 5 seconds instead of 3 seconds by default
+                comm.connection.connectTimeout = 5000;
                 config = rapiscanConfig;
             }
             default -> { return null; }
