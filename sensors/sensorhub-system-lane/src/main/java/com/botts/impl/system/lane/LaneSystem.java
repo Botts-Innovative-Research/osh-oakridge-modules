@@ -16,6 +16,7 @@
 package com.botts.impl.system.lane;
 
 
+import com.botts.impl.process.occupancy.OccupancyDataRecorder;
 import com.botts.impl.process.occupancy.OccupancyProcessConfig;
 import com.botts.impl.process.occupancy.OccupancyProcessModule;
 import com.botts.impl.sensor.aspect.AspectConfig;
@@ -24,6 +25,7 @@ import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProviderConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.system.lane.config.LaneConfig;
+import com.botts.impl.system.lane.config.LaneDatabaseConfig;
 import com.botts.impl.system.lane.config.RPMConfig;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
@@ -35,10 +37,13 @@ import org.sensorhub.api.event.EventUtils;
 import org.sensorhub.api.module.ModuleConfig;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.sensor.SensorConfig;
+import org.sensorhub.api.system.ISystemWithDesc;
 import org.sensorhub.api.system.SystemAddedEvent;
 import org.sensorhub.api.system.SystemEvent;
+import org.sensorhub.api.system.SystemRemovedEvent;
 import org.sensorhub.impl.comm.TCPCommProviderConfig;
 import org.sensorhub.impl.database.system.HistoricalObsAutoPurgeConfig;
+import org.sensorhub.impl.database.system.MaxAgeAutoPurgeConfig;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
 import org.sensorhub.impl.module.AbstractModule;
 import org.sensorhub.impl.module.ModuleRegistry;
@@ -49,9 +54,11 @@ import org.sensorhub.impl.sensor.SensorSystemConfig;
 import org.sensorhub.impl.sensor.videocam.VideoCamHelper;
 import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
 import org.sensorhub.utils.MsgUtils;
+import org.slf4j.Logger;
 import org.vast.util.Asserts;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.Flow;
 
@@ -67,6 +74,9 @@ public class LaneSystem extends SensorSystem {
     AbstractSensorModule<?> existingRPMModule = null;
     AbstractProcessModule<?> existingProcessModule = null;
     Flow.Subscription subscription = null;
+    private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
+    private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
+    private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -90,6 +100,7 @@ public class LaneSystem extends SensorSystem {
         for (var member : getMembers().values()) {
             if (member instanceof RapiscanSensor || member instanceof AspectSensor) {
                 existingRPMModule = (AbstractSensorModule<?>) member;
+                break;
             }
         }
 
@@ -214,6 +225,7 @@ public class LaneSystem extends SensorSystem {
     public void cleanup() throws SensorHubException {
         super.cleanup();
 
+        // Cancel and remove module/system subscription on cleanup
         if (subscription != null) {
             subscription.cancel();
             subscription = null;
@@ -256,6 +268,57 @@ public class LaneSystem extends SensorSystem {
         }
     }
 
+    private void addSystemsToPurgePolicy(String databaseId, List<String> systemUIDs, int purgePeriodMinutes) {
+        // Add systems to purge policy
+        try {
+            if (getParentHub().getModuleRegistry().getModuleById(databaseId) instanceof SystemDriverDatabase dbModule) {
+                var dbModuleConfig = dbModule.getConfiguration();
+                // If first purge policy exists, use it and make sure the purge period matches the config
+                var purgePolicies = dbModuleConfig.autoPurgeConfig;
+                if (purgePolicies != null && !purgePolicies.isEmpty()) {
+                    // Check if first purge policy has correct purge period, and if it has other video drivers, then add it or skip it
+                    var firstPolicy = purgePolicies.getFirst();
+                    if (firstPolicy.purgePeriod != purgePeriodMinutes * 60)
+                        firstPolicy.purgePeriod = purgePeriodMinutes * 60;
+                    // Remove asterisk just in case it's there
+                    firstPolicy.systemUIDs.remove("*");
+                    firstPolicy.systemUIDs.addAll(systemUIDs);
+                }
+                // If there's no purge policies, create a new one with the PP and MRA from config
+                else {
+                    var newPurgePolicy = new MaxAgeAutoPurgeConfig();
+                    newPurgePolicy.systemUIDs = new ArrayList<>(systemUIDs);
+                    newPurgePolicy.purgePeriod = purgePeriodMinutes * 60;
+                    newPurgePolicy.maxRecordAge = purgePeriodMinutes * 60;
+                    newPurgePolicy.enabled = true;
+                    if (purgePolicies == null)
+                        purgePolicies = new ArrayList<>();
+                    purgePolicies.add(newPurgePolicy);
+                }
+                dbModule.updateConfig(dbModuleConfig);
+            }
+        } catch (SensorHubException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void removeSystemsFromPurgePolicy(String databaseId, List<String> systemUIDs) {
+        // Remove systems in purge policy
+        try {
+            if (getParentHub().getModuleRegistry().getModuleById(databaseId) instanceof SystemDriverDatabase dbModule) {
+                var dbModuleConfig = dbModule.getConfiguration();
+                var purgePolicies = dbModuleConfig.autoPurgeConfig;
+                if (purgePolicies != null && !purgePolicies.isEmpty()) {
+                    for (var policy : purgePolicies)
+                        policy.systemUIDs.removeAll(systemUIDs);
+                    dbModule.updateConfig(dbModuleConfig);
+                }
+            }
+        } catch (SensorHubException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private AbstractModule<?> registerSubmodule(ModuleConfig config) throws SensorHubException {
         var newMember = new SensorSystemConfig.SystemMember();
         newMember.config = config;
@@ -281,52 +344,88 @@ public class LaneSystem extends SensorSystem {
         // TODO: Add listener to nullify rpm module and process module if they are removed
         // TODO: If lane is not saved to config, then delete database data and process?
 
-        System.out.println(e.getClass());
-
         if (e instanceof SystemAddedEvent event) {
-            System.out.println(event.getSystemUID() + " ADDED!!!");
-            System.out.println("Parent group ID " + event.getParentGroupUID());
-            System.out.println("Source ID " + event.getSourceID());
-            System.out.println("Source class " + event.getSource());
-
-            // Note:
-            // Check if parent group ID = lane UID
-            // Check database for video or raster image obs prop
 
             // Signifies that a subsystem was added to this lane
             if (event.getParentGroupUID() != null && event.getParentGroupUID().equals(getUniqueIdentifier())) {
+                // If added subsystems are video systems, then add their UIDs to the database purge policy
+                if (getLaneDatabaseID() != null
+                        && getLaneDatabaseConfig() != null
+                        && getLaneDatabaseConfig().autoPurgeVideoData
+                        && getLaneDatabaseConfig().purgePeriodMinutes > 0) {
 
-                // Find newly added system with lane as parent
-                var sysFilterBuilder = new SystemFilter.Builder()
-                        .withUniqueIDs(event.getSystemUID())
-                        .withParents(new SystemFilter.Builder().withUniqueIDs(getUniqueIdentifier()).build());
+                    // Find newly added system with this lane as parent
+                    var sysFilterBuilder = new SystemFilter.Builder()
+                            .withUniqueIDs(event.getSystemUID())
+                            .withParents(new SystemFilter.Builder().withUniqueIDs(getUniqueIdentifier()).build());
 
-                // Generic video data stream filter
-                var videoDsFilter = new DataStreamFilter.Builder().withObservedProperties(VideoCamHelper.DEF_IMAGE, VideoCamHelper.DEF_VIDEOFRAME).build();
+                    // Generic video data stream filter
+                    var videoDsFilter = new DataStreamFilter.Builder().withObservedProperties(VideoCamHelper.DEF_IMAGE, VideoCamHelper.DEF_VIDEOFRAME).build();
 
-                // If system has video datastreams
-                if(getParentHub().getDatabaseRegistry().getFederatedDatabase().getSystemDescStore().select(sysFilterBuilder.withDataStreams(videoDsFilter).build()).findAny().isPresent()) {
-                    // Add to purge policy
-                    if(getLaneDatabaseID() != null) {
-                        try {
-                            if (getParentHub().getModuleRegistry().getModuleById(getLaneDatabaseID()) instanceof SystemDriverDatabase dbModule) {
-                                var dbModuleConfig = dbModule.getConfiguration();
-                                var purgePolicies = dbModuleConfig.autoPurgeConfig;
-                                if(purgePolicies != null && !purgePolicies.isEmpty()) {
-                                    // TODO Create new default purge policy and add to list
-                                }
-                                dbModule.updateConfig(dbModuleConfig);
-                            }
-                        } catch (SensorHubException ex) {
-                            throw new RuntimeException(ex);
-                        }
+                    var videoSystems = getParentHub().getDatabaseRegistry().getFederatedDatabase().getSystemDescStore().select(sysFilterBuilder.withDataStreams(videoDsFilter).build()).toList();
+                    // If system has video datastreams
+                    if (!videoSystems.isEmpty()) {
+                        // Add to purge policy
+                        List<String> videoSystemUIDs = new ArrayList<>();
+                        videoSystems.forEach(videoSystem -> videoSystemUIDs.add(videoSystem.getUniqueIdentifier()));
+                        addSystemsToPurgePolicy(getLaneDatabaseID(), videoSystemUIDs, getLaneDatabaseConfig().purgePeriodMinutes);
                     }
+                }
 
+                // Anytime a subsystem is added, we need to restart our associated process, so it can pick up on new systems
+                if (existingRPMModule != null && existingProcessModule != null && existingRPMModule.isStarted()) {
+                    try {
+                        // TODO: Test that a restart changes the output structure for process
+                        // Re-init and start process module
+                        getParentHub().getModuleRegistry().initModule(existingProcessModule.getLocalID());
+                        getParentHub().getModuleRegistry().startModuleAsync(existingProcessModule);
+                    } catch (SensorHubException ex) {
+                        throw new RuntimeException(ex);
+                    }
                 }
             }
         }
 
-        if (e instanceof ModuleEvent event) {
+        else if (e instanceof SystemRemovedEvent event) {
+
+            // Signifies that a subsystem was removed from the lane
+            if (event.getParentGroupUID() != null && event.getParentGroupUID().equals(getUniqueIdentifier())) {
+                // If video subsystems are removed, then remove their UIDs from the database purge policy
+                if (getLaneDatabaseID() != null
+                && getLaneDatabaseConfig() != null
+                && getLaneDatabaseConfig().autoPurgeVideoData
+                && getLaneDatabaseConfig().purgePeriodMinutes > 0) {
+
+                    // TODO: Probably put this in its own method
+                    // Find removed system with this lane as parent
+                    var sysFilterBuilder = new SystemFilter.Builder()
+                            .withUniqueIDs(event.getSystemUID())
+                            .withParents(new SystemFilter.Builder().withUniqueIDs(getUniqueIdentifier()).build());
+
+                    // Generic video data stream filter
+                    var videoDsFilter = new DataStreamFilter.Builder().withObservedProperties(VideoCamHelper.DEF_IMAGE, VideoCamHelper.DEF_VIDEOFRAME).build();
+
+                    var videoSystems = getParentHub().getDatabaseRegistry().getFederatedDatabase().getSystemDescStore().select(sysFilterBuilder.withDataStreams(videoDsFilter).build()).toList();
+                    // If system has video datastreams
+                    if (!videoSystems.isEmpty()) {
+                        // Remove from purge policy
+                        List<String> videoSystemUIDs = new ArrayList<>();
+                        videoSystems.forEach(videoSystem -> videoSystemUIDs.add(videoSystem.getUniqueIdentifier()));
+                        removeSystemsFromPurgePolicy(getLaneDatabaseID(), videoSystemUIDs);
+                    }
+                }
+
+                // If RPM is removed, nullify local object
+                if (event.getSystemUID().contains(RAPISCAN_URI) || event.getSystemUID().contains(ASPECT_URI))
+                    existingRPMModule = null;
+            }
+
+            // If process is removed, nullify local object
+            if (event.getSystemUID().contains(PROCESS_URI))
+                existingProcessModule = null;
+        }
+
+        else if (e instanceof ModuleEvent event) {
 
             // When lane is deleted, delete all lane data and process data
             if (event.getType() == ModuleEvent.Type.DELETED && event.getSourceID().equals(getLocalID())) {
@@ -399,11 +498,17 @@ public class LaneSystem extends SensorSystem {
     }
 
     private String getLaneDatabaseID() {
-        if (getLaneConfig().laneOptionsConfig != null
-        && getLaneConfig().laneOptionsConfig.laneDatabaseConfig != null
+        if (getLaneDatabaseConfig() != null
         && getLaneConfig().laneOptionsConfig.laneDatabaseConfig.laneDatabaseId != null
         && !getLaneConfig().laneOptionsConfig.laneDatabaseConfig.laneDatabaseId.isBlank())
             return getLaneConfig().laneOptionsConfig.laneDatabaseConfig.laneDatabaseId;
+        return null;
+    }
+
+    private LaneDatabaseConfig getLaneDatabaseConfig() {
+        if(getLaneConfig().laneOptionsConfig != null
+        && getLaneConfig().laneOptionsConfig.laneDatabaseConfig != null)
+            return getLaneConfig().laneOptionsConfig.laneDatabaseConfig;
         return null;
     }
 

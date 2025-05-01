@@ -24,7 +24,8 @@ import org.sensorhub.impl.database.system.SystemDriverDatabase;
  * @author Alex Almanza
  * @since April 2025
  */
-public class LaneDatabaseConfig {
+public class
+LaneDatabaseConfig {
 
     @DisplayInfo.Required
     @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.MODULE_ID)
@@ -33,5 +34,8 @@ public class LaneDatabaseConfig {
 
     @DisplayInfo(label = "Auto Purge Video Data", desc = "Select this to automatically add video systems to your lane database's purge policy")
     public boolean autoPurgeVideoData = true;
+
+    @DisplayInfo(label = "Purge Period (in minutes)", desc = "Purges video data every x minutes")
+    public int purgePeriodMinutes = 5;
 
 }
