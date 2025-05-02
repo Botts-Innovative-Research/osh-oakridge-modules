@@ -93,7 +93,7 @@ public class LaneSystem extends SensorSystem {
                 String suffix = config.uniqueID.replace(URN_PREFIX, "");
                 generateXmlID(DEFAULT_XMLID_PREFIX, suffix);
             } else {
-                this.uniqueID = URN_PREFIX + "osh:system:lane:" + config.uniqueID;
+                this.uniqueID = createLaneUID(config.uniqueID);
                 generateXmlID(DEFAULT_XMLID_PREFIX, config.uniqueID);
             }
         }
@@ -213,11 +213,48 @@ public class LaneSystem extends SensorSystem {
     public void cleanup() throws SensorHubException {
         super.cleanup();
 
+        // Auto delete lane data if specified
+        if (getLaneConfig() != null && getLaneConfig().autoDelete) {
+            String laneDatabaseId = getLaneDatabaseID();
+            String laneUID = getUniqueIdentifier();
+            if(laneUID == null)
+                laneUID = createLaneUID(config.uniqueID);
+            if (laneDatabaseId != null) {
+                // Remove lane if nothing else
+                List<String> removalList = new ArrayList<>(List.of(laneUID));
+                // Auto delete process module and remove from database
+                if (existingProcessModule != null) {
+                    var processDesc = existingProcessModule.getCurrentDescription();
+                    String processUID = null;
+                    if (processDesc == null)
+                        processUID = createProcessUID(config.uniqueID);
+                    else
+                        processUID = processDesc.getUniqueIdentifier();
+                    try {
+                        getParentHub().getModuleRegistry().destroyModule(existingProcessModule.getLocalID());
+                    } catch (SensorHubException ex) {
+                        throw new RuntimeException(ex);
+                    }
+                    removalList.add(processUID);
+                }
+                // Remove lane (and process) from database
+                removeSystemsFromDatabase(laneDatabaseId, true, removalList);
+            }
+        }
+
         // Cancel and remove module/system subscription on cleanup
         if (subscription != null) {
             subscription.cancel();
             subscription = null;
         }
+    }
+
+    private String createLaneUID(String suffix) {
+        return URN_PREFIX + "osh:system:lane:" + suffix;
+    }
+
+    private String createProcessUID(String suffix) {
+        return URN_PREFIX + "osh:process:occupancy:" + suffix;
     }
 
     private void addSystemsToDatabase(String databaseId, List<String> systemUIDs) {
@@ -238,7 +275,8 @@ public class LaneSystem extends SensorSystem {
             // Remove system ids from database config
             if (getParentHub().getModuleRegistry().getModuleById(databaseId) instanceof SystemDriverDatabase dbModule) {
                 var dbModuleConfig = dbModule.getConfiguration();
-                List.of(systemUIDs).forEach(dbModuleConfig.systemUIDs::remove);
+                for (String sysUID : systemUIDs)
+                    dbModuleConfig.systemUIDs.remove(sysUID);
                 dbModule.updateConfig(dbModuleConfig);
                 // Pass along retrieved IObsSystemDatabase to clean
                 obsDatabase = dbModule.getWrappedDatabase();
@@ -464,29 +502,6 @@ public class LaneSystem extends SensorSystem {
         }
 
         else if (e instanceof ModuleEvent event) {
-
-            // When lane is deleted, delete all lane data and process data
-            if (event.getType() == ModuleEvent.Type.DELETED && event.getSourceID().equals(getLocalID())) {
-                // Auto delete lane data if specified
-                if (getLaneConfig().autoDelete) {
-                    String laneDatabaseId = getLaneDatabaseID();
-                    if (laneDatabaseId != null) {
-                        // Remove lane if nothing else
-                        List<String> removalList = new ArrayList<>(List.of(getUniqueIdentifier()));
-                        // Auto delete process module and remove from database
-                        if (existingProcessModule != null) {
-                            try {
-                                getParentHub().getModuleRegistry().destroyModule(existingProcessModule.getLocalID());
-                            } catch (SensorHubException ex) {
-                                throw new RuntimeException(ex);
-                            }
-                            removalList.add(existingProcessModule.getUniqueIdentifier());
-                        }
-                        // Remove lane (and process) from database
-                        removeSystemsFromDatabase(laneDatabaseId, true, removalList);
-                    }
-                }
-            }
 
             // Module STATE_CHANGED events
             if (event.getType() == ModuleEvent.Type.STATE_CHANGED) {
