@@ -12,19 +12,29 @@
  Developer are Copyright (C) 2025 the Initial Developer. All Rights Reserved.
  ******************************************************************************/
 
+import com.botts.impl.process.occupancy.OccupancyProcessModule;
 import com.botts.impl.system.lane.Descriptor;
 import com.botts.impl.system.lane.LaneSystem;
 import com.botts.impl.system.lane.config.*;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.FixMethodOrder;
 import org.junit.Test;
 import org.junit.runners.MethodSorters;
+import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.SensorHub;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
 import org.sensorhub.impl.database.system.SystemDriverDatabaseConfig;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
+import org.sensorhub.impl.processing.AbstractProcessModule;
+import org.sensorhub.utils.Async;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.File;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.Assert.*;
 
@@ -34,6 +44,7 @@ import static org.junit.Assert.*;
  */
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class LaneTests {
+    private static final Logger log = LoggerFactory.getLogger(LaneTests.class);
     // Constants
     private String LANE_DATABASE_ID = "lanedb1";
     private String RPM_UID = "rpm1";
@@ -47,62 +58,73 @@ public class LaneTests {
     private SensorHub hub;
     private LaneSystem lane;
     private SystemDriverDatabase database;
-    
+    private File dbFile;
+
     @Before
     public void setUp() throws Exception {
-        hub = new SensorHub();
-        hub.start();
+        if (dbFile == null) {
+            // Create temp file to use with System Driver Database
+            dbFile = File.createTempFile("testlanedb", ".dat");
+            dbFile.deleteOnExit();
+        }
 
-        database = loadSystemDriverDatabase();
-        assertNotNull(database);
-        assertNull(database.getCurrentError());
-        assertEquals(database.getCurrentState(), ModuleEvent.ModuleState.STARTED);
-        lane = loadLaneModule();
-        assertNotNull(lane);
-        assertNull(lane.getCurrentError());
-        assertEquals(lane.getCurrentState(), ModuleEvent.ModuleState.LOADED);
+        if (hub == null) {
+            hub = new SensorHub();
+            hub.start();
+        }
+
+        if (database == null) {
+            database = loadSystemDriverDatabase(hub);
+            assertNotNull(database);
+            assertNull(database.getCurrentError());
+            assertEquals(database.getCurrentState(), ModuleEvent.ModuleState.STARTED);
+        }
+
+        if (lane == null) {
+            lane = loadLaneModule(hub);
+            assertNotNull(lane);
+            assertNull(lane.getCurrentError());
+            assertEquals(lane.getCurrentState(), ModuleEvent.ModuleState.LOADED);
+            startLaneAndWaitForStarted();
+            assertEquals(lane.getCurrentState(), ModuleEvent.ModuleState.STARTED);
+        }
     }
 
     @Test
-    public void _1testSystemDriverDatabaseLoads() throws SensorHubException {
-        database = loadSystemDriverDatabase();
-    }
-
-    @Test
-    public void _2testLaneLoads() throws SensorHubException {
-        lane = loadLaneModule();
-    }
-
-    @Test
-    public void _3testLaneCreatesRPMModule() throws SensorHubException {
-        hub.getModuleRegistry().startModuleAsync(lane);
+    public void testLaneCreatesRPMModule() throws SensorHubException {
         assertFalse(lane.getMembers().isEmpty());
     }
 
     @Test
-    public void _4testProcessLoaded() {
+    public void testLaneAddedToDatabase() throws InterruptedException, TimeoutException {
+        Async.waitForCondition(() -> database.getConfiguration().systemUIDs.contains(lane.getUniqueIdentifier()), 500, 10000);
     }
 
     @Test
-    public void _5testProcessInitialized() {
+    public void testProcessStarted() throws SensorHubException, TimeoutException {
+        AbstractProcessModule<?> processModule = hub.getModuleRegistry().getModuleByType(OccupancyProcessModule.class);
+        Async.waitForCondition(() -> processModule.getCurrentState() == ModuleEvent.ModuleState.STARTED, 500, 20000);
+        System.out.println("Process started");
     }
 
-    @Test
-    public void _6testProcessStarted() {
+    private void startLaneAndWaitForStarted() throws SensorHubException {
+        hub.getModuleRegistry().startModule(lane.getLocalID());
+        lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
     }
 
-    private SystemDriverDatabase loadSystemDriverDatabase() throws SensorHubException {
+    private SystemDriverDatabase loadSystemDriverDatabase(ISensorHub hub) throws SensorHubException {
         SystemDriverDatabaseConfig dbModuleConfig = new SystemDriverDatabaseConfig();
+        dbModuleConfig.id = LANE_DATABASE_ID;
         dbModuleConfig.name = "Lane DB";
         dbModuleConfig.autoStart = true;
         dbModuleConfig.databaseNum = 1;
         MVObsSystemDatabaseConfig dbConfig = (MVObsSystemDatabaseConfig) (dbModuleConfig.dbConfig = new MVObsSystemDatabaseConfig());
-        dbConfig.storagePath = "unitTestDB.db";
+        dbConfig.storagePath = dbFile.getAbsolutePath();
         dbConfig.readOnly = false;
         return (SystemDriverDatabase) hub.getModuleRegistry().loadModule(dbModuleConfig);
     }
 
-    private LaneSystem loadLaneModule() throws SensorHubException {
+    private LaneSystem loadLaneModule(ISensorHub hub) throws SensorHubException {
         // This is what you should configure in the Admin UI
         LaneConfig laneConfig = (LaneConfig) hub.getModuleRegistry().createModuleConfig(new Descriptor());
         laneConfig.uniqueID = LANE_UID;
@@ -120,6 +142,25 @@ public class LaneTests {
         rpm.remoteHost = RAPISCAN_HOST;
         rpm.remotePort = RAPISCAN_PORT;
         return (LaneSystem) hub.getModuleRegistry().loadModule(laneConfig);
+    }
+
+    @After
+    public void cleanup()
+    {
+        try
+        {
+            if (hub != null)
+                hub.stop();
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+        finally
+        {
+            if (dbFile != null)
+                dbFile.delete();
+        }
     }
 
 }
