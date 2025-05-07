@@ -23,17 +23,14 @@ import org.junit.Test;
 import org.junit.runners.MethodSorters;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.event.Event;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.SensorHub;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
 import org.sensorhub.impl.database.system.SystemDriverDatabaseConfig;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
 import org.sensorhub.impl.processing.AbstractProcessModule;
-import org.sensorhub.impl.sensor.SensorSystemConfig;
-import org.sensorhub.impl.sensor.fakeweather.FakeWeatherConfig;
-import org.sensorhub.impl.sensor.fakeweather.FakeWeatherDescriptor;
-import org.sensorhub.impl.sensor.fakeweather.FakeWeatherSensor;
+//import org.sensorhub.impl.sensor.fakeweather.FakeWeatherConfig;
+//import org.sensorhub.impl.sensor.fakeweather.FakeWeatherSensor;
 import org.sensorhub.utils.Async;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -158,42 +155,42 @@ public class LaneTests {
         assertEquals(processModules.size(), lanes.size());
     }
 
-    @Test
-    public void testProcessContainsNewOutputs() throws TimeoutException, SensorHubException {
-        // TODO: Add test
-        // Check lane is started
-        lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-        var processes = hub.getModuleRegistry().getLoadedModules(OccupancyProcessModule.class).stream().toList();
-        OccupancyProcessModule process = processes.stream().filter(p -> p.getConfiguration().systemUID.equals(lane.getUniqueIdentifier())).findFirst().orElse(null);
-        assertNotNull(process);
-        // Check process is started
-        process.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-        // Track number of outputs of only one lane submodule (should be ~10)
-        numOutputsBefore = process.getOutputs().size();
-        // Add submodule to lane
-        var weatherSubmodule = lane.addSubsystem(createWeatherSubmodule(hub, "1"));
-        System.out.println("Weather submodule loaded");
-        System.out.println(weatherSubmodule.getCurrentState());
-        // Wait for autostart to kick in
-        weatherSubmodule.init();
-        weatherSubmodule.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
-        weatherSubmodule.start();
-        var weatherStarted = weatherSubmodule.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-        assertTrue(weatherStarted);
-        System.out.println("Weather submodule started");
-        System.out.println(weatherSubmodule.getCurrentState());
-        // Check process adds submodule's outputs
-        System.out.println("Num outputs before: " + numOutputsBefore);
-        System.out.println("Num outputs after: " + process.getOutputs().size());
-        Async.waitForCondition(() -> numOutputsBefore != process.getOutputs().size(), 20000);
-        // Check process is started with new outputs
-        System.out.println("Num outputs before: " + numOutputsBefore);
-        System.out.println("Num outputs after: " + process.getOutputs().size());
-        System.out.println(process.getCurrentState());
-        boolean isStarted = process.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-        System.out.println("Process: " + process.getCurrentState());
-        assertTrue(isStarted);
-    }
+    // NOTE: Uncomment all related simulated weather driver code if you want to run this test, or perform test with different module
+//    @Test
+//    public void testProcessContainsNewOutputs() throws TimeoutException, SensorHubException {
+//        // Check lane is started
+//        lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+//        var processes = hub.getModuleRegistry().getLoadedModules(OccupancyProcessModule.class).stream().toList();
+//        OccupancyProcessModule process = processes.stream().filter(p -> p.getConfiguration().systemUID.equals(lane.getUniqueIdentifier())).findFirst().orElse(null);
+//        assertNotNull(process);
+//        // Check process is started
+//        process.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+//        // Track number of outputs of only one lane submodule (should be ~10)
+//        numOutputsBefore = process.getOutputs().size();
+//        // Add submodule to lane
+//        var weatherSubmodule = lane.addSubsystem(createWeatherSubmodule(hub, "1"));
+//        System.out.println("Weather submodule loaded");
+//        System.out.println(weatherSubmodule.getCurrentState());
+//        // Wait for autostart to kick in
+//        weatherSubmodule.init();
+//        weatherSubmodule.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
+//        weatherSubmodule.start();
+//        var weatherStarted = weatherSubmodule.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+//        assertTrue(weatherStarted);
+//        System.out.println("Weather submodule started");
+//        System.out.println(weatherSubmodule.getCurrentState());
+//        // Check process adds submodule's outputs
+//        System.out.println("Num outputs before: " + numOutputsBefore);
+//        System.out.println("Num outputs after: " + process.getOutputs().size());
+//        Async.waitForCondition(() -> numOutputsBefore != process.getOutputs().size(), 20000);
+//        // Check process is started with new outputs
+//        System.out.println("Num outputs before: " + numOutputsBefore);
+//        System.out.println("Num outputs after: " + process.getOutputs().size());
+//        System.out.println(process.getCurrentState());
+//        boolean isStarted = process.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+//        System.out.println("Process: " + process.getCurrentState());
+//        assertTrue(isStarted);
+//    }
 
     @Test
     public void testProcessStopsAndStartsWithLane() throws SensorHubException {
@@ -227,16 +224,16 @@ public class LaneTests {
         lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
     }
 
-    private SensorSystemConfig.SystemMember createWeatherSubmodule(ISensorHub hub, String id) throws SensorHubException {
-        FakeWeatherConfig config = (FakeWeatherConfig) hub.getModuleRegistry().createModuleConfig(hub.getModuleRegistry().getInstalledModuleTypes(FakeWeatherSensor.class).stream().toList().get(0));
-        assertNotNull(config);
-        config.autoStart = true;
-        config.name = "Weather Driver " + id;
-        config.serialNumber = id;
-        var newMember = new SensorSystemConfig.SystemMember();
-        newMember.config = config;
-        return newMember;
-    }
+//    private SensorSystemConfig.SystemMember createWeatherSubmodule(ISensorHub hub, String id) throws SensorHubException {
+//        FakeWeatherConfig config = (FakeWeatherConfig) hub.getModuleRegistry().createModuleConfig(hub.getModuleRegistry().getInstalledModuleTypes(FakeWeatherSensor.class).stream().toList().get(0));
+//        assertNotNull(config);
+//        config.autoStart = true;
+//        config.name = "Weather Driver " + id;
+//        config.serialNumber = id;
+//        var newMember = new SensorSystemConfig.SystemMember();
+//        newMember.config = config;
+//        return newMember;
+//    }
 
     private SystemDriverDatabase loadSystemDriverDatabase(ISensorHub hub) throws SensorHubException {
         SystemDriverDatabaseConfig dbModuleConfig = new SystemDriverDatabaseConfig();
