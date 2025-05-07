@@ -44,6 +44,7 @@ import org.sensorhub.impl.comm.TCPCommProviderConfig;
 import org.sensorhub.impl.database.system.MaxAgeAutoPurgeConfig;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
 import org.sensorhub.impl.module.AbstractModule;
+import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.processing.AbstractProcessModule;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.SensorSystem;
@@ -52,7 +53,6 @@ import org.sensorhub.impl.sensor.videocam.VideoCamHelper;
 import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
 import org.sensorhub.utils.Async;
 import org.sensorhub.utils.MsgUtils;
-import org.sensorhub.utils.NamedThreadFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.util.Asserts;
@@ -74,6 +74,9 @@ public class LaneSystem extends SensorSystem {
     private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
     private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
+
+    private static final Object databaseLock = new Object();
+
     AbstractSensorModule<?> existingRPMModule = null;
     AbstractProcessModule<?> existingProcessModule = null;
     Flow.Subscription subscription = null;
@@ -84,7 +87,8 @@ public class LaneSystem extends SensorSystem {
     @Override
     protected void doInit() throws SensorHubException {
         execQueue = new LinkedBlockingQueue<>(100);
-        threadPool = new ThreadPoolExecutor(1, 1, 10, TimeUnit.SECONDS, execQueue, new NamedThreadFactory("LaneModuleThreadPool"));
+//        threadPool = new ThreadPoolExecutor(1, 1, 10, TimeUnit.SECONDS, execQueue, new NamedThreadFactory("LaneModuleThreadPool"));
+        threadPool = Executors.newSingleThreadExecutor();
 
         // generate unique ID
         if (config.uniqueID != null && !config.uniqueID.equals(AUTO_ID)) {
@@ -178,30 +182,13 @@ public class LaneSystem extends SensorSystem {
 
         getParentHub().getEventBus().newSubscription()
             // TODO: osh-core needs to use EventUtils for module topic IDs
-            .withTopicID(EventUtils.getSystemRegistryTopicID(), getLocalID())
+            .withTopicID(EventUtils.getSystemRegistryTopicID(), ModuleRegistry.EVENT_GROUP_ID)
             .subscribe(this::handleLaneEvent)
             .thenAccept(subscription -> {
                 this.subscription = subscription;
                 subscription.request(Long.MAX_VALUE);
                 getLogger().info("Started module subscription to {}", getLocalID());
             });
-    }
-
-    private boolean checkDriverFinishedRegistration(String systemUID, IDataProducer driver) {
-        var dsFilter = new DataStreamFilter.Builder().withSystems(new SystemFilter.Builder().withUniqueIDs(systemUID).build()).build();
-        var numDataStreams = getParentHub().getDatabaseRegistry().getFederatedDatabase().getDataStreamStore().countMatchingEntries(dsFilter);
-        var numDriverOutputs = driver.getOutputs().size();
-
-        boolean outputsMatch = numDriverOutputs == numDataStreams;
-
-        if (driver instanceof ICommandReceiver commandReceiver) {
-            var csFilter = new CommandStreamFilter.Builder().withSystems(new SystemFilter.Builder().withUniqueIDs(systemUID).build()).build();
-            var numControlStreams = getParentHub().getDatabaseRegistry().getFederatedDatabase().getCommandStreamStore().countMatchingEntries(csFilter);
-            var numDriverInputs = commandReceiver.getCommandInputs().size();
-            return outputsMatch && numControlStreams == numDriverInputs;
-        }
-
-        return outputsMatch;
     }
 
     @Override
@@ -238,7 +225,7 @@ public class LaneSystem extends SensorSystem {
                     removalList.add(processUID);
                 }
                 // Remove lane (and process) from database
-                removeSystemsFromDatabase(laneDatabaseId, true, removalList);
+                deleteSystemsFromDatabase(laneDatabaseId, removalList);
             }
         }
 
@@ -257,33 +244,13 @@ public class LaneSystem extends SensorSystem {
         return URN_PREFIX + "osh:process:occupancy:" + suffix;
     }
 
-    private void addSystemsToDatabase(String databaseId, List<String> systemUIDs) {
+    private synchronized void deleteSystemsFromDatabase(String databaseId, List<String> systemUIDs) {
         try {
-            if (getParentHub().getModuleRegistry().getModuleById(databaseId) instanceof SystemDriverDatabase dbModule) {
-                var dbModuleConfig = dbModule.getConfiguration();
-                dbModuleConfig.systemUIDs.addAll(systemUIDs);
-                dbModule.updateConfig(dbModuleConfig);
-            }
-        } catch (SensorHubException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private void removeSystemsFromDatabase(String databaseId, boolean deleteData, List<String> systemUIDs) {
-        try {
-            IObsSystemDatabase obsDatabase = null;
-            // Remove system ids from database config
-            if (getParentHub().getModuleRegistry().getModuleById(databaseId) instanceof SystemDriverDatabase dbModule) {
-                var dbModuleConfig = dbModule.getConfiguration();
-                for (String sysUID : systemUIDs)
-                    dbModuleConfig.systemUIDs.remove(sysUID);
-                dbModule.updateConfig(dbModuleConfig);
-                // Pass along retrieved IObsSystemDatabase to clean
-                obsDatabase = dbModule.getWrappedDatabase();
-            }
+            // Collect database from configured module ID
+            IObsSystemDatabase obsDatabase = ((SystemDriverDatabase) getParentHub().getModuleRegistry().getModuleById(databaseId)).getWrappedDatabase();
 
             // Optionally delete the system data too
-            if (deleteData && obsDatabase != null) {
+            if (obsDatabase != null) {
                 var transactionHandler = new SystemDatabaseTransactionHandler(getParentHub().getEventBus(), obsDatabase);
                 // Don't use forEach bc nested try-catch
                 for (String sysUID : systemUIDs)
@@ -291,6 +258,8 @@ public class LaneSystem extends SensorSystem {
             }
         } catch (SensorHubException e) {
             throw new RuntimeException(e);
+        } catch (ClassCastException e) {
+            throw new ClassCastException("Database ID in configuration does not correspond to a System Driver Database!");
         }
     }
 
@@ -328,7 +297,7 @@ public class LaneSystem extends SensorSystem {
         }
     }
 
-    private void removeSystemsFromPurgePolicy(String databaseId, List<String> systemUIDs) {
+    private synchronized void removeSystemsFromPurgePolicy(String databaseId, List<String> systemUIDs) {
         // Remove systems in purge policy
         try {
             if (getParentHub().getModuleRegistry().getModuleById(databaseId) instanceof SystemDriverDatabase dbModule) {
@@ -372,35 +341,6 @@ public class LaneSystem extends SensorSystem {
 
         if (e instanceof SystemAddedEvent event) {
 
-            // If process is the newly added system, attach  it to database
-            if (existingProcessModule != null && existingProcessModule.getCurrentDescription() != null && Objects.equals(event.getSystemUID(), existingProcessModule.getUniqueIdentifier()) && getLaneDatabaseID() != null) {
-                threadPool.execute(() -> {
-                    try {
-                        existingProcessModule.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-                        Async.waitForCondition(() -> checkDriverFinishedRegistration(existingProcessModule.getUniqueIdentifier(), existingProcessModule), 500, 10000);
-                        addSystemsToDatabase(getLaneDatabaseID(), List.of(existingProcessModule.getUniqueIdentifier()));
-                    } catch (TimeoutException | SensorHubException ex) {
-                        throw new RuntimeException(ex);
-                    }
-                });
-            }
-
-            // If lane is the newly added system, attach it to database
-            if (existingRPMModule != null && Objects.equals(event.getSystemUID(), getUniqueIdentifier()) && getLaneDatabaseID() != null) {
-                threadPool.execute(() -> {
-                    try {
-                        waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-                        existingRPMModule.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-                        getLogger().info("Waiting for lane to finish registration");
-                        Async.waitForCondition(() -> checkDriverFinishedRegistration(existingRPMModule.getUniqueIdentifier(), existingRPMModule), 500, 10000);
-                        getLogger().info("Finished registration");
-                        addSystemsToDatabase(getLaneDatabaseID(), List.of(getUniqueIdentifier()));
-                    } catch (TimeoutException | SensorHubException ex) {
-                        throw new RuntimeException(ex);
-                    }
-                });
-            }
-
             // Signifies that a subsystem was added to this lane
             if (event.getParentGroupUID() != null && event.getParentGroupUID().equals(getUniqueIdentifier())) {
                 // If added subsystems are video systems, then add their UIDs to the database purge policy
@@ -428,37 +368,37 @@ public class LaneSystem extends SensorSystem {
                 }
 
                 // Anytime a subsystem is added, we need to restart our associated process, so it can pick up on new systems
-                if (existingRPMModule != null && existingProcessModule != null && existingRPMModule.isStarted() && this.isStarted()
-                        && getParentHub().getSystemDriverRegistry().hasDatabase(this.getUniqueIdentifier())) {
-                    // TODO: Test that a restart changes the output structure for process
-                    threadPool.execute(() -> {
-                        boolean success = false;
-                        int retries = 0;
-                        while(!success && retries < 5 && !existingProcessModule.isStarted()) {
-                            // Re-init and start process module
-                            try {
-                                waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-                                existingRPMModule.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-                                var dbModule = (SystemDriverDatabase) getParentHub().getModuleRegistry().getModuleById(getLaneDatabaseID());
-                                Async.waitForCondition(() -> dbModule.getConfiguration().systemUIDs.contains(getUniqueIdentifier()), 500, 10000);
-                                dbModule.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-                                Async.waitForCondition(() -> checkDriverFinishedRegistration(existingRPMModule.getUniqueIdentifier(), existingRPMModule), 500, 10000);
-                                getParentHub().getModuleRegistry().initModule(existingProcessModule.getLocalID());
-                                existingProcessModule.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
-                                getParentHub().getModuleRegistry().startModule(existingProcessModule.getLocalID());
-                            } catch (SensorHubException | TimeoutException ex) {
-                                retries++;
-                                getLogger().warn("Process module initialization attempt {} failed, retrying...", retries, ex);
-                                try {
-                                    Thread.sleep(1000);
-                                } catch (InterruptedException ie) {
-                                    Thread.currentThread().interrupt();
-                                    break;
-                                }
-                            }
-                        }
-                    });
-                }
+//                if (existingRPMModule != null && existingProcessModule != null && existingRPMModule.isStarted() && this.isStarted()
+//                        && getParentHub().getSystemDriverRegistry().hasDatabase(this.getUniqueIdentifier())) {
+//                    // TODO: Test that a restart changes the output structure for process
+//                    threadPool.execute(() -> {
+//                        boolean success = false;
+//                        int retries = 0;
+//                        while(!success && retries < 5 && !existingProcessModule.isStarted()) {
+//                            // Re-init and start process module
+//                            try {
+//                                waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+//                                existingRPMModule.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+//                                var dbModule = (SystemDriverDatabase) getParentHub().getModuleRegistry().getModuleById(getLaneDatabaseID());
+//                                Async.waitForCondition(() -> dbModule.getConfiguration().systemUIDs.contains(getUniqueIdentifier()), 500, 10000);
+//                                dbModule.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+//                                Async.waitForCondition(() -> checkDriverFinishedRegistration(existingRPMModule.getUniqueIdentifier(), existingRPMModule), 500, 10000);
+//                                getParentHub().getModuleRegistry().initModule(existingProcessModule.getLocalID());
+//                                existingProcessModule.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
+//                                getParentHub().getModuleRegistry().startModule(existingProcessModule.getLocalID());
+//                            } catch (SensorHubException | TimeoutException ex) {
+//                                retries++;
+//                                getLogger().warn("Process module initialization attempt {} failed, retrying...", retries, ex);
+//                                try {
+//                                    Thread.sleep(1000);
+//                                } catch (InterruptedException ie) {
+//                                    Thread.currentThread().interrupt();
+//                                    break;
+//                                }
+//                            }
+//                        }
+//                    });
+//                }
             }
         }
 
@@ -513,6 +453,9 @@ public class LaneSystem extends SensorSystem {
                     if (existingRPMModule != null && Objects.equals(event.getSourceID(), existingRPMModule.getLocalID()) && existingProcessModule != null
                     && !existingProcessModule.isStarted()) {
                         try {
+                            if (existingProcessModule.getCurrentState().equals(ModuleEvent.ModuleState.LOADED))
+                                getParentHub().getModuleRegistry().initModule(existingProcessModule.getLocalID());
+                            existingProcessModule.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
                             getParentHub().getModuleRegistry().startModuleAsync(existingProcessModule);
                         } catch (SensorHubException ex) {
                             throw new RuntimeException(ex);

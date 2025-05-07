@@ -138,7 +138,12 @@ public class OccupancyDataRecorder extends ExecutableProcessImpl implements ISen
             return false;
 
         outputData.clear();
-        db.getDataStreamStore().values().forEach(ds -> {
+        var sysFilter = new SystemFilter.Builder()
+                .withUniqueIDs(inputSystemID)
+                .includeMembers(true)
+                .build();
+
+        db.getDataStreamStore().select(new DataStreamFilter.Builder().withSystems(sysFilter).build()).forEach(ds -> {
             // Don't add process datastreams as outputs
             if(ds.getSystemID().getUniqueID().contains(OSHProcessInfo.URI_PREFIX))
                 return;

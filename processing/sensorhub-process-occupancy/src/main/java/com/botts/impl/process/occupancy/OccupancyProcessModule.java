@@ -20,17 +20,24 @@ import net.opengis.swe.v20.AbstractSWEIdentifiable;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import org.sensorhub.api.ISensorHub;
+import org.sensorhub.api.command.ICommandReceiver;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.data.IDataProducer;
+import org.sensorhub.api.datastore.command.CommandStreamFilter;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
+import org.sensorhub.api.event.Event;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.processing.OSHProcessInfo;
 import org.sensorhub.api.processing.ProcessingException;
+import org.sensorhub.api.system.ISystemDriver;
+import org.sensorhub.api.system.SystemChangedEvent;
 import org.sensorhub.api.utils.OshAsserts;
+import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.processing.AbstractProcessModule;
 import com.botts.impl.process.occupancy.helpers.ProcessHelper;
 import com.botts.impl.process.occupancy.helpers.OccupancyDataOutputInterface;
-import org.sensorhub.impl.sensor.SensorSystem;
+import org.sensorhub.utils.Async;
 import org.vast.process.ProcessException;
 import org.vast.sensorML.AggregateProcessImpl;
 import org.vast.sensorML.SMLException;
@@ -39,7 +46,10 @@ import org.vast.sensorML.SMLUtils;
 
 import java.io.*;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.Flow;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 // Based on SMLProcessImpl
@@ -51,7 +61,8 @@ public class OccupancyProcessModule extends AbstractProcessModule<OccupancyProce
     protected boolean useThreads = true;
     String processUniqueID;
     OccupancyDataRecorder alarmProcess;
-    String parentSystemUniqueID;
+    String parentSystemUID = null;
+    Flow.Subscription subscription = null;
 
     /**
      * Standalone processing module to be recognized by OSH module provider, accessible in the OSH Admin UI.
@@ -75,6 +86,31 @@ public class OccupancyProcessModule extends AbstractProcessModule<OccupancyProce
 
     @Override
     protected void doInit() throws SensorHubException {
+        parentSystemUID = config.systemUID;
+        if (parentSystemUID == null || parentSystemUID.isBlank()) {
+            if(getParentSystem() == null || getParentSystemUID() == null || getParentSystemUID().isBlank())
+                throw new SensorHubException("Please specify a system UID, or put process under parent system.");
+            parentSystemUID = getParentSystemUID();
+        }
+
+        String parentModuleID = null;
+        for (var module : getParentHub().getModuleRegistry().getLoadedModules()) {
+            if (module instanceof ISystemDriver driver && driver.getCurrentDescription() != null && driver.getUniqueIdentifier() != null && driver.getUniqueIdentifier().equals(parentSystemUID)) {
+                parentModuleID = module.getLocalID();
+                break;
+            }
+        }
+
+        // Listen for system events on config's system UID
+        getParentHub().getEventBus().newSubscription()
+                // TODO: Ideally should only listen to single module
+                .withTopicID(ModuleRegistry.EVENT_GROUP_ID)
+                .consume(this::handleEvent)
+                .thenAccept(s -> {
+                    subscription = s;
+                    s.request(Long.MAX_VALUE);
+                });
+
         try {
             processUniqueID = OSHProcessInfo.URI_PREFIX +  "occupancy:" + config.serialNumber;
             OshAsserts.checkValidUID(processUniqueID);
@@ -91,6 +127,54 @@ public class OccupancyProcessModule extends AbstractProcessModule<OccupancyProce
         }
     }
 
+    private void handleEvent(Event e) {
+        if (e instanceof ModuleEvent event) {
+            // Subsystem has been added to our parent system containing RPM and other data sources
+            if (event.getModule() instanceof IDataProducer driver && Objects.equals(driver.getParentSystemUID(), parentSystemUID)
+            && event.getType().equals(ModuleEvent.Type.STATE_CHANGED)
+            && event.getNewState().equals(ModuleEvent.ModuleState.STARTED)
+            && this.isStarted()) {
+                try {
+                    Async.waitForCondition(() -> checkSystemDriverFinishedRegistration(driver.getUniqueIdentifier(), driver), 500, 10000);
+                    new Thread(() -> {
+                        boolean isStarting = true;
+                        while (isStarting) {
+                            try {
+                                this.init();
+                                boolean isInitialized = waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
+                                if (!isInitialized)
+                                    continue;
+                                this.start();
+                                isStarting = false;
+                            } catch (SensorHubException ex) {
+                                getLogger().info("Failed restart, trying again to restart module...");
+                            }
+                        }
+                    }).start();
+                } catch (TimeoutException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        }
+    }
+
+    private boolean checkSystemDriverFinishedRegistration(String systemUID, IDataProducer driver) {
+        var dsFilter = new DataStreamFilter.Builder().withSystems(new SystemFilter.Builder().withUniqueIDs(systemUID).build()).build();
+        var numDataStreams = getParentHub().getDatabaseRegistry().getFederatedDatabase().getDataStreamStore().countMatchingEntries(dsFilter);
+        var numDriverOutputs = driver.getOutputs().size();
+
+        boolean outputsMatch = numDriverOutputs == numDataStreams;
+
+        if (driver instanceof ICommandReceiver commandReceiver) {
+            var csFilter = new CommandStreamFilter.Builder().withSystems(new SystemFilter.Builder().withUniqueIDs(systemUID).build()).build();
+            var numControlStreams = getParentHub().getDatabaseRegistry().getFederatedDatabase().getCommandStreamStore().countMatchingEntries(csFilter);
+            var numDriverInputs = commandReceiver.getCommandInputs().size();
+            return outputsMatch && numControlStreams == numDriverInputs;
+        }
+
+        return outputsMatch;
+    }
+
     /**
      * Build SensorML process description via ProcessHelper. // TODO Change to use ProcessHelper in sensorhub-process-helpers
      * @return process chain implementation to be executed
@@ -98,18 +182,12 @@ public class OccupancyProcessModule extends AbstractProcessModule<OccupancyProce
      * @throws SensorHubException if no RPM data streams
      */
     public AggregateProcessImpl buildProcess() throws ProcessException, SensorHubException {
-        String systemUID = config.systemUID;
-        if (systemUID == null || systemUID.isBlank()) {
-            if(getParentSystem() == null || getParentSystemUID() == null || getParentSystemUID().isBlank())
-                throw new SensorHubException("Please specify a system UID, or put process under parent system.");
-            systemUID = getParentSystemUID();
-        }
 
         ProcessHelper processHelper = new ProcessHelper();
         processHelper.getAggregateProcess().setUniqueIdentifier(processUniqueID);
 
         var sysFilter = new SystemFilter.Builder()
-                .withUniqueIDs(systemUID)
+                .withUniqueIDs(parentSystemUID)
                 .includeMembers(true)
                 .build();
 
@@ -134,7 +212,7 @@ public class OccupancyProcessModule extends AbstractProcessModule<OccupancyProce
 
         processHelper.addDataSource("source0", dataStreamUID);
 
-        alarmProcess.getParameterList().getComponent(OccupancyDataRecorder.SYSTEM_INPUT_PARAM).getData().setStringValue(systemUID);
+        alarmProcess.getParameterList().getComponent(OccupancyDataRecorder.SYSTEM_INPUT_PARAM).getData().setStringValue(parentSystemUID);
 
         alarmProcess.setParentHub(getParentHub());
         alarmProcess.notifyParamChange();
@@ -181,12 +259,6 @@ public class OccupancyProcessModule extends AbstractProcessModule<OccupancyProce
         refreshIOList(processDescription.getOutputList(), outputs, alarmProcess.getOutputEncodingMap());
 
         setState(ModuleEvent.ModuleState.INITIALIZED);
-    }
-
-
-    public AggregateProcessImpl getProcessChain()
-    {
-        return wrapperProcess;
     }
 
 
@@ -256,6 +328,11 @@ public class OccupancyProcessModule extends AbstractProcessModule<OccupancyProce
     @Override
     protected void doStop()
     {
+        if (subscription != null) {
+            subscription.cancel();
+            subscription = null;
+        }
+
         if (wrapperProcess != null && wrapperProcess.isExecutable())
             wrapperProcess.stop();
     }

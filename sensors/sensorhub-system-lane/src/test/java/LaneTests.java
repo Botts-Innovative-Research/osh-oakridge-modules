@@ -23,17 +23,26 @@ import org.junit.Test;
 import org.junit.runners.MethodSorters;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.event.Event;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.SensorHub;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
 import org.sensorhub.impl.database.system.SystemDriverDatabaseConfig;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
 import org.sensorhub.impl.processing.AbstractProcessModule;
+import org.sensorhub.impl.sensor.SensorSystemConfig;
+import org.sensorhub.impl.sensor.fakeweather.FakeWeatherConfig;
+import org.sensorhub.impl.sensor.fakeweather.FakeWeatherDescriptor;
+import org.sensorhub.impl.sensor.fakeweather.FakeWeatherSensor;
 import org.sensorhub.utils.Async;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.concurrent.Flow;
 import java.util.concurrent.TimeoutException;
 
 import static org.junit.Assert.*;
@@ -57,37 +66,50 @@ public class LaneTests {
     // Used for tests
     private SensorHub hub;
     private LaneSystem lane;
+    private List<LaneSystem> multipleLanes;
     private SystemDriverDatabase database;
     private File dbFile;
 
+    // For specific process test
+    private Flow.Subscription processSub;
+    private int numOutputsBefore;
+    private int numOutputsAfter;
+
     @Before
     public void setUp() throws Exception {
-        if (dbFile == null) {
-            // Create temp file to use with System Driver Database
-            dbFile = File.createTempFile("testlanedb", ".dat");
-            dbFile.deleteOnExit();
-        }
+        // Create temp file to use with System Driver Database
+        dbFile = File.createTempFile("testlanedb", ".dat");
+        dbFile.deleteOnExit();
 
-        if (hub == null) {
-            hub = new SensorHub();
-            hub.start();
-        }
+        hub = new SensorHub();
+        hub.start();
 
-        if (database == null) {
-            database = loadSystemDriverDatabase(hub);
-            assertNotNull(database);
-            assertNull(database.getCurrentError());
-            assertEquals(database.getCurrentState(), ModuleEvent.ModuleState.STARTED);
-        }
+        database = loadSystemDriverDatabase(hub);
+        assertNotNull(database);
+        assertNull(database.getCurrentError());
+        assertEquals(database.getCurrentState(), ModuleEvent.ModuleState.STARTED);
 
-        if (lane == null) {
-            lane = loadLaneModule(hub);
-            assertNotNull(lane);
-            assertNull(lane.getCurrentError());
-            assertEquals(lane.getCurrentState(), ModuleEvent.ModuleState.LOADED);
-            startLaneAndWaitForStarted();
-            assertEquals(lane.getCurrentState(), ModuleEvent.ModuleState.STARTED);
-        }
+        lane = loadLaneModule(hub, "x");
+        assertNotNull(lane);
+        assertNull(lane.getCurrentError());
+        assertEquals(lane.getCurrentState(), ModuleEvent.ModuleState.LOADED);
+        startLaneAndWaitForStarted();
+        assertEquals(lane.getCurrentState(), ModuleEvent.ModuleState.STARTED);
+
+//        multipleLanes = new ArrayList<>();
+//        for (int i = 0; i < 20; i++) {
+//            multipleLanes.add(loadLaneModule(hub, "" + i));
+//        }
+//
+//        for (LaneSystem lane : multipleLanes) {
+//            hub.getModuleRegistry().initModule(lane.getLocalID());
+//            lane.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
+//            hub.getModuleRegistry().startModuleAsync(lane);
+//        }
+//
+//        for (LaneSystem lane : multipleLanes) {
+//            lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+//        }
     }
 
     @Test
@@ -96,8 +118,18 @@ public class LaneTests {
     }
 
     @Test
-    public void testLaneAddedToDatabase() throws InterruptedException, TimeoutException {
-        Async.waitForCondition(() -> database.getConfiguration().systemUIDs.contains(lane.getUniqueIdentifier()), 500, 10000);
+    public void testMultipleLanesCreateRPMModules() throws SensorHubException {
+        boolean failed = false;
+        for (LaneSystem lane : multipleLanes) {
+            lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+        }
+
+        for (LaneSystem lane : multipleLanes) {
+            if (lane.getMembers().isEmpty())
+                failed = true;
+            break;
+        }
+        assertFalse(failed);
     }
 
     @Test
@@ -107,9 +139,88 @@ public class LaneTests {
         System.out.println("Process started");
     }
 
+    @Test
+    public void testAllProcessesStarted() throws TimeoutException {
+        List<OccupancyProcessModule> processModules = hub.getModuleRegistry().getLoadedModules(OccupancyProcessModule.class).stream().toList();
+        System.out.println(processModules.size());
+        for (OccupancyProcessModule processModule : processModules) {
+            Async.waitForCondition(() -> processModule.getCurrentState() == ModuleEvent.ModuleState.STARTED, 500, 20000);
+            System.out.println("Process " + processModule.getName() + " started");
+        }
+        System.out.println("All processes started");
+    }
+
+    @Test
+    public void testAllProcessesCreated() throws SensorHubException {
+        var processModules = hub.getModuleRegistry().getLoadedModules(OccupancyProcessModule.class);
+        var lanes = hub.getModuleRegistry().getLoadedModules(LaneSystem.class);
+        System.out.println("Processes: " + processModules.size());
+        System.out.println("Lanes: " + lanes.size());
+        assertEquals(processModules.size(), lanes.size());
+    }
+
+    @Test
+    public void testProcessContainsNewOutputs() throws TimeoutException, SensorHubException {
+        // TODO: Add test
+        // Check lane is started
+        lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+        var processes = hub.getModuleRegistry().getLoadedModules(OccupancyProcessModule.class).stream().toList();
+        OccupancyProcessModule process = processes.stream().filter(p -> p.getConfiguration().systemUID.equals(lane.getUniqueIdentifier())).findFirst().orElse(null);
+        assertNotNull(process);
+        // Check process is started
+        process.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+        // Track number of outputs of only one lane submodule (should be ~10)
+        numOutputsBefore = process.getOutputs().size();
+        // Add submodule to lane
+        var weatherSubmodule = lane.addSubsystem(createWeatherSubmodule(hub, "1"));
+        System.out.println("Weather submodule loaded");
+        System.out.println(weatherSubmodule.getCurrentState());
+        // Wait for autostart to kick in
+        weatherSubmodule.init();
+        weatherSubmodule.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
+        weatherSubmodule.start();
+        var weatherStarted = weatherSubmodule.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+        assertTrue(weatherStarted);
+        System.out.println("Weather submodule started");
+        System.out.println(weatherSubmodule.getCurrentState());
+        // Check process adds submodule's outputs
+        System.out.println("Num outputs before: " + numOutputsBefore);
+        System.out.println("Num outputs after: " + process.getOutputs().size());
+        Async.waitForCondition(() -> numOutputsBefore != process.getOutputs().size(), 20000);
+        // Check process is started with new outputs
+        System.out.println("Num outputs before: " + numOutputsBefore);
+        System.out.println("Num outputs after: " + process.getOutputs().size());
+        System.out.println(process.getCurrentState());
+        boolean isStarted = process.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+        System.out.println("Process: " + process.getCurrentState());
+        assertTrue(isStarted);
+    }
+
+    @Test
+    public void testProcessStopsAndStartsWithLane() {
+        // Check lane is started
+        // Check process is started
+        // Add listener to process module
+        // Stop lane
+        // Start lane
+        // Ensure process stopped and started, and has update outputs
+        fail();
+    }
+
     private void startLaneAndWaitForStarted() throws SensorHubException {
         hub.getModuleRegistry().startModule(lane.getLocalID());
         lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+    }
+
+    private SensorSystemConfig.SystemMember createWeatherSubmodule(ISensorHub hub, String id) throws SensorHubException {
+        FakeWeatherConfig config = (FakeWeatherConfig) hub.getModuleRegistry().createModuleConfig(hub.getModuleRegistry().getInstalledModuleTypes(FakeWeatherSensor.class).stream().toList().get(0));
+        assertNotNull(config);
+        config.autoStart = true;
+        config.name = "Weather Driver " + id;
+        config.serialNumber = id;
+        var newMember = new SensorSystemConfig.SystemMember();
+        newMember.config = config;
+        return newMember;
     }
 
     private SystemDriverDatabase loadSystemDriverDatabase(ISensorHub hub) throws SensorHubException {
@@ -118,17 +229,18 @@ public class LaneTests {
         dbModuleConfig.name = "Lane DB";
         dbModuleConfig.autoStart = true;
         dbModuleConfig.databaseNum = 1;
+        dbModuleConfig.systemUIDs = new HashSet<>(List.of("urn:osh:system:lane:*", "urn:osh:process:occupancy:*"));
         MVObsSystemDatabaseConfig dbConfig = (MVObsSystemDatabaseConfig) (dbModuleConfig.dbConfig = new MVObsSystemDatabaseConfig());
         dbConfig.storagePath = dbFile.getAbsolutePath();
         dbConfig.readOnly = false;
         return (SystemDriverDatabase) hub.getModuleRegistry().loadModule(dbModuleConfig);
     }
 
-    private LaneSystem loadLaneModule(ISensorHub hub) throws SensorHubException {
+    private LaneSystem loadLaneModule(ISensorHub hub, String id) throws SensorHubException {
         // This is what you should configure in the Admin UI
         LaneConfig laneConfig = (LaneConfig) hub.getModuleRegistry().createModuleConfig(new Descriptor());
-        laneConfig.uniqueID = LANE_UID;
-        laneConfig.name = LANE_NAME;
+        laneConfig.uniqueID = id;
+        laneConfig.name = "Lane " + id;
         var opts = laneConfig.laneOptionsConfig = new LaneOptionsConfig();
         var db = opts.laneDatabaseConfig = new LaneDatabaseConfig();
         db.purgePeriodMinutes = 5;
@@ -136,8 +248,8 @@ public class LaneTests {
         db.autoPurgeVideoData = true;
         opts.createProcess = true;
         var rpm = opts.rpmConfig = new RPMConfig();
-        rpm.rpmUniqueId = RPM_UID;
-        rpm.rpmLabel = RPM_NAME;
+        rpm.rpmUniqueId = id;
+        rpm.rpmLabel = "RPM " + id;
         rpm.rpmType = RPMType.RAPISCAN;
         rpm.remoteHost = RAPISCAN_HOST;
         rpm.remotePort = RAPISCAN_PORT;
