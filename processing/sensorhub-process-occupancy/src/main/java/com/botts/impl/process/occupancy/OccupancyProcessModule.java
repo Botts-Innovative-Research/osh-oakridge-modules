@@ -30,8 +30,6 @@ import org.sensorhub.api.event.Event;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.processing.OSHProcessInfo;
 import org.sensorhub.api.processing.ProcessingException;
-import org.sensorhub.api.system.ISystemDriver;
-import org.sensorhub.api.system.SystemChangedEvent;
 import org.sensorhub.api.utils.OshAsserts;
 import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.processing.AbstractProcessModule;
@@ -93,17 +91,9 @@ public class OccupancyProcessModule extends AbstractProcessModule<OccupancyProce
             parentSystemUID = getParentSystemUID();
         }
 
-        String parentModuleID = null;
-        for (var module : getParentHub().getModuleRegistry().getLoadedModules()) {
-            if (module instanceof ISystemDriver driver && driver.getCurrentDescription() != null && driver.getUniqueIdentifier() != null && driver.getUniqueIdentifier().equals(parentSystemUID)) {
-                parentModuleID = module.getLocalID();
-                break;
-            }
-        }
-
         // Listen for system events on config's system UID
         getParentHub().getEventBus().newSubscription()
-                // TODO: Ideally should only listen to single module
+                // TODO: Ideally should only listen to single module, but we would need to change config or programmatically find the lane module
                 .withTopicID(ModuleRegistry.EVENT_GROUP_ID)
                 .consume(this::handleEvent)
                 .thenAccept(s -> {
@@ -199,7 +189,7 @@ public class OccupancyProcessModule extends AbstractProcessModule<OccupancyProce
                 .withLimit(1)
                 .build());
 
-        var dsList = matchingDs.collect(Collectors.toList());
+        var dsList = matchingDs.toList();
         if(dsList.size() != 1)
             throw new SensorHubException("Unable to find RPM datastream in system");
         var rpmDs = dsList.get(0);
