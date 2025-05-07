@@ -10,6 +10,7 @@ dependencies {
     implementation project(':sensorhub-driver-rapiscan')
     implementation project(':sensorhub-driver-videocam')
     implementation project(':sensorhub-process-occupancy')
+    implementation project(':sensorhub-driver-ffmpeg')
     testImplementation('junit:junit:4.13.1')
     implementation('junit:junit:4.13.1')
 }

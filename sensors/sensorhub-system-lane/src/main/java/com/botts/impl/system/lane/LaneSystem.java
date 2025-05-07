@@ -23,6 +23,7 @@ import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProviderConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
+import com.botts.impl.system.lane.config.FFMpegConfig;
 import com.botts.impl.system.lane.config.LaneConfig;
 import com.botts.impl.system.lane.config.LaneDatabaseConfig;
 import com.botts.impl.system.lane.config.RPMConfig;
@@ -48,7 +49,9 @@ import org.sensorhub.impl.processing.AbstractProcessModule;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
+import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.videocam.VideoCamHelper;
+import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensor;
 import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
 import org.sensorhub.utils.Async;
 import org.sensorhub.utils.MsgUtils;
@@ -130,7 +133,12 @@ public class LaneSystem extends SensorSystem {
                 var config = createRPMConfig(rpmConfig);
                 existingRPMModule = (AbstractSensorModule<?>) registerSubmodule(config);
             }
-
+            // Initial FFmpeg config
+            var ffmpegConfigList = getLaneConfig().laneOptionsConfig.ffmpegConfig;
+            for (var simpleConfig : ffmpegConfigList) {
+                FFMPEGConfig config = createFFmpegConfig(simpleConfig);
+                createFfmpegModule(config);
+            }
             // Process creation / attachment
             if (getLaneConfig().laneOptionsConfig.createProcess && existingProcessModule == null) {
                 registeringProcessModule = true;
@@ -185,6 +193,17 @@ public class LaneSystem extends SensorSystem {
                 subscription.request(Long.MAX_VALUE);
                 getLogger().info("Started module subscription to {}", getLocalID());
             });
+    }
+
+    private void createFfmpegModule(FFMPEGConfig ffmpegConfig) throws SensorHubException {
+        // Avoid creating a module with the same ID as an existing one
+        // Might be an inefficient implementation
+        for (var ffmpegModule : getParentHub().getModuleRegistry().getLoadedModules(FFMPEGSensor.class)) {
+            if (ffmpegModule.getConfiguration().serialNumber.equals(ffmpegConfig.serialNumber)) {
+                return;
+            }
+        }
+        registerSubmodule(ffmpegConfig); // Create ffmpeg submodule
     }
 
     private boolean checkDriverFinishedRegistration(String systemUID, IDataProducer driver) {
@@ -581,6 +600,52 @@ public class LaneSystem extends SensorSystem {
         config.name = rpmConfig.rpmLabel;
         config.autoStart = true;
 
+        return config;
+    }
+
+    private FFMPEGConfig createFFmpegConfig(FFMpegConfig ffmpegConfig) {
+        Asserts.checkNotNull(ffmpegConfig.ffmpegType);
+        Asserts.checkNotNullOrBlank(ffmpegConfig.ffmpegLabel, "Please specify an FFmpeg driver label");
+        Asserts.checkNotNullOrBlank(ffmpegConfig.ffmpegUniqueId, "Please specify a unique FFmpeg ID");
+        Asserts.checkNotNull(ffmpegConfig.remoteHost);
+
+        FFMPEGConfig config = new FFMPEGConfig(); // This is the actual ffmpeg sensor config
+        StringBuilder endpoint = new StringBuilder();
+
+        // Add username and password if supplied
+        if (ffmpegConfig.username != null && !ffmpegConfig.username.isBlank()) {
+            endpoint.append(ffmpegConfig.username);
+            endpoint.append(":");
+            endpoint.append(ffmpegConfig.password);
+            endpoint.append("@");
+        }
+        endpoint.append(ffmpegConfig.remoteHost);
+
+        switch(ffmpegConfig.ffmpegType) {
+            // Autofill with AXIS info
+            case AXIS -> {
+                endpoint.insert(0, "http://"); // AXIS streams over http (for the examples I have)
+                endpoint.append("/axis-cgi/mjpg/video.cgi?resolution=640x480&fps=10");
+                config.connection.fps = 10;
+                config.connection.isMJPEG = true;
+            }
+            // Autofill with SONY info
+            case SONY -> {
+                endpoint.insert(0, "rtsp://");
+                endpoint.append(":554/media/video1");
+                config.connection.fps = 30; // Setting it to 30 for now, may change it later
+                config.connection.isMJPEG = false;
+            }
+            default -> { return null; }
+        }
+
+        // Use label from config
+        config.name = ffmpegConfig.ffmpegLabel;
+        config.serialNumber = ffmpegConfig.ffmpegUniqueId;
+        config.autoStart = true;
+        config.connection.connectionString = endpoint.toString();
+        config.moduleClass = FFMPEGSensor.class.getCanonicalName();
+        config.connectionConfig.reconnectAttempts = 10;
         return config;
     }
 
