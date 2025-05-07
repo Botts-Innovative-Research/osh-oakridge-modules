@@ -10,7 +10,8 @@ dependencies {
     implementation project(':sensorhub-driver-rapiscan')
     implementation project(':sensorhub-driver-videocam')
     implementation project(':sensorhub-process-occupancy')
-    testImplementation project(':sensorhub-driver-fakeweather')
+    // NOTE: Uncomment and use if you want to run specific lane module unit tests
+//    testImplementation project(':sensorhub-driver-fakeweather')
     testImplementation('junit:junit:4.13.1')
     implementation('junit:junit:4.13.1')
 }
