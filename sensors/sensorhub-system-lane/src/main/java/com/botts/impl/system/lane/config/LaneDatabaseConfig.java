@@ -32,10 +32,4 @@ LaneDatabaseConfig {
     @DisplayInfo.ModuleType(SystemDriverDatabase.class)
     public String laneDatabaseId;
 
-    @DisplayInfo(label = "Auto Purge Video Data", desc = "Select this to automatically add video systems to your lane database's purge policy")
-    public boolean autoPurgeVideoData = true;
-
-    @DisplayInfo(label = "Purge Period (in minutes)", desc = "Purges video data every x minutes")
-    public int purgePeriodMinutes = 5;
-
 }

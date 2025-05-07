@@ -255,9 +255,7 @@ public class LaneTests {
         laneConfig.name = "Lane " + id;
         var opts = laneConfig.laneOptionsConfig = new LaneOptionsConfig();
         var db = opts.laneDatabaseConfig = new LaneDatabaseConfig();
-        db.purgePeriodMinutes = 5;
         db.laneDatabaseId = LANE_DATABASE_ID;
-        db.autoPurgeVideoData = true;
         opts.createProcess = true;
         var rpm = opts.rpmConfig = new RPMConfig();
         rpm.rpmUniqueId = id;
