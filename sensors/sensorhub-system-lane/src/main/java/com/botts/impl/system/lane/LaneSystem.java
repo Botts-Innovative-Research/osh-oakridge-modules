@@ -618,9 +618,9 @@ public class LaneSystem extends SensorSystem {
         Asserts.checkNotNull(ffmpegConfig.remoteHost);
 
         FFMPEGConfig config = new FFMPEGConfig(); // This is the actual ffmpeg sensor config
-        StringBuilder endpoint = new StringBuilder();
+        StringBuilder endpoint = new StringBuilder("rtsp://"); // All streams should be over rtsp
 
-        // Add username and password if supplied
+        // Add username and password if provided
         if (ffmpegConfig.username != null && !ffmpegConfig.username.isBlank()) {
             endpoint.append(ffmpegConfig.username);
             endpoint.append(":");
@@ -632,22 +632,19 @@ public class LaneSystem extends SensorSystem {
         switch(ffmpegConfig.ffmpegType) {
             // Autofill with AXIS info
             case AXIS -> {
-                endpoint.insert(0, "http://"); // AXIS streams over http (for the examples I have)
-                endpoint.append("/axis-cgi/mjpg/video.cgi?resolution=640x480&fps=10");
-                config.connection.fps = 10;
-                config.connection.isMJPEG = true;
+                endpoint.append("/axis-media/media.amp?adjustablelivestream=1&resolution=640x480"); // rtsp fps uncapped, might need to change
+                config.connection.fps = 24;
             }
             // Autofill with SONY info
             case SONY -> {
-                endpoint.insert(0, "rtsp://");
                 endpoint.append(":554/media/video1");
-                config.connection.fps = 30; // Setting it to 30 for now, may change it later
-                config.connection.isMJPEG = false;
+                config.connection.fps = 24; // Setting it to 24 for now, may change it later
+
             }
             default -> { return null; }
         }
 
-        // Use label from config
+        config.connection.isMJPEG = false;
         config.name = ffmpegConfig.ffmpegLabel;
         config.serialNumber = ffmpegConfig.ffmpegUniqueId;
         config.autoStart = true;
