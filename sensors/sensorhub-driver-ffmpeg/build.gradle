@@ -1,5 +1,5 @@
-description = 'FFMPEG VIDEO DRIVER'
-ext.details = "Driver for connecting to ffmpeg capable video streams"
+description = 'FFmpeg Video Driver'
+ext.details = "Driver for connecting to FFmpeg capable video streams"
 version = '2.0.0'
 
 // To build in entire java cv platform of projects use

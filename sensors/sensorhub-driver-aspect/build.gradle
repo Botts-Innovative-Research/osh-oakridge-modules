@@ -1,5 +1,5 @@
 description = 'Aspect Sensor Driver'
-ext.details = "Aspect Portal Monitor Sensor Driver"
+ext.details = "Aspect Radiation Portal Monitor (RPM) Sensor Driver"
 version = '1.0.0'
 
 dependencies {

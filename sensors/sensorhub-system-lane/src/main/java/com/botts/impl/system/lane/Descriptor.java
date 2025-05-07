@@ -32,7 +32,7 @@ public class Descriptor extends JarModuleProvider implements IModuleProvider {
 
     @Override
     public String getModuleDescription() {
-        return "RPM Lane Sensor System to be used as parent system for RPM and Video drivers that are part of a lane.";
+        return "Specialized Sensor System module to be used as parent system for RPM and Video drivers in a lane.";
     }
 
     @Override

@@ -1,5 +1,5 @@
 description = 'Kromek D3S Radiation Sensor Driver'
-ext.details = "Radiation Sensor Driver"
+ext.details = "Driver for the Kromek D3S radiation sensor."
 version = '1.0.0'
 
 dependencies {
@@ -20,7 +20,7 @@ test {
 // add info to OSGi manifest
 osgi {
     manifest {
-        attributes ('Bundle-Vendor': 'Botts Inc')
+        attributes ('Bundle-Vendor': 'Botts Innovative Research, Inc.')
         attributes ('Bundle-Activator': 'com.botts.impl.sensor.kromek.d3s.D3sActivator')
     }
 }
