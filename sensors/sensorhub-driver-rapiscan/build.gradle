@@ -1,5 +1,5 @@
 description = 'Rapiscan Sensor Driver'
-ext.details = "Radiation Portal Monitor Sensor Driver"
+ext.details = "Rapiscan Radiation Portal Monitor (RPM) Sensor Driver"
 version = '1.0.0'
 
 dependencies {
@@ -22,7 +22,7 @@ test {
 // add info to OSGi manifest
 osgi {
     manifest {
-        attributes ('Bundle-Vendor': 'Botts Inc')
+        attributes ('Bundle-Vendor': 'Botts Innovative Research, Inc.')
         attributes ('Bundle-Activator': 'com.botts.impl.sensor.rapiscan.RapiscanActivator')
     }
 }

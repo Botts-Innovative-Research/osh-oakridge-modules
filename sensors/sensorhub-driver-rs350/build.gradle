@@ -1,6 +1,6 @@
-description = 'RS-350'
+description = 'RS-350 Radiation Sensor Driver'
 ext.details = ''
-version = '0.1'
+version = '1.0.0'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
