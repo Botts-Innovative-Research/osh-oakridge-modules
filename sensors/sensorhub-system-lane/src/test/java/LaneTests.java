@@ -73,7 +73,6 @@ public class LaneTests {
     // For specific process test
     private Flow.Subscription processSub;
     private int numOutputsBefore;
-    private int numOutputsAfter;
 
     @Before
     public void setUp() throws Exception {
@@ -96,20 +95,20 @@ public class LaneTests {
         startLaneAndWaitForStarted();
         assertEquals(lane.getCurrentState(), ModuleEvent.ModuleState.STARTED);
 
-//        multipleLanes = new ArrayList<>();
-//        for (int i = 0; i < 20; i++) {
-//            multipleLanes.add(loadLaneModule(hub, "" + i));
-//        }
-//
-//        for (LaneSystem lane : multipleLanes) {
-//            hub.getModuleRegistry().initModule(lane.getLocalID());
-//            lane.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
-//            hub.getModuleRegistry().startModuleAsync(lane);
-//        }
-//
-//        for (LaneSystem lane : multipleLanes) {
-//            lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-//        }
+        multipleLanes = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            multipleLanes.add(loadLaneModule(hub, "" + i));
+        }
+
+        for (LaneSystem lane : multipleLanes) {
+            hub.getModuleRegistry().initModule(lane.getLocalID());
+            lane.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
+            hub.getModuleRegistry().startModuleAsync(lane);
+        }
+
+        for (LaneSystem lane : multipleLanes) {
+            lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+        }
     }
 
     @Test
@@ -197,14 +196,30 @@ public class LaneTests {
     }
 
     @Test
-    public void testProcessStopsAndStartsWithLane() {
+    public void testProcessStopsAndStartsWithLane() throws SensorHubException {
+        var processes = hub.getModuleRegistry().getLoadedModules(OccupancyProcessModule.class).stream().toList();
+        OccupancyProcessModule process = processes.stream().filter(p -> p.getConfiguration().systemUID.equals(lane.getUniqueIdentifier())).findFirst().orElse(null);
         // Check lane is started
+        lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
         // Check process is started
+        process.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
         // Add listener to process module
+        new Thread(() -> {
+            try {
+                Async.waitForCondition(() -> process.getCurrentState() == ModuleEvent.ModuleState.STARTING, 500, 20000);
+                System.out.println("Process has been restarted..");
+                System.out.println(process.getCurrentState());
+            } catch (TimeoutException e) {
+                fail();
+                throw new RuntimeException(e);
+            }
+        }).start();
         // Stop lane
+        lane.stop();
+        lane.waitForState(ModuleEvent.ModuleState.STOPPED, 5000);
         // Start lane
-        // Ensure process stopped and started, and has update outputs
-        fail();
+        lane.start();
+        lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
     }
 
     private void startLaneAndWaitForStarted() throws SensorHubException {
