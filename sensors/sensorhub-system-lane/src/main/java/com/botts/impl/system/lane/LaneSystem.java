@@ -196,14 +196,22 @@ public class LaneSystem extends SensorSystem {
     }
 
     private void createFfmpegModule(FFMPEGConfig ffmpegConfig) throws SensorHubException {
-        // Avoid creating a module with the same ID as an existing one
-        // Might be an inefficient implementation
-        for (var ffmpegModule : getParentHub().getModuleRegistry().getLoadedModules(FFMPEGSensor.class)) {
-            if (ffmpegModule.getConfiguration().serialNumber.equals(ffmpegConfig.serialNumber)) {
-                return;
-            }
+        // Get ffmpeg submodule with the same unique serial num
+        // If there is a module registered for this serial number, then the driver was already registered
+        var ffmpegModuleOpt = getMembers().values().stream().filter(
+                module -> (
+                        module instanceof FFMPEGSensor && ((FFMPEGSensor) module).getConfiguration().serialNumber.equals(ffmpegConfig.serialNumber)
+                )
+        ).findFirst();
+
+        // Register the new module
+        if (ffmpegModuleOpt.isEmpty()) {
+            registerSubmodule(ffmpegConfig);
+        } else { // If there is already a module registered, then update the config
+            FFMPEGSensor module = (FFMPEGSensor) ffmpegModuleOpt.get();
+            ffmpegConfig.id = module.getLocalID();
+            module.updateConfig(ffmpegConfig);
         }
-        registerSubmodule(ffmpegConfig); // Create ffmpeg submodule
     }
 
     private boolean checkDriverFinishedRegistration(String systemUID, IDataProducer driver) {
