@@ -50,7 +50,7 @@ public class MessageHandler {
         occupancyGammaBatch = new LinkedList<>();
         occupancyNeutronBatch = new LinkedList<>();
 
-        timeSinceLastMessage = System.currentTimeMillis();
+
 
 //        thread = new Thread(this, "Message Handler");
 
@@ -63,6 +63,8 @@ public class MessageHandler {
 
                 MonitorRegisters monitorRegisters = new MonitorRegisters(parentSensor.commProviderModule.getConnection(), 100, 21);
                 while (!Thread.currentThread().isInterrupted()) {
+                    timeSinceLastMessage = System.currentTimeMillis();
+
                     monitorRegisters.readRegisters(deviceAddress);
 
                     double timestamp = System.currentTimeMillis() / 1000d;
@@ -73,7 +75,6 @@ public class MessageHandler {
                     parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
                     parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
                     parentSensor.speedOutput.setData(monitorRegisters, timestamp);
-
 
                     if (checkOccupancyRecord(monitorRegisters, timestamp)) {
                         parentSensor.occupancyOutput.setData(monitorRegisters, timestamp, startTime, endTime, gammaAlarm, neutronAlarm, maxGamma, maxNeutron);
