@@ -291,6 +291,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> implements 
         synchronized (this) {
             while (isRunning) {
                 if(messageHandler.getTimeSinceLastMessage() < config.commSettings.connection.reconnectPeriod) {
+
                     this.connectionStatusOutput.onNewMessage(true);
                 }
                 else {
