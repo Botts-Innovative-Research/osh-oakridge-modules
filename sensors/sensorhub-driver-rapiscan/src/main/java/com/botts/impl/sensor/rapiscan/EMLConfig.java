@@ -10,7 +10,7 @@ public class EMLConfig {
     @DisplayInfo(label = "Is Collimated", desc = "Collimation status")
     public boolean isCollimated = false;
 
-    @DisplayInfo(label = "Lane Width", desc = "Width of the lane in meters")
+    @DisplayInfo(label = "Lane Width", desc = "Lane Width (m)")
     public double laneWidth = 4.82f;
 
 }
