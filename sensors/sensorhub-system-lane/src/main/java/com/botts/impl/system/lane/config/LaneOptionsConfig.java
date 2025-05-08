@@ -17,6 +17,8 @@ package com.botts.impl.system.lane.config;
 
 import org.sensorhub.api.config.DisplayInfo;
 
+import java.util.List;
+
 /**
  * Additional configuration settings for the Lane Sensor System.
  *
@@ -33,5 +35,8 @@ public class LaneOptionsConfig {
 
     @DisplayInfo(label = "Initial RPM Config", desc = "Config used for initial RPM setup")
     public RPMConfig rpmConfig;
+
+    @DisplayInfo(label = "Initial Camera Config", desc = "Config used for initial FFmpeg camera setup")
+    public List<FFMpegConfig> ffmpegConfig;
 
 }

@@ -23,6 +23,7 @@ import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProviderConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
+import com.botts.impl.system.lane.config.FFMpegConfig;
 import com.botts.impl.system.lane.config.LaneConfig;
 import com.botts.impl.system.lane.config.LaneDatabaseConfig;
 import com.botts.impl.system.lane.config.RPMConfig;
@@ -42,6 +43,8 @@ import org.sensorhub.impl.processing.AbstractProcessModule;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
+import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
+import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensor;
 import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
 import org.sensorhub.utils.MsgUtils;
 import org.vast.util.Asserts;
@@ -63,19 +66,13 @@ public class LaneSystem extends SensorSystem {
     private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
     private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
-
-    private static final Object databaseLock = new Object();
-
     AbstractSensorModule<?> existingRPMModule = null;
     AbstractProcessModule<?> existingProcessModule = null;
     Flow.Subscription subscription = null;
     private ExecutorService threadPool = null;
-    private BlockingQueue<Runnable> execQueue = null;
 
     @Override
     protected void doInit() throws SensorHubException {
-        execQueue = new LinkedBlockingQueue<>(100);
-//        threadPool = new ThreadPoolExecutor(1, 1, 10, TimeUnit.SECONDS, execQueue, new NamedThreadFactory("LaneModuleThreadPool"));
         threadPool = Executors.newSingleThreadExecutor();
 
         // generate unique ID
@@ -122,7 +119,12 @@ public class LaneSystem extends SensorSystem {
                 var config = createRPMConfig(rpmConfig);
                 existingRPMModule = (AbstractSensorModule<?>) registerSubmodule(config);
             }
-
+            // Initial FFmpeg config
+            var ffmpegConfigList = getLaneConfig().laneOptionsConfig.ffmpegConfig;
+            for (var simpleConfig : ffmpegConfigList) {
+                FFMPEGConfig config = createFFmpegConfig(simpleConfig);
+                createFFmpegModule(config);
+            }
             // Process creation / attachment
             if (getLaneConfig().laneOptionsConfig.createProcess && existingProcessModule == null) {
                 registeringProcessModule = true;
@@ -176,6 +178,25 @@ public class LaneSystem extends SensorSystem {
                 subscription.request(Long.MAX_VALUE);
                 getLogger().info("Started module subscription to {}", getLocalID());
             });
+    }
+
+    private void createFFmpegModule(FFMPEGConfig ffmpegConfig) throws SensorHubException {
+        // Get ffmpeg submodule with the same unique serial num
+        // If there is a module registered for this serial number, then the driver was already registered
+        var ffmpegModuleOpt = getMembers().values().stream().filter(
+                module -> (
+                        module instanceof FFMPEGSensor && ((FFMPEGSensor) module).getConfiguration().serialNumber.equals(ffmpegConfig.serialNumber)
+                )
+        ).findFirst();
+
+        // Register the new module
+        if (ffmpegModuleOpt.isEmpty()) {
+            registerSubmodule(ffmpegConfig);
+        } else { // If there is already a module registered, then update the config
+            FFMPEGSensor module = (FFMPEGSensor) ffmpegModuleOpt.get();
+            ffmpegConfig.id = module.getLocalID();
+            module.updateConfig(ffmpegConfig);
+        }
     }
 
     @Override
@@ -366,6 +387,49 @@ public class LaneSystem extends SensorSystem {
         config.name = rpmConfig.rpmLabel;
         config.autoStart = true;
 
+        return config;
+    }
+
+    private FFMPEGConfig createFFmpegConfig(FFMpegConfig ffmpegConfig) {
+        Asserts.checkNotNull(ffmpegConfig.ffmpegType);
+        Asserts.checkNotNullOrBlank(ffmpegConfig.ffmpegLabel, "Please specify an FFmpeg driver label");
+        Asserts.checkNotNullOrBlank(ffmpegConfig.ffmpegUniqueId, "Please specify a unique FFmpeg ID");
+        Asserts.checkNotNull(ffmpegConfig.remoteHost);
+
+        FFMPEGConfig config = new FFMPEGConfig(); // This is the actual ffmpeg sensor config
+        StringBuilder endpoint = new StringBuilder("rtsp://"); // All streams should be over rtsp
+
+        // Add username and password if provided
+        if (ffmpegConfig.username != null && !ffmpegConfig.username.isBlank()) {
+            endpoint.append(ffmpegConfig.username);
+            endpoint.append(":");
+            endpoint.append(ffmpegConfig.password);
+            endpoint.append("@");
+        }
+        endpoint.append(ffmpegConfig.remoteHost);
+
+        switch(ffmpegConfig.ffmpegType) {
+            // Autofill with AXIS info
+            case AXIS -> {
+                endpoint.append("/axis-media/media.amp?adjustablelivestream=1&resolution=640x480"); // rtsp fps uncapped, might need to change
+                config.connection.fps = 24;
+            }
+            // Autofill with SONY info
+            case SONY -> {
+                endpoint.append(":554/media/video1");
+                config.connection.fps = 24; // Setting it to 24 for now, may change it later
+
+            }
+            default -> { return null; }
+        }
+
+        config.connection.isMJPEG = false;
+        config.name = ffmpegConfig.ffmpegLabel;
+        config.serialNumber = ffmpegConfig.ffmpegUniqueId;
+        config.autoStart = true;
+        config.connection.connectionString = endpoint.toString();
+        config.moduleClass = FFMPEGSensor.class.getCanonicalName();
+        config.connectionConfig.reconnectAttempts = 10;
         return config;
     }
 
