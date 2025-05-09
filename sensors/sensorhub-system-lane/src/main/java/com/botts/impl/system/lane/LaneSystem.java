@@ -29,11 +29,14 @@ import com.botts.impl.system.lane.config.LaneDatabaseConfig;
 import com.botts.impl.system.lane.config.RPMConfig;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
+import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.api.event.Event;
 import org.sensorhub.api.event.EventUtils;
 import org.sensorhub.api.module.ModuleConfig;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.sensor.SensorConfig;
+import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.api.system.SystemRemovedEvent;
 import org.sensorhub.impl.comm.TCPCommProviderConfig;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
@@ -139,6 +142,8 @@ public class LaneSystem extends SensorSystem {
         if (!statusMsg.equalsIgnoreCase("Note: "))
             reportStatus(statusMsg);
 
+        boolean rpmFailedToInit = false;
+
         // Init modules all modules except process module as it requires other modules to be started
         for (var module: getMembers().values()) {
             if (module != null) {
@@ -146,13 +151,16 @@ public class LaneSystem extends SensorSystem {
                     module.init();
                 }
                 catch (Exception e) {
+                    // TODO: If rapiscan fails to initialize, then don't load process module
+                    if (module instanceof RapiscanSensor || module instanceof AspectSensor)
+                        rpmFailedToInit = true;
                     getLogger().error("Cannot initialize system component {}", MsgUtils.moduleString(module), e);
                 }
             }
         }
 
         // Initial creation of process after everything starts
-        if (getLaneConfig().laneOptionsConfig != null && getLaneConfig().laneOptionsConfig.createProcess && existingProcessModule == null) {
+        if (getLaneConfig().laneOptionsConfig != null && getLaneConfig().laneOptionsConfig.createProcess && existingProcessModule == null && !rpmFailedToInit) {
             threadPool.execute(() -> {
                 // Create process config
                 OccupancyProcessConfig processConfig = new OccupancyProcessConfig();
@@ -342,6 +350,42 @@ public class LaneSystem extends SensorSystem {
                     }
                 }
             }
+
+            else if (event.getType().equals(ModuleEvent.Type.ERROR)) {
+                // If lane fails to load, then perform some magic
+                if (Objects.equals(event.getModule(), this)) {
+                    // Check for SensorException
+                    if (event.getError() != null && event.getError() instanceof SensorHubException hubException
+                    && hubException.getCause() instanceof SensorException sensorException) {
+                        // Check for driver failed to register error
+                        if (sensorException.getCause() instanceof NullPointerException) {
+                            // Find prev UID and delete from database
+                            IObsSystemDatabase database = null;
+                            if (getUniqueIdentifier() != null)
+                                database = getParentHub().getSystemDriverRegistry().getDatabase(getUniqueIdentifier());
+                            long systemAndMembers = 0;
+                            if (database != null)
+                                systemAndMembers = database.getSystemDescStore().select(new SystemFilter.Builder().withUniqueIDs(getUniqueIdentifier()).includeMembers(true).build()).count();
+                            // Only delete from database if lane doesn't have children
+                            if (systemAndMembers == 1) {
+                                var transactionHandler = new SystemDatabaseTransactionHandler(getParentHub().getEventBus(), database);
+                                try {
+                                    transactionHandler.getSystemHandler(getUniqueIdentifier()).delete(true);
+                                } catch (DataStoreException ex) {
+                                    getLogger().error("Failed to remove system from database: {}", ex.getMessage());
+                                }
+                            }
+                        }
+
+                        // Check for illegal state (command receiver already connected, etc.)
+                        if (sensorException.getCause() instanceof IllegalStateException) {
+                            // TODO: Add fix. Current fix is restarting OSH
+                        }
+
+                    }
+                }
+            }
+
         }
     }
 
