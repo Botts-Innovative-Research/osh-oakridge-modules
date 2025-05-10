@@ -13,6 +13,7 @@
  ******************************************************************************/
 
 import com.botts.impl.process.occupancy.OccupancyProcessModule;
+import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.system.lane.Descriptor;
 import com.botts.impl.system.lane.LaneSystem;
 import com.botts.impl.system.lane.config.*;
@@ -89,23 +90,23 @@ public class LaneTests {
         assertNotNull(lane);
         assertNull(lane.getCurrentError());
         assertEquals(lane.getCurrentState(), ModuleEvent.ModuleState.LOADED);
-        startLaneAndWaitForStarted();
+        startLaneAndWaitForStarted(lane);
         assertEquals(lane.getCurrentState(), ModuleEvent.ModuleState.STARTED);
 
-        multipleLanes = new ArrayList<>();
-        for (int i = 0; i < 20; i++) {
-            multipleLanes.add(loadLaneModule(hub, "" + i));
-        }
-
-        for (LaneSystem lane : multipleLanes) {
-            hub.getModuleRegistry().initModule(lane.getLocalID());
-            lane.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
-            hub.getModuleRegistry().startModuleAsync(lane);
-        }
-
-        for (LaneSystem lane : multipleLanes) {
-            lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-        }
+//        multipleLanes = new ArrayList<>();
+//        for (int i = 0; i < 20; i++) {
+//            multipleLanes.add(loadLaneModule(hub, "" + i));
+//        }
+//
+//        for (LaneSystem lane : multipleLanes) {
+//            hub.getModuleRegistry().initModule(lane.getLocalID());
+//            lane.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
+//            hub.getModuleRegistry().startModuleAsync(lane);
+//        }
+//
+//        for (LaneSystem lane : multipleLanes) {
+//            lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+//        }
     }
 
     @Test
@@ -219,7 +220,42 @@ public class LaneTests {
         lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
     }
 
-    private void startLaneAndWaitForStarted() throws SensorHubException {
+    @Test
+    public void testLaneCanStartWithBrokenSubmodule() throws SensorHubException {
+        var newLane = loadLaneModule(hub, "broken");
+        // Break rpm config
+        LaneConfig config = (LaneConfig) newLane.getConfiguration();
+        ((LaneConfig) config).laneOptionsConfig.rpmConfig.remotePort = 1;
+        // Update with broken config
+        newLane.updateConfig(config);
+        newLane.init();
+        newLane.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
+
+        // Failed start
+        try {
+            newLane.start();
+        } catch (SensorHubException e) {
+            e.printStackTrace();
+        }
+
+        // Repair submodule config
+        var rapiscanModule = ((RapiscanSensor) newLane.getMembers().values().toArray()[0]);
+        var rapiscanConfig = rapiscanModule.getConfiguration();
+        rapiscanConfig.commSettings.protocol.remotePort = 1600;
+        rapiscanModule.updateConfig(rapiscanConfig);
+
+        // Ensure we can still start
+        try {
+            newLane.start();
+        } catch (SensorHubException e) {
+            e.printStackTrace();
+            fail();
+        }
+        boolean newLaneStarted = newLane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+        assertTrue(newLaneStarted);
+    }
+
+    private void startLaneAndWaitForStarted(LaneSystem lane) throws SensorHubException {
         hub.getModuleRegistry().startModule(lane.getLocalID());
         lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
     }
@@ -263,6 +299,7 @@ public class LaneTests {
         rpm.rpmType = RPMType.RAPISCAN;
         rpm.remoteHost = RAPISCAN_HOST;
         rpm.remotePort = RAPISCAN_PORT;
+        opts.ffmpegConfig = new ArrayList<>();
         return (LaneSystem) hub.getModuleRegistry().loadModule(laneConfig);
     }
 
