@@ -365,6 +365,7 @@ public class LaneSystem extends SensorSystem {
                 comm.protocol.remotePort = rpmConfig.remotePort;
                 // Update connection timeout to be 5 seconds instead of 3 seconds by default
                 comm.connection.connectTimeout = 5000;
+                comm.connection.reconnectAttempts = 10;
                 config = aspectConfig;
             }
             // Create Rapiscan config
@@ -378,6 +379,7 @@ public class LaneSystem extends SensorSystem {
                 comm.protocol.remotePort = rpmConfig.remotePort;
                 // Update connection timeout to be 5 seconds instead of 3 seconds by default
                 comm.connection.connectTimeout = 5000;
+                comm.connection.reconnectAttempts = 10;
                 config = rapiscanConfig;
             }
             default -> { return null; }
@@ -429,6 +431,7 @@ public class LaneSystem extends SensorSystem {
         config.autoStart = true;
         config.connection.connectionString = endpoint.toString();
         config.moduleClass = FFMPEGSensor.class.getCanonicalName();
+        config.connectionConfig.connectTimeout = 5000;
         config.connectionConfig.reconnectAttempts = 10;
         return config;
     }
