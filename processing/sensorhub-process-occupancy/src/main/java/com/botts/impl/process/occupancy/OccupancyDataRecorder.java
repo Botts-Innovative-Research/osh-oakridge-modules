@@ -15,15 +15,17 @@
 
 package com.botts.impl.process.occupancy;
 
-import net.opengis.swe.v20.*;
+import net.opengis.swe.v20.DataComponent;
+import net.opengis.swe.v20.DataEncoding;
+import net.opengis.swe.v20.Text;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
-import org.sensorhub.api.event.EventUtils;
 import org.sensorhub.api.processing.OSHProcessInfo;
 import org.sensorhub.impl.processing.ISensorHubProcess;
+import org.sensorhub.impl.sensor.videocam.VideoCamHelper;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.utils.Async;
 import org.vast.process.ExecutableProcessImpl;
@@ -113,16 +115,15 @@ public class OccupancyDataRecorder extends ExecutableProcessImpl implements ISen
         var db = hub.getDatabaseRegistry().getFederatedDatabase();
 
         // Get output data from input system UID
-        var stuff = db.getDataStreamStore().select(new DataStreamFilter.Builder()
+        var occupancyDataStreamQuery = db.getDataStreamStore().select(new DataStreamFilter.Builder()
                         .withSystems(sysFilter)
                         .withCurrentVersion()
                         .withOutputNames(OCCUPANCY_NAME)
                         .withLimit(1)
                         .build());
-        var colStuff = stuff.collect(Collectors.toList());
-        for(var item : colStuff) {
-            inputData.add(OCCUPANCY_NAME, item.getRecordStructure());
-        }
+        var occupancyDataStreams = occupancyDataStreamQuery.collect(Collectors.toList());
+        if (!occupancyDataStreams.isEmpty())
+            inputData.add(OCCUPANCY_NAME, occupancyDataStreams.get(0).getRecordStructure());
 
         return !inputData.isEmpty();
     }
@@ -143,7 +144,9 @@ public class OccupancyDataRecorder extends ExecutableProcessImpl implements ISen
                 .includeMembers(true)
                 .build();
 
-        db.getDataStreamStore().select(new DataStreamFilter.Builder().withSystems(sysFilter).build()).forEach(ds -> {
+        db.getDataStreamStore().select(new DataStreamFilter.Builder().withSystems(sysFilter)
+                // Only record video data in process, because we don't really use the other data
+                .withObservedProperties(VideoCamHelper.DEF_VIDEOFRAME, VideoCamHelper.DEF_IMAGE).build()).forEach(ds -> {
             // Don't add process datastreams as outputs
             if(ds.getSystemID().getUniqueID().contains(OSHProcessInfo.URI_PREFIX))
                 return;
@@ -206,6 +209,7 @@ public class OccupancyDataRecorder extends ExecutableProcessImpl implements ISen
         ObsFilter filter = new ObsFilter.Builder()
                 .withDataStreams(dsFilter)
                 .withPhenomenonTimeDuring(start, end)
+                .withLimit(Long.MAX_VALUE)
                 .build();
 
         return db.getObservationStore().select(filter).collect(Collectors.toList());
@@ -230,7 +234,6 @@ public class OccupancyDataRecorder extends ExecutableProcessImpl implements ISen
                     output.setData(data.getResult());
                     try {
                         publishData();
-                        publishData(fullOutputName);
                     } catch (InterruptedException e) {
                         throw new RuntimeException(e);
                     }
