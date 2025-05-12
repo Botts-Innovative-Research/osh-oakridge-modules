@@ -32,5 +32,14 @@ public class FFMpegConfig {
     @DisplayInfo(label = "Password")
     public String password;
 
+    @DisplayInfo(label = "Stream Path", desc = "Path for video stream. Only applies for the CUSTOM camera type.")
+    public String streamPath;
+
+    public FFMpegConfig () {
+        ffmpegType = CameraType.AXIS;
+        streamPath = "/axis-media/media.amp?adjustablelivestream=1&resolution=640x480&videocodec=h264";
+    }
+
+
     // Port, fps, full endpoint should be autofilled
 }
