@@ -91,8 +91,9 @@ public class OccupancyProcessModule extends AbstractProcessModule<OccupancyProce
             parentSystemUID = getParentSystemUID();
         }
 
-        // Listen for system events on config's system UID
-        getParentHub().getEventBus().newSubscription()
+        // Listen for system events on all modules
+        if (subscription == null)
+            getParentHub().getEventBus().newSubscription()
                 // TODO: Ideally should only listen to single module, but we would need to change config or programmatically find the lane module
                 .withTopicID(ModuleRegistry.EVENT_GROUP_ID)
                 .consume(this::handleEvent)
@@ -318,13 +319,17 @@ public class OccupancyProcessModule extends AbstractProcessModule<OccupancyProce
     @Override
     protected void doStop()
     {
-        if (subscription != null) {
-            subscription.cancel();
-            subscription = null;
-        }
-
         if (wrapperProcess != null && wrapperProcess.isExecutable())
             wrapperProcess.stop();
     }
 
+    @Override
+    public void cleanup() {
+        super.cleanup();
+
+        if (subscription != null) {
+            subscription.cancel();
+            subscription = null;
+        }
+    }
 }
