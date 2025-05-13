@@ -25,23 +25,20 @@ import org.sensorhub.api.config.DisplayInfo;
  * @author Alex Almanza
  * @since April 24 2025
  */
-public class RPMConfig{
+public class AspectRPMConfig extends RPMConfig{
 
+    // aspect specific
+    @DisplayInfo(label = "Find device within address range")
     @DisplayInfo.Required
-    @DisplayInfo(label = "RPM Unique ID", desc = "RPM UID for new submodule if RPM type is specified. Please do not include osh UID prefix (i.e. urn:osh:sensor:rapiscan)")
-    public String rpmUniqueId;
+    public ModbusTCPConfig.AddressRange addressRange = new ModbusTCPConfig.AddressRange();
 
-    @DisplayInfo.Required
-    @DisplayInfo(label = "RPM Label", desc = "Friendly name for RPM module")
-    public String rpmLabel;
+    public static class AddressRange {
+        @DisplayInfo(label = "From")
+        @DisplayInfo.Required
+        public int from = 1;
 
-    @DisplayInfo.Required
-    @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.REMOTE_ADDRESS)
-    @DisplayInfo(label = "Remote Host")
-    public String remoteHost;
-
-    @DisplayInfo.Required
-    @DisplayInfo(label = "Remote Port")
-    public int remotePort;
-
+        @DisplayInfo(label = "To")
+        @DisplayInfo.Required
+        public int to = 32;
+    }
 }
