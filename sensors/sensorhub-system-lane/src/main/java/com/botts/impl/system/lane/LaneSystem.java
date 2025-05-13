@@ -120,7 +120,7 @@ public class LaneSystem extends SensorSystem {
                 existingRPMModule = (AbstractSensorModule<?>) registerSubmodule(config);
             }
             // Initial FFmpeg config
-            var ffmpegConfigList = getLaneConfig().ffmpegConfig;
+            var ffmpegConfigList = getLaneConfig().laneOptionsConfig.ffmpegConfig;
             for (var simpleConfig : ffmpegConfigList) {
                 FFMPEGConfig config = createFFmpegConfig(simpleConfig);
                 createFFmpegModule(config);
