@@ -7,23 +7,7 @@ import org.sensorhub.api.config.DisplayInfo;
  * @author Kyle Fitzpatrick
  * @since May 6, 2025
  */
-public class FFMpegConfig {
-    @DisplayInfo.Required
-    @DisplayInfo(label = "FFmpeg Camera Type", desc = "FFmpeg Camera module to generate for this lane")
-    public CameraType ffmpegType;
-
-    @DisplayInfo.Required
-    @DisplayInfo(label = "FFmpeg Unique ID", desc = "FFmpeg UID for new submodule if RPM type is specified. Please do not include osh UID prefix (i.e. urn:osh:sensor:rapiscan)")
-    public String ffmpegUniqueId;
-
-    @DisplayInfo.Required
-    @DisplayInfo(label = "FFmpeg Label", desc = "Friendly name for FFmpeg module")
-    public String ffmpegLabel;
-
-    @DisplayInfo.Required
-    @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.REMOTE_ADDRESS)
-    @DisplayInfo(label = "Remote Host")
-    public String remoteHost;
+public class FFMpegConfig extends ConnectionConfig{
 
     @DisplayInfo(label = "Username")
     public String username;
@@ -32,14 +16,4 @@ public class FFMpegConfig {
     @DisplayInfo(label = "Password")
     public String password;
 
-    @DisplayInfo(label = "Stream Path", desc = "Path for video stream. Only applies for the CUSTOM camera type.")
-    public String streamPath;
-
-    public FFMpegConfig () {
-        ffmpegType = CameraType.AXIS;
-        streamPath = "/axis-media/media.amp?adjustablelivestream=1&resolution=640x480&videocodec=h264";
-    }
-
-
-    // Port, fps, full endpoint should be autofilled
 }

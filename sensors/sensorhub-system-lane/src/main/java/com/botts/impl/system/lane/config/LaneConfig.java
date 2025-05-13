@@ -18,6 +18,8 @@ package com.botts.impl.system.lane.config;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
 
+import java.util.List;
+
 /**
  * Configuration settings for the Lane Sensor System.
  *
@@ -32,4 +34,6 @@ public class LaneConfig extends SensorSystemConfig {
     @DisplayInfo(label = "Delete Data on Lane Removal", desc = "Select this to automatically delete all records of this lane when the lane is deleted.")
     public boolean autoDelete = true;
 
+    @DisplayInfo(label = "Initial Camera Config", desc = "Config used for initial FFmpeg camera setup")
+    public List<FFMpegConfig> ffmpegConfig;
 }
