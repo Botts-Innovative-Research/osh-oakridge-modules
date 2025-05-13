@@ -452,6 +452,7 @@ public class LaneSystem extends SensorSystem {
         FFMPEGConfig config = new FFMPEGConfig();
 
         String path = defaultAxis;
+        
         if(ffmpegConfig instanceof AxisCameraConfig axisVideoConfig){
              path = axisVideoConfig.streamPath;
         }else if (ffmpegConfig instanceof SonyCameraConfig sonyVideoConfig){
@@ -459,28 +460,6 @@ public class LaneSystem extends SensorSystem {
         }else if(ffmpegConfig instanceof CustomCameraConfig customVideoConfig){
              path = customVideoConfig.streamPath.length() > 0 ? customVideoConfig.streamPath : defaultAxis;
         }
-//        switch(ffmpegConfig.ffmpegType) {
-//            // Autofill with AXIS info
-//            case AXIS -> {
-//                String path = "/axis-media/media.amp?adjustablelivestream=1&resolution=640x480&videocodec=h264"; // rtsp fps uncapped, might need to change
-//                endpoint.append(path);
-//                ffmpegConfig.streamPath = path; // Set path in the user-facing config to help indicate what's being autofilled
-//                config.connection.fps = 24;
-//            }
-//            // Autofill with SONY info
-//            case SONY -> {
-//                String path = ":554/media/video1";
-//                endpoint.append(path);
-//                ffmpegConfig.streamPath = path; // Set path in the user-facing config to help indicate what's being autofilled
-//                config.connection.fps = 24; // Setting it to 24 for now, may change it later
-//
-//            }
-//            case CUSTOM -> {
-//                endpoint.append(ffmpegConfig.streamPath);
-//                config.connection.fps = 24;
-//            }
-//            default -> { return null; }
-//        }
 
         endpoint.append(path);
 
