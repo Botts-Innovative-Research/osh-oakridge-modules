@@ -1,0 +1,51 @@
+description = 'OSCAR Widgets'
+ext.details = "Admin UI widgets for OSCAR"
+version = '1.0.0'
+
+dependencies {
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation 'org.sensorhub:sensorhub-webui-core:' + oshCoreVersion
+    implementation project(':sensorhub-system-lane')
+    // TODO: Check which of these we don't need. Using all of them worked but I'm sure they're not all needed
+    embeddedImpl 'com.vaadin:vaadin-server:8.14.3'
+    embeddedImpl 'com.vaadin:vaadin-push:8.14.3'
+    compileOnly 'com.vaadin:vaadin-client:8.14.3'
+    embeddedImpl 'com.vaadin:vaadin-client-compiled:8.14.3'
+    embeddedImpl 'com.vaadin:vaadin-compatibility-server:8.14.3'
+    compileOnly 'com.vaadin:vaadin-compatibility-client:8.14.3'
+    embeddedImpl 'com.vaadin:vaadin-compatibility-client-compiled:8.14.3'
+    embeddedImpl 'com.vaadin:vaadin-themes:8.14.3'
+
+    testImplementation('junit:junit:4.13.1')
+    implementation('junit:junit:4.13.1')
+}
+
+test {
+    useJUnit()
+}
+
+// add info to OSGi manifest
+osgi {
+    manifest {
+        attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
+        attributes('Bundle-Activator': 'com.botts.ui.oscar.Activator')
+    }
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'earocorn'
+            name 'Alex Almanza'
+            organization 'Botts Innovative Research, Inc.'
+            organizationUrl 'https://www.botts-inc.com'
+        }
+        developer {
+            id 'kalynstricklin'
+            name 'Kalyn Stricklin'
+            organization 'Botts Innovative Research, Inc.'
+            organizationUrl 'https://www.botts-inc.com'
+        }
+    }
+}
