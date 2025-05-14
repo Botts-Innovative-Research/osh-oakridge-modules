@@ -22,8 +22,8 @@ import org.sensorhub.api.config.DisplayInfo;
 /**
  * Configuration for automatic setup of RPM submodule
  *
- * @author Alex Almanza
- * @since April 24 2025
+ * @author Kalyn Stricklin
+ * @since May 2025
  */
 public class AspectRPMConfig extends RPMConfig{
 

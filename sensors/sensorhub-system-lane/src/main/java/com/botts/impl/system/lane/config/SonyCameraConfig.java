@@ -3,9 +3,9 @@ package com.botts.impl.system.lane.config;
 import org.sensorhub.api.config.DisplayInfo;
 
 /**
- * Configuration for FFMpeg driver (endpoints) based on camera manufacturer
- * @author Kyle Fitzpatrick
- * @since May 6, 2025
+ * Configuration for custom FFMpeg driver
+ * @author Kalyn Stricklin, Kyle Fitzpatrick
+ * @since May 2025
  */
 public class SonyCameraConfig extends FFMpegConfig{
 

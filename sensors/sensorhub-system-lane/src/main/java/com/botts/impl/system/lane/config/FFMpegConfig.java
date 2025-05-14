@@ -4,8 +4,8 @@ import org.sensorhub.api.config.DisplayInfo;
 
 /**
  * Configuration for FFMpeg driver (endpoints) based on camera manufacturer
- * @author Kyle Fitzpatrick
- * @since May 6, 2025
+ * @author Kyle Fitzpatrick, Kalyn Stricklin
+ * @since May 2025
  */
 public class FFMpegConfig extends ConnectionConfig{
 

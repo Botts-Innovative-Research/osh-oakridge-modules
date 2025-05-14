@@ -387,7 +387,6 @@ public class LaneSystem extends SensorSystem {
     }
 
     private SensorConfig createRPMConfig(RPMConfig rpmConfig) {
-//        Asserts.checkNotNull(rpmConfig.rpmType);
         Asserts.checkNotNullOrBlank(rpmConfig.label, "Please specify an RPM driver label");
         Asserts.checkNotNullOrBlank(rpmConfig.uniqueId, "Please specify a unique RPM ID");
         Asserts.checkNotNull(rpmConfig.remoteHost);
@@ -431,7 +430,7 @@ public class LaneSystem extends SensorSystem {
 
     private FFMPEGConfig createFFmpegConfig(FFMpegConfig ffmpegConfig) {
         String defaultAxis = "/axis-media/media.amp?adjustablelivestream=1&resolution=640x480&videocodec=h264";
-//        Asserts.checkNotNull(ffmpegConfig.ffmpegType);
+
         Asserts.checkNotNullOrBlank(ffmpegConfig.label, "Please specify an FFmpeg driver label");
         Asserts.checkNotNullOrBlank(ffmpegConfig.uniqueId, "Please specify a unique FFmpeg ID");
         Asserts.checkNotNull(ffmpegConfig.remoteHost);
@@ -455,16 +454,18 @@ public class LaneSystem extends SensorSystem {
         
         if(ffmpegConfig instanceof AxisCameraConfig axisVideoConfig){
              path = axisVideoConfig.streamPath;
+            config.connection.isMJPEG = false;
         }else if (ffmpegConfig instanceof SonyCameraConfig sonyVideoConfig){
              path = sonyVideoConfig.streamPath;
+            config.connection.isMJPEG = false;
         }else if(ffmpegConfig instanceof CustomCameraConfig customVideoConfig){
              path = customVideoConfig.streamPath.length() > 0 ? customVideoConfig.streamPath : defaultAxis;
+             config.connection.isMJPEG = customVideoConfig.isMJPEG;
         }
 
         endpoint.append(path);
 
         config.connection.fps = 24;
-        config.connection.isMJPEG = false;
         config.name = ffmpegConfig.label;
         config.serialNumber = ffmpegConfig.uniqueId;
         config.autoStart = true;
