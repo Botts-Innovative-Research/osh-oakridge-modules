@@ -181,6 +181,8 @@ public class MpegTsProcessor extends Thread {
 
     private long timeout = 5000000;
 
+    byte[] spsPpsHeader = null;
+
     /**
      * Constructor
      *
@@ -292,6 +294,13 @@ public class MpegTsProcessor extends Thread {
 
                 videoStreamTimeBase = timeBaseUnits;
             }
+
+            int extraSize = avFormatContext.streams(streamId).codecpar().extradata_size();
+            if (extraSize > 0) {
+                spsPpsHeader = new byte[extraSize];
+                avFormatContext.streams(streamId).codecpar().extradata().get(spsPpsHeader);
+            }
+
 
 //            if (INVALID_STREAM_ID == dataStreamId && avutil.AVMEDIA_TYPE_DATA == codecType) {
 //
@@ -505,6 +514,7 @@ public class MpegTsProcessor extends Thread {
                     // Process video packet
                     byte[] dataBuffer = new byte[avPacket.size()];
                     avPacket.data().get(dataBuffer);
+                    boolean isKeyFrame = (avPacket.flags() & avcodec.AV_PKT_FLAG_KEY) != 0;
 
                     // if FPS is set, we may have to wait a little
                     if (fps > 0) {
@@ -522,6 +532,10 @@ public class MpegTsProcessor extends Thread {
 
                     // Pass data buffer to interested listener
                     frameCount++;
+                    if (isKeyFrame && spsPpsHeader != null) {
+                        videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, spsPpsHeader));
+                    }
+                    videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer));
                     videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer));
                 }
 //                 else if ((avPacket.stream_index() == dataStreamId) && (null != metadataDataBufferListener)) {
