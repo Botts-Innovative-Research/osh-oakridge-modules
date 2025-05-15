@@ -536,7 +536,6 @@ public class MpegTsProcessor extends Thread {
                         videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, spsPpsHeader));
                     }
                     videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer));
-                    videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer));
                 }
 //                 else if ((avPacket.stream_index() == dataStreamId) && (null != metadataDataBufferListener)) {
 //
