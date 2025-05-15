@@ -38,5 +38,4 @@ public class LaneOptionsConfig {
 
     @DisplayInfo(label = "Initial Camera Config", desc = "Config used for initial FFmpeg camera setup")
     public List<FFMpegConfig> ffmpegConfig;
-
 }

@@ -14,12 +14,31 @@
 
 package com.botts.impl.system.lane.config;
 
+
+import com.botts.impl.sensor.aspect.comm.ModbusTCPConfig;
+import org.sensorhub.api.config.DisplayInfo;
+
+
 /**
- * @author Alex Almanza
- * @since April 23 2025
+ * Configuration for automatic setup of RPM submodule
+ *
+ * @author Kalyn Stricklin
+ * @since May 2025
  */
-public enum RPMType {
+public class AspectRPMConfig extends RPMConfig{
 
-    ASPECT, RAPISCAN
+    // aspect specific
+    @DisplayInfo(label = "Find device within address range")
+    @DisplayInfo.Required
+    public ModbusTCPConfig.AddressRange addressRange = new ModbusTCPConfig.AddressRange();
 
+    public static class AddressRange {
+        @DisplayInfo(label = "From")
+        @DisplayInfo.Required
+        public int from = 1;
+
+        @DisplayInfo(label = "To")
+        @DisplayInfo.Required
+        public int to = 32;
+    }
 }

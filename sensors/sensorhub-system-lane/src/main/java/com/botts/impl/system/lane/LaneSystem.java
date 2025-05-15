@@ -23,10 +23,7 @@ import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProviderConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
-import com.botts.impl.system.lane.config.FFMpegConfig;
-import com.botts.impl.system.lane.config.LaneConfig;
-import com.botts.impl.system.lane.config.LaneDatabaseConfig;
-import com.botts.impl.system.lane.config.RPMConfig;
+import com.botts.impl.system.lane.config.*;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.DataStoreException;
@@ -52,9 +49,7 @@ import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
 import org.sensorhub.utils.MsgUtils;
 import org.vast.util.Asserts;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.*;
 
 /**
@@ -73,6 +68,7 @@ public class LaneSystem extends SensorSystem {
     AbstractProcessModule<?> existingProcessModule = null;
     Flow.Subscription subscription = null;
     private ExecutorService threadPool = null;
+
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -115,6 +111,7 @@ public class LaneSystem extends SensorSystem {
 
         // Lane database and process setup
         if (getLaneConfig().laneOptionsConfig != null) {
+
             // Initial RPM config
             var rpmConfig = getLaneConfig().laneOptionsConfig.rpmConfig;
             if (rpmConfig != null && existingRPMModule == null) {
@@ -390,59 +387,56 @@ public class LaneSystem extends SensorSystem {
     }
 
     private SensorConfig createRPMConfig(RPMConfig rpmConfig) {
-        Asserts.checkNotNull(rpmConfig.rpmType);
-        Asserts.checkNotNullOrBlank(rpmConfig.rpmLabel, "Please specify an RPM driver label");
-        Asserts.checkNotNullOrBlank(rpmConfig.rpmUniqueId, "Please specify a unique RPM ID");
+        Asserts.checkNotNullOrBlank(rpmConfig.label, "Please specify an RPM driver label");
+        Asserts.checkNotNullOrBlank(rpmConfig.uniqueId, "Please specify a unique RPM ID");
         Asserts.checkNotNull(rpmConfig.remoteHost);
 
-        // TODO: Make Rapiscan and Aspect drivers use common class/interface and common configs
         SensorConfig config;
-        switch(rpmConfig.rpmType) {
-            // Create Aspect config
-            case ASPECT -> {
-                AspectConfig aspectConfig = new AspectConfig();
-                aspectConfig.serialNumber = rpmConfig.rpmUniqueId;
-                aspectConfig.moduleClass = AspectSensor.class.getCanonicalName();
-                // Setup communication config
-                var comm = aspectConfig.commSettings = new ModbusTCPCommProviderConfig();
-                comm.protocol.remoteHost = rpmConfig.remoteHost;
-                comm.protocol.remotePort = rpmConfig.remotePort;
-                // Update connection timeout to be 5 seconds instead of 3 seconds by default
-                comm.connection.connectTimeout = 5000;
-                comm.connection.reconnectAttempts = 10;
-                config = aspectConfig;
-            }
-            // Create Rapiscan config
-            case RAPISCAN -> {
-                RapiscanConfig rapiscanConfig = new RapiscanConfig();
-                rapiscanConfig.serialNumber = rpmConfig.rpmUniqueId;
-                rapiscanConfig.moduleClass = RapiscanSensor.class.getCanonicalName();
-                // Setup communication config
-                var comm = rapiscanConfig.commSettings = new TCPCommProviderConfig();
-                comm.protocol.remoteHost = rpmConfig.remoteHost;
-                comm.protocol.remotePort = rpmConfig.remotePort;
-                // Update connection timeout to be 5 seconds instead of 3 seconds by default
-                comm.connection.connectTimeout = 5000;
-                comm.connection.reconnectAttempts = 10;
-                config = rapiscanConfig;
-            }
-            default -> { return null; }
+
+        if(rpmConfig instanceof AspectRPMConfig aspectRPMConfig){
+            AspectConfig aspectConfig = new AspectConfig();
+            aspectConfig.serialNumber = aspectRPMConfig.uniqueId;
+            aspectConfig.moduleClass = AspectSensor.class.getCanonicalName();
+            // Setup communication config
+            var comm = aspectConfig.commSettings = new ModbusTCPCommProviderConfig();
+            comm.protocol.remoteHost = aspectRPMConfig.remoteHost;
+            comm.protocol.remotePort = aspectRPMConfig.remotePort;
+
+            comm.protocol.addressRange.from = aspectRPMConfig.addressRange.from;
+            comm.protocol.addressRange.to = aspectRPMConfig.addressRange.to;
+            // Update connection timeout to be 5 seconds instead of 3 seconds by default
+            comm.connection.connectTimeout = 5000;
+            comm.connection.reconnectAttempts = 10;
+            config = aspectConfig;
+        }else{
+            RapiscanConfig rapiscanConfig = new RapiscanConfig();
+            rapiscanConfig.serialNumber = rpmConfig.uniqueId;
+            rapiscanConfig.moduleClass = RapiscanSensor.class.getCanonicalName();
+            // Setup communication config
+            var comm = rapiscanConfig.commSettings = new TCPCommProviderConfig();
+            comm.protocol.remoteHost = rpmConfig.remoteHost;
+            comm.protocol.remotePort = rpmConfig.remotePort;
+            // Update connection timeout to be 5 seconds instead of 3 seconds by default
+            comm.connection.connectTimeout = 5000;
+            comm.connection.reconnectAttempts = 10;
+            config = rapiscanConfig;
         }
 
-        // Use label from config
-        config.name = rpmConfig.rpmLabel;
+        config.name = rpmConfig.label;
         config.autoStart = true;
 
         return config;
     }
 
     private FFMPEGConfig createFFmpegConfig(FFMpegConfig ffmpegConfig) {
-        Asserts.checkNotNull(ffmpegConfig.ffmpegType);
-        Asserts.checkNotNullOrBlank(ffmpegConfig.ffmpegLabel, "Please specify an FFmpeg driver label");
-        Asserts.checkNotNullOrBlank(ffmpegConfig.ffmpegUniqueId, "Please specify a unique FFmpeg ID");
+        String defaultAxis = "/axis-media/media.amp?adjustablelivestream=1&resolution=640x480&videocodec=h264";
+
+        Asserts.checkNotNullOrBlank(ffmpegConfig.label, "Please specify an FFmpeg driver label");
+        Asserts.checkNotNullOrBlank(ffmpegConfig.uniqueId, "Please specify a unique FFmpeg ID");
         Asserts.checkNotNull(ffmpegConfig.remoteHost);
 
-        FFMPEGConfig config = new FFMPEGConfig(); // This is the actual ffmpeg sensor config
+
+        // This is the actual ffmpeg sensor config
         StringBuilder endpoint = new StringBuilder("rtsp://"); // All streams should be over rtsp
 
         // Add username and password if provided
@@ -454,32 +448,26 @@ public class LaneSystem extends SensorSystem {
         }
         endpoint.append(ffmpegConfig.remoteHost);
 
-        switch(ffmpegConfig.ffmpegType) {
-            // Autofill with AXIS info
-            case AXIS -> {
-                String path = "/axis-media/media.amp?adjustablelivestream=1&resolution=640x480&videocodec=h264"; // rtsp fps uncapped, might need to change
-                endpoint.append(path);
-                ffmpegConfig.streamPath = path; // Set path in the user-facing config to help indicate what's being autofilled
-                config.connection.fps = 24;
-            }
-            // Autofill with SONY info
-            case SONY -> {
-                String path = ":554/media/video1";
-                endpoint.append(path);
-                ffmpegConfig.streamPath = path; // Set path in the user-facing config to help indicate what's being autofilled
-                config.connection.fps = 24; // Setting it to 24 for now, may change it later
+        FFMPEGConfig config = new FFMPEGConfig();
 
-            }
-            case CUSTOM -> {
-                endpoint.append(ffmpegConfig.streamPath);
-                config.connection.fps = 24;
-            }
-            default -> { return null; }
+        String path = defaultAxis;
+        
+        if(ffmpegConfig instanceof AxisCameraConfig axisVideoConfig){
+             path = axisVideoConfig.streamPath;
+            config.connection.isMJPEG = false;
+        }else if (ffmpegConfig instanceof SonyCameraConfig sonyVideoConfig){
+             path = sonyVideoConfig.streamPath;
+            config.connection.isMJPEG = false;
+        }else if(ffmpegConfig instanceof CustomCameraConfig customVideoConfig){
+             path = customVideoConfig.streamPath.length() > 0 ? customVideoConfig.streamPath : defaultAxis;
+             config.connection.isMJPEG = customVideoConfig.isMJPEG;
         }
 
-        config.connection.isMJPEG = false;
-        config.name = ffmpegConfig.ffmpegLabel;
-        config.serialNumber = ffmpegConfig.ffmpegUniqueId;
+        endpoint.append(path);
+
+        config.connection.fps = 24;
+        config.name = ffmpegConfig.label;
+        config.serialNumber = ffmpegConfig.uniqueId;
         config.autoStart = true;
         config.connection.connectionString = endpoint.toString();
         config.moduleClass = FFMPEGSensor.class.getCanonicalName();
