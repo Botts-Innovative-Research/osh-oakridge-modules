@@ -54,6 +54,7 @@ import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
 import org.sensorhub.utils.MsgUtils;
 import org.vast.util.Asserts;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -368,29 +369,22 @@ public class LaneSystem extends SensorSystem {
                         }
                     }
                 }
-            }
 
-            else if (event.getType().equals(ModuleEvent.Type.CONFIG_CHANGED)) {
-                // FFmpeg config changed events
-                if (event.getModule() instanceof FFMPEGSensor ffmpegDriver) {
-                    var oldConfig = ffmpegConfigs.get(ffmpegDriver.getLocalID());
-                    if (oldConfig != null) {
-                        var newConfig = ffmpegDriver.getConfiguration();
-                        // If important parts of configuration are updated, remove data from old driver
-                        if (newConfig.connection.isMJPEG != oldConfig.connection.isMJPEG
-                        || newConfig.connection.connectionString != oldConfig.connection.connectionString
-                        || newConfig.connection.transportStreamPath != oldConfig.connection.transportStreamPath) {
-                            var laneDatabaseId = getLaneDatabaseID();
-                            if (ffmpegDriver.getUniqueIdentifier() != null && laneDatabaseId != null)
-                                threadPool.execute(() -> {
-                                    try {
-                                        ffmpegDriver.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
-                                    } catch (SensorHubException ex) {
-                                        throw new RuntimeException(ex);
-                                    }
+                else if (event.getNewState() == ModuleEvent.ModuleState.INITIALIZING) {
+                    // FFmpeg config changed events
+                    if (event.getModule() instanceof FFMPEGSensor ffmpegDriver) {
+                        var oldConfig = ffmpegConfigs.get(ffmpegDriver.getLocalID());
+                        if (oldConfig != null) {
+                            var newConfig = ffmpegDriver.getConfiguration();
+                            // If important parts of configuration are updated, remove data from old driver
+                            if (newConfig.connection.isMJPEG != oldConfig.connection.isMJPEG
+                                    || !Objects.equals(newConfig.connection.connectionString, oldConfig.connection.connectionString)
+                                    || !Objects.equals(newConfig.connection.transportStreamPath, oldConfig.connection.transportStreamPath)) {
+                                var laneDatabaseId = getLaneDatabaseID();
+                                if (ffmpegDriver.getUniqueIdentifier() != null && laneDatabaseId != null)
                                     deleteSystemsFromDatabase(laneDatabaseId, List.of(ffmpegDriver.getUniqueIdentifier()));
-                                });
-                            ffmpegConfigs.put(ffmpegDriver.getLocalID(), ffmpegDriver.getConfiguration());
+                                ffmpegConfigs.put(ffmpegDriver.getLocalID(), ffmpegDriver.getConfiguration());
+                            }
                         }
                     }
                 }
