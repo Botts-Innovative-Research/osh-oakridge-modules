@@ -147,14 +147,19 @@ public class OccupancyDataRecorder extends ExecutableProcessImpl implements ISen
         db.getDataStreamStore().select(new DataStreamFilter.Builder().withSystems(sysFilter)
                 // Only record video data in process, because we don't really use the other data
                 .withObservedProperties(VideoCamHelper.DEF_VIDEOFRAME, VideoCamHelper.DEF_IMAGE).build()).forEach(ds -> {
-            // Don't add process datastreams as outputs
+            // Don't add process data streams as outputs
             if(ds.getSystemID().getUniqueID().contains(OSHProcessInfo.URI_PREFIX))
                 return;
 
             var struct = ds.getRecordStructure().clone();
             var encoding = ds.getRecordEncoding();
             String fullOutputName = ds.getSystemID().getUniqueID() + ":" + ds.getOutputName();
-            outputData.add(fullOutputName, struct);
+            try {
+                outputData.get(fullOutputName);
+                getLogger().warn("An existing video system with same UID exists in database");
+            } catch (Exception e) {
+                outputData.add(fullOutputName, struct);
+            }
             outputEncodingMap.put(fullOutputName, encoding);
         });
 
@@ -225,12 +230,13 @@ public class OccupancyDataRecorder extends ExecutableProcessImpl implements ISen
             inputSystemID = systemInputParam.getData().getStringValue();
         }
         if(isTriggered()) {
+            System.gc();
             int size = outputData.size();
             for(int i = 0; i < size; i++) {
                 DataComponent output = outputData.getComponent(i);
                 String fullOutputName = output.getName();
-
-                for(IObsData data : getPastData(fullOutputName)) {
+                List<IObsData> pastData = getPastData(fullOutputName);
+                for(IObsData data : pastData) {
                     output.setData(data.getResult());
                     try {
                         publishData();
@@ -238,7 +244,7 @@ public class OccupancyDataRecorder extends ExecutableProcessImpl implements ISen
                         throw new RuntimeException(e);
                     }
                 }
-
+                pastData = null;
             }
         }
     }
