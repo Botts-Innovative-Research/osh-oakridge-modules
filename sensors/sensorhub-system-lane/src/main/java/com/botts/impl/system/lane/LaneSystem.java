@@ -30,6 +30,7 @@ import com.botts.impl.system.lane.config.RPMConfig;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.api.event.Event;
 import org.sensorhub.api.event.EventUtils;
@@ -52,9 +53,7 @@ import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
 import org.sensorhub.utils.MsgUtils;
 import org.vast.util.Asserts;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.*;
 
 /**
@@ -73,10 +72,12 @@ public class LaneSystem extends SensorSystem {
     AbstractProcessModule<?> existingProcessModule = null;
     Flow.Subscription subscription = null;
     private ExecutorService threadPool = null;
+    Map<String, FFMPEGConfig> ffmpegConfigs = null;
 
     @Override
     protected void doInit() throws SensorHubException {
         threadPool = Executors.newSingleThreadExecutor();
+        ffmpegConfigs = new HashMap<>();
 
         // generate unique ID
         if (config.uniqueID != null && !config.uniqueID.equals(AUTO_ID)) {
@@ -98,7 +99,8 @@ public class LaneSystem extends SensorSystem {
         for (var member : getMembers().values()) {
             if (member instanceof RapiscanSensor || member instanceof AspectSensor) {
                 existingRPMModule = (AbstractSensorModule<?>) member;
-                break;
+            } else if (member instanceof FFMPEGSensor) {
+                ffmpegConfigs.put(member.getLocalID(), ((FFMPEGSensor) member).getConfiguration());
             }
         }
 
@@ -263,9 +265,16 @@ public class LaneSystem extends SensorSystem {
             // Delete the system data
             if (obsDatabase != null) {
                 var transactionHandler = new SystemDatabaseTransactionHandler(getParentHub().getEventBus(), obsDatabase);
-                // Don't use forEach bc nested try-catch
-                for (String sysUID : systemUIDs)
+                for (String sysUID : systemUIDs) {
                     transactionHandler.getSystemHandler(sysUID).delete(true);
+                    obsDatabase.getObservationStore().removeEntries(new ObsFilter.Builder()
+                            .withDataStreams()
+                            .withSystems()
+                            .withUniqueIDs(sysUID)
+                            .done()
+                            .done()
+                            .build());
+                }
             }
         } catch (SensorHubException e) {
             throw new RuntimeException(e);
@@ -346,6 +355,24 @@ public class LaneSystem extends SensorSystem {
                     if (event.getModule() instanceof OccupancyProcessModule processModule && existingProcessModule == null) {
                         if (Objects.equals(processModule.getConfiguration().systemUID, this.getUniqueIdentifier())) {
                             existingProcessModule = processModule;
+                        }
+                    }
+                }
+            }
+
+            else if (event.getType().equals(ModuleEvent.Type.CONFIG_CHANGED)) {
+                // FFmpeg config changed events
+                if (event.getModule() instanceof FFMPEGSensor ffmpegDriver) {
+                    var oldConfig = ffmpegConfigs.get(ffmpegDriver.getLocalID());
+                    if (oldConfig != null) {
+                        var newConfig = ffmpegDriver.getConfiguration();
+                        // If important parts of configuration are updated, remove data from old driver
+                        if (newConfig.connection.isMJPEG != oldConfig.connection.isMJPEG
+                        || newConfig.connection.connectionString != oldConfig.connection.connectionString
+                        || newConfig.connection.transportStreamPath != oldConfig.connection.transportStreamPath) {
+                            var laneDatabaseId = getLaneDatabaseID();
+                            if (ffmpegDriver.getUniqueIdentifier() != null && laneDatabaseId != null)
+                                deleteSystemsFromDatabase(laneDatabaseId, List.of(ffmpegDriver.getUniqueIdentifier()));
                         }
                     }
                 }
