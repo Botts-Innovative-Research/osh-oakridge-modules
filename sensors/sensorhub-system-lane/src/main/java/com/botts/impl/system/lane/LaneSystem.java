@@ -465,6 +465,7 @@ public class LaneSystem extends SensorSystem {
 
         endpoint.append(path);
 
+        config.connection.useTCP = ffmpegConfig.useTCP;
         config.connection.fps = 24;
         config.name = ffmpegConfig.label;
         config.serialNumber = ffmpegConfig.uniqueId;

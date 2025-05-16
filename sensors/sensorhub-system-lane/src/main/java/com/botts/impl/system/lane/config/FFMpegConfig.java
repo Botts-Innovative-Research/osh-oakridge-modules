@@ -16,4 +16,6 @@ public class FFMpegConfig extends ConnectionConfig{
     @DisplayInfo(label = "Password")
     public String password;
 
+    @DisplayInfo(label = "TCP", desc = "Select if using TCP network protocol. Otherwise driver will use UDP.")
+    public boolean useTCP = true;
 }
