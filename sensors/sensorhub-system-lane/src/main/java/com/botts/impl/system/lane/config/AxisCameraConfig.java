@@ -10,6 +10,6 @@ import org.sensorhub.api.config.DisplayInfo;
 public class AxisCameraConfig extends FFMpegConfig{
 
     @DisplayInfo(label = "Stream Path", desc = "Path for video stream. Only applies for the CUSTOM camera type.")
-    public String streamPath = "/axis-media/media.amp?adjustablelivestream=1&resolution=640x480&videocodec=h264";
+    public String streamPath = "/axis-media/media.amp?adjustablelivestream=1&resolution=640x480&videocodec=h264&videokeyframeinterval=15";
 
 }

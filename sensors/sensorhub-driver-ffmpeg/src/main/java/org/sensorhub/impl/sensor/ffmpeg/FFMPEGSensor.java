@@ -114,7 +114,8 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> implements Runn
     @Override
     public void doStop() throws SensorHubException {
         try {
-            reconnectThread.interrupt();
+            if(reconnectThread != null)
+                reconnectThread.interrupt();
         } catch (SecurityException e) {
             logger.info("Reconnect thread interrupted.");
         }
