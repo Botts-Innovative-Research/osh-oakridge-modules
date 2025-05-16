@@ -30,6 +30,7 @@ import com.botts.impl.system.lane.config.RPMConfig;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.api.event.Event;
@@ -264,15 +265,24 @@ public class LaneSystem extends SensorSystem {
 
             // Delete the system data
             if (obsDatabase != null) {
-                var transactionHandler = new SystemDatabaseTransactionHandler(getParentHub().getEventBus(), obsDatabase);
                 for (String sysUID : systemUIDs) {
-                    transactionHandler.getSystemHandler(sysUID).delete(true);
-                    obsDatabase.getObservationStore().removeEntries(new ObsFilter.Builder()
+                    // Delete old observations
+                    long obsRemoved = obsDatabase.getObservationStore().removeEntries(new ObsFilter.Builder()
                             .withDataStreams()
                             .withSystems()
                             .withUniqueIDs(sysUID)
                             .done()
                             .done()
+                            .build());
+                    // Delete old data streams
+                    long dsRemoved = obsDatabase.getDataStreamStore().removeEntries(new DataStreamFilter.Builder()
+                            .withSystems()
+                            .withUniqueIDs(sysUID)
+                            .done()
+                            .build());
+                    // Delete old systems
+                    long sysRemoved = obsDatabase.getSystemDescStore().removeEntries(new SystemFilter.Builder()
+                            .withUniqueIDs(sysUID)
                             .build());
                 }
             }
@@ -372,7 +382,15 @@ public class LaneSystem extends SensorSystem {
                         || newConfig.connection.transportStreamPath != oldConfig.connection.transportStreamPath) {
                             var laneDatabaseId = getLaneDatabaseID();
                             if (ffmpegDriver.getUniqueIdentifier() != null && laneDatabaseId != null)
-                                deleteSystemsFromDatabase(laneDatabaseId, List.of(ffmpegDriver.getUniqueIdentifier()));
+                                threadPool.execute(() -> {
+                                    try {
+                                        ffmpegDriver.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
+                                    } catch (SensorHubException ex) {
+                                        throw new RuntimeException(ex);
+                                    }
+                                    deleteSystemsFromDatabase(laneDatabaseId, List.of(ffmpegDriver.getUniqueIdentifier()));
+                                });
+                            ffmpegConfigs.put(ffmpegDriver.getLocalID(), ffmpegDriver.getConfiguration());
                         }
                     }
                 }
