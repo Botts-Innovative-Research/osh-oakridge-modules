@@ -93,11 +93,11 @@ public class Video<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSensor
 
         // Get an instance of SWE Factory suitable to build components
         VideoCamHelper sweFactory = new VideoCamHelper();
-        Boolean isMJPEG = (parentSensor).getIsMJPEG();
+        //Boolean isMJPEG = (parentSensor).getIsMJPEG();
         DataStream outputDef;
 
         logger.debug(codecFormat);
-        if (Boolean.TRUE.equals(isMJPEG)){
+        if (codecFormat.equals("mjpeg")){
              outputDef = sweFactory.newVideoOutputMJPEG(getName(), videoFrameWidth, videoFrameHeight);
         } else {
              outputDef = sweFactory.newVideoOutputH264(getName(), videoFrameWidth, videoFrameHeight);
