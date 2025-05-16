@@ -304,8 +304,12 @@ public class MpegTsProcessor extends Thread {
                 videoStreamTimeBase = timeBaseUnits;
             }
 
+            // Injecting extradata as-is only works for receiving video streams
+            // For file h264 containers (like mp4) we will want to convert the
+            // PPS/SPS extradata from AVCC to Annex B.
+            // TODO: Detect AVCC, convert to Annex B
             int extraSize = avFormatContext.streams(streamId).codecpar().extradata_size();
-            if (extraSize > 0) {
+            if (extraSize > 0 && avFormatContext.streams(streamId).codecpar().codec_id() == avcodec.AV_CODEC_ID_H264) {
                 spsPpsHeader = new byte[extraSize];
                 avFormatContext.streams(streamId).codecpar().extradata().get(spsPpsHeader);
             }
@@ -355,6 +359,19 @@ public class MpegTsProcessor extends Thread {
 //
 //        return hasDataStream;
 //    }
+
+    // This is a very unsophisticated way of getting the name
+    // Good enough for the reverted driver
+    public String getCodecName() {
+        int codecId = avFormatContext.streams(videoStreamId).codecpar().codec_id();
+        if (codecId == avcodec.AV_CODEC_ID_H264) {
+            return "h264";
+        } else if (codecId == avcodec.AV_CODEC_ID_MJPEG) {
+            return "mjpeg";
+        } else {
+            return "other";
+        }
+    }
 
     /**
      * Retrieves the average frame rate for the embedded video if there is one
@@ -548,16 +565,6 @@ public class MpegTsProcessor extends Thread {
                     }
                     videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer));
                 }
-//                 else if ((avPacket.stream_index() == dataStreamId) && (null != metadataDataBufferListener)) {
-//
-//                    // Process the data packet
-//                    byte[] dataBuffer = new byte[avPacket.size()];
-//                    avPacket.data().get(dataBuffer);
-//
-//                    // Pass data buffer to interested listener
-//                    metadataDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * dataStreamTimeBase, dataBuffer));
-//                }
-
                 // clear packet
                 avcodec.av_packet_unref(avPacket);
             }
@@ -600,7 +607,6 @@ public class MpegTsProcessor extends Thread {
             closeCodecContext();
 
             if (null != avFormatContext) {
-
                 avformat.avformat_close_input(avFormatContext);
             }
 
@@ -637,7 +643,6 @@ public class MpegTsProcessor extends Thread {
 
         // Get the associated codec from the id stored in the context
         AVCodec codec = avcodec.avcodec_find_decoder(avCodecContext.codec_id());
-
         if (null == codec) {
 
             String message = "Unsupported codec";
@@ -660,13 +665,4 @@ public class MpegTsProcessor extends Thread {
             throw new IllegalStateException(message);
         }
     }
-
-//    public String getCodecFormat() {
-////        String codecFormat = avCodecContext.codec().long_name().getString(StandardCharsets.UTF_8);
-//        String codecFormat = "temporary";
-//
-//
-//
-//        return codecFormat;
-//    }
 }

@@ -169,8 +169,6 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         videoOutput.init();
     }
 
-
-
     /**
      * Overridden to set the definition of the sensor to "http://www.w3.org/ns/ssn/System"
      */
@@ -215,7 +213,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	            	// that now.
 	            	if (videoOutput == null) {
 	            		int[] videoDimensions = mpegTsProcessor.getVideoStreamFrameDimensions();
-	            		String codecFormat = "string";
+	            		String codecFormat = mpegTsProcessor.getCodecName();
 	            		createVideoOutput(videoDimensions, codecFormat);
 	            	}
 	                // Set video stream packet listener to video output
@@ -303,12 +301,10 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         ignoreDataTimestamp = config.connection.ignoreDataTimestamps;
         return ignoreDataTimestamp;
     }
-
+/*
     public Boolean getIsMJPEG() {
         isMJPEG = config.connection.isMJPEG;
         return isMJPEG;
     }
-
-
-
+    */
 }

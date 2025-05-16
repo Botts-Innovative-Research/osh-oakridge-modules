@@ -81,14 +81,14 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> implements Runn
     private void handleReconnect() {
         if (currentReconnect < config.connectionConfig.reconnectAttempts) {
             try {
-                logger.info("Reconnect attempt {}.", currentReconnect + 1);
+                reportStatus("Reconnect attempt " + currentReconnect + 1);
                 this.getParentHub().getModuleRegistry().restartModuleAsync(this);
                 currentReconnect++;
             } catch (SensorHubException e) {
                 throw new RuntimeException(e);
             }
         } else {
-            logger.error("Failed to connect after {} attempts.", currentReconnect);
+            reportStatus("Failed to connect after " + currentReconnect + " attempts.");
             currentReconnect = 0;
             try {
                 this.getParentHub().getModuleRegistry().stopModuleAsync(this);
@@ -100,26 +100,31 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> implements Runn
 
     @Override
     public void run() {
+        // Wait for the mpegTsProcessor to finish (video stream end)
+        // and reconnect.
         try {
             mpegTsProcessor.join();
         } catch (InterruptedException e) {
-            logger.info("Mpeg process interrupted.");
+            // If join is interrupted, this means doStop was called
+            // and the function should immediately return to avoid
+            // starting the reconnect loop.
+            logger.debug("Mpeg process interrupted.");
             currentReconnect = 0;
             return;
         }
         handleReconnect();
-
     }
 
     @Override
     public void doStop() throws SensorHubException {
-        try {
-            if(reconnectThread != null)
+        if (reconnectThread != null) {
+            try {
                 reconnectThread.interrupt();
-        } catch (SecurityException e) {
-            logger.info("Reconnect thread interrupted.");
+            } catch (SecurityException e) {
+                logger.debug("Reconnect thread could not be interrupted.");
+            }
+            reconnectThread = null;
         }
         super.doStop();
-
     }
 }
