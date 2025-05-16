@@ -429,7 +429,7 @@ public class LaneSystem extends SensorSystem {
     }
 
     private FFMPEGConfig createFFmpegConfig(FFMpegConfig ffmpegConfig) {
-        String defaultAxis = "/axis-media/media.amp?adjustablelivestream=1&resolution=640x480&videocodec=h264";
+        String defaultAxis = "/axis-media/media.amp?adjustablelivestream=1&resolution=640x480&videocodec=h264&videokeyframeinterval=15";
 
         Asserts.checkNotNullOrBlank(ffmpegConfig.label, "Please specify an FFmpeg driver label");
         Asserts.checkNotNullOrBlank(ffmpegConfig.uniqueId, "Please specify a unique FFmpeg ID");
@@ -462,6 +462,7 @@ public class LaneSystem extends SensorSystem {
 
         endpoint.append(path);
 
+        config.connection.useTCP = true;
         config.connection.fps = 24;
         config.name = ffmpegConfig.label;
         config.serialNumber = ffmpegConfig.uniqueId;

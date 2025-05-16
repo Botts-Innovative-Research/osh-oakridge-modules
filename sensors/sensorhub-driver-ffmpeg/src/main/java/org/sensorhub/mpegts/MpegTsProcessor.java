@@ -183,6 +183,8 @@ public class MpegTsProcessor extends Thread {
 
     byte[] spsPpsHeader = null;
 
+    private boolean useTCP;
+
     /**
      * Constructor
      *
@@ -191,7 +193,7 @@ public class MpegTsProcessor extends Thread {
      */
     public MpegTsProcessor(String source) {
 
-        this(source, 0, false);
+        this(source, 0, false, false);
     }
 
 
@@ -203,13 +205,14 @@ public class MpegTsProcessor extends Thread {
      * @param fps The desired playback FPS (use 0 for decoding the TS file as fast as possible)
      * @param loop
      */
-    public MpegTsProcessor(String source, int fps, boolean loop) {
+    public MpegTsProcessor(String source, int fps, boolean loop, boolean useTCP) {
 
         super(WORKER_THREAD_NAME);
 
         this.streamSource = source;
         this.fps = fps;
         this.loop = loop;
+        this.useTCP = useTCP;
     }
 
     /**
@@ -226,6 +229,12 @@ public class MpegTsProcessor extends Thread {
         avformat.avformat_network_init();
 
         AVDictionary options = new AVDictionary();
+
+
+        if(useTCP){
+            avutil.av_dict_set(options, "rtsp_transport", "tcp", 0);
+        }
+
         avutil.av_dict_set(options, "timeout", Long.toString(timeout), 0);
 
         // Create a new AV Format Context for I/O
@@ -549,7 +558,9 @@ public class MpegTsProcessor extends Thread {
 
                     // Pass data buffer to interested listener
                     frameCount++;
+
                     if (isKeyFrame && spsPpsHeader != null) {
+                        logger.debug("Keyframe detected at pts: {}", avPacket.pts());
                         videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, spsPpsHeader));
                     }
                     videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer));

@@ -41,4 +41,7 @@ public class Connection {
 
     @DisplayInfo(label = "Ignore Data Timestamps", desc = "This ignores any data timestamps and defaults to current system time. This is necessary if video stream does not contain any timestamps")
     public boolean ignoreDataTimestamps = true;
+
+    @DisplayInfo(label = "TCP", desc = "Select if using TCP network protocol. Otherwise driver will use UDP.")
+    public boolean useTCP = false;
 }
