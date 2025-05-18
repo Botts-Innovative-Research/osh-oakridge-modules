@@ -27,6 +27,8 @@ import com.botts.impl.system.lane.config.*;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.api.datastore.obs.DataStreamFilter;
+import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.api.event.Event;
 import org.sensorhub.api.event.EventUtils;
@@ -68,12 +70,13 @@ public class LaneSystem extends SensorSystem {
     AbstractProcessModule<?> existingProcessModule = null;
     Flow.Subscription subscription = null;
     private ExecutorService threadPool = null;
+    Map<String, FFMPEGConfig> ffmpegConfigs = null;
 
 
     @Override
     protected void doInit() throws SensorHubException {
         threadPool = Executors.newSingleThreadExecutor();
-
+        ffmpegConfigs = new HashMap<>();
         // generate unique ID
         if (config.uniqueID != null && !config.uniqueID.equals(AUTO_ID)) {
             if (config.uniqueID.startsWith(URN_PREFIX)) {
@@ -95,6 +98,8 @@ public class LaneSystem extends SensorSystem {
             if (member instanceof RapiscanSensor || member instanceof AspectSensor) {
                 existingRPMModule = (AbstractSensorModule<?>) member;
                 break;
+            }else if (member instanceof FFMPEGSensor) {
+                ffmpegConfigs.put(member.getLocalID(), ((FFMPEGSensor) member).getConfiguration());
             }
         }
 
@@ -259,10 +264,26 @@ public class LaneSystem extends SensorSystem {
 
             // Delete the system data
             if (obsDatabase != null) {
-                var transactionHandler = new SystemDatabaseTransactionHandler(getParentHub().getEventBus(), obsDatabase);
-                // Don't use forEach bc nested try-catch
-                for (String sysUID : systemUIDs)
-                    transactionHandler.getSystemHandler(sysUID).delete(true);
+                for (String sysUID : systemUIDs) {
+                    var sysFilter = new SystemFilter.Builder()
+                            .withUniqueIDs(sysUID)
+                            .includeMembers(true)
+                            .build();
+
+                    // Delete old observations
+                    obsDatabase.getObservationStore().removeEntries(new ObsFilter.Builder()
+                            .withDataStreams()
+                            .withSystems(sysFilter)
+                            .done()
+                            .build());
+                    // Delete old data streams
+                    obsDatabase.getDataStreamStore().removeEntries(new DataStreamFilter.Builder()
+                            .withSystems(sysFilter)
+                            .build());
+
+                    // Delete old systems
+                    obsDatabase.getSystemDescStore().removeEntries(sysFilter);
+                }
             }
         } catch (SensorHubException e) {
             throw new RuntimeException(e);
@@ -344,6 +365,48 @@ public class LaneSystem extends SensorSystem {
                         if (Objects.equals(processModule.getConfiguration().systemUID, this.getUniqueIdentifier())) {
                             existingProcessModule = processModule;
                         }
+                    }
+
+                    if (event.getModule() instanceof FFMPEGSensor ffmpegDriver){
+                        if(!ffmpegConfigs.containsKey(ffmpegDriver.getLocalID()))
+                            ffmpegConfigs.put(ffmpegDriver.getLocalID(), ffmpegDriver.getConfiguration());
+                    }
+                }
+            }
+
+            else if (event.getType().equals(ModuleEvent.Type.CONFIG_CHANGED)) {
+                // FFmpeg config changed events
+                if (event.getModule() instanceof FFMPEGSensor ffmpegDriver) {
+                    var oldConfig = ffmpegConfigs.get(ffmpegDriver.getLocalID());
+
+                    if (oldConfig == null) {
+                        ffmpegConfigs.put(ffmpegDriver.getLocalID(), ffmpegDriver.getConfiguration());
+                        return;
+                    }
+
+                    var newConfig = ffmpegDriver.getConfiguration();
+
+                    // If important parts of configuration are updated, remove data from old driver
+                    if (newConfig.connection.useTCP != oldConfig.connection.useTCP
+                    || !Objects.equals(newConfig.connection.connectionString, oldConfig.connection.connectionString)
+                    || !Objects.equals(newConfig.connection.transportStreamPath, oldConfig.connection.transportStreamPath)) {
+                        var laneDatabaseId = getLaneDatabaseID();
+
+                        if (ffmpegDriver.getUniqueIdentifier() != null && laneDatabaseId != null ) {
+
+                            try {
+                                ffmpegDriver.stop();
+                                ffmpegDriver.waitForState(ModuleEvent.ModuleState.INITIALIZED, 5000);
+                                deleteSystemsFromDatabase(laneDatabaseId, List.of(ffmpegDriver.getUniqueIdentifier()));
+                                getParentHub().getSystemDriverRegistry().register(ffmpegDriver);
+                                if (ffmpegDriver.getConfiguration().autoStart)
+                                    ffmpegDriver.start();
+                            } catch (SensorHubException ex) {
+                                getLogger().error("Failed to delete FFmpeg driver from database. Please delete old FFmpeg system in database to avoid further issues" + ex.getMessage());
+                            }
+                        }
+                        ffmpegConfigs.put(ffmpegDriver.getLocalID(), ffmpegDriver.getConfiguration());
+
                     }
                 }
             }
@@ -451,7 +514,7 @@ public class LaneSystem extends SensorSystem {
         FFMPEGConfig config = new FFMPEGConfig();
 
         String path = defaultAxis;
-        
+
         if(ffmpegConfig instanceof AxisCameraConfig axisVideoConfig){
              path = axisVideoConfig.streamPath;
         }else if (ffmpegConfig instanceof SonyCameraConfig sonyVideoConfig){
