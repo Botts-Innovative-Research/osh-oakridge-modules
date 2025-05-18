@@ -265,30 +265,24 @@ public class LaneSystem extends SensorSystem {
             // Delete the system data
             if (obsDatabase != null) {
                 for (String sysUID : systemUIDs) {
-                    // Delete old observations
-                    long obsRemoved = obsDatabase.getObservationStore().removeEntries(new ObsFilter.Builder()
-                            .withDataStreams()
-                            .withSystems()
+                    var sysFilter = new SystemFilter.Builder()
                             .withUniqueIDs(sysUID)
-                            .done()
+                            .includeMembers(true)
+                            .build();
+
+                    // Delete old observations
+                    obsDatabase.getObservationStore().removeEntries(new ObsFilter.Builder()
+                            .withDataStreams()
+                            .withSystems(sysFilter)
                             .done()
                             .build());
                     // Delete old data streams
-                    long dsRemoved = obsDatabase.getDataStreamStore().removeEntries(new DataStreamFilter.Builder()
-                            .withSystems()
-                            .withUniqueIDs(sysUID)
-                            .done()
-                            .build());
-
-                    // delete old submodules
-                    long submodulesRemoved = obsDatabase.getSystemDescStore().removeEntries(new SystemFilter.Builder()
-                            .withParents()
+                    obsDatabase.getDataStreamStore().removeEntries(new DataStreamFilter.Builder()
+                            .withSystems(sysFilter)
                             .build());
 
                     // Delete old systems
-                    long sysRemoved = obsDatabase.getSystemDescStore().removeEntries(new SystemFilter.Builder()
-                            .withUniqueIDs(sysUID)
-                            .build());
+                    obsDatabase.getSystemDescStore().removeEntries(sysFilter);
                 }
             }
         } catch (SensorHubException e) {
@@ -374,9 +368,8 @@ public class LaneSystem extends SensorSystem {
                     }
 
                     if (event.getModule() instanceof FFMPEGSensor ffmpegDriver){
-                        System.out.println("ffmpegConfigs: "+ ffmpegConfigs);
                         if(!ffmpegConfigs.containsKey(ffmpegDriver.getLocalID()))
-                            ffmpegConfigs.put(ffmpegDriver.getLocalID(), ((FFMPEGSensor) ffmpegDriver).getConfiguration());
+                            ffmpegConfigs.put(ffmpegDriver.getLocalID(), ffmpegDriver.getConfiguration());
                     }
                 }
             }
@@ -387,7 +380,6 @@ public class LaneSystem extends SensorSystem {
                     var oldConfig = ffmpegConfigs.get(ffmpegDriver.getLocalID());
 
                     if (oldConfig == null) {
-                        System.out.println("Old config is null, adding ffmpeg to list.");
                         ffmpegConfigs.put(ffmpegDriver.getLocalID(), ffmpegDriver.getConfiguration());
                         return;
                     }
@@ -395,7 +387,9 @@ public class LaneSystem extends SensorSystem {
                     var newConfig = ffmpegDriver.getConfiguration();
 
                     // If important parts of configuration are updated, remove data from old driver
-                    if (newConfig.connection.useTCP != oldConfig.connection.useTCP || newConfig.connection.connectionString != oldConfig.connection.connectionString || newConfig.connection.transportStreamPath != oldConfig.connection.transportStreamPath) {
+                    if (newConfig.connection.useTCP != oldConfig.connection.useTCP
+                    || !Objects.equals(newConfig.connection.connectionString, oldConfig.connection.connectionString)
+                    || !Objects.equals(newConfig.connection.transportStreamPath, oldConfig.connection.transportStreamPath)) {
                         var laneDatabaseId = getLaneDatabaseID();
 
                         if (ffmpegDriver.getUniqueIdentifier() != null && laneDatabaseId != null ) {
@@ -403,15 +397,10 @@ public class LaneSystem extends SensorSystem {
                             try {
                                 ffmpegDriver.stop();
                                 ffmpegDriver.waitForState(ModuleEvent.ModuleState.INITIALIZED, 5000);
-
                                 deleteSystemsFromDatabase(laneDatabaseId, List.of(ffmpegDriver.getUniqueIdentifier()));
-
                                 getParentHub().getSystemDriverRegistry().register(ffmpegDriver);
-
-
-                                if (ffmpegDriver.getConfiguration().autoStart){
+                                if (ffmpegDriver.getConfiguration().autoStart)
                                     ffmpegDriver.start();
-                                }
                             } catch (SensorHubException ex) {
                                 getLogger().error("Failed to delete FFmpeg driver from database. Please delete old FFmpeg system in database to avoid further issues" + ex.getMessage());
                             }
