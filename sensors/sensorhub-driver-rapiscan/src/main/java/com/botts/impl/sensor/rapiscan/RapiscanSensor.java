@@ -38,7 +38,7 @@ import java.io.InputStream;
  * @author Drew Botts
  * @since Oct 16, 2023
  */
-public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> implements Runnable{
+public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     private static final Logger logger = LoggerFactory.getLogger(RapiscanSensor.class);
 
@@ -70,6 +70,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
     RobustConnection connection;
     private boolean isRunning;
     private Thread tcpConnectionThread;
+    private static final Object heartbeatLock = new Object();
 
     @Override
     public void doInit() throws SensorHubException {
@@ -223,7 +224,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
     @Override
     protected void afterStart() {
         // Begin heartbeat check
-        tcpConnectionThread = new Thread(this);
+        tcpConnectionThread = new Thread(this::heartbeat);
         isRunning = true;
         tcpConnectionThread.start();
     }
@@ -238,6 +239,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
     @Override
     public void doStop() {
         isRunning = false;
+        if (tcpConnectionThread != null) tcpConnectionThread = null;
         if(connection != null) connection.cancel();
 
         if (commProviderModule != null) {
@@ -316,11 +318,10 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> impleme
 
     public ConnectionStatusOutput getConnectionStatusOutput() {return connectionStatusOutput;}
 
-    @Override
-    public void run() {
+    public void heartbeat() {
         long waitPeriod = -1;
 
-        synchronized (this) {
+        synchronized (heartbeatLock) {
             while (isRunning) {
                 try{
                     long timeSinceMsg = messageHandler.getTimeSinceLastMessage();
