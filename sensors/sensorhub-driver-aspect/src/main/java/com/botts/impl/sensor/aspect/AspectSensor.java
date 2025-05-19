@@ -34,7 +34,7 @@ import java.net.ConnectException;
  * @author Michael Elmore
  * @since December 2023
  */
-public class AspectSensor extends AbstractSensorModule<AspectConfig> implements Runnable{
+public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     private static final Logger log = LoggerFactory.getLogger(AspectSensor.class);
 
     IModbusTCPCommProvider<?> commProviderModule;
@@ -56,6 +56,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> implements 
     RobustConnection connection;
     private boolean isRunning;
     private Thread tcpConnectionThread;
+    private static final Object heartbeatLock = new Object();
 
     @Override
     public void doInit() throws SensorHubException {
@@ -184,14 +185,16 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> implements 
     @Override
     protected void afterStart() {
         // Begin heartbeat check
-        tcpConnectionThread = new Thread(this);
+        tcpConnectionThread = new Thread(this::heartbeat);
         isRunning = true;
         tcpConnectionThread.start();
     }
 
     @Override
     public void doStop() {
-
+        isRunning = false;
+        if(tcpConnectionThread != null)
+            tcpConnectionThread = null;
         // cancel reconnection loop
         if(connection != null){
             connection.cancel();
@@ -286,9 +289,9 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> implements 
 //        }
 //    }
 
-    @Override
-    public void run() {
-        synchronized (this) {
+
+    public void heartbeat() {
+        synchronized (heartbeatLock) {
             while (isRunning) {
                 if(messageHandler.getTimeSinceLastMessage() < config.commSettings.connection.reconnectPeriod) {
 

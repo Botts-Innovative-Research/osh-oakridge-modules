@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
  * @author Drew Botts
  * @since Feb. 2023
  */
-public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> implements Runnable {
+public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
 
     /** Debug logger */
     private static final Logger logger = LoggerFactory.getLogger(FFMPEGSensor.class);
@@ -72,7 +72,7 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> implements Runn
         startStream();
 
         currentReconnect = 0;
-        reconnectThread = new Thread(this);
+        reconnectThread = new Thread(this::waitAndReconnect);
         if (!reconnectThread.isAlive()) {
             reconnectThread.start();
         }
@@ -98,12 +98,12 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> implements Runn
         }
     }
 
-    @Override
-    public void run() {
+    public void waitAndReconnect() {
         // Wait for the mpegTsProcessor to finish (video stream end)
         // and reconnect.
         try {
-            mpegTsProcessor.join();
+            if(mpegTsProcessor != null)
+                mpegTsProcessor.join();
         } catch (InterruptedException e) {
             // If join is interrupted, this means doStop was called
             // and the function should immediately return to avoid
