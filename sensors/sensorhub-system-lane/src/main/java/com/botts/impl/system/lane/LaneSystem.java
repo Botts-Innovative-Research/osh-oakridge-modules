@@ -516,9 +516,9 @@ public class LaneSystem extends SensorSystem {
         String path = defaultAxis;
 
         if(ffmpegConfig instanceof AxisCameraConfig axisVideoConfig){
-             path = axisVideoConfig.streamPath;
+             path = axisVideoConfig.streamPath.getPath();
         }else if (ffmpegConfig instanceof SonyCameraConfig sonyVideoConfig){
-             path = sonyVideoConfig.streamPath;
+             path = SonyCameraConfig.streamPath;
         }else if(ffmpegConfig instanceof CustomCameraConfig customVideoConfig){
              path = customVideoConfig.streamPath.length() > 0 ? customVideoConfig.streamPath : defaultAxis;
         }
