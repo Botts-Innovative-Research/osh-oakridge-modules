@@ -9,7 +9,6 @@ import org.sensorhub.api.config.DisplayInfo;
  */
 public class SonyCameraConfig extends FFMpegConfig{
 
-    @DisplayInfo(label = "Stream Path", desc = "Path for video stream. Only applies for the CUSTOM camera type.")
-    public String streamPath = ":554/media/video1";
+    public static final String streamPath = ":554/media/video1";
 
 }
