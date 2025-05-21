@@ -560,7 +560,6 @@ public class MpegTsProcessor extends Thread {
                     frameCount++;
 
                     if (isKeyFrame && spsPpsHeader != null) {
-                        logger.debug("Keyframe detected at pts: {}", avPacket.pts());
                         videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, spsPpsHeader));
                     }
                     videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer));
