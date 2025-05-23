@@ -27,9 +27,6 @@ import java.util.List;
  */
 public class LaneOptionsConfig {
 
-    @DisplayInfo(label = "Lane Database Config", desc = "Specify automatic database setup when creating this lane")
-    public LaneDatabaseConfig laneDatabaseConfig = new LaneDatabaseConfig();
-
     @DisplayInfo(label = "Auto Create Process", desc = "Automatically create database process for this lane")
     public boolean createProcess = true;
 

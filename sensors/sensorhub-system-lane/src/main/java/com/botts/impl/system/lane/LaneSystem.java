@@ -39,6 +39,8 @@ import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.api.system.SystemRemovedEvent;
 import org.sensorhub.impl.comm.TCPCommProviderConfig;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
+import org.sensorhub.impl.database.system.SystemDriverDatabaseConfig;
+import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
 import org.sensorhub.impl.module.AbstractModule;
 import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.processing.AbstractProcessModule;
@@ -84,9 +86,23 @@ public class LaneSystem extends SensorSystem {
                 String suffix = config.uniqueID.replace(URN_PREFIX, "");
                 generateXmlID(DEFAULT_XMLID_PREFIX, suffix);
             } else {
-                this.uniqueID = createLaneUID(config.uniqueID);
+                this.uniqueID = createLaneUID(config.uniqueID, getLaneConfig().groupID);
                 generateXmlID(DEFAULT_XMLID_PREFIX, config.uniqueID);
             }
+        }
+
+        // Set up a database with group ID if one doesn't exist
+        if (getLaneConfig().groupID != -1) {
+            boolean foundDatabase = false;
+            for (var databaseModule : getParentHub().getModuleRegistry().getLoadedModules(SystemDriverDatabase.class)) {
+                if (databaseModule.getConfiguration().systemUIDs.contains(createGroupUIDPattern(getLaneConfig().groupID))) {
+                    foundDatabase = true;
+                    break;
+                }
+            }
+
+            if (!foundDatabase)
+                getParentHub().getModuleRegistry().loadModule(createLaneGroupDatabaseConfig(getLaneConfig().groupID));
         }
 
         // Ensure name is at most 12 characters
@@ -97,7 +113,6 @@ public class LaneSystem extends SensorSystem {
         for (var member : getMembers().values()) {
             if (member instanceof RapiscanSensor || member instanceof AspectSensor) {
                 existingRPMModule = (AbstractSensorModule<?>) member;
-                break;
             }else if (member instanceof FFMPEGSensor) {
                 ffmpegConfigs.put(member.getLocalID(), ((FFMPEGSensor) member).getConfiguration());
             }
@@ -215,11 +230,12 @@ public class LaneSystem extends SensorSystem {
 
         // Auto delete lane data if specified
         if (getLaneConfig() != null && getLaneConfig().autoDelete) {
-            String laneDatabaseId = getLaneDatabaseID();
+            IObsSystemDatabase db = getParentHub().getSystemDriverRegistry().getDatabase(getUniqueIdentifier());
+
             String laneUID = getUniqueIdentifier();
             if(laneUID == null)
-                laneUID = createLaneUID(config.uniqueID);
-            if (laneDatabaseId != null) {
+                laneUID = createLaneUID(config.uniqueID, getLaneConfig().groupID);
+            if (db != null) {
                 // Remove lane if nothing else
                 List<String> removalList = new ArrayList<>(List.of(laneUID));
                 // Auto delete process module and remove from database
@@ -238,7 +254,7 @@ public class LaneSystem extends SensorSystem {
                     removalList.add(processUID);
                 }
                 // Remove lane (and process) from database
-                deleteSystemsFromDatabase(laneDatabaseId, removalList);
+                deleteSystemsFromDatabase(removalList);
             }
         }
 
@@ -249,46 +265,43 @@ public class LaneSystem extends SensorSystem {
         }
     }
 
-    private String createLaneUID(String suffix) {
-        return URN_PREFIX + "osh:system:lane:" + suffix;
+    private String createLaneUID(String suffix, int groupID) {
+        return groupID == -1 ? URN_PREFIX + "osh:system:lane:" + suffix : URN_PREFIX + "osh:system:group:" + groupID + ":lane:" + suffix;
+    }
+
+    private String createGroupUIDPattern(int groupID) {
+        return URN_PREFIX + "osh:system:group:" + groupID + ":*";
     }
 
     private String createProcessUID(String suffix) {
         return URN_PREFIX + "osh:process:occupancy:" + suffix;
     }
 
-    private synchronized void deleteSystemsFromDatabase(String databaseId, List<String> systemUIDs) {
-        try {
-            // Collect database from configured module ID
-            IObsSystemDatabase obsDatabase = ((SystemDriverDatabase) getParentHub().getModuleRegistry().getModuleById(databaseId)).getWrappedDatabase();
+    private synchronized void deleteSystemsFromDatabase(List<String> systemUIDs) {
+        // Delete the system data. Use for-loop in case of different databases
+        for (String sysUID : systemUIDs) {
+            IObsSystemDatabase obsDatabase = getParentHub().getSystemDriverRegistry().getDatabase(sysUID);
+            if (obsDatabase == null)
+                return;
 
-            // Delete the system data
-            if (obsDatabase != null) {
-                for (String sysUID : systemUIDs) {
-                    var sysFilter = new SystemFilter.Builder()
-                            .withUniqueIDs(sysUID)
-                            .includeMembers(true)
-                            .build();
+            var sysFilter = new SystemFilter.Builder()
+                    .withUniqueIDs(sysUID)
+                    .includeMembers(true)
+                    .build();
 
-                    // Delete old observations
-                    obsDatabase.getObservationStore().removeEntries(new ObsFilter.Builder()
-                            .withDataStreams()
-                            .withSystems(sysFilter)
-                            .done()
-                            .build());
-                    // Delete old data streams
-                    obsDatabase.getDataStreamStore().removeEntries(new DataStreamFilter.Builder()
-                            .withSystems(sysFilter)
-                            .build());
+            // Delete old observations
+            obsDatabase.getObservationStore().removeEntries(new ObsFilter.Builder()
+                    .withDataStreams()
+                    .withSystems(sysFilter)
+                    .done()
+                    .build());
+            // Delete old data streams
+            obsDatabase.getDataStreamStore().removeEntries(new DataStreamFilter.Builder()
+                    .withSystems(sysFilter)
+                    .build());
 
-                    // Delete old systems
-                    obsDatabase.getSystemDescStore().removeEntries(sysFilter);
-                }
-            }
-        } catch (SensorHubException e) {
-            throw new RuntimeException(e);
-        } catch (ClassCastException e) {
-            throw new ClassCastException("Database ID in configuration does not correspond to a System Driver Database!");
+            // Delete old systems
+            obsDatabase.getSystemDescStore().removeEntries(sysFilter);
         }
     }
 
@@ -377,6 +390,10 @@ public class LaneSystem extends SensorSystem {
             else if (event.getType().equals(ModuleEvent.Type.CONFIG_CHANGED)) {
                 // FFmpeg config changed events
                 if (event.getModule() instanceof FFMPEGSensor ffmpegDriver) {
+                    // Let's only handle our own ffmpeg children
+                    if (ffmpegDriver.getParentSystem() == null || !ffmpegDriver.getParentSystem().equals(this))
+                        return;
+
                     var oldConfig = ffmpegConfigs.get(ffmpegDriver.getLocalID());
 
                     if (oldConfig == null) {
@@ -390,14 +407,12 @@ public class LaneSystem extends SensorSystem {
                     if (newConfig.connection.useTCP != oldConfig.connection.useTCP
                     || !Objects.equals(newConfig.connection.connectionString, oldConfig.connection.connectionString)
                     || !Objects.equals(newConfig.connection.transportStreamPath, oldConfig.connection.transportStreamPath)) {
-                        var laneDatabaseId = getLaneDatabaseID();
-
-                        if (ffmpegDriver.getUniqueIdentifier() != null && laneDatabaseId != null ) {
+                        if (ffmpegDriver.getUniqueIdentifier() != null && getParentHub().getSystemDriverRegistry().getDatabase(getUniqueIdentifier()) != null) {
 
                             try {
                                 ffmpegDriver.stop();
                                 ffmpegDriver.waitForState(ModuleEvent.ModuleState.INITIALIZED, 5000);
-                                deleteSystemsFromDatabase(laneDatabaseId, List.of(ffmpegDriver.getUniqueIdentifier()));
+                                deleteSystemsFromDatabase(List.of(ffmpegDriver.getUniqueIdentifier()));
                                 getParentHub().getSystemDriverRegistry().register(ffmpegDriver);
                                 if (ffmpegDriver.getConfiguration().autoStart)
                                     ffmpegDriver.start();
@@ -520,7 +535,7 @@ public class LaneSystem extends SensorSystem {
         }else if (ffmpegConfig instanceof SonyCameraConfig sonyVideoConfig){
              path = SonyCameraConfig.streamPath;
         }else if(ffmpegConfig instanceof CustomCameraConfig customVideoConfig){
-             path = customVideoConfig.streamPath.length() > 0 ? customVideoConfig.streamPath : defaultAxis;
+             path = !customVideoConfig.streamPath.isEmpty() ? customVideoConfig.streamPath : defaultAxis;
         }
 
         endpoint.append(path);
@@ -537,23 +552,33 @@ public class LaneSystem extends SensorSystem {
         return config;
     }
 
+    private SystemDriverDatabaseConfig createLaneGroupDatabaseConfig(int groupID) {
+        SystemDriverDatabaseConfig config = new SystemDriverDatabaseConfig();
+        config.name = "Group " + groupID + " Lanes";
+        config.dbConfig = new MVObsSystemDatabaseConfig();
+        config.autoStart = true;
+
+        // Use janky database num code from AdminUI
+        int highestDbNum = 0;
+        for (var otherDb: getParentHub().getDatabaseRegistry().getAllDatabases())
+            highestDbNum = Math.max(otherDb.getDatabaseNum(), highestDbNum);
+        for (var otherDb: getParentHub().getModuleRegistry().getLoadedModules(IObsSystemDatabase.class))
+        {
+            if (otherDb.getDatabaseNum() == null)
+                continue;
+            highestDbNum = Math.max(otherDb.getDatabaseNum(), highestDbNum);
+        }
+
+        config.databaseNum = highestDbNum+1;
+        config.systemUIDs = new HashSet<>(List.of(createGroupUIDPattern(groupID)));
+        MVObsSystemDatabaseConfig dbConfig = (MVObsSystemDatabaseConfig) (config.dbConfig = new MVObsSystemDatabaseConfig());
+        dbConfig.storagePath = "group" + groupID + "lanes.db";
+        dbConfig.readOnly = false;
+        return config;
+    }
+
     private LaneConfig getLaneConfig() {
         return (LaneConfig) this.config;
-    }
-
-    private String getLaneDatabaseID() {
-        if (getLaneDatabaseConfig() != null
-        && getLaneConfig().laneOptionsConfig.laneDatabaseConfig.laneDatabaseId != null
-        && !getLaneConfig().laneOptionsConfig.laneDatabaseConfig.laneDatabaseId.isBlank())
-            return getLaneConfig().laneOptionsConfig.laneDatabaseConfig.laneDatabaseId;
-        return null;
-    }
-
-    private LaneDatabaseConfig getLaneDatabaseConfig() {
-        if(getLaneConfig().laneOptionsConfig != null
-        && getLaneConfig().laneOptionsConfig.laneDatabaseConfig != null)
-            return getLaneConfig().laneOptionsConfig.laneDatabaseConfig;
-        return null;
     }
 
 }
