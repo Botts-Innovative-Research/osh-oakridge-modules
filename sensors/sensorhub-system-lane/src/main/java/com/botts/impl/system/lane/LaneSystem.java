@@ -38,6 +38,7 @@ import org.sensorhub.api.sensor.SensorConfig;
 import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.api.system.SystemRemovedEvent;
 import org.sensorhub.impl.comm.TCPCommProviderConfig;
+import org.sensorhub.impl.database.system.MaxAgeAutoPurgeConfig;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
 import org.sensorhub.impl.database.system.SystemDriverDatabaseConfig;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
@@ -571,6 +572,13 @@ public class LaneSystem extends SensorSystem {
 
         config.databaseNum = highestDbNum+1;
         config.systemUIDs = new HashSet<>(List.of(createGroupUIDPattern(groupID)));
+        config.autoPurgeConfig = new ArrayList<>();
+        var defaultPurgeConfig = new MaxAgeAutoPurgeConfig();
+        defaultPurgeConfig.systemUIDs = new ArrayList<>(List.of("urn:osh:sensor:ffmpeg:*"));
+        defaultPurgeConfig.purgePeriod = 120;
+        defaultPurgeConfig.maxRecordAge = 120;
+        defaultPurgeConfig.enabled = true;
+        config.autoPurgeConfig.add(defaultPurgeConfig);
         MVObsSystemDatabaseConfig dbConfig = (MVObsSystemDatabaseConfig) (config.dbConfig = new MVObsSystemDatabaseConfig());
         dbConfig.storagePath = "group" + groupID + "lanes.db";
         dbConfig.readOnly = false;
