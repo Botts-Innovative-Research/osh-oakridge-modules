@@ -80,6 +80,8 @@ public class LaneSystem extends SensorSystem {
     protected void doInit() throws SensorHubException {
         threadPool = Executors.newSingleThreadExecutor();
         ffmpegConfigs = new HashMap<>();
+
+
         // generate unique ID
         if (config.uniqueID != null && !config.uniqueID.equals(AUTO_ID)) {
             if (config.uniqueID.startsWith(URN_PREFIX)) {
