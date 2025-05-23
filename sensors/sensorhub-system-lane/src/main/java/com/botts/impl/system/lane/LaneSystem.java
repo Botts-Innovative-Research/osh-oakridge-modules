@@ -142,10 +142,14 @@ public class LaneSystem extends SensorSystem {
             }
             // Initial FFmpeg config
             var ffmpegConfigList = getLaneConfig().laneOptionsConfig.ffmpegConfig;
+
+
             for (var simpleConfig : ffmpegConfigList) {
-                FFMPEGConfig config = createFFmpegConfig(simpleConfig);
+                FFMPEGConfig config = createFFmpegConfig(simpleConfig, ffmpegConfigList.indexOf(simpleConfig));
                 createFFmpegModule(config);
             }
+
+
             // Process creation / attachment
             if (getLaneConfig().laneOptionsConfig.createProcess && existingProcessModule == null) {
                 registeringProcessModule = true;
@@ -169,7 +173,7 @@ public class LaneSystem extends SensorSystem {
                     module.init();
                 }
                 catch (Exception e) {
-                    // TODO: If rapiscan fails to initialize, then don't load process module
+                    // If rapiscan fails to initialize, then don't load process module
                     if (module instanceof RapiscanSensor || module instanceof AspectSensor)
                         rpmFailedToInit = true;
                     getLogger().error("Cannot initialize system component {}", MsgUtils.moduleString(module), e);
@@ -466,15 +470,13 @@ public class LaneSystem extends SensorSystem {
     }
 
     private SensorConfig createRPMConfig(RPMConfig rpmConfig) {
-        Asserts.checkNotNullOrBlank(rpmConfig.label, "Please specify an RPM driver label");
-        Asserts.checkNotNullOrBlank(rpmConfig.uniqueId, "Please specify a unique RPM ID");
         Asserts.checkNotNull(rpmConfig.remoteHost);
 
         SensorConfig config;
 
         if(rpmConfig instanceof AspectRPMConfig aspectRPMConfig){
             AspectConfig aspectConfig = new AspectConfig();
-            aspectConfig.serialNumber = aspectRPMConfig.uniqueId;
+            aspectConfig.serialNumber = getLaneConfig().uniqueID;
             aspectConfig.moduleClass = AspectSensor.class.getCanonicalName();
             // Setup communication config
             var comm = aspectConfig.commSettings = new ModbusTCPCommProviderConfig();
@@ -489,7 +491,7 @@ public class LaneSystem extends SensorSystem {
             config = aspectConfig;
         }else{
             RapiscanConfig rapiscanConfig = new RapiscanConfig();
-            rapiscanConfig.serialNumber = rpmConfig.uniqueId;
+            rapiscanConfig.serialNumber = getLaneConfig().uniqueID;
             rapiscanConfig.moduleClass = RapiscanSensor.class.getCanonicalName();
             // Setup communication config
             var comm = rapiscanConfig.commSettings = new TCPCommProviderConfig();
@@ -501,19 +503,18 @@ public class LaneSystem extends SensorSystem {
             config = rapiscanConfig;
         }
 
-        config.name = rpmConfig.label;
+        config.name = getLaneConfig().name + " - RPM";
         config.autoStart = true;
 
         return config;
     }
 
-    private FFMPEGConfig createFFmpegConfig(FFMpegConfig ffmpegConfig) {
+
+
+    private FFMPEGConfig createFFmpegConfig(FFMpegConfig ffmpegConfig, int videoIndex) {
         String defaultAxis = "/axis-media/media.amp?adjustablelivestream=1&resolution=640x480&videocodec=h264&videokeyframeinterval=15";
 
-        Asserts.checkNotNullOrBlank(ffmpegConfig.label, "Please specify an FFmpeg driver label");
-        Asserts.checkNotNullOrBlank(ffmpegConfig.uniqueId, "Please specify a unique FFmpeg ID");
         Asserts.checkNotNull(ffmpegConfig.remoteHost);
-
 
         // This is the actual ffmpeg sensor config
         StringBuilder endpoint = new StringBuilder("rtsp://"); // All streams should be over rtsp
@@ -534,7 +535,7 @@ public class LaneSystem extends SensorSystem {
         if(ffmpegConfig instanceof AxisCameraConfig axisVideoConfig){
              path = axisVideoConfig.streamPath.getPath();
         }else if (ffmpegConfig instanceof SonyCameraConfig sonyVideoConfig){
-             path = SonyCameraConfig.streamPath;
+             path = sonyVideoConfig.streamPath;
         }else if(ffmpegConfig instanceof CustomCameraConfig customVideoConfig){
              path = !customVideoConfig.streamPath.isEmpty() ? customVideoConfig.streamPath : defaultAxis;
         }
@@ -543,8 +544,12 @@ public class LaneSystem extends SensorSystem {
 
         config.connection.useTCP = true;
         config.connection.fps = 24;
-        config.name = ffmpegConfig.label;
-        config.serialNumber = ffmpegConfig.uniqueId;
+        config.name = getLaneConfig().name + " - Camera " + videoIndex;
+
+
+
+        config.serialNumber = "lane:" + getLaneConfig().uniqueID + ":" + videoIndex;
+
         config.autoStart = true;
         config.connection.connectionString = endpoint.toString();
         config.moduleClass = FFMPEGSensor.class.getCanonicalName();
