@@ -1,22 +1,9 @@
-description = 'OSCAR Widgets'
-ext.details = "Admin UI widgets for OSCAR"
+description = 'OSCAR Database Tools'
+ext.details = "Database tools for OSCAR"
 version = '1.0.0'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
-    implementation 'org.sensorhub:sensorhub-webui-core:' + oshCoreVersion
-    implementation project(':sensorhub-system-lane')
-    implementation project(':sensorhub-database-oscar')
-    // TODO: Check which of these we don't need. Using all of them worked but I'm sure they're not all needed
-    embeddedImpl 'com.vaadin:vaadin-server:8.14.3'
-    embeddedImpl 'com.vaadin:vaadin-push:8.14.3'
-    compileOnly 'com.vaadin:vaadin-client:8.14.3'
-    embeddedImpl 'com.vaadin:vaadin-client-compiled:8.14.3'
-    embeddedImpl 'com.vaadin:vaadin-compatibility-server:8.14.3'
-    compileOnly 'com.vaadin:vaadin-compatibility-client:8.14.3'
-    embeddedImpl 'com.vaadin:vaadin-compatibility-client-compiled:8.14.3'
-    embeddedImpl 'com.vaadin:vaadin-themes:8.14.3'
-
     testImplementation('junit:junit:4.13.1')
     implementation('junit:junit:4.13.1')
 }
