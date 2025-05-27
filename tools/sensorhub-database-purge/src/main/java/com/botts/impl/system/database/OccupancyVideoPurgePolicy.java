@@ -145,13 +145,7 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
 
                  // now purge anything after the last item in the interval and the end of the result time of the video
                  var lastIndex = mergedTimeIntervalsToKeep.size()-1;
-
-                 System.out.println("Video end time: " + resultTimeRange.end());
-                 System.out.println("Last alarm end time: " + mergedTimeIntervalsToKeep.get(lastIndex).end());
-                 System.out.println("Is video end after last alarm end? " + resultTimeRange.end().isAfter(mergedTimeIntervalsToKeep.get(lastIndex).end()));
-
-
-                 System.out.println("last index"+ lastIndex);
+                 
                  if(resultTimeRange.end().isAfter(mergedTimeIntervalsToKeep.get(lastIndex).end())){
                      System.out.println("Removing records after last alarm: " + mergedTimeIntervalsToKeep.get(lastIndex).end()  + " to "  + resultTimeRange.end());
 
@@ -164,7 +158,7 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
                              .withResultTimeDuring(start, end)
                              .build());
                  }
-                 
+
                  // now remove entries from the end of the previous time pair to the start of the next time pair to
                  // remove time entries before the startTime but keep the time
                  int i = 0;
