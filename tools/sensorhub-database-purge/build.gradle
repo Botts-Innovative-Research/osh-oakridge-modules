@@ -6,14 +6,7 @@ dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     implementation 'org.sensorhub:sensorhub-datastore-h2:' + oshCoreVersion
     testImplementation 'org.sensorhub:sensorhub-datastore-h2'
-    implementation project(':sensorhub-utils-rad')
-    implementation project(':sensorhub-driver-aspect')
-    implementation project(':sensorhub-driver-rapiscan')
-    implementation project(':sensorhub-driver-videocam')
-    implementation project(':sensorhub-process-occupancy')
-    // NOTE: Uncomment and use if you want to run specific lane module unit tests
-//    testImplementation project(':sensorhub-driver-fakeweather')
-    implementation project(':sensorhub-driver-ffmpeg')
+
     testImplementation('junit:junit:4.13.1')
     implementation('junit:junit:4.13.1')
 }
@@ -30,7 +23,7 @@ test {
 osgi {
     manifest {
         attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
-        attributes('Bundle-Activator': 'com.botts.impl.system.lane.Activator')
+        attributes('Bundle-Activator': 'com.botts.impl.system.database.Activator')
     }
 }
 
@@ -38,8 +31,8 @@ osgi {
 ext.pom >>= {
     developers {
         developer {
-            id 'earocorn'
-            name 'Alex Almanza'
+            id 'kalynstricklin'
+            name 'Kalyn Stricklin'
             organization 'Botts Innovative Research, Inc.'
             organizationUrl 'https://www.botts-inc.com'
         }

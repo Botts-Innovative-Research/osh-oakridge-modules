@@ -18,4 +18,5 @@ package com.botts.impl.system.database;
 import org.sensorhub.utils.OshBundleActivator;
 
 public class Activator extends OshBundleActivator {
+
 }
