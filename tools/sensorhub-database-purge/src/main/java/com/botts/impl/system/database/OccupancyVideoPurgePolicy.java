@@ -80,17 +80,11 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
                   var result = obsEntry.getValue().getResult();
 
                   if(result instanceof DataBlockTuple){
-//                     var samplingTime = result.getDateTime(0);
-//                     var occupancyCount = result.getIntValue(1);
                      var startTime = result.getDateTime(2);
                      var endTime = result.getDateTime(3);
-//                     var neutronBkg = result.getDoubleValue(4);
                      var gammaAlarm = result.getBooleanValue(5);
                      var neutronAlarm = result.getBooleanValue(6);
-//                     var maxGamma = result.getDoubleValue(7);
-//                     var maxNeutron = result.getDoubleValue(8);
-//                     var isAdjudicated = result.getBooleanValue(9);
-//
+
                       //todo: add to list of video intervals to keep based of alarming occupancy start and end times
                       if(gammaAlarm || neutronAlarm){
                           timeIntervalsToKeep.add(TimeExtent.period(startTime.toInstant(), endTime.toInstant()));
@@ -108,9 +102,7 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
 
                  System.out.println("time ints to keep: "+ timeIntervalsToKeep);
 
-
                  List<TimeExtent> mergedTimeIntervalsToKeep = new ArrayList<>();
-
 
                  int idx = 0;
                  while(idx < timeIntervalsToKeep.size()){
@@ -158,27 +150,24 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
                              .build());
                  }
 
-                 // now remove entries from the end of the previous time pair to the start of the next time pair to
-                 // remove time entries before the startTime but keep the time
+                 // now remove entries between alarming occupancies
                  int i = 0;
-                 while(i < mergedTimeIntervalsToKeep.size()){
+                 while(i < mergedTimeIntervalsToKeep.size()-1){
+
                      var currentIntervalEndTime = mergedTimeIntervalsToKeep.get(i).end();
-                     while(i + 1 < mergedTimeIntervalsToKeep.size()){
-                         var nextIntervalStartTime = mergedTimeIntervalsToKeep.get(i+1).begin();
+                     var nextIntervalStartTime = mergedTimeIntervalsToKeep.get(i+1).begin();
 
-                         System.out.println("time interval end: "+ mergedTimeIntervalsToKeep.get(i).end());
-                         System.out.println("next indexes time interval start: "+ mergedTimeIntervalsToKeep.get(i+1).begin());
+                     System.out.println("time interval end: "+ mergedTimeIntervalsToKeep.get(i).end());
+                     System.out.println("next indexes time interval start: "+ mergedTimeIntervalsToKeep.get(i+1).begin());
 
-                         if(currentIntervalEndTime.isBefore(nextIntervalStartTime)){
-                            numObsRemoved += db.getObservationStore().removeEntries(new ObsFilter.Builder()
-                                    .withDataStreams(dsID)
-                                    .withResultTimeDuring(currentIntervalEndTime, nextIntervalStartTime)
-                                    .build());
-                            System.out.println("removed observation: "+ currentIntervalEndTime +"-" + nextIntervalStartTime);
-                         }
-                         i++;
+                     if(currentIntervalEndTime.isBefore(nextIntervalStartTime)){
+                         numObsRemoved += db.getObservationStore().removeEntries(new ObsFilter.Builder()
+                                 .withDataStreams(dsID)
+                                 .withResultTimeDuring(currentIntervalEndTime, nextIntervalStartTime)
+                                 .build());
+                         System.out.println("removed observation: "+ currentIntervalEndTime +"-" + nextIntervalStartTime);
                      }
-
+                     i++;
                  }
 
 
@@ -194,3 +183,4 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
         }
     }
 }
+

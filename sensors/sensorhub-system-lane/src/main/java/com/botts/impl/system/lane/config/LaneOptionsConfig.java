@@ -27,8 +27,8 @@ import java.util.List;
  */
 public class LaneOptionsConfig {
 
-    @DisplayInfo(label = "Auto Create Process", desc = "Automatically create database process for this lane")
-    public boolean createProcess = true;
+//    @DisplayInfo(label = "Auto Create Process", desc = "Automatically create database process for this lane")
+//    public boolean createProcess = true;
 
     @DisplayInfo(label = "Initial RPM Config", desc = "Config used for initial RPM setup")
     public RPMConfig rpmConfig;
