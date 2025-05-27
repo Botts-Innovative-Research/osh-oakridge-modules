@@ -68,9 +68,9 @@ public class LaneSystem extends SensorSystem {
     private static final String URN_PREFIX = "urn:";
     private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
-    private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
+//    private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
     AbstractSensorModule<?> existingRPMModule = null;
-    AbstractProcessModule<?> existingProcessModule = null;
+//    AbstractProcessModule<?> existingProcessModule = null;
     Flow.Subscription subscription = null;
     private ExecutorService threadPool = null;
     Map<String, FFMPEGConfig> ffmpegConfigs = null;
@@ -152,15 +152,15 @@ public class LaneSystem extends SensorSystem {
         }
 
         // Check all occupancy process modules for module associated to this lane
-        for (var processModule : getParentHub().getModuleRegistry().getLoadedModules(OccupancyProcessModule.class)) {
-            if (processModule.getConfiguration().systemUID.equals(getUniqueIdentifier())) {
-                existingProcessModule = processModule;
-                break;
-            }
-        }
+//        for (var processModule : getParentHub().getModuleRegistry().getLoadedModules(OccupancyProcessModule.class)) {
+//            if (processModule.getConfiguration().systemUID.equals(getUniqueIdentifier())) {
+//                existingProcessModule = processModule;
+//                break;
+//            }
+//        }
 
         // Variable to signify asynchronous registration
-        boolean registeringProcessModule = false;
+//        boolean registeringProcessModule = false;
 
         // Lane database and process setup
         if (getConfiguration().laneOptionsConfig != null) {
@@ -179,17 +179,17 @@ public class LaneSystem extends SensorSystem {
             }
 
 
-            // Process creation / attachment
-            if (getConfiguration().laneOptionsConfig.createProcess && existingProcessModule == null) {
-                registeringProcessModule = true;
-            }
+//            // Process creation / attachment
+//            if (getConfiguration().laneOptionsConfig.createProcess && existingProcessModule == null) {
+//                registeringProcessModule = true;
+//            }
         }
 
         String statusMsg = "Note: ";
         if (existingRPMModule == null)
             statusMsg += "No RPM driver found in lane.\n";
-        if (existingProcessModule == null && !registeringProcessModule)
-            statusMsg += "No database process module found for this lane.\n";
+//        if (existingProcessModule == null && !registeringProcessModule)
+//            statusMsg += "No database process module found for this lane.\n";
         if (!statusMsg.equalsIgnoreCase("Note: "))
             reportStatus(statusMsg);
 
@@ -211,22 +211,22 @@ public class LaneSystem extends SensorSystem {
         }
 
         // Initial creation of process after everything starts
-        if (getConfiguration().laneOptionsConfig != null && getConfiguration().laneOptionsConfig.createProcess && existingProcessModule == null && !rpmFailedToInit) {
-            threadPool.execute(() -> {
-                // Create process config
-                OccupancyProcessConfig processConfig = new OccupancyProcessConfig();
-                processConfig.moduleClass = OccupancyProcessModule.class.getCanonicalName();
-                processConfig.serialNumber = config.uniqueID;
-                processConfig.name = getConfiguration().name + " Database Process";
-                processConfig.systemUID = getUniqueIdentifier();
-                try {
-                    existingProcessModule = (AbstractProcessModule<?>) getParentHub().getModuleRegistry().loadModule(processConfig);
-                    reportStatus("Process module loaded with module ID " + existingProcessModule.getLocalID());
-                } catch (SensorHubException e) {
-                    throw new RuntimeException(e);
-                }
-            });
-        }
+//        if (getConfiguration().laneOptionsConfig != null && getConfiguration().laneOptionsConfig.createProcess && existingProcessModule == null && !rpmFailedToInit) {
+//            threadPool.execute(() -> {
+//                // Create process config
+//                OccupancyProcessConfig processConfig = new OccupancyProcessConfig();
+//                processConfig.moduleClass = OccupancyProcessModule.class.getCanonicalName();
+//                processConfig.serialNumber = config.uniqueID;
+//                processConfig.name = getConfiguration().name + " Database Process";
+//                processConfig.systemUID = getUniqueIdentifier();
+//                try {
+//                    existingProcessModule = (AbstractProcessModule<?>) getParentHub().getModuleRegistry().loadModule(processConfig);
+//                    reportStatus("Process module loaded with module ID " + existingProcessModule.getLocalID());
+//                } catch (SensorHubException e) {
+//                    throw new RuntimeException(e);
+//                }
+//            });
+//        }
 
         getParentHub().getEventBus().newSubscription()
             // TODO: osh-core needs to use EventUtils for module topic IDs
@@ -273,20 +273,20 @@ public class LaneSystem extends SensorSystem {
                 // Remove lane if nothing else
                 List<String> removalList = new ArrayList<>(List.of(laneUID));
                 // Auto delete process module and remove from database
-                if (existingProcessModule != null) {
-                    var processDesc = existingProcessModule.getCurrentDescription();
-                    String processUID;
-                    if (processDesc == null)
-                        processUID = createProcessUID(config.uniqueID);
-                    else
-                        processUID = processDesc.getUniqueIdentifier();
-                    try {
-                        getParentHub().getModuleRegistry().destroyModule(existingProcessModule.getLocalID());
-                    } catch (SensorHubException ex) {
-                        throw new RuntimeException(ex);
-                    }
-                    removalList.add(processUID);
-                }
+//                if (existingProcessModule != null) {
+//                    var processDesc = existingProcessModule.getCurrentDescription();
+//                    String processUID;
+//                    if (processDesc == null)
+//                        processUID = createProcessUID(config.uniqueID);
+//                    else
+//                        processUID = processDesc.getUniqueIdentifier();
+//                    try {
+//                        getParentHub().getModuleRegistry().destroyModule(existingProcessModule.getLocalID());
+//                    } catch (SensorHubException ex) {
+//                        throw new RuntimeException(ex);
+//                    }
+//                    removalList.add(processUID);
+//                }
                 // Remove lane (and process) from database
                 deleteSystemsFromDatabase(removalList);
             }
@@ -370,49 +370,49 @@ public class LaneSystem extends SensorSystem {
             }
 
             // If process is removed, nullify local object
-            if (event.getSystemUID().contains(PROCESS_URI))
-                existingProcessModule = null;
+//            if (event.getSystemUID().contains(PROCESS_URI))
+//                existingProcessModule = null;
         }
 
         else if (e instanceof ModuleEvent event) {
             // Module STATE_CHANGED events
             if (event.getType() == ModuleEvent.Type.STATE_CHANGED) {
                 // Module STARTED events
-                if (event.getNewState() == ModuleEvent.ModuleState.STARTED) {
-                    // If RPM module is started, then start process module
-                    if (existingRPMModule != null && Objects.equals(event.getSourceID(), existingRPMModule.getLocalID()) && existingProcessModule != null && !existingProcessModule.isStarted()) {
-                        try {
-                            if (existingProcessModule.getCurrentState().equals(ModuleEvent.ModuleState.LOADED))
-                                getParentHub().getModuleRegistry().initModule(existingProcessModule.getLocalID());
-                            existingProcessModule.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
-                            getParentHub().getModuleRegistry().startModuleAsync(existingProcessModule);
-                        } catch (SensorHubException ex) {
-                            throw new RuntimeException(ex);
-                        }
-                    }
+//                if (event.getNewState() == ModuleEvent.ModuleState.STARTED) {
+//                    // If RPM module is started, then start process module
+//                    if (existingRPMModule != null && Objects.equals(event.getSourceID(), existingRPMModule.getLocalID()) && existingProcessModule != null && !existingProcessModule.isStarted()) {
+//                        try {
+//                            if (existingProcessModule.getCurrentState().equals(ModuleEvent.ModuleState.LOADED))
+//                                getParentHub().getModuleRegistry().initModule(existingProcessModule.getLocalID());
+//                            existingProcessModule.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
+//                            getParentHub().getModuleRegistry().startModuleAsync(existingProcessModule);
+//                        } catch (SensorHubException ex) {
+//                            throw new RuntimeException(ex);
+//                        }
+//                    }
+//
+//                }
 
-                }
-
-                // Module STOPPED events
-                else if (event.getNewState() == ModuleEvent.ModuleState.STOPPED) {
-                    // If RPM module is stopped, then stop process module
-                    if (existingRPMModule != null && Objects.equals(event.getSourceID(), existingRPMModule.getLocalID()) && existingProcessModule != null) {
-                        try {
-                            getParentHub().getModuleRegistry().stopModuleAsync(existingProcessModule);
-                        } catch (SensorHubException ex) {
-                            throw new RuntimeException(ex);
-                        }
-                    }
-                }
+//                // Module STOPPED events
+//                else if (event.getNewState() == ModuleEvent.ModuleState.STOPPED) {
+//                    // If RPM module is stopped, then stop process module
+//                    if (existingRPMModule != null && Objects.equals(event.getSourceID(), existingRPMModule.getLocalID()) && existingProcessModule != null) {
+//                        try {
+//                            getParentHub().getModuleRegistry().stopModuleAsync(existingProcessModule);
+//                        } catch (SensorHubException ex) {
+//                            throw new RuntimeException(ex);
+//                        }
+//                    }
+//                }
 
                 // New module loaded
-                else if (event.getNewState() == ModuleEvent.ModuleState.LOADED) {
+                if (event.getNewState() == ModuleEvent.ModuleState.LOADED) {
                     // If process is loaded manually and null locally, find it and keep track of it
-                    if (event.getModule() instanceof OccupancyProcessModule processModule && existingProcessModule == null) {
-                        if (Objects.equals(processModule.getConfiguration().systemUID, this.getUniqueIdentifier())) {
-                            existingProcessModule = processModule;
-                        }
-                    }
+//                    if (event.getModule() instanceof OccupancyProcessModule processModule && existingProcessModule == null) {
+//                        if (Objects.equals(processModule.getConfiguration().systemUID, this.getUniqueIdentifier())) {
+//                            existingProcessModule = processModule;
+//                        }
+//                    }
 
                     if (event.getModule() instanceof FFMPEGSensor ffmpegDriver){
                         if(!ffmpegConfigs.containsKey(ffmpegDriver.getLocalID()))

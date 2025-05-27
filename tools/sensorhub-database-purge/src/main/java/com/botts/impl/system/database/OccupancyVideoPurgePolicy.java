@@ -38,7 +38,6 @@ import java.util.*;
 public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
 
     OccupancyVideoPurgePolicyConfig config;
-    private Object obs;
 
     OccupancyVideoPurgePolicy(OccupancyVideoPurgePolicyConfig config) {
         this.config = config;
@@ -145,7 +144,7 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
 
                  // now purge anything after the last item in the interval and the end of the result time of the video
                  var lastIndex = mergedTimeIntervalsToKeep.size()-1;
-                 
+
                  if(resultTimeRange.end().isAfter(mergedTimeIntervalsToKeep.get(lastIndex).end())){
                      System.out.println("Removing records after last alarm: " + mergedTimeIntervalsToKeep.get(lastIndex).end()  + " to "  + resultTimeRange.end());
 
@@ -187,35 +186,11 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
 
 
 
-            if (log.isInfoEnabled()) {
-                
-                log.info("Purgin Data. Removed records: {}", numObsRemoved);
-            }
+
+        }
+        if (log.isInfoEnabled()) {
+
+            log.info("Purgin Data. Removed records: {}", numObsRemoved);
         }
     }
 }
-
-
-
-// case that the start and end time are the same
-//                 for(int i = 0; i<timeIntervalsToKeep.size(); i++){
-//                     if(timeIntervalsToKeep.get(i).end().equals(timeIntervalsToKeep.get(i+1).begin())){
-//                         mergedTimeIntervalsToKeep.add(TimeExtent.period(timeIntervalsToKeep.get(i).begin(), timeIntervalsToKeep.get(i+1).end()));
-//                     }else{
-//                         mergedTimeIntervalsToKeep.add(TimeExtent.period(timeIntervalsToKeep.get(i).begin(), timeIntervalsToKeep.get(i).end()));
-//                     }
-//                 }
-
-//                 for(int i = 0; i< mergedTimeIntervalsToKeep.size(); i++){
-//
-//                     var currentIntervalEndTime = mergedTimeIntervalsToKeep.get(i).end();
-//                     var nextIntervalStartTime = mergedTimeIntervalsToKeep.get(i+1).begin();
-//
-//                     System.out.println("time interval end: "+ mergedTimeIntervalsToKeep.get(i).end());
-//                     System.out.println("next indexes time interval start: "+ mergedTimeIntervalsToKeep.get(i+1).begin());
-//
-//                     numObsRemoved += db.getObservationStore().removeEntries(new ObsFilter.Builder()
-//                             .withDataStreams(dsID)
-//                             .withResultTimeDuring(currentIntervalEndTime, nextIntervalStartTime)
-//                             .build());
-//                 }
