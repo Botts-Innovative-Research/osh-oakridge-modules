@@ -63,15 +63,15 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
             var resultTimeRange = dsEntry.getValue().getResultTimeRange();
 
 
-            //todo: identify occupancy datastreams
+            //identify occupancy datastreams
             if(recordStructure.getDefinition().equals("http://www.opengis.net/def/occupancy")){
 
-                //todo: get observations from datastream
+                //get observations from datastream
                 var obsStore = db.getObservationStore().selectEntries(new ObsFilter.Builder()
                         .withDataStreams(dsID)
                         .build()).iterator();
 
-                //todo: extract data from observations to
+                //extract data from observations to
               while(obsStore.hasNext()){
                   var obsEntry = obsStore.next();
 
@@ -83,7 +83,7 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
                      var gammaAlarm = result.getBooleanValue(5);
                      var neutronAlarm = result.getBooleanValue(6);
 
-                      //todo: add to list of video intervals to keep based of alarming occupancy start and end times
+                      // add to list of video intervals to keep based of alarming occupancy start and end times
                       if(gammaAlarm || neutronAlarm){
                           timeIntervalsToKeep.add(TimeExtent.period(startTime.toInstant(), endTime.toInstant()));
 
@@ -92,7 +92,7 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
               }
             }
 
-            //todo: remove video records outside of videoIntervalsToKeep
+            // remove video records outside of videoIntervalsToKeep
             // if videoDS and timeIntervalsToKeep then remove db
              if(recordStructure.getDefinition().equals("http://sensorml.com/ont/swe/property/VideoFrame") && timeIntervalsToKeep.size() > 0){
 
@@ -177,7 +177,7 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
         }
         if (log.isInfoEnabled()) {
 
-            log.info("Purgin Data. Removed records: {}", numObsRemoved);
+            log.info("Purging Data. Removed records: {}", numObsRemoved);
         }
     }
 }
