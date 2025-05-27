@@ -1,5 +1,5 @@
-description = 'Lane System'
-ext.details = "Sensor system for RPM lanes"
+description = 'Non-Alarming Occupancy Purge Policy'
+ext.details = "Purge policy to remove video entries that are not during an alarming occupancy"
 version = '1.0.0'
 
 dependencies {
