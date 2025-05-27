@@ -589,13 +589,13 @@ public class LaneSystem extends SensorSystem {
 
         config.databaseNum = getGroupDatabaseNum(groupID);
         config.systemUIDs = new HashSet<>(List.of(createGroupUIDPattern(groupID)));
-        config.autoPurgeConfig = new ArrayList<>();
-        var defaultPurgeConfig = new MaxAgeAutoPurgeConfig();
-        defaultPurgeConfig.systemUIDs = new ArrayList<>(List.of("urn:osh:sensor:ffmpeg:*"));
-        defaultPurgeConfig.purgePeriod = DEFAULT_PURGE_PERIOD;
-        defaultPurgeConfig.maxRecordAge = DEFAULT_PURGE_PERIOD;
-        defaultPurgeConfig.enabled = true;
-        config.autoPurgeConfig.add(defaultPurgeConfig);
+//        config.autoPurgeConfig = new ArrayList<>();
+//        var defaultPurgeConfig = new MaxAgeAutoPurgeConfig();
+//        defaultPurgeConfig.systemUIDs = new ArrayList<>(List.of("urn:osh:sensor:ffmpeg:*"));
+//        defaultPurgeConfig.purgePeriod = DEFAULT_PURGE_PERIOD;
+//        defaultPurgeConfig.maxRecordAge = DEFAULT_PURGE_PERIOD;
+//        defaultPurgeConfig.enabled = true;
+//        config.autoPurgeConfig.add(defaultPurgeConfig);
         MVObsSystemDatabaseConfig dbConfig = (MVObsSystemDatabaseConfig) (config.dbConfig = new MVObsSystemDatabaseConfig());
         dbConfig.storagePath = "group" + groupID + "lanes.db";
         dbConfig.readOnly = false;
