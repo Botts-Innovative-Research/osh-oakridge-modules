@@ -141,7 +141,7 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
                      System.out.println("Removing records after last alarm: " + mergedTimeIntervalsToKeep.get(lastIndex).end()  + " to "  + resultTimeRange.end());
 
                      Instant start = mergedTimeIntervalsToKeep.get(lastIndex).end();
-                     Instant end = resultTimeRange.end().minusSeconds(10);
+                     Instant end = resultTimeRange.end();
                      System.out.println("Attempting to purge from: " + start + " to " + end);
                      // then remove records from the video result time start til our first alarming occupancy
                      numObsRemoved += db.getObservationStore().removeEntries(new ObsFilter.Builder()
