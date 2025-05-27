@@ -7,6 +7,10 @@ import org.sensorhub.ui.data.BaseProperty;
 
 import java.util.Map;
 
+/**
+ * @author Alex Almanza
+ * @since May 24, 2025
+ */
 public class OccupancyVideoPurgeConfigForm extends SystemDriverDatabaseConfigForm {
 
     @Override

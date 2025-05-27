@@ -57,7 +57,9 @@ import java.util.concurrent.*;
 /**
  * Extended functionality of the SensorSystem class unique for Open Source Central Alarm (OSCAR)
  *
- * @author Alex Almanza, Kyle Fitzpatrick, Kalyn Stricklin
+ * @author Alex Almanza
+ * @author Kyle Fitzpatrick
+ * @author Kalyn Stricklin
  * @since March 2025
  */
 public class LaneSystem extends SensorSystem {
