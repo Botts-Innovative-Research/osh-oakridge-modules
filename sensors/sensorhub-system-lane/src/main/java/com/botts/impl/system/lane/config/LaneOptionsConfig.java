@@ -26,7 +26,7 @@ import java.util.List;
  * @since March 2025
  */
 public class LaneOptionsConfig {
-    
+
     @DisplayInfo(label = "Initial RPM Config", desc = "Config used for initial RPM setup")
     public RPMConfig rpmConfig;
 
