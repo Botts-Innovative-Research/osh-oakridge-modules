@@ -16,8 +16,6 @@
 package com.botts.impl.system.database;
 
 
-import org.sensorhub.api.common.BigId;
-import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.database.IObsSystemDbAutoPurgePolicy;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
