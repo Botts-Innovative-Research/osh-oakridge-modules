@@ -11,6 +11,7 @@ dependencies {
     implementation project(':sensorhub-driver-rapiscan')
     implementation project(':sensorhub-driver-videocam')
     implementation project(':sensorhub-process-occupancy')
+    implementation project(':sensorhub-database-purge')
     // NOTE: Uncomment and use if you want to run specific lane module unit tests
 //    testImplementation project(':sensorhub-driver-fakeweather')
     implementation project(':sensorhub-driver-ffmpeg')

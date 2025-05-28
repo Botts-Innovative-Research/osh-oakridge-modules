@@ -22,6 +22,7 @@ import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProviderConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
+import com.botts.impl.system.database.OccupancyVideoPurgePolicyConfig;
 import com.botts.impl.system.lane.config.*;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
@@ -496,6 +497,10 @@ public class LaneSystem extends SensorSystem {
 
         config.databaseNum = getGroupDatabaseNum(groupID);
         config.systemUIDs = new HashSet<>(List.of(createGroupUIDPattern(groupID)));
+
+        OccupancyVideoPurgePolicyConfig purgeConfig = new OccupancyVideoPurgePolicyConfig();
+        purgeConfig.purgePeriod = DEFAULT_PURGE_PERIOD;
+        config.autoPurgeConfig.add(purgeConfig);
 
         MVObsSystemDatabaseConfig dbConfig = (MVObsSystemDatabaseConfig) (config.dbConfig = new MVObsSystemDatabaseConfig());
         dbConfig.storagePath = "group" + groupID + "lanes.db";
