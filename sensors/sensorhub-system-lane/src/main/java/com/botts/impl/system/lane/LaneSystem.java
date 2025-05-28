@@ -16,8 +16,7 @@
 package com.botts.impl.system.lane;
 
 
-import com.botts.impl.process.occupancy.OccupancyProcessConfig;
-import com.botts.impl.process.occupancy.OccupancyProcessModule;
+
 import com.botts.impl.sensor.aspect.AspectConfig;
 import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProviderConfig;
@@ -38,13 +37,11 @@ import org.sensorhub.api.sensor.SensorConfig;
 import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.api.system.SystemRemovedEvent;
 import org.sensorhub.impl.comm.TCPCommProviderConfig;
-import org.sensorhub.impl.database.system.MaxAgeAutoPurgeConfig;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
 import org.sensorhub.impl.database.system.SystemDriverDatabaseConfig;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
 import org.sensorhub.impl.module.AbstractModule;
 import org.sensorhub.impl.module.ModuleRegistry;
-import org.sensorhub.impl.processing.AbstractProcessModule;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
@@ -61,6 +58,8 @@ import java.util.concurrent.*;
  * Extended functionality of the SensorSystem class unique for Open Source Central Alarm (OSCAR)
  *
  * @author Alex Almanza
+ * @author Kyle Fitzpatrick
+ * @author Kalyn Stricklin
  * @since March 2025
  */
 public class LaneSystem extends SensorSystem {
@@ -68,9 +67,8 @@ public class LaneSystem extends SensorSystem {
     private static final String URN_PREFIX = "urn:";
     private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
-    private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
+
     AbstractSensorModule<?> existingRPMModule = null;
-    AbstractProcessModule<?> existingProcessModule = null;
     Flow.Subscription subscription = null;
     private ExecutorService threadPool = null;
     Map<String, FFMPEGConfig> ffmpegConfigs = null;
@@ -151,17 +149,6 @@ public class LaneSystem extends SensorSystem {
             }
         }
 
-        // Check all occupancy process modules for module associated to this lane
-        for (var processModule : getParentHub().getModuleRegistry().getLoadedModules(OccupancyProcessModule.class)) {
-            if (processModule.getConfiguration().systemUID.equals(getUniqueIdentifier())) {
-                existingProcessModule = processModule;
-                break;
-            }
-        }
-
-        // Variable to signify asynchronous registration
-        boolean registeringProcessModule = false;
-
         // Lane database and process setup
         if (getConfiguration().laneOptionsConfig != null) {
             // Initial RPM config
@@ -178,18 +165,11 @@ public class LaneSystem extends SensorSystem {
                 createFFmpegModule(config);
             }
 
-
-            // Process creation / attachment
-            if (getConfiguration().laneOptionsConfig.createProcess && existingProcessModule == null) {
-                registeringProcessModule = true;
-            }
         }
 
         String statusMsg = "Note: ";
         if (existingRPMModule == null)
             statusMsg += "No RPM driver found in lane.\n";
-        if (existingProcessModule == null && !registeringProcessModule)
-            statusMsg += "No database process module found for this lane.\n";
         if (!statusMsg.equalsIgnoreCase("Note: "))
             reportStatus(statusMsg);
 
@@ -208,24 +188,6 @@ public class LaneSystem extends SensorSystem {
                     getLogger().error("Cannot initialize system component {}", MsgUtils.moduleString(module), e);
                 }
             }
-        }
-
-        // Initial creation of process after everything starts
-        if (getConfiguration().laneOptionsConfig != null && getConfiguration().laneOptionsConfig.createProcess && existingProcessModule == null && !rpmFailedToInit) {
-            threadPool.execute(() -> {
-                // Create process config
-                OccupancyProcessConfig processConfig = new OccupancyProcessConfig();
-                processConfig.moduleClass = OccupancyProcessModule.class.getCanonicalName();
-                processConfig.serialNumber = config.uniqueID;
-                processConfig.name = getConfiguration().name + " Database Process";
-                processConfig.systemUID = getUniqueIdentifier();
-                try {
-                    existingProcessModule = (AbstractProcessModule<?>) getParentHub().getModuleRegistry().loadModule(processConfig);
-                    reportStatus("Process module loaded with module ID " + existingProcessModule.getLocalID());
-                } catch (SensorHubException e) {
-                    throw new RuntimeException(e);
-                }
-            });
         }
 
         getParentHub().getEventBus().newSubscription()
@@ -272,21 +234,6 @@ public class LaneSystem extends SensorSystem {
             if (db != null) {
                 // Remove lane if nothing else
                 List<String> removalList = new ArrayList<>(List.of(laneUID));
-                // Auto delete process module and remove from database
-                if (existingProcessModule != null) {
-                    var processDesc = existingProcessModule.getCurrentDescription();
-                    String processUID;
-                    if (processDesc == null)
-                        processUID = createProcessUID(config.uniqueID);
-                    else
-                        processUID = processDesc.getUniqueIdentifier();
-                    try {
-                        getParentHub().getModuleRegistry().destroyModule(existingProcessModule.getLocalID());
-                    } catch (SensorHubException ex) {
-                        throw new RuntimeException(ex);
-                    }
-                    removalList.add(processUID);
-                }
                 // Remove lane (and process) from database
                 deleteSystemsFromDatabase(removalList);
             }
@@ -305,10 +252,6 @@ public class LaneSystem extends SensorSystem {
 
     private String createGroupUIDPattern(int groupID) {
         return URN_PREFIX + "osh:system:group:" + groupID + ":*";
-    }
-
-    private String createProcessUID(String suffix) {
-        return URN_PREFIX + "osh:process:occupancy:" + suffix;
     }
 
     private synchronized void deleteSystemsFromDatabase(List<String> systemUIDs) {
@@ -369,50 +312,14 @@ public class LaneSystem extends SensorSystem {
                     existingRPMModule = null;
             }
 
-            // If process is removed, nullify local object
-            if (event.getSystemUID().contains(PROCESS_URI))
-                existingProcessModule = null;
         }
 
         else if (e instanceof ModuleEvent event) {
             // Module STATE_CHANGED events
             if (event.getType() == ModuleEvent.Type.STATE_CHANGED) {
-                // Module STARTED events
-                if (event.getNewState() == ModuleEvent.ModuleState.STARTED) {
-                    // If RPM module is started, then start process module
-                    if (existingRPMModule != null && Objects.equals(event.getSourceID(), existingRPMModule.getLocalID()) && existingProcessModule != null && !existingProcessModule.isStarted()) {
-                        try {
-                            if (existingProcessModule.getCurrentState().equals(ModuleEvent.ModuleState.LOADED))
-                                getParentHub().getModuleRegistry().initModule(existingProcessModule.getLocalID());
-                            existingProcessModule.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
-                            getParentHub().getModuleRegistry().startModuleAsync(existingProcessModule);
-                        } catch (SensorHubException ex) {
-                            throw new RuntimeException(ex);
-                        }
-                    }
-
-                }
-
-                // Module STOPPED events
-                else if (event.getNewState() == ModuleEvent.ModuleState.STOPPED) {
-                    // If RPM module is stopped, then stop process module
-                    if (existingRPMModule != null && Objects.equals(event.getSourceID(), existingRPMModule.getLocalID()) && existingProcessModule != null) {
-                        try {
-                            getParentHub().getModuleRegistry().stopModuleAsync(existingProcessModule);
-                        } catch (SensorHubException ex) {
-                            throw new RuntimeException(ex);
-                        }
-                    }
-                }
 
                 // New module loaded
-                else if (event.getNewState() == ModuleEvent.ModuleState.LOADED) {
-                    // If process is loaded manually and null locally, find it and keep track of it
-                    if (event.getModule() instanceof OccupancyProcessModule processModule && existingProcessModule == null) {
-                        if (Objects.equals(processModule.getConfiguration().systemUID, this.getUniqueIdentifier())) {
-                            existingProcessModule = processModule;
-                        }
-                    }
+                if (event.getNewState() == ModuleEvent.ModuleState.LOADED) {
 
                     if (event.getModule() instanceof FFMPEGSensor ffmpegDriver){
                         if(!ffmpegConfigs.containsKey(ffmpegDriver.getLocalID()))
@@ -562,7 +469,7 @@ public class LaneSystem extends SensorSystem {
         if(ffmpegConfig instanceof AxisCameraConfig axisVideoConfig){
              path = axisVideoConfig.streamPath.getPath();
         }else if (ffmpegConfig instanceof SonyCameraConfig sonyVideoConfig){
-             path = SonyCameraConfig.streamPath;
+             path = sonyVideoConfig.streamPath;
         }else if(ffmpegConfig instanceof CustomCameraConfig customVideoConfig){
              path = !customVideoConfig.streamPath.isEmpty() ? customVideoConfig.streamPath : defaultAxis;
         }
@@ -589,13 +496,7 @@ public class LaneSystem extends SensorSystem {
 
         config.databaseNum = getGroupDatabaseNum(groupID);
         config.systemUIDs = new HashSet<>(List.of(createGroupUIDPattern(groupID)));
-        config.autoPurgeConfig = new ArrayList<>();
-        var defaultPurgeConfig = new MaxAgeAutoPurgeConfig();
-        defaultPurgeConfig.systemUIDs = new ArrayList<>(List.of("urn:osh:sensor:ffmpeg:*"));
-        defaultPurgeConfig.purgePeriod = DEFAULT_PURGE_PERIOD;
-        defaultPurgeConfig.maxRecordAge = DEFAULT_PURGE_PERIOD;
-        defaultPurgeConfig.enabled = true;
-        config.autoPurgeConfig.add(defaultPurgeConfig);
+
         MVObsSystemDatabaseConfig dbConfig = (MVObsSystemDatabaseConfig) (config.dbConfig = new MVObsSystemDatabaseConfig());
         dbConfig.storagePath = "group" + groupID + "lanes.db";
         dbConfig.readOnly = false;
