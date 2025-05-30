@@ -56,7 +56,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     RobustConnection connection;
     private boolean isRunning;
     private Thread tcpConnectionThread;
-    private static final Object heartbeatLock = new Object();
+    //private static final Object heartbeatLock = new Object();
 
     @Override
     public void doInit() throws SensorHubException {
@@ -291,24 +291,22 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
 
 
     public void heartbeat() {
-        synchronized (heartbeatLock) {
-            while (isRunning) {
-                if(messageHandler.getTimeSinceLastMessage() < config.commSettings.connection.reconnectPeriod) {
 
-                    this.connectionStatusOutput.onNewMessage(true);
-                }
-                else {
-                    this.connectionStatusOutput.onNewMessage(false);
+        while (isRunning) {
+            if(messageHandler.getTimeSinceLastMessage() < config.commSettings.connection.reconnectPeriod) {
 
-                    checkConnection();
-                }
-                try {
-                    Thread.sleep(1000);
-                } catch (Exception e) {
-                    logger.debug("Couldn't sleep");
-                }
+                this.connectionStatusOutput.onNewMessage(true);
+            }
+            else {
+                this.connectionStatusOutput.onNewMessage(false);
+
+                checkConnection();
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (Exception e) {
+                logger.debug("Couldn't sleep");
             }
         }
     }
-
 }
