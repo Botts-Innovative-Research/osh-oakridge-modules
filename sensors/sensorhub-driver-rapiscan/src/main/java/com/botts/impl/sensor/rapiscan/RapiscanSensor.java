@@ -70,7 +70,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     RobustConnection connection;
     private boolean isRunning;
     private Thread tcpConnectionThread;
-    private static final Object heartbeatLock = new Object();
+    //private static final Object heartbeatLock = new Object();
 
     @Override
     public void doInit() throws SensorHubException {
@@ -321,35 +321,33 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     public void heartbeat() {
         long waitPeriod = -1;
 
-        synchronized (heartbeatLock) {
-            while (isRunning) {
-                try{
-                    long timeSinceMsg = messageHandler.getTimeSinceLastMessage();
-                    boolean isReceivingMsg = timeSinceMsg < config.commSettings.connection.reconnectPeriod;
+        while (isRunning) {
+            try{
+                long timeSinceMsg = messageHandler.getTimeSinceLastMessage();
+                boolean isReceivingMsg = timeSinceMsg < config.commSettings.connection.reconnectPeriod;
 
-                    if(isReceivingMsg) {
-                        this.connectionStatusOutput.onNewMessage(true);
+                if(isReceivingMsg) {
+                    this.connectionStatusOutput.onNewMessage(true);
+                    waitPeriod = -1;
+                }
+                else {
+                    this.connectionStatusOutput.onNewMessage(false);
+
+                    if(waitPeriod == -1) waitPeriod = System.currentTimeMillis();
+
+                    long timeDisconnected = System.currentTimeMillis() - waitPeriod;
+
+                    if(timeDisconnected > config.commSettings.connection.connectTimeout){ //config.commSettings.connection.connectTimeout
+//                            connection.cancel();
+                        connection.reconnect();
                         waitPeriod = -1;
                     }
-                    else {
-                        this.connectionStatusOutput.onNewMessage(false);
-
-                        if(waitPeriod == -1) waitPeriod = System.currentTimeMillis();
-
-                        long timeDisconnected = System.currentTimeMillis() - waitPeriod;
-
-                        if(timeDisconnected > config.commSettings.connection.connectTimeout){ //config.commSettings.connection.connectTimeout
-//                            connection.cancel();
-                            connection.reconnect();
-                            waitPeriod = -1;
-                        }
-                    }
-
-                    Thread.sleep(1000);
-
-                } catch (Exception e) {
-                    logger.debug("Error during connection check, "+ e);
                 }
+
+                Thread.sleep(1000);
+
+            } catch (Exception e) {
+                logger.debug("Error during connection check, "+ e);
             }
         }
     }
