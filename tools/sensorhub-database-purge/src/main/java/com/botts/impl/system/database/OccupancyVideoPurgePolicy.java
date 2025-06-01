@@ -96,10 +96,6 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
             // if videoDS and timeIntervalsToKeep then remove db
              if(recordStructure.getDefinition().equals("http://sensorml.com/ont/swe/property/VideoFrame") && timeIntervalsToKeep.size() > 0){
 
-                 System.out.println("video record and time range found");
-
-                 System.out.println("time ints to keep: "+ timeIntervalsToKeep);
-
                  List<TimeExtent> mergedTimeIntervalsToKeep = new ArrayList<>();
 
                  int idx = 0;
@@ -109,7 +105,6 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
 
                      // check that index is still in range and if end time equals next intervals start time then update the end time
                      while(idx+1 < timeIntervalsToKeep.size() && end.equals(timeIntervalsToKeep.get(idx+1).begin())){
-                         System.out.println("end time matches next intervals start time... merging times");
                          //update the end time
                          end = timeIntervalsToKeep.get(idx+1).end();
                          idx++;
@@ -120,12 +115,9 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
                  }
 
 
-                 System.out.println("new merged time intervals: "+ mergedTimeIntervalsToKeep);
-
                  // check if the resultTimeRange is before the first occupancy start time if so call this!!!
                  if(resultTimeRange.begin().isBefore(mergedTimeIntervalsToKeep.get(0).begin())){
                      // then remove records from the video result time start til our first alarming occupancy
-                     System.out.println("Removing records before first alarm: " + resultTimeRange.begin() + " to " + mergedTimeIntervalsToKeep.get(0).begin());
                      numObsRemoved += db.getObservationStore().removeEntries(new ObsFilter.Builder()
                              .withDataStreams(dsID)
                              .withResultTimeDuring(resultTimeRange.begin(), mergedTimeIntervalsToKeep.get(0).begin())
@@ -136,11 +128,9 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
                  var lastIndex = mergedTimeIntervalsToKeep.size()-1;
 
                  if(resultTimeRange.end().isAfter(mergedTimeIntervalsToKeep.get(lastIndex).end())){
-                     System.out.println("Removing records after last alarm: " + mergedTimeIntervalsToKeep.get(lastIndex).end()  + " to "  + resultTimeRange.end());
 
                      Instant start = mergedTimeIntervalsToKeep.get(lastIndex).end();
                      Instant end = resultTimeRange.end();
-                     System.out.println("Attempting to purge from: " + start + " to " + end);
                      // then remove records from the video result time start til our first alarming occupancy
                      numObsRemoved += db.getObservationStore().removeEntries(new ObsFilter.Builder()
                              .withDataStreams(dsID)
@@ -155,15 +145,11 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
                      var currentIntervalEndTime = mergedTimeIntervalsToKeep.get(i).end();
                      var nextIntervalStartTime = mergedTimeIntervalsToKeep.get(i+1).begin();
 
-                     System.out.println("time interval end: "+ mergedTimeIntervalsToKeep.get(i).end());
-                     System.out.println("next indexes time interval start: "+ mergedTimeIntervalsToKeep.get(i+1).begin());
-
                      if(currentIntervalEndTime.isBefore(nextIntervalStartTime)){
                          numObsRemoved += db.getObservationStore().removeEntries(new ObsFilter.Builder()
                                  .withDataStreams(dsID)
                                  .withResultTimeDuring(currentIntervalEndTime, nextIntervalStartTime)
                                  .build());
-                         System.out.println("removed observation: "+ currentIntervalEndTime +"-" + nextIntervalStartTime);
                      }
                      i++;
                  }
