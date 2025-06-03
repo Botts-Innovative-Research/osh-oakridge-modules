@@ -18,6 +18,16 @@ test {
     useJUnit()
 }
 
+tasks.register('copyReadme', Copy) {
+    from "${projectDir}/README.md"
+    into "${projectDir}/src/main/resources/com/botts/impl/sensor/aspect"
+    onlyIf { file("${projectDir}/README.md").exists() }
+}
+
+processResources {
+    dependsOn copyReadme
+}
+
 // add info to OSGi manifest
 osgi {
     manifest {
