@@ -61,10 +61,11 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
             var dsID = dsEntry.getKey().getInternalID();
             var recordStructure = dsEntry.getValue().getRecordStructure();
             var resultTimeRange = dsEntry.getValue().getResultTimeRange();
+            if (resultTimeRange == null) continue;
 
 
             //identify occupancy datastreams
-            if(recordStructure.getDefinition().equals("http://www.opengis.net/def/occupancy")){
+            if(recordStructure.getDefinition() != null && recordStructure.getDefinition().equals("http://www.opengis.net/def/occupancy")){
 
                 //get observations from datastream
                 var obsStore = db.getObservationStore().selectEntries(new ObsFilter.Builder()
@@ -94,7 +95,7 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
 
             // remove video records outside of videoIntervalsToKeep
             // if videoDS and timeIntervalsToKeep then remove db
-             if(recordStructure.getDefinition().equals("http://sensorml.com/ont/swe/property/VideoFrame") && timeIntervalsToKeep.size() > 0){
+             if(recordStructure.getDefinition() != null && recordStructure.getDefinition().equals("http://sensorml.com/ont/swe/property/VideoFrame") && timeIntervalsToKeep.size() > 0){
 
                  List<TimeExtent> mergedTimeIntervalsToKeep = new ArrayList<>();
 
@@ -116,7 +117,7 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
 
 
                  // check if the resultTimeRange is before the first occupancy start time if so call this!!!
-                 if(resultTimeRange.begin().isBefore(mergedTimeIntervalsToKeep.get(0).begin())){
+                 if(resultTimeRange != null && resultTimeRange.begin().isBefore(mergedTimeIntervalsToKeep.get(0).begin())){
                      // then remove records from the video result time start til our first alarming occupancy
                      numObsRemoved += db.getObservationStore().removeEntries(new ObsFilter.Builder()
                              .withDataStreams(dsID)
