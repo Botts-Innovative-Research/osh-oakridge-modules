@@ -28,6 +28,16 @@ osgi {
     }
 }
 
+tasks.register('copyReadme', Copy) {
+    from "${projectDir}/README.md"
+    into "${projectDir}/src/main/resources/org/sensorhub/impl/sensor/ffmpeg/config"
+    onlyIf { file("${projectDir}/README.md").exists() }
+}
+
+processResources {
+    dependsOn copyReadme
+}
+
 // add info to maven pom
 ext.pom >>= {
     developers {
