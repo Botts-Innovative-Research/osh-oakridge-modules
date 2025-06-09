@@ -60,11 +60,11 @@ Location:
 
 ### EML Config: 
 Settings for VM250 lanes, only configure these settings if the lane requires the EML service.
-- **Lane Width:** Width of Lane in meters
-- **Collimated:** Check if the lane is collimated.
+- **Lane Width:** 
+- **Collimated:** 
 - **Supplemental Algorithm:** If checked, this will initiate the eml service for the driver. 
-
-### Setup Values from RPM Hardware
+ 
 - **Intervals:**
 - **Occupancy Holdin:**
-- **NSigma**
+- **Algorithm:**
+- **Sigma**
