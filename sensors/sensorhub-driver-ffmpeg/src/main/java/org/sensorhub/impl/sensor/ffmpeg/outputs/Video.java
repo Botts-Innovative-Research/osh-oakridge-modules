@@ -16,6 +16,7 @@ package org.sensorhub.impl.sensor.ffmpeg.outputs;
 import java.util.concurrent.Executor;
 
 import org.sensorhub.api.data.DataEvent;
+import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.common.SyncTime;
@@ -86,7 +87,7 @@ public class Video<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSensor
      * Initializes the data structure for the output, defining the fields, their ordering,
      * and data types.
      */
-    public void init() {
+    public void init() throws SensorException {
 
         logger.debug("Initializing Video");
 
@@ -97,10 +98,18 @@ public class Video<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSensor
         DataStream outputDef;
 
         logger.debug(codecFormat);
-        if (codecFormat.equals("mjpeg")){
-             outputDef = sweFactory.newVideoOutputMJPEG(getName(), videoFrameWidth, videoFrameHeight);
+
+        if (videoFrameHeight <= 0) {
+            throw new SensorException("videoFrameHeight (" + videoFrameHeight + ") must be greater than 0");
+        }
+        if (videoFrameWidth <= 0) {
+            throw new SensorException("videoFrameWidth (" + videoFrameWidth + ") must be greater than 0");
+        }
+
+        if (codecFormat.equals("mjpeg")) {
+            outputDef = sweFactory.newVideoOutputMJPEG(getName(), videoFrameWidth, videoFrameHeight);
         } else {
-             outputDef = sweFactory.newVideoOutputH264(getName(), videoFrameWidth, videoFrameHeight);
+            outputDef = sweFactory.newVideoOutputH264(getName(), videoFrameWidth, videoFrameHeight);
         }
 
 
