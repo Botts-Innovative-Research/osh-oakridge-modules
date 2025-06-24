@@ -447,7 +447,7 @@ public class LaneSystem extends SensorSystem {
 
             config = rapiscanConfig;
         }else{
-            reportError("RPM Config specified is invalid, config must be of type AspectRPMConfig or RapiscanRPMConfig", new Throwable());
+            reportError("RPM Config specified is invalid, config must be of type AspectRPMConfig or RapiscanRPMConfig", new IllegalArgumentException());
         }
 
         config.name = getConfiguration().name + " - RPM";
