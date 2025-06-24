@@ -410,7 +410,7 @@ public class LaneSystem extends SensorSystem {
     private SensorConfig createRPMConfig(RPMConfig rpmConfig) {
         Asserts.checkNotNull(rpmConfig.remoteHost);
 
-        SensorConfig config;
+        SensorConfig config = null;
 
         if(rpmConfig instanceof AspectRPMConfig aspectRPMConfig){
             AspectConfig aspectConfig = new AspectConfig();
@@ -447,7 +447,7 @@ public class LaneSystem extends SensorSystem {
 
             config = rapiscanConfig;
         }else{
-            config = null;
+            reportError("RPM Config specified is invalid, config must be of type AspectRPMConfig or RapiscanRPMConfig", new Throwable());
         }
 
         config.name = getConfiguration().name + " - RPM";
