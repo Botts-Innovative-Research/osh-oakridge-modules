@@ -429,18 +429,25 @@ public class LaneSystem extends SensorSystem {
             comm.connection.reconnectAttempts = 10;
             comm.moduleClass = ModbusTCPCommProvider.class.getCanonicalName();
             config = aspectConfig;
-        }else{
+        }else if(rpmConfig instanceof RapiscanRPMConfig rapiscanRPMConfig){
             RapiscanConfig rapiscanConfig = new RapiscanConfig();
             rapiscanConfig.serialNumber = getConfiguration().uniqueID;
             rapiscanConfig.moduleClass = RapiscanSensor.class.getCanonicalName();
+
+            // add eml for rapiscan
+            rapiscanConfig.emlConfig = rapiscanRPMConfig.emlConfig;
+
             // Setup communication config
             var comm = rapiscanConfig.commSettings = new TCPCommProviderConfig();
-            comm.protocol.remoteHost = rpmConfig.remoteHost;
-            comm.protocol.remotePort = rpmConfig.remotePort;
+            comm.protocol.remoteHost = rapiscanRPMConfig.remoteHost;
+            comm.protocol.remotePort = rapiscanRPMConfig.remotePort;
             // Update connection timeout to be 5 seconds instead of 3 seconds by default
             comm.connection.connectTimeout = 5000;
             comm.connection.reconnectAttempts = 10;
+
             config = rapiscanConfig;
+        }else{
+            config = null;
         }
 
         config.name = getConfiguration().name + " - RPM";
