@@ -19,6 +19,7 @@ package com.botts.impl.system.lane;
 
 import com.botts.impl.sensor.aspect.AspectConfig;
 import com.botts.impl.sensor.aspect.AspectSensor;
+import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProvider;
 import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProviderConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
@@ -411,10 +412,13 @@ public class LaneSystem extends SensorSystem {
 
         SensorConfig config;
 
+        String name = getConfiguration().name + " - RPM";
+
         if(rpmConfig instanceof AspectRPMConfig aspectRPMConfig){
             AspectConfig aspectConfig = new AspectConfig();
             aspectConfig.serialNumber = getConfiguration().uniqueID;
             aspectConfig.moduleClass = AspectSensor.class.getCanonicalName();
+
             // Setup communication config
             var comm = aspectConfig.commSettings = new ModbusTCPCommProviderConfig();
             comm.protocol.remoteHost = aspectRPMConfig.remoteHost;
@@ -425,6 +429,9 @@ public class LaneSystem extends SensorSystem {
             // Update connection timeout to be 5 seconds instead of 3 seconds by default
             comm.connection.connectTimeout = 5000;
             comm.connection.reconnectAttempts = 10;
+            comm.moduleClass = ModbusTCPCommProvider.class.getCanonicalName();
+            aspectConfig.name = name;
+            aspectConfig.autoStart = true;
             config = aspectConfig;
         }else{
             RapiscanConfig rapiscanConfig = new RapiscanConfig();
@@ -437,11 +444,10 @@ public class LaneSystem extends SensorSystem {
             // Update connection timeout to be 5 seconds instead of 3 seconds by default
             comm.connection.connectTimeout = 5000;
             comm.connection.reconnectAttempts = 10;
+            rapiscanConfig.name = name;
+            rapiscanConfig.autoStart = true;
             config = rapiscanConfig;
         }
-
-        config.name = getConfiguration().name + " - RPM";
-        config.autoStart = true;
 
         return config;
     }
