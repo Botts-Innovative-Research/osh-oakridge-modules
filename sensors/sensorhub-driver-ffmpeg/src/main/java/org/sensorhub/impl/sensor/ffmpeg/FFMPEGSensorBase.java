@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.event.Event;
 import org.sensorhub.api.event.IEventListener;
+import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.DefaultLocationOutput;
 import org.sensorhub.impl.sensor.DefaultLocationOutputLLA;
@@ -160,13 +161,18 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
      * Create and initialize the video output. The caller has to be careful not to call this if the video output has
      * already been created and added to the sensor.
      */
-    protected void createVideoOutput(int[] videoDims, String codecFormat) {
+    protected void createVideoOutput(int[] videoDims, String codecFormat) throws SensorHubException {
     	videoOutput = new Video<FFMPEGconfigType>(this, videoDims, codecFormat);
     	if (executor != null) {
     		videoOutput.setExecutor(executor);
     	}
         addOutput(videoOutput, false);
-        videoOutput.init();
+        try {
+            videoOutput.init();
+        } catch (SensorException e) {
+            logger.error("Could not initialize video stream.", e);
+            throw new SensorHubException("Video stream misconfigured. Please ensure the camera's video stream is working before reinitializing.");
+        }
     }
 
     /**
