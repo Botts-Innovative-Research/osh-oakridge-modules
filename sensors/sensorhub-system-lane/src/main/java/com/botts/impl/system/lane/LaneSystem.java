@@ -412,8 +412,6 @@ public class LaneSystem extends SensorSystem {
 
         SensorConfig config;
 
-        String name = getConfiguration().name + " - RPM";
-
         if(rpmConfig instanceof AspectRPMConfig aspectRPMConfig){
             AspectConfig aspectConfig = new AspectConfig();
             aspectConfig.serialNumber = getConfiguration().uniqueID;
@@ -430,8 +428,6 @@ public class LaneSystem extends SensorSystem {
             comm.connection.connectTimeout = 5000;
             comm.connection.reconnectAttempts = 10;
             comm.moduleClass = ModbusTCPCommProvider.class.getCanonicalName();
-            aspectConfig.name = name;
-            aspectConfig.autoStart = true;
             config = aspectConfig;
         }else{
             RapiscanConfig rapiscanConfig = new RapiscanConfig();
@@ -444,10 +440,11 @@ public class LaneSystem extends SensorSystem {
             // Update connection timeout to be 5 seconds instead of 3 seconds by default
             comm.connection.connectTimeout = 5000;
             comm.connection.reconnectAttempts = 10;
-            rapiscanConfig.name = name;
-            rapiscanConfig.autoStart = true;
             config = rapiscanConfig;
         }
+
+        config.name = getConfiguration().name + " - RPM";
+        config.autoStart = true;
 
         return config;
     }
