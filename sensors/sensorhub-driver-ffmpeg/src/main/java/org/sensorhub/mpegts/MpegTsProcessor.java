@@ -18,18 +18,25 @@ import org.bytedeco.ffmpeg.avcodec.AVCodecContext;
 import org.bytedeco.ffmpeg.avcodec.AVCodecParameters;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avformat.AVFormatContext;
+import org.bytedeco.ffmpeg.avformat.AVIOContext;
+import org.bytedeco.ffmpeg.avformat.AVStream;
 import org.bytedeco.ffmpeg.avutil.AVDictionary;
 import org.bytedeco.ffmpeg.avutil.AVRational;
 import org.bytedeco.ffmpeg.global.avcodec;
 import org.bytedeco.ffmpeg.global.avformat;
 import org.bytedeco.ffmpeg.global.avutil;
+import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.PointerPointer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.bytedeco.ffmpeg.global.avformat.av_read_frame;
+import static org.bytedeco.ffmpeg.global.avcodec.*;
+import static org.bytedeco.ffmpeg.global.avformat.*;
+import static org.bytedeco.ffmpeg.global.avutil.*;
 
 /**
  * The class provides a wrapper to bytedeco.org JavaCpp-Platform.
@@ -185,6 +192,21 @@ public class MpegTsProcessor extends Thread {
 
     private boolean useTCP;
 
+    private volatile boolean doFileWrite = false;
+
+    private String outputFile = "";
+
+    private AVFormatContext outputContext;
+
+    private final Object contextLock = new Object();
+
+    private ArrayDeque<AVPacket> framesSinceKey = new ArrayDeque<>();
+
+    private long filePts = 0;
+    private long filePacketPos = 0;
+
+    AVStream outputVideoStream;
+
     /**
      * Constructor
      *
@@ -213,6 +235,103 @@ public class MpegTsProcessor extends Thread {
         this.fps = fps;
         this.loop = loop;
         this.useTCP = useTCP;
+    }
+
+    public void openFile(String outputFile) throws IOException {
+        try {
+            if (doFileWrite) {
+                throw new IOException("Already writing to file " + this.outputFile);
+            }
+
+            if (!framesSinceKey.isEmpty()) {
+                filePts = framesSinceKey.peek().pts();
+            } else {
+                filePts = 0;
+            }
+            filePacketPos = 0;
+
+            int ret;
+
+            outputContext = avformat.avformat_alloc_context();
+            this.outputFile = outputFile;
+            avformat.avformat_alloc_output_context2(outputContext, null, null, outputFile);
+
+            AVCodec videoCodec = new AVCodec(avCodecContext.codec());
+            //videoCodec.type(AVMEDIA_TYPE_VIDEO);
+
+            outputVideoStream = avformat.avformat_new_stream(outputContext, videoCodec);
+            AVStream inputStream = avFormatContext.streams(videoStreamId);
+
+            outputContext.video_codec(videoCodec);
+
+            avcodec.avcodec_parameters_copy(outputVideoStream.codecpar(), inputStream.codecpar());
+
+            outputVideoStream.time_base(new AVRational(inputStream.time_base()));
+            outputVideoStream.avg_frame_rate(new AVRational(inputStream.avg_frame_rate()));
+            outputVideoStream.start_time(0);
+            outputVideoStream.position(0);
+            outputVideoStream.r_frame_rate(new AVRational(inputStream.r_frame_rate()));
+
+            // TODO Make sure this is correct
+            if ((outputContext.oformat().flags() & AVFMT_NOFILE) == 0) {
+                AVIOContext avioContext = new AVIOContext(null);
+                if (avio_open(avioContext, outputFile, AVIO_FLAG_WRITE) < 0) {
+                    throw new IOException("Could not open file.");
+                }
+                outputContext.pb(avioContext);
+            }
+
+            outputContext.start_time(0);
+            outputContext.position(0);
+            outputContext.pb().position(0);
+            //avformat.avformat_init_output(outputContext, (PointerPointer<?>) null);
+
+            if ((ret = avformat.avformat_write_header(outputContext, (PointerPointer<?>) null)) < 0) {
+                logFFmpeg(ret);
+                throw new IOException("Could not write header to file.");
+            }
+
+            while (!framesSinceKey.isEmpty()) {
+                AVPacket packet = framesSinceKey.pop();
+                filePacketTiming(packet);
+                av_write_frame(outputContext, packet);
+                av_packet_unref(packet);
+            }
+
+            doFileWrite = true;
+        } catch (Exception e) {
+            throw new IOException("Could not open output file " + outputFile + ".", e);
+        }
+    }
+
+    private void logFFmpeg(int retCode) {
+        BytePointer buf = new BytePointer(AV_ERROR_MAX_STRING_SIZE);
+        av_strerror(retCode, buf, buf.capacity());
+        logger.warn("FFmpeg returned error code {}: {}", retCode, buf.getString());
+    }
+
+    private void filePacketTiming(AVPacket packet) {
+        logger.debug("Original: {}\tModified: {}", packet.pts(), packet.pts() - filePts);
+        packet.pts(packet.pts() - filePts);
+        packet.dts(packet.dts() - filePts);
+        packet.time_base(outputVideoStream.time_base());
+        //packet.position(outputVideoStream.position());
+    }
+
+    public void closeFile() throws IOException {
+        if (doFileWrite) {
+            doFileWrite = false;
+            try {
+                synchronized (contextLock) {
+                    avformat.av_write_trailer(outputContext);
+                    avio_close(outputContext.pb());
+                    avformat.avformat_free_context(outputContext);
+                    outputContext = null;
+                }
+            } catch (Exception e) {
+                throw new IOException("Could not close output file " + outputFile + ".", e);
+            }
+        }
     }
 
     /**
@@ -254,7 +373,6 @@ public class MpegTsProcessor extends Thread {
             } else {
 
                 streamOpened = true;
-
                 logger.debug("Stream opened {}", streamSource);
             }
         } else {
@@ -563,6 +681,22 @@ public class MpegTsProcessor extends Thread {
                         videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, spsPpsHeader));
                     }
                     videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer));
+
+                    synchronized (contextLock) {
+                        if (doFileWrite) {
+                            if (outputContext != null) {
+                                filePacketTiming(avPacket);
+                                av_write_frame(outputContext, avPacket);
+                            } else {
+                                logger.error("Cannot write to file; output context is null");
+                            }
+                        } else {
+                            if (isKeyFrame) {
+                                framesSinceKey.clear();
+                            }
+                            framesSinceKey.add(av_packet_clone(avPacket));
+                        }
+                    }
                 }
                 // clear packet
                 avcodec.av_packet_unref(avPacket);
