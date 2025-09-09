@@ -1,4 +1,4 @@
-package com.botts.impl.system.database;
+package com.botts.impl.system.database.helpers;
 
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartUtilities;

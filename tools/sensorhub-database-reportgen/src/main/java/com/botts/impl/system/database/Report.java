@@ -1,6 +1,8 @@
 package com.botts.impl.system.database;
 
 
+import com.botts.impl.system.database.helpers.ReportType;
+
 public class Report {
 
     private ReportType reportType;

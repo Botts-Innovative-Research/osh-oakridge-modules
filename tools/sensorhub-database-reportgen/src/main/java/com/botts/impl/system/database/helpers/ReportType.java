@@ -1,4 +1,4 @@
-package com.botts.impl.system.database;
+package com.botts.impl.system.database.helpers;
 
 public enum ReportType {
        RDS_SITE_REPORT,
