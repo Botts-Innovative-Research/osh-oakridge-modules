@@ -1,0 +1,43 @@
+description = 'Report Gen'
+ext.details = "Report Gen"
+version = '1.0.0'
+
+dependencies {
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation 'org.sensorhub:sensorhub-datastore-h2:' + oshCoreVersion
+    testImplementation 'org.sensorhub:sensorhub-datastore-h2'
+
+    implementation("jfree:jfreechart:1.0.13")
+    implementation("com.itextpdf:itext7-core:9.3.0")
+
+    testImplementation('junit:junit:4.13.1')
+    implementation('junit:junit:4.13.1')
+}
+
+// exclude tests requiring connection to the sensor
+// these have to be run manually
+//      If tests are to be excluded list them here as follows
+//          exclude '**/TestNameClass.class'
+test {
+    useJUnit()
+}
+
+// add info to OSGi manifest
+osgi {
+    manifest {
+        attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
+        attributes('Bundle-Activator': 'com.botts.impl.system.database.Activator')
+    }
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'kalynstricklin'
+            name 'Kalyn Stricklin'
+            organization 'Botts Innovative Research, Inc.'
+            organizationUrl 'https://www.botts-inc.com'
+        }
+    }
+}
