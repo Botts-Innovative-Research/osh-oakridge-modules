@@ -20,10 +20,9 @@ public class ImageHandler {
                 Image image = new Image(ImageDataFactory.create(imgPath));
                 image.scaleToFit(500, 300);
                 document.add(image);
-                file.delete();
             }
         }catch(Exception e){
-            System.out.println("Error while adding image to pdf");
+            e.printStackTrace();
         }
     }
 }

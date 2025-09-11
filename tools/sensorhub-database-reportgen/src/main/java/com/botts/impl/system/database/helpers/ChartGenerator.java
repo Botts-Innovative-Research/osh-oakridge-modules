@@ -12,7 +12,7 @@ import java.io.IOException;
 public class ChartGenerator {
 
 
-    public void createChart(String title, String xAxisLabel, String yAxisLabel, CategoryDataset dataset, String chartType) throws IOException {
+    public void createChart(String title, String xAxisLabel, String yAxisLabel, CategoryDataset dataset, String chartType, String outputFilePath) throws IOException {
         JFreeChart chart = null;
 
         switch(chartType.toLowerCase()) {
@@ -35,6 +35,6 @@ public class ChartGenerator {
 
 
         if(chart != null)
-            ChartUtilities.saveChartAsPNG(new File(title + ".png"), chart, 800, 600);
+            ChartUtilities.saveChartAsPNG(new File(outputFilePath), chart, 800, 600);
     }
 }

@@ -14,7 +14,7 @@ public class TableGenerator {
     protected void addTable(String[] headers, Object dataset){
         Table table = new Table(UnitValue.createPercentArray(8)).useAllAvailableWidth();
 
-        for(var header : headers){
+        for(String header : headers){
             table.addHeaderCell(header);
         }
 

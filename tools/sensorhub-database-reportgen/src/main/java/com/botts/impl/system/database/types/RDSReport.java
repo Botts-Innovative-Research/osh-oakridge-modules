@@ -6,6 +6,8 @@ import com.itextpdf.layout.element.Paragraph;
 public class RDSReport extends Report {
     String reportTitle = "RDS Site Report";
 
+    String siteId = "";
+
     String[] alarmOccupancyHeaders =  {
             "Neutron", "Gamma", "Gamma & Neutron", "EML Suppressed", "Total Occupancies",  "Daily Occupancy Average", "Speed (Avg)", "Alarm Rate", "EML Alarm Rate"
     };
@@ -17,29 +19,57 @@ public class RDSReport extends Report {
 
     Document document;
 
-    public RDSReport(Document document) {
-        super(document);
+    public RDSReport(Document document, String startTime, String endTime) {
+        super(document, startTime, endTime);
     }
 
     @Override
     public void generate(){
-        document.add(new Paragraph(reportTitle).setFontSize(16).simulateBold());
-        document.add(new Paragraph("Site ID: " + "TODO: site id").setFontSize(12));
-        document.add(new Paragraph("\n"));
+        addHeader();
 
+        addAlarmStatistics();
+        addFaultStatistics();
+        addStatistics();
+        addOccupancyStatistics();
+        addDriveStorageAvailability();
 
-        document.add(new Paragraph("Alarm & Occupancy Statistics").setFontSize(12));
-//        addTableToPdf(alarmOccupancyHeaders, null);
-        document.add(new Paragraph("\n"));
-
-        document.add(new Paragraph("Fault Statistics").setFontSize(12));
-//        addTableToPdf(faultHeaders, null);
-        document.add(new Paragraph("\n"));
-
-
-
-//        TODO: Drive storage availability
-        document.add(new Paragraph("Drive Storage Availability"));
     }
 
+    private void addHeader(){
+        document.add(new Paragraph(reportTitle).setFontSize(16).simulateBold());
+        document.add(new Paragraph("Site ID: " + siteId).setFontSize(12));
+        document.add(new Paragraph("\n"));
+    }
+
+    private void addAlarmStatistics(){
+        document.add(new Paragraph("Alarm Statistics"));
+        //        addTableToPdf(faultHeaders, null);
+
+        document.add(new Paragraph("\n"));
+    }
+
+    private void addFaultStatistics(){
+        document.add(new Paragraph("Fault Statistics"));
+        //        addTableToPdf(faultHeaders, null);
+
+        document.add(new Paragraph("\n"));
+    }
+
+    private void addOccupancyStatistics(){
+        document.add(new Paragraph("Occupancy Statistics"));
+        //        addTableToPdf(faultHeaders, null);
+
+        document.add(new Paragraph("\n"));
+    }
+
+    private void addStatistics() {
+        document.add(new Paragraph("Statistics").setFontSize(12));
+        //        addTableToPdf(faultHeaders, null);
+
+        document.add(new Paragraph("\n"));
+    }
+
+    private void addDriveStorageAvailability(){
+        document.add(new Paragraph("Drive Storage Availability"));
+    }
 }
