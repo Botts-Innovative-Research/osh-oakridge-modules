@@ -1,12 +1,13 @@
 package com.botts.impl.service.oscar.reports;
 
 import com.botts.impl.service.oscar.OSCARSystem;
+import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
-import org.sensorhub.api.command.ICommandData;
-import org.sensorhub.api.command.ICommandStatus;
+import org.sensorhub.api.command.*;
 import org.sensorhub.impl.command.AbstractControlInterface;
 import org.vast.swe.SWEHelper;
 
+import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 
 public class RequestReportControl extends AbstractControlInterface<OSCARSystem> {
@@ -16,17 +17,22 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
     public static final String DESCRIPTION = "Control to request operations, performance, and maintenance reports";
 
     DataComponent commandStructure;
+    DataComponent resultStructure;
     SWEHelper fac;
 
     enum ReportType {
-        REPORT_1,
-        REPORT_2,
-        I_FORGOT_WHAT_TYPES_THERE_ARE
+        RDS_SITE,
+        LANE,
+        OPERATIONS,
+        EVENT,
+        SECONDARY_INSPECTIONS
     }
 
     protected RequestReportControl(OSCARSystem parent) {
         super(NAME, parent);
 
+        // TODO: Add additional parameters for lane UID, event ID, etc.
+        // TODO: Add defs
         commandStructure = fac.createRecord()
                 .name(NAME)
                 .label(LABEL)
@@ -41,6 +47,10 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                         .description("Report type to request")
                         .addAllowedValues(ReportType.class))
                 .build();
+
+        // TODO: Either have 2 urls for local and remote URL, or just handle this in client
+        // e.g. localhost:8282/reports/report123.pdf vs. public.ip:8282/reports/report123.pdf
+        resultStructure = fac.createText().name("reportUrl").build();
     }
 
     @Override
@@ -50,7 +60,28 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
     @Override
     public CompletableFuture<ICommandStatus> submitCommand(ICommandData command) {
-        return null;
+        DataBlock paramData = command.getParams();
+        Instant start = paramData.getTimeStamp(0);
+        Instant end = paramData.getTimeStamp(1);
+        ReportType type = ReportType.valueOf(paramData.getStringValue(2));
+
+        // TODO: Check if report of this type and during this time frame already exists in the filesystem
+        // Report report = getReport(start, end, type);
+        // if report == null then generate new report
+
+        // if report is invalid then send FAILED command status
+
+        // TODO: Build command result
+        DataBlock resultData = resultStructure.createDataBlock();
+        resultData.setStringValue("URL of report PDF in file system");
+        ICommandResult result = CommandResult.withData(resultData);
+
+        // TODO: Build status
+        ICommandStatus status = new CommandStatus.Builder()
+                .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
+                .withResult(result).build();
+
+        return CompletableFuture.completedFuture(status);
     }
 
 }
