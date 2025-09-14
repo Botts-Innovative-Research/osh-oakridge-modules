@@ -3,26 +3,35 @@ ext.details = 'Provides necessary configuration and performs specific operations
 version = '1.0.0'
 
 dependencies {
-  implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+
+    implementation("jfree:jfreechart:1.0.13") // charts
+    implementation("com.itextpdf:itext7-core:9.3.0") //pdfs
 }
   
 // add info to OSGi manifest
 osgi {
-  manifest {
-    attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
-    attributes('Bundle-Activator': 'com.botts.impl.service.oscar.Activator')
-  }
+    manifest {
+        attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
+        attributes('Bundle-Activator': 'com.botts.impl.service.oscar.Activator')
+    }
 }
 
 // add info to maven pom
 ext.pom >>= {
-  developers {
-    developer {
-      id 'earocorn'
-      name 'Alex Almanza'
-      organization 'Botts Innovative Research, Inc.'
-      organizationUrl 'http://www.botts-inc.com'
+    developers {
+        developer {
+            id 'earocorn'
+            name 'Alex Almanza'
+            organization 'Botts Innovative Research, Inc.'
+            organizationUrl 'http://www.botts-inc.com'
+        }
+        developer {
+            id 'kalynstricklin'
+            name 'Kalyn Stricklin'
+            organization 'Botts Innovative Research, Inc.'
+            organizationUrl 'http://www.botts-inc.com'
+        }
     }
-  }
 }
 

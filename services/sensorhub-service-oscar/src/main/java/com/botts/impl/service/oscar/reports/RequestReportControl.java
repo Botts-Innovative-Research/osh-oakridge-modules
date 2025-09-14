@@ -38,29 +38,39 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
     enum ReportType {
         RDS_SITE,
         LANE,
-        OPERATIONS,
         EVENT,
-        SECONDARY_INSPECTIONS
+        ADJUDICATION
     }
 
     protected RequestReportControl(OSCARSystem parent) {
         super(NAME, parent);
 
         // TODO: Add additional parameters for lane UID, event ID, etc.
-        // TODO: Add defs
         commandStructure = fac.createRecord()
                 .name(NAME)
                 .label(LABEL)
                 .description(DESCRIPTION)
                 .addField("startDateTime", fac.createTime()
+                        .definition(SWEHelper.getPropertyUri("StartDateTime"))
                         .withIso8601Format()
                         .description("Start datetime (ISO 8601)"))
                 .addField("endDateTime", fac.createTime()
+                        .definition(SWEHelper.getPropertyUri("EndDateTime"))
                         .withIso8601Format()
                         .description("End datetime (ISO 8601)"))
                 .addField("reportType", fac.createCategory()
-                        .description("Report type to request")
+                        .label("Report Type")
+                        .definition(SWEHelper.getPropertyUri("ReportType"))
+                        .description("Type of report to request")
                         .addAllowedValues(ReportType.class))
+                .addField("laneId", fac.createText()
+                        .label("Lane ID")
+                        .definition(SWEHelper.getPropertyUri("LaneID"))
+                        .description("Identifier of the lane to request"))
+                .addField("eventID", fac.createText()
+                        .label("Event ID")
+                        .definition(SWEHelper.getPropertyUri("EventID"))
+                        .description("Identifier of the event requested"))
                 .build();
 
         // TODO: Either have 2 urls for local and remote URL, or just handle this in client
@@ -79,9 +89,11 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
         Instant start = paramData.getTimeStamp(0);
         Instant end = paramData.getTimeStamp(1);
         ReportType type = ReportType.valueOf(paramData.getStringValue(2));
+        String laneId = paramData.getStringValue(3);
+        String eventId = paramData.getStringValue(4);
 
         // TODO: Check if report of this type and during this time frame already exists in the filesystem
-        // Report report = getReport(start, end, type);
+//         Report report = getReport(start, end, type);
         // if report == null then generate new report
 
         // if report is invalid then send FAILED command status
