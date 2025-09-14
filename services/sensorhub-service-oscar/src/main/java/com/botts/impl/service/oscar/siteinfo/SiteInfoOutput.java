@@ -46,12 +46,22 @@ public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
                 .description(DESCRIPTION)
                 .addField("sampleTime", fac.createTime().asSamplingTimeIsoUTC())
                 .addField("siteDiagramPath", fac.createText()
+                        .definition(SWEHelper.getPropertyUri("SiteDiagramPath"))
+                        .label("Site Diagram Path")
                         .description("Path of site diagram image"))
                 .addField("siteBoundingBox", fac.createRecord()
+                        .label("Bounding box")
+                        .definition(SWEHelper.getPropertyUri("SiteBoundingBox"))
                         .description("Geographic bounding box coordinates of site diagram")
-                        .addField("lowerLeftBound", fac.createLocationVectorLatLon())
-                        .addField("upperRightBound", fac.createLocationVectorLatLon()))
-                .build();
+                        .addField("lowerLeftBound", fac.createLocationVectorLatLon()
+                                .label("Lower Left Bound")
+                                .definition(SWEHelper.getPropertyUri("LowerLeftBound"))
+                                .build())
+                        .addField("upperRightBound", fac.createLocationVectorLatLon()
+                                .label("Upper Right Bound")
+                                .definition(SWEHelper.getPropertyUri("UpperRightBound"))
+                                .build())
+                ).build();
 
         this.recordEncoding = new TextEncodingImpl();
     }
