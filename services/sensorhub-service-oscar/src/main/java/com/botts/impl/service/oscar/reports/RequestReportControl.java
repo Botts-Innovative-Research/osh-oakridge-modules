@@ -138,9 +138,6 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
             ICommandStatus status = null;
 
-            // if report is invalid then send FAILED command status
-
-            // TODO: Build command result
             DataBlock resultData = resultStructure.createDataBlock();
             resultData.setStringValue(url);
             ICommandResult result = CommandResult.withData(resultData);
