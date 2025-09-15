@@ -42,8 +42,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         // TODO: Publish latest site info observation
 
-        getParentHub().getSystemDriverRegistry().getDatabase("urn:osh:system:lane:1").getObservationStore();
-        getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().get("sensorhub").getParameters();
+//        getParentHub().getSystemDriverRegistry().getDatabase("urn:osh:system:lane:1").getObservationStore();
+//        getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().get("sensorhub").getParameters();
 
     }
 
