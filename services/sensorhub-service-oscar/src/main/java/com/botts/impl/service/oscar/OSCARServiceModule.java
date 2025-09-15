@@ -51,7 +51,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         super.doStart();
 
         // TODO: Publish latest site info observation
-
+        
     }
 
     @Override
