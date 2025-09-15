@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ernie:laneDatabase
+  xmlns="http://ernie.llnl.gov"
+  xmlns:vm250="http://ernie.llnl.gov/vm250"
+  xmlns:ernie="http://ernie.llnl.gov"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation= 
+	"http://ernie.llnl.gov http://ernie.llnl.gov/schema/ernie.xsd
+	http://ernie.llnl.gov/vm250 http://ernie.llnl.gov/vm250/schema/ernie-vm250.xsd"
+>
+  <lane>
+    <!-- <laneWidth>4.0417</laneWidth> -->
+    <laneWidth>5.0</laneWidth>
+    <laneHeight>5</laneHeight>
+
+    <gammaPanels>
+      <panelWidth>0.152</panelWidth>
+      <panelHeight>0.762</panelHeight>
+      <panelThickness>0.0381</panelThickness>
+
+      <energyEdges>22 145</energyEdges>
+
+      <panel x="0.152" y="1" z="0.498"/>
+      <panel x="0.152" y="-1" z="0.498"/>
+      <panel x="0.152" y="1" z="2.476"/>
+      <panel x="0.152" y="-1" z="2.476"/>
+
+      <group loc="top">2 3</group>
+      <group loc="bottom">0 1</group>
+      <group loc="left">1 3</group>
+      <group loc="right">0 2</group>
+      <group loc="all">0 1 2 3</group>
+
+      <samplePeriod units="ms">200</samplePeriod>
+
+      <!-- UNCOLLIMATED  -->
+      <collimated>false</collimated>
+      <sideCollimator>0.001</sideCollimator>
+      <yFactors>-0.2279042234236729 -0.16791931939252275 0.15673568638332558 -0.053628485686096905 -0.01301175731336917 0.11135400335692923 0.0264992321814647 2.2341674599622174 0.010768862165040948</yFactors>
+      <zFactors>0.02693181822900201 6.096235328327473 -4.1405379541250955 0.07348339396838388 -2.160555414866461 -0.008637600033699587 -0.12285734574678188 -0.008398183839193345 1.5056808685223655</zFactors>
+<!--        
+        <yFactors>0.740659253970609 -0.13353499526798582 0.24500833620529433 -0.02180102042492847 0.01456153673168928 0.3131681870748602 -0.003570383187436847 2.4610146785430995 0.009386017243148978</yFactors>
+	<zFactors>0.08879509675191384 8.45613999829396 -4.325239865052804 0.13732431711830134 -4.569485821938495 -0.019483252188397616 -0.13950976154398523 -0.011945492329568642 1.5188894429028525</zFactors>
+-->
+    </gammaPanels>
+
+    <neutronPanels>
+      <panelWidth>0.152</panelWidth>
+      <panelHeight>0.762</panelHeight>
+      <panelThickness>0.0381</panelThickness>
+
+      <panel x="0.406" y="1" z="0.568"/>
+      <panel x="0.406" y="-1" z="0.568"/>
+      <panel x="0.406" y="1" z="2.457"/>
+      <panel x="0.406" y="-1" z="2.457"/>
+
+      <group loc="top">2 3</group>
+      <group loc="bottom">0 1</group>
+      <group loc="left">1 3</group>
+      <group loc="right">0 2</group>
+      <group loc="all">0 1 2 3</group>
+
+      <samplePeriod units="s">1</samplePeriod>
+    </neutronPanels>
+
+  </lane>
+
+  <lane>
+    <!-- <laneWidth>4.0417</laneWidth> -->
+    <laneWidth>5.0</laneWidth>
+    <laneHeight>5</laneHeight>
+
+    <gammaPanels>
+      <panelWidth>0.152</panelWidth>
+      <panelHeight>0.762</panelHeight>
+      <panelThickness>0.0381</panelThickness>
+
+      <energyEdges>22 145</energyEdges>
+
+      <panel x="0.152" y="1" z="0.498"/>
+      <panel x="0.152" y="-1" z="0.498"/>
+      <panel x="0.152" y="1" z="2.476"/>
+      <panel x="0.152" y="-1" z="2.476"/>
+
+      <group loc="top">2 3</group>
+      <group loc="bottom">0 1</group>
+      <group loc="left">1 3</group>
+      <group loc="right">0 2</group>
+      <group loc="all">0 1 2 3</group>
+
+      <samplePeriod units="ms">200</samplePeriod>
+
+      <!-- COLLIMATED  -->
+      <collimated>true</collimated>
+      <sideCollimator>0.0762</sideCollimator>
+      <yFactors>1.2807273207255356 -0.09500537191439079 0.04865208883348547 -0.07766324751545634 0.009480509555481327 -0.6229546361438129 0.004655344964394486 3.0687506454182705 0.010315471527365717</yFactors>
+      <zFactors>-0.023860911910508636 10.171856595064867 -3.7355820161693725 0.18132657003788918 -4.447326620199531 0.1381595982543341 -0.15655920652336364 -0.036703250169062555 1.5093674230073426</zFactors>
+
+    </gammaPanels>
+
+    <neutronPanels>
+      <panelWidth>0.152</panelWidth>
+      <panelHeight>0.762</panelHeight>
+      <panelThickness>0.0381</panelThickness>
+
+      <panel x="0.406" y="1" z="0.568"/>
+      <panel x="0.406" y="-1" z="0.568"/>
+      <panel x="0.406" y="1" z="2.457"/>
+      <panel x="0.406" y="-1" z="2.457"/>
+
+      <group loc="top">2 3</group>
+      <group loc="bottom">0 1</group>
+      <group loc="left">1 3</group>
+      <group loc="right">0 2</group> 
+      <group loc="all">0 1 2 3</group> 
+
+      <samplePeriod units="s">1</samplePeriod>
+    </neutronPanels>
+
+  </lane>
+</ernie:laneDatabase>

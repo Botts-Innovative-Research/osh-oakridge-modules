@@ -1,0 +1,63 @@
+# Common
+occupancyTable: dbo.occupancy
+velocityTable: dbo.velocities
+gammasTable: dbo.gammas
+neutronsTable: dbo.neutrons
+gammaBGTable: dbo.gammaBackground
+neutronBGTable: dbo.neutronBackground
+backgroundErrorsTable: dbo.backgroundErrors
+setupTable: dbo.setup
+tamperFlagTable: dbo.tamperFlags
+
+defaultDatabase: VM250_2017
+
+# Database.connect
+database.connection: jdbc:sqlserver://ernie-sql:1433;instance=MSSQLSERVER;integratedSecurity=false;databaseName={database}
+database.user: test
+database.pwd: t3stl0g1n
+
+# Database.getSegmentDescriptorIds
+getSegmentDescriptorIds.query: SELECT occupancyId FROM {database}.{occupancyTable}
+
+# Database.getRecordKey
+fetchRecordKey.fields: occupancyId, DateTime, siteId, laneId
+fetchRecordKey.query: DECLARE @seg_id INT = ?; SELECT {fetchRecordKey.fields} FROM {database}.{occupancyTable} with(NOLOCK) WHERE occupancyId=@seg_id
+
+# Database.fetchSegmentDescriptor
+fetchSegmentDescriptor.fields: siteId,laneId,DateTime,continuation,lastGB1,lastGB2,lastGB3,lastGB4,neutronBackground,gammaAlarm,neutronAlarm,realOccupancy
+fetchSegmentDescriptor.query: DECLARE @seg_id INT = ?; SELECT {fetchSegmentDescriptor.fields} FROM {database}.{occupancyTable} with(NOLOCK) WHERE occupancyId=@seg_id
+
+# Database.gammaPanelData
+fetchGammaPanelData.fields: G1,G2,G3,G4,alarm
+fetchGammaPanelData.query: DECLARE @seg_id INT = ?; SELECT {fetchGammaPanelData.fields} FROM {database}.{gammasTable} with(NOLOCK) WHERE occupancyId = @seg_id ORDER BY sample_id
+
+# Database.neutronPanelData
+fetchNeutronPanelData.fields: N1,N2,N3,N4,alarm
+fetchNeutronPanelData.query: DECLARE @seg_id INT = ?; SELECT {fetchNeutronPanelData.fields} FROM {database}.{neutronsTable} with(NOLOCK) WHERE occupancyId = @seg_id ORDER BY sample_id
+
+# Database.fetchVelocities
+fetchVelocities.fields: DateTime, mps
+fetchVelocities.query: DECLARE @seg_id INT = ?; SELECT {fetchVelocities.fields} from {database}.{velocityTable} WHERE occupancyId = @seg_id
+
+# Database.selectBackgroundErrors
+fetchBackgroundErrors.fields: gammaHighBackground, gammaLowBackground, neutronHighBackground
+fetchBackgroundErrors.query: DECLARE @seg_id INT = ?; SELECT {fetchBackgroundErrors.fields} FROM {database}.{backgroundErrorsTable} with(NOLOCK) WHERE occupancyId = @seg_id
+
+# Database.selectSetup
+fetchSetup.fields: Intervals, OccupancyHoldin, NSigma
+fetchSetup.query: DECLARE @site_id INT = ?, @lane_id INT = ?; SELECT TOP 1 {fetchSetup.fields} FROM {database}.{setupTable} with(NOLOCK) WHERE siteId = @site_id and laneId = @lane_id group by {fetchSetup.fields} order by count(*) DESC
+
+# Database.findVehicleSegments		Ignore for now, no continuation records present currently in VM250 data
+findVehicleSegments.fields1: Data_Source_ID,RPM_Date_Time,RPM_ID,Vehicle_ID
+findVehicleSegments.query1: SELECT {findVehicleSegments.fields1} FROM {database}.{SegmentDescriptorTable} with(NOLOCK) WHERE Segment_Descriptor_ID={id}
+findVehicleSegments.query2: SELECT Segment_Descriptor_ID FROM {database}.{SegmentDescriptorTable} with(NOLOCK) WHERE Data_Source_ID={dataSourceId} AND RPM_Date_Time>='{date}' AND RPM_Date_Time<='{date2}' AND RPM_ID={rpmId} AND Vehicle_ID={vehicleId}
+
+# Database.selectAlarms
+selectAlarms.query: SELECT occupancyId FROM {database}.{occupancyTable} with(NOLOCK) WHERE gammaAlarm=1 OR neutronAlarm=1
+
+# Database.selectGammaAlarms
+selectGammaAlarms.query: SELECT occupancyId FROM {database}.{occupancyTable} with(NOLOCK) WHERE gammaAlarm=1
+
+# Database.selectNeutronAlarms
+selectNeutronAlarms.query: SELECT occupancyId FROM {database}.{occupancyTable} with(NOLOCK) WHERE neutronAlarm=1
+
