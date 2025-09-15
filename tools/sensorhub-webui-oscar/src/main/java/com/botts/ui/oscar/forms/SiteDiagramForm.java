@@ -1,21 +1,17 @@
 package com.botts.ui.oscar.forms;
 
 
-import com.botts.impl.system.database.OccupancyVideoPurgePolicyConfig;
 import com.vaadin.event.MouseEvents;
 import com.vaadin.server.FileResource;
-import com.vaadin.ui.Component;
-import com.vaadin.ui.HorizontalLayout;
+import com.vaadin.ui.*;
 import com.vaadin.ui.Image;
+import com.vaadin.ui.Label;
 import com.vaadin.v7.data.Property;
 import com.vaadin.v7.ui.Field;
-import org.sensorhub.ui.FieldWrapper;
 import org.sensorhub.ui.GenericConfigForm;
-import org.sensorhub.ui.SystemDriverDatabaseConfigForm;
-import org.sensorhub.ui.data.BaseProperty;
 
+import java.awt.*;
 import java.io.File;
-import java.util.Map;
 
 /**
  * @author
@@ -27,34 +23,37 @@ public class SiteDiagramForm extends GenericConfigForm {
     protected Field<?> buildAndBindField(String label, String propId, Property<?> prop) {
         Field<?> field = super.buildAndBindField(label, propId, prop);
 
-        if (propId.endsWith("location") || propId.equals("location")) {
-           return addImage(field, "");
+        if (propId.equals("location.lon")) {
+            var image = addImage("web/sitemaps/image.png");
+            super.addComponents(image);
         }
 
         return field;
     }
 
-    private Field<?> addImage(Field<?> field, String imageUrl){
+    private VerticalLayout addImage(String imageUrl){
+        VerticalLayout layout = new VerticalLayout();
+        final Image siteMap = new Image();
+        siteMap.setSource(new FileResource(new File("web/sitemaps/image.png")));
 
-        return new FieldWrapper<Object>((Field<Object>) field){
+        HorizontalLayout coordinateLayout = new HorizontalLayout();
 
-            @Override
-            protected Component initContent()
-            {
-                HorizontalLayout layout = new HorizontalLayout();
-                layout.setSpacing(true);
+        Label pixelCoordinatesTitle = new Label("Coordinates: ");
+        Label pixelCoordinates = new Label("");
+        coordinateLayout.addComponents(pixelCoordinatesTitle, pixelCoordinates);
+        layout.addComponent(coordinateLayout);
+//        layout.addComponent(new Label("Clicked at x: " + ", y: " ));
 
-                Image image = new Image();
-                image.setSource(new FileResource(new File("image.png")));
-                image.addClickListener((MouseEvents.ClickListener) event -> {
-                    var lon = event.getRelativeX();
-                    var lat = event.getRelativeY();
+        siteMap.addClickListener((MouseEvents.ClickListener) event -> {
+            var lon = event.getRelativeX();
+            var lat = event.getRelativeY();
+            System.out.println(lon + " " + lat);
 
-                });
+            pixelCoordinates.setValue(lon + ", " + lat);
 
-                layout.addComponent(image);
-                return layout;
-            }
-        };
+        });
+
+        layout.addComponent(siteMap);
+        return layout;
     }
 }
