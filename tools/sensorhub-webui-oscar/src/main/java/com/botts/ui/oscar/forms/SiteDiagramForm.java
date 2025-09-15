@@ -27,8 +27,7 @@ public class SiteDiagramForm extends GenericConfigForm {
     protected Field<?> buildAndBindField(String label, String propId, Property<?> prop) {
         Field<?> field = super.buildAndBindField(label, propId, prop);
 
-        if (propId.endsWith("box_UL") || propId.equals("box_UL")) {
-            System.out.println("box ll");
+        if (propId.endsWith("location") || propId.equals("location")) {
            return addImage(field, "");
         }
 
@@ -46,7 +45,7 @@ public class SiteDiagramForm extends GenericConfigForm {
                 layout.setSpacing(true);
 
                 Image image = new Image();
-                image.setSource(new FileResource(new File("SiteMap.png")));
+                image.setSource(new FileResource(new File("image.png")));
                 image.addClickListener((MouseEvents.ClickListener) event -> {
                     var lon = event.getRelativeX();
                     var lat = event.getRelativeY();
