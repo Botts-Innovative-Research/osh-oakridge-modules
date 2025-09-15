@@ -50,7 +50,7 @@ public class SiteDiagramForm extends GenericConfigForm {
             System.out.println(lon + " " + lat);
 
             pixelCoordinates.setValue(lon + ", " + lat);
-
+            
         });
 
         layout.addComponent(siteMap);
