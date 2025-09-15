@@ -23,6 +23,7 @@ import net.opengis.swe.v20.DataComponent;
 import org.sensorhub.api.command.*;
 import org.sensorhub.impl.command.AbstractControlInterface;
 import org.vast.swe.SWEHelper;
+import org.vast.util.TimeExtent;
 
 import java.io.File;
 import java.time.Instant;
@@ -34,16 +35,16 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
     public static final String LABEL = "Request Report";
     public static final String DESCRIPTION = "Control to request operations, performance, and maintenance reports";
 
+    public static final String path = "files/reports/";
+
     DataComponent commandStructure;
     DataComponent resultStructure;
     SWEHelper fac;
-
-
+    long startTime;
 
     protected RequestReportControl(OSCARSystem parent) {
         super(NAME, parent);
 
-        // TODO: Add additional parameters for lane UID, event ID, etc.
         commandStructure = fac.createRecord()
                 .name(NAME)
                 .label(LABEL)
@@ -83,6 +84,11 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
     @Override
     public CompletableFuture<ICommandStatus> submitCommand(ICommandData command) {
+        long now = System.currentTimeMillis();
+
+        if(startTime == 0)
+            this.startTime = now;
+
         DataBlock paramData = command.getParams();
         Instant start = paramData.getTimeStamp(0);
         Instant end = paramData.getTimeStamp(1);
@@ -90,7 +96,6 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
         String laneId = paramData.getStringValue(3);
         String eventId = paramData.getStringValue(4);
 
-        // TODO: Check if report of this type and during this time frame already exists in the filesystem
 
         Report report = null;
 
@@ -98,25 +103,25 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
         switch (type) {
             case LANE -> {
-                file = new File("files/reports/" + type + "_" + laneId + "_" + start + "_" + end + ".pdf");
+                file = new File(path + type + "_" + laneId + "_" + start + "_" + end + ".pdf");
 
                 if (!file.exists())
                     report = new LaneReport(start, end, laneId);
             }
             case RDS_SITE -> {
-                file = new File("files/reports/" + type + "_" + start + "_" + end + ".pdf");
+                file = new File(path + type + "_" + start + "_" + end + ".pdf");
 
                 if (!file.exists())
                     report = new RDSReport(start, end);
             }
             case EVENT ->  {
-                file = new File("files/reports/" + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
+                file = new File(path + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
 
                 if (!file.exists())
                     report = new EventReportTodo(start, end, eventId, laneId);
             }
             case ADJUDICATION ->   {
-                file = new File("files/reports/" + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
+                file = new File(path + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
                 if (!file.exists())
                     report = new AdjudicationReport(start, end, eventId, laneId);
             }
@@ -125,21 +130,28 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
         if (report == null) System.out.println("Report not found");
 
+
         String url = report.generate();
 
+        ICommandStatus status = null;
 
-
-        // if report is invalid then send FAILED command status
-
-        // TODO: Build command result
         DataBlock resultData = resultStructure.createDataBlock();
         resultData.setStringValue(url);
+
         ICommandResult result = CommandResult.withData(resultData);
 
-        // TODO: Build status
-        ICommandStatus status = new CommandStatus.Builder()
-                .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
-                .withResult(result).build();
+        if (url == null) {
+            status = new CommandStatus.Builder()
+                    .withStatusCode(ICommandStatus.CommandStatusCode.FAILED)
+                    .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
+                    .withResult(result).build();
+        } else {
+            status = new CommandStatus.Builder()
+                    .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
+                    .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
+                    .withResult(result).build();
+
+        }
 
         return CompletableFuture.completedFuture(status);
     }
