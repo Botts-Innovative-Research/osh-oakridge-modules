@@ -27,6 +27,7 @@ public class SiteDiagramForm extends GenericConfigForm {
     protected Field<?> buildAndBindField(String label, String propId, Property<?> prop) {
         Field<?> field = super.buildAndBindField(label, propId, prop);
 
+
         if (propId.endsWith("location") || propId.equals("location")) {
            return addImage(field, "");
         }
