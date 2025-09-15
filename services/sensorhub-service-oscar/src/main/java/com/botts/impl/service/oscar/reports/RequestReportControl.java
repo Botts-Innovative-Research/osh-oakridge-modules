@@ -16,12 +16,15 @@
 package com.botts.impl.service.oscar.reports;
 
 import com.botts.impl.service.oscar.OSCARSystem;
+import com.botts.impl.service.oscar.reports.helpers.ReportType;
+import com.botts.impl.service.oscar.reports.types.*;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import org.sensorhub.api.command.*;
 import org.sensorhub.impl.command.AbstractControlInterface;
 import org.vast.swe.SWEHelper;
 
+import java.io.File;
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 
@@ -35,13 +38,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
     DataComponent resultStructure;
     SWEHelper fac;
 
-    enum ReportType {
-        RDS_SITE,
-        LANE,
-        OPERATIONS,
-        EVENT,
-        SECONDARY_INSPECTIONS
-    }
+
 
     protected RequestReportControl(OSCARSystem parent) {
         super(NAME, parent);
@@ -108,8 +105,43 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 //        String eventId = paramData.getStringValue(4);
 
         // TODO: Check if report of this type and during this time frame already exists in the filesystem
-        // Report report = getReport(start, end, type);
-        // if report == null then generate new report
+
+        Report report = null;
+
+        File file;
+
+        switch (type) {
+            case LANE -> {
+                file = new File("files/reports/" + type + "_" + laneId + "_" + start + "_" + end + ".pdf");
+
+                if (!file.exists())
+                    report = new LaneReport(start, end, laneId);
+            }
+            case RDS_SITE -> {
+                file = new File("files/reports/" + type + "_" + start + "_" + end + ".pdf");
+
+                if (!file.exists())
+                    report = new RDSReport(start, end);
+            }
+            case EVENT ->  {
+                file = new File("files/reports/" + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
+
+                if (!file.exists())
+                    report = new EventReportTodo(start, end, eventId, laneId);
+            }
+            case ADJUDICATION ->   {
+                file = new File("files/reports/" + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
+                if (!file.exists())
+                    report = new AdjudicationReport(start, end, eventId, laneId);
+            }
+            default -> report = null;
+        }
+
+        if (report == null) System.out.println("Report not found");
+
+        String url = report.generate();
+
+
 
         // if report is invalid then send FAILED command status
 

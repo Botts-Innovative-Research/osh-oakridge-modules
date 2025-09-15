@@ -10,22 +10,23 @@ import java.io.File;
 import java.io.IOException;
 import java.time.Instant;
 
-public class LaneReport extends Report {
+public class EventReportTodo extends Report {
 
-    String reportTitle = "Lane Report";
+    String reportTitle = "Event Report";
+
     Document document;
     PdfWriter pdfWriter;
     PdfDocument pdfDocument;
-    String pdfFileName;
 
-    public LaneReport(Instant startTime, Instant endTime, String laneId) {
+    String pdfFileName;
+    public EventReportTodo(Instant startTime, Instant endTime, String eventID, String laneId) {
         try {
-            pdfFileName = ReportType.LANE.name() + "_" + laneId + "_" + startTime + "_"+ endTime + ".pdf";
-            File file = new File("files/reports/" + pdfFileName);
+
+            pdfFileName = ReportType.EVENT.name()+ "_" + laneId + "_" + eventID + "_" + startTime + "_"+ endTime + ".pdf";
+            File file = new File( "files/reports/" + pdfFileName);
             file.getParentFile().mkdirs();
 
             pdfWriter  = new PdfWriter(file);
-
             pdfDocument = new PdfDocument(pdfWriter);
             document = new Document(pdfDocument);
         } catch (IOException e) {
@@ -35,26 +36,25 @@ public class LaneReport extends Report {
 
     @Override
     public String generate() {
-
         addHeader();
 
         // check for data before calling these
-        addAlarmStatistics();
-        addFaultStatistics();
-        addStatisics();
-        addOccupancyStatistics();
+//        addAlarmStatistics();
+//        addFaultStatistics();
+//        addStatistics();
+//        addOccupancyStatistics();
 
         document.close();
         pdfDocument.close();
 
         return pdfFileName;
-
     }
 
     private void addHeader(){
         document.add(new Paragraph(reportTitle).setFontSize(16).simulateBold());
-        document.add(new Paragraph("Lane Report").setFontSize(16).simulateBold());
-        document.add(new Paragraph("Lane Name: " + "TODO: lane name").setFontSize(12));
+        document.add(new Paragraph("Event Report").setFontSize(16).simulateBold());
+        document.add(new Paragraph("Lane ID:" + "TODO: lane name").setFontSize(12));
+        document.add(new Paragraph("Event ID:" + "TODO: lane name").setFontSize(12));
         document.add(new Paragraph("\n"));
     }
 
@@ -76,8 +76,8 @@ public class LaneReport extends Report {
 
     }
 
-    private void addStatisics(){
-        document.add(new Paragraph("Statisics").setFontSize(12));
+    private void addStatistics(){
+        document.add(new Paragraph("Statistics").setFontSize(12));
         //        addTableToPdf(alarmOccupancyHeaders, null);
 
     }

@@ -1,15 +1,9 @@
 package com.botts.impl.service.oscar.reports.types;
 
+import com.botts.impl.service.oscar.reports.helpers.ReportType;
 import com.itextpdf.layout.Document;
 
 public abstract class Report {
-    Document document;
-    String startTime;
-    String endTime;
 
-    public Report(Document document, String startTime,  String endTime) {
-        this.document = document;
-    }
-
-    public abstract void generate();
+    public abstract String generate();
 }
