@@ -13,6 +13,8 @@
  ******************************************************************************/
 
 import com.botts.impl.process.occupancy.OccupancyProcessModule;
+import com.botts.impl.sensor.rapiscan.EMLConfig;
+import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.system.lane.Descriptor;
 import com.botts.impl.system.lane.LaneSystem;
@@ -30,6 +32,7 @@ import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.processing.AbstractProcessModule;
 //import org.sensorhub.impl.sensor.fakeweather.FakeWeatherConfig;
 //import org.sensorhub.impl.sensor.fakeweather.FakeWeatherSensor;
+import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.utils.Async;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -81,6 +84,15 @@ public class LaneTests {
         config.laneOptionsConfig.rpmConfig.remotePort = rpmPort;
         config.uniqueID = rpmHost + rpmPort;
         config.name = "Lane " + rpmPort;
+
+        List<FFMpegConfig> ffmpegList = new ArrayList();
+        ffmpegList.add(new CustomCameraConfig());
+
+//        http://66.27.116.187/mjpg/video.mjpg
+        config.laneOptionsConfig.ffmpegConfig = ffmpegList;
+        config.laneOptionsConfig.ffmpegConfig.get(0).remoteHost = "66.27.116.187";
+        ((CustomCameraConfig) config.laneOptionsConfig.ffmpegConfig.get(0)).streamPath = "/mjpg/video.mjpg";
+
         return config;
     }
 
@@ -104,8 +116,25 @@ public class LaneTests {
     }
 
     @Test
-    public void test25Rapiscan() {
+    public void test25RapiscanEML() throws SensorHubException {
 
+        for (int i = 1; i < 25; i++) {
+            int port = 1600 + i;
+            var config = createLaneConfig(true, RPM_HOST, port);
+
+            ((RapiscanRPMConfig) config.laneOptionsConfig.rpmConfig).emlConfig = new EMLConfig();
+            ((RapiscanRPMConfig) config.laneOptionsConfig.rpmConfig).emlConfig.emlEnabled = true;
+            testLoadAndStart(config);
+        }
+    }
+
+    @Test
+    public void test25Rapiscan() throws SensorHubException {
+        for (int i = 1; i < 25; i++) {
+            int port = 1600 + i;
+            var config = createLaneConfig(true, RPM_HOST, port);
+            testLoadAndStart(config);
+        }
     }
 
 
