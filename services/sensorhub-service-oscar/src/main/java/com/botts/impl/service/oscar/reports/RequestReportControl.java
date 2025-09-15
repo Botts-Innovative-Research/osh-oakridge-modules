@@ -42,7 +42,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
     SWEHelper fac;
     long startTime;
 
-    protected RequestReportControl(OSCARSystem parent) {
+    public RequestReportControl(OSCARSystem parent) {
         super(NAME, parent);
         fac = new SWEHelper();
 
