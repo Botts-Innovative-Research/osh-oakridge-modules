@@ -42,7 +42,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
     SWEHelper fac;
     long startTime;
 
-    public RequestReportControl(OSCARSystem parent) {
+    protected RequestReportControl(OSCARSystem parent) {
         super(NAME, parent);
         fac = new SWEHelper();
 
@@ -99,7 +99,6 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             ReportType type = ReportType.valueOf(paramData.getStringValue(2));
             String laneId = paramData.getStringValue(3);
             String eventId = paramData.getStringValue(4);
-
 
             Report report = null;
 
