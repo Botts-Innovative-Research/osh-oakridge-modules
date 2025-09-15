@@ -42,11 +42,10 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
     SWEHelper fac;
     long startTime;
 
-    protected RequestReportControl(OSCARSystem parent) {
+    public RequestReportControl(OSCARSystem parent) {
         super(NAME, parent);
         fac = new SWEHelper();
 
-        // TODO: Add additional parameters for lane UID, event ID, etc.
         commandStructure = fac.createRecord()
                 .name(NAME)
                 .label(LABEL)
@@ -91,80 +90,79 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
             long now = System.currentTimeMillis();
 
-            if(startTime == 0)
+            if (startTime == 0)
                 this.startTime = now;
 
-//        DataBlock paramData = command.getParams();
-//        Instant start = paramData.getTimeStamp(0);
-//        Instant end = paramData.getTimeStamp(1);
-//        ReportType type = ReportType.valueOf(paramData.getStringValue(2));
-//        String laneId = paramData.getStringValue(3);
-//        String eventId = paramData.getStringValue(4);
+            DataBlock paramData = command.getParams();
+            Instant start = paramData.getTimeStamp(0);
+            Instant end = paramData.getTimeStamp(1);
+            ReportType type = ReportType.valueOf(paramData.getStringValue(2));
+            String laneId = paramData.getStringValue(3);
+            String eventId = paramData.getStringValue(4);
 
-        // TODO: Check if report of this type and during this time frame already exists in the filesystem
 
-        Report report = null;
+            Report report = null;
 
-        File file;
+            File file;
 
-        switch (type) {
-            case LANE -> {
-                file = new File(path + type + "_" + laneId + "_" + start + "_" + end + ".pdf");
+            switch (type) {
+                case LANE -> {
+                    file = new File(path + type + "_" + laneId + "_" + start + "_" + end + ".pdf");
 
-                if (!file.exists())
-                    report = new LaneReport(start, end, laneId);
+                    if (!file.exists())
+                        report = new LaneReport(start, end, laneId);
+                }
+                case RDS_SITE -> {
+                    file = new File(path + type + "_" + start + "_" + end + ".pdf");
+
+                    if (!file.exists())
+                        report = new RDSReport(start, end);
+                }
+                case EVENT -> {
+                    file = new File(path + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
+
+                    if (!file.exists())
+                        report = new EventReportTodo(start, end, eventId, laneId);
+                }
+                case ADJUDICATION -> {
+                    file = new File(path + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
+                    if (!file.exists())
+                        report = new AdjudicationReport(start, end, eventId, laneId);
+                }
+                default -> report = null;
             }
-            case RDS_SITE -> {
-                file = new File(path + type + "_" + start + "_" + end + ".pdf");
 
-                if (!file.exists())
-                    report = new RDSReport(start, end);
-            }
-            case EVENT ->  {
-                file = new File(path + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
-
-                if (!file.exists())
-                    report = new EventReportTodo(start, end, eventId, laneId);
-            }
-            case ADJUDICATION ->   {
-                file = new File(path + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
-                if (!file.exists())
-                    report = new AdjudicationReport(start, end, eventId, laneId);
-            }
-            default -> report = null;
-        }
-
-        if (report == null) System.out.println("Report not found");
+            if (report == null) System.out.println("Report not found");
 
 
-        String url = report.generate();
+            String url = report.generate();
 
-        ICommandStatus status = null;
+            ICommandStatus status = null;
 
-        // if report is invalid then send FAILED command status
+            // if report is invalid then send FAILED command status
 
             // TODO: Build command result
             DataBlock resultData = resultStructure.createDataBlock();
             resultData.setStringValue(url);
             ICommandResult result = CommandResult.withData(resultData);
 
-        if (url == null) {
-            status = new CommandStatus.Builder()
-                    .withCommand(command.getID())
-                    .withStatusCode(ICommandStatus.CommandStatusCode.FAILED)
-                    .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
-                    .withResult(result).build();
-        } else {
-            status = new CommandStatus.Builder()
-                    .withCommand(command.getID())
-                    .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
-                    .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
-                    .withResult(result)
-                    .build();
-        }
+            if (url == null) {
+                status = new CommandStatus.Builder()
+                        .withCommand(command.getID())
+                        .withStatusCode(ICommandStatus.CommandStatusCode.FAILED)
+                        .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
+                        .withResult(result).build();
+            } else {
+                status = new CommandStatus.Builder()
+                        .withCommand(command.getID())
+                        .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
+                        .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
+                        .withResult(result)
+                        .build();
+            }
 
-        return status;
-    });
-}
+            return status;
+        });
+    }
 
 }
