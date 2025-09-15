@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<recordManipulator
+	xmlns="http://ernie.llnl.gov/vm250"
+	xmlns:ernie="http://ernie.llnl.gov"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation= 
+	"http://ernie.llnl.gov http://ernie.llnl.gov/schema/ernie.xsd
+	http://ernie.llnl.gov/vm250 http://ernie.llnl.gov/vm250/schema/ernie-vm250.xsd"
+	>
+
+	<imports>
+		<ernie:shieldingModel extern="rpm8ShieldingFe.xml" id="shielding" />
+	</imports>
+
+	<applyShielding>true</applyShielding>
+
+  <nominalLaneWidth>4.0417</nominalLaneWidth>
+
+	<passengerAreaModel> 2 2 0 0 0.5</passengerAreaModel>
+
+	<cargoModel> 0 0 0.05 2 1</cargoModel>
+	<cargoModel> 0 0 0.07 2 1</cargoModel>
+	<cargoModel> 0 0 0.1 2 1</cargoModel>
+	<cargoModel> 0 0 0.2 2 1</cargoModel>
+
+	<shieldingModel ref_id="shielding"/>
+	<sourceLibrary path="vm250"/>
+
+</recordManipulator>
+

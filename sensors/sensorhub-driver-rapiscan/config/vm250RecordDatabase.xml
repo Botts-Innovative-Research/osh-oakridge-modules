@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<vm250:recordDatabase
+  xmlns="http://ernie.llnl.gov"
+  xmlns:vm250="http://ernie.llnl.gov/vm250"
+  xmlns:ernie="http://ernie.llnl.gov"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation= 
+	"http://ernie.llnl.gov http://ernie.llnl.gov/schema/ernie.xsd
+	http://ernie.llnl.gov/vm250 http://ernie.llnl.gov/vm250/schema/ernie-vm250.xsd"
+>
+  <vm250:imports>
+    <ernie:laneDatabase extern="vm250LaneDatabase.xml" id="laneDatabase"/>
+  </vm250:imports>
+
+  <vm250:queries extern="vm250Queries.txt" />
+
+  <vm250:lanes ref_id="laneDatabase" />
+
+</vm250:recordDatabase>

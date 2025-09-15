@@ -15,7 +15,7 @@ public class ModbusTCPCommProviderConfig extends CommProviderConfig<ModbusTCPCon
     public RobustIPConnectionConfig connection = new RobustIPConnectionConfig();
 
     public ModbusTCPCommProviderConfig() {
-        this.moduleClass = TCPCommProvider.class.getCanonicalName();
+        this.moduleClass = ModbusTCPCommProvider.class.getCanonicalName();
         this.protocol = new ModbusTCPConfig();
     }
 }
