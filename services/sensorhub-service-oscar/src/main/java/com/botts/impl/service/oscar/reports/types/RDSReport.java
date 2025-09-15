@@ -1,12 +1,18 @@
 package com.botts.impl.service.oscar.reports.types;
 
+import com.botts.impl.service.oscar.reports.helpers.ReportType;
+import com.itextpdf.kernel.pdf.PdfDocument;
+import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
+
+import java.io.File;
+import java.io.IOException;
+import java.time.Instant;
 
 public class RDSReport extends Report {
     String reportTitle = "RDS Site Report";
 
-    String siteId = "";
 
     String[] alarmOccupancyHeaders =  {
             "Neutron", "Gamma", "Gamma & Neutron", "EML Suppressed", "Total Occupancies",  "Daily Occupancy Average", "Speed (Avg)", "Alarm Rate", "EML Alarm Rate"
@@ -18,13 +24,29 @@ public class RDSReport extends Report {
 
 
     Document document;
+    PdfWriter pdfWriter;
+    PdfDocument pdfDocument;
+    String pdfFileName;
 
-    public RDSReport(Document document, String startTime, String endTime) {
-        super(document, startTime, endTime);
+    String siteId;
+
+    public RDSReport(Instant startTime, Instant endTime) {
+        try {
+            pdfFileName = ReportType.RDS_SITE.name()+ "_" + startTime + "_"+ endTime + ".pdf";
+            File file = new File("files/reports/" + pdfFileName);
+            file.getParentFile().mkdirs();
+
+            pdfWriter  = new PdfWriter(file);
+            pdfDocument = new PdfDocument(pdfWriter);
+            document = new Document(pdfDocument);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
-    public void generate(){
+    public String generate(){
+
         addHeader();
 
         addAlarmStatistics();
@@ -32,6 +54,12 @@ public class RDSReport extends Report {
         addStatistics();
         addOccupancyStatistics();
         addDriveStorageAvailability();
+
+        document.close();
+
+        pdfDocument.close();
+
+        return pdfFileName;
 
     }
 
