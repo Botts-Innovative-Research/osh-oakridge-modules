@@ -73,9 +73,10 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                         .description("Identifier of the event requested"))
                 .build();
 
-        // TODO: Either have 2 urls for local and remote URL, or just handle this in client
         // e.g. localhost:8282/reports/report123.pdf vs. public.ip:8282/reports/report123.pdf
-        resultStructure = fac.createText().name("reportUrl").build();
+        resultStructure = fac.createRecord().name("result")
+                .addField("reportUrl", fac.createText())
+                .build();
     }
 
     @Override
