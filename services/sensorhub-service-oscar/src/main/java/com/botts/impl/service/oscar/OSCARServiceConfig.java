@@ -18,6 +18,7 @@ package com.botts.impl.service.oscar;
 import com.botts.impl.service.oscar.siteinfo.SiteDiagramConfig;
 import com.botts.impl.service.oscar.video.VideoRetentionConfig;
 import org.sensorhub.api.config.DisplayInfo;
+import org.sensorhub.api.database.IObsSystemDatabaseModule;
 import org.sensorhub.api.service.ServiceConfig;
 
 public class OSCARServiceConfig extends ServiceConfig {
@@ -33,7 +34,9 @@ public class OSCARServiceConfig extends ServiceConfig {
     public String nodeId;
 
     @DisplayInfo.Required
+    @DisplayInfo.ModuleType(IObsSystemDatabaseModule.class)
+    @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.MODULE_ID)
     @DisplayInfo(desc = "Database connected to this OSCAR service")
-    public String databaseId;
+    public String databaseID;
 
 }

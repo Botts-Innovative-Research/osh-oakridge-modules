@@ -15,6 +15,9 @@
 
 package com.botts.impl.service.oscar;
 
+import com.botts.impl.service.oscar.clientconfig.ClientConfigOutput;
+import com.botts.impl.service.oscar.reports.RequestReportControl;
+import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.module.AbstractModule;
 
@@ -28,12 +31,19 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         // TODO: Add or update OSCAR system and client config system
         OSCARSystem system = new OSCARSystem(config.nodeId);
 
-        // TODO: Check that multiple restarts / reloads doesn't overwrite OSCAR system
-        getParentHub().getSystemDriverRegistry().register(system);
+        RequestReportControl reportControl = new RequestReportControl(system);
+        system.addControlInput(reportControl);
 
+        SiteInfoOutput siteInfoOutput = new SiteInfoOutput(system);
+        system.addOutput(siteInfoOutput, false);
+
+        ClientConfigOutput clientConfigOutput = new ClientConfigOutput(system);
+        system.addOutput(clientConfigOutput, false);
         // TODO: Add or update report generation control interface
 
         // TODO: Add or update site info datastream
+        system.updateSensorDescription();
+        getParentHub().getSystemDriverRegistry().register(system);
     }
 
     @Override
@@ -41,9 +51,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         super.doStart();
 
         // TODO: Publish latest site info observation
-
-        getParentHub().getSystemDriverRegistry().getDatabase("urn:osh:system:lane:1").getObservationStore();
-        getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().get("sensorhub").getParameters();
 
     }
 

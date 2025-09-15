@@ -22,6 +22,7 @@ import net.opengis.swe.v20.DataEncoding;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.vast.data.TextEncodingImpl;
+import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
 
 public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
@@ -34,8 +35,10 @@ public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
     DataEncoding recordEncoding;
     GeoPosHelper fac;
 
-    protected SiteInfoOutput(OSCARSystem parentSensor) {
+    public SiteInfoOutput(OSCARSystem parentSensor) {
         super(NAME, parentSensor);
+
+        fac = new GeoPosHelper();
 
         this.recordStructure = fac.createRecord()
                 .name(NAME)

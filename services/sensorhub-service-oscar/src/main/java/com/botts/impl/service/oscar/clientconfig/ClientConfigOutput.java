@@ -20,6 +20,7 @@ import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.vast.data.TextEncodingImpl;
+import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
 
 public class ClientConfigOutput extends AbstractSensorOutput<OSCARSystem> {
@@ -30,10 +31,12 @@ public class ClientConfigOutput extends AbstractSensorOutput<OSCARSystem> {
 
     DataComponent recordStructure;
     DataEncoding recordEncoding;
-    GeoPosHelper fac;
+    SWEHelper fac;
 
-    protected ClientConfigOutput(OSCARSystem parentSensor) {
+    public ClientConfigOutput(OSCARSystem parentSensor) {
         super(NAME, parentSensor);
+
+        fac = new SWEHelper();
 
         this.recordStructure = fac.createRecord()
                 .name(NAME)
