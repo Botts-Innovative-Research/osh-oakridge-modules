@@ -13,14 +13,13 @@
  ******************************************************************************/
 
 import com.botts.impl.process.occupancy.OccupancyProcessModule;
+import com.botts.impl.sensor.rapiscan.EMLConfig;
+import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.system.lane.Descriptor;
 import com.botts.impl.system.lane.LaneSystem;
 import com.botts.impl.system.lane.config.*;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.FixMethodOrder;
-import org.junit.Test;
+import org.junit.*;
 import org.junit.runners.MethodSorters;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.common.SensorHubException;
@@ -29,9 +28,11 @@ import org.sensorhub.impl.SensorHub;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
 import org.sensorhub.impl.database.system.SystemDriverDatabaseConfig;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
+import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.processing.AbstractProcessModule;
 //import org.sensorhub.impl.sensor.fakeweather.FakeWeatherConfig;
 //import org.sensorhub.impl.sensor.fakeweather.FakeWeatherSensor;
+import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.utils.Async;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,272 +54,94 @@ import static org.junit.Assert.*;
 public class LaneTests {
     private static final Logger log = LoggerFactory.getLogger(LaneTests.class);
     // Constants
-    private String LANE_DATABASE_ID = "lanedb1";
     private String RPM_UID = "rpm1";
     private String RPM_NAME = "My RPM";
     private String LANE_UID = "1";
     private String LANE_NAME = "Test Lane";
-    private String RAPISCAN_HOST = "localhost";
-    private int RAPISCAN_PORT = 1600;
+
+    private static final String RPM_HOST = "192.168.1.211";
+    private static final int RAPISCAN_PORT = 1601;
+    private static final int ASPECT_PORT = 502;
 
     // Used for tests
     private SensorHub hub;
+    private ModuleRegistry reg;
     private LaneSystem lane;
     private List<LaneSystem> multipleLanes;
-    private SystemDriverDatabase database;
-    private File dbFile;
-
-    // For specific process test
-    private Flow.Subscription processSub;
-    private int numOutputsBefore;
 
     @Before
     public void setUp() throws Exception {
-        // Create temp file to use with System Driver Database
-        dbFile = File.createTempFile("testlanedb", ".dat");
-        dbFile.deleteOnExit();
-
         hub = new SensorHub();
         hub.start();
+        reg = hub.getModuleRegistry();
+    }
 
-        database = loadSystemDriverDatabase(hub);
-        assertNotNull(database);
-        assertNull(database.getCurrentError());
-        assertEquals(database.getCurrentState(), ModuleEvent.ModuleState.STARTED);
+    private LaneConfig createLaneConfig(boolean isRapiscan, String rpmHost, int rpmPort) throws SensorHubException {
+        LaneConfig config = (LaneConfig) reg.createModuleConfig(new Descriptor());
+        config.laneOptionsConfig = new LaneOptionsConfig();
+        config.laneOptionsConfig.rpmConfig = isRapiscan ? new RapiscanRPMConfig() : new AspectRPMConfig();
+        config.laneOptionsConfig.rpmConfig.remoteHost = rpmHost;
+        config.laneOptionsConfig.rpmConfig.remotePort = rpmPort;
+        config.uniqueID = rpmHost + rpmPort;
+        config.name = "Lane " + rpmPort;
 
-//        lane = loadLaneModule(hub, "x");
-        assertNotNull(lane);
-        assertNull(lane.getCurrentError());
-        assertEquals(lane.getCurrentState(), ModuleEvent.ModuleState.LOADED);
-        startLaneAndWaitForStarted(lane);
-        assertEquals(lane.getCurrentState(), ModuleEvent.ModuleState.STARTED);
+        List<FFMpegConfig> ffmpegList = new ArrayList();
+        ffmpegList.add(new CustomCameraConfig());
 
-//        multipleLanes = new ArrayList<>();
-//        for (int i = 0; i < 20; i++) {
-//            multipleLanes.add(loadLaneModule(hub, "" + i));
-//        }
-//
-//        for (LaneSystem lane : multipleLanes) {
-//            hub.getModuleRegistry().initModule(lane.getLocalID());
-//            lane.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
-//            hub.getModuleRegistry().startModuleAsync(lane);
-//        }
-//
-//        for (LaneSystem lane : multipleLanes) {
-//            lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-//        }
+//        http://66.27.116.187/mjpg/video.mjpg
+        config.laneOptionsConfig.ffmpegConfig = ffmpegList;
+        config.laneOptionsConfig.ffmpegConfig.get(0).remoteHost = "66.27.116.187";
+        ((CustomCameraConfig) config.laneOptionsConfig.ffmpegConfig.get(0)).streamPath = "/mjpg/video.mjpg";
+
+        return config;
+    }
+
+    private void testLoadAndStart(LaneConfig config) throws SensorHubException {
+        LaneSystem lane = (LaneSystem) reg.loadModule(config);
+        reg.startModule(lane.getLocalID());
+        boolean isStarted = lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+        Assert.assertTrue(isStarted);
     }
 
     @Test
-    public void testLaneCreatesRPMModule() throws SensorHubException {
-        assertFalse(lane.getMembers().isEmpty());
+    public void testSingleRapiscan() throws SensorHubException {
+        var config = createLaneConfig(true, RPM_HOST, RAPISCAN_PORT);
+        testLoadAndStart(config);
     }
 
     @Test
-    public void testMultipleLanesCreateRPMModules() throws SensorHubException {
-        boolean failed = false;
-        for (LaneSystem lane : multipleLanes) {
-            lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+    public void testSingleAspect() throws SensorHubException {
+        var config = createLaneConfig(false, RPM_HOST, ASPECT_PORT);
+        testLoadAndStart(config);
+    }
+
+    @Test
+    public void test25RapiscanEML() throws SensorHubException {
+
+        for (int i = 1; i < 25; i++) {
+            int port = 1600 + i;
+            var config = createLaneConfig(true, RPM_HOST, port);
+
+            ((RapiscanRPMConfig) config.laneOptionsConfig.rpmConfig).emlConfig = new EMLConfig();
+            ((RapiscanRPMConfig) config.laneOptionsConfig.rpmConfig).emlConfig.emlEnabled = true;
+            testLoadAndStart(config);
         }
+    }
 
-        for (LaneSystem lane : multipleLanes) {
-            if (lane.getMembers().isEmpty())
-                failed = true;
-            break;
+    @Test
+    public void test25Rapiscan() throws SensorHubException {
+        for (int i = 1; i < 25; i++) {
+            int port = 1600 + i;
+            var config = createLaneConfig(true, RPM_HOST, port);
+            testLoadAndStart(config);
         }
-        assertFalse(failed);
     }
 
-    @Test
-    public void testProcessStarted() throws SensorHubException, TimeoutException {
-        AbstractProcessModule<?> processModule = hub.getModuleRegistry().getModuleByType(OccupancyProcessModule.class);
-        Async.waitForCondition(() -> processModule.getCurrentState() == ModuleEvent.ModuleState.STARTED, 500, 20000);
-        System.out.println("Process started");
-    }
-
-    @Test
-    public void testAllProcessesStarted() throws TimeoutException {
-        List<OccupancyProcessModule> processModules = hub.getModuleRegistry().getLoadedModules(OccupancyProcessModule.class).stream().toList();
-        System.out.println(processModules.size());
-        for (OccupancyProcessModule processModule : processModules) {
-            Async.waitForCondition(() -> processModule.getCurrentState() == ModuleEvent.ModuleState.STARTED, 500, 20000);
-            System.out.println("Process " + processModule.getName() + " started");
-        }
-        System.out.println("All processes started");
-    }
-
-    @Test
-    public void testAllProcessesCreated() throws SensorHubException {
-        var processModules = hub.getModuleRegistry().getLoadedModules(OccupancyProcessModule.class);
-        var lanes = hub.getModuleRegistry().getLoadedModules(LaneSystem.class);
-        System.out.println("Processes: " + processModules.size());
-        System.out.println("Lanes: " + lanes.size());
-        assertEquals(processModules.size(), lanes.size());
-    }
-
-    // NOTE: Uncomment all related simulated weather driver code if you want to run this test, or perform test with different module
-//    @Test
-//    public void testProcessContainsNewOutputs() throws TimeoutException, SensorHubException {
-//        // Check lane is started
-//        lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-//        var processes = hub.getModuleRegistry().getLoadedModules(OccupancyProcessModule.class).stream().toList();
-//        OccupancyProcessModule process = processes.stream().filter(p -> p.getConfiguration().systemUID.equals(lane.getUniqueIdentifier())).findFirst().orElse(null);
-//        assertNotNull(process);
-//        // Check process is started
-//        process.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-//        // Track number of outputs of only one lane submodule (should be ~10)
-//        numOutputsBefore = process.getOutputs().size();
-//        // Add submodule to lane
-//        var weatherSubmodule = lane.addSubsystem(createWeatherSubmodule(hub, "1"));
-//        System.out.println("Weather submodule loaded");
-//        System.out.println(weatherSubmodule.getCurrentState());
-//        // Wait for autostart to kick in
-//        weatherSubmodule.init();
-//        weatherSubmodule.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
-//        weatherSubmodule.start();
-//        var weatherStarted = weatherSubmodule.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-//        assertTrue(weatherStarted);
-//        System.out.println("Weather submodule started");
-//        System.out.println(weatherSubmodule.getCurrentState());
-//        // Check process adds submodule's outputs
-//        System.out.println("Num outputs before: " + numOutputsBefore);
-//        System.out.println("Num outputs after: " + process.getOutputs().size());
-//        Async.waitForCondition(() -> numOutputsBefore != process.getOutputs().size(), 20000);
-//        // Check process is started with new outputs
-//        System.out.println("Num outputs before: " + numOutputsBefore);
-//        System.out.println("Num outputs after: " + process.getOutputs().size());
-//        System.out.println(process.getCurrentState());
-//        boolean isStarted = process.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-//        System.out.println("Process: " + process.getCurrentState());
-//        assertTrue(isStarted);
-//    }
-
-    @Test
-    public void testProcessStopsAndStartsWithLane() throws SensorHubException {
-        var processes = hub.getModuleRegistry().getLoadedModules(OccupancyProcessModule.class).stream().toList();
-        OccupancyProcessModule process = processes.stream().filter(p -> p.getConfiguration().systemUID.equals(lane.getUniqueIdentifier())).findFirst().orElse(null);
-        // Check lane is started
-        lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-        // Check process is started
-        process.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-        // Add listener to process module
-        new Thread(() -> {
-            try {
-                Async.waitForCondition(() -> process.getCurrentState() == ModuleEvent.ModuleState.STARTING, 500, 20000);
-                System.out.println("Process has been restarted..");
-                System.out.println(process.getCurrentState());
-            } catch (TimeoutException e) {
-                fail();
-                throw new RuntimeException(e);
-            }
-        }).start();
-        // Stop lane
-        lane.stop();
-        lane.waitForState(ModuleEvent.ModuleState.STOPPED, 5000);
-        // Start lane
-        lane.start();
-        lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-    }
-
-//    @Test
-//    public void testLaneCanStartWithBrokenSubmodule() throws SensorHubException {
-//        var newLane = loadLaneModule(hub, "broken");
-//        // Break rpm config
-//        LaneConfig config = (LaneConfig) newLane.getConfiguration();
-//        ((LaneConfig) config).laneOptionsConfig.rpmConfig.remotePort = 1;
-//        // Update with broken config
-//        newLane.updateConfig(config);
-//        newLane.init();
-//        newLane.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
-//
-//        // Failed start
-//        try {
-//            newLane.start();
-//        } catch (SensorHubException e) {
-//            e.printStackTrace();
-//        }
-//
-//        // Repair submodule config
-//        var rapiscanModule = ((RapiscanSensor) newLane.getMembers().values().toArray()[0]);
-//        var rapiscanConfig = rapiscanModule.getConfiguration();
-//        rapiscanConfig.commSettings.protocol.remotePort = 1600;
-//        rapiscanModule.updateConfig(rapiscanConfig);
-//
-//        // Ensure we can still start
-//        try {
-//            newLane.start();
-//        } catch (SensorHubException e) {
-//            e.printStackTrace();
-//            fail();
-//        }
-//        boolean newLaneStarted = newLane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-//        assertTrue(newLaneStarted);
-//    }
-
-    private void startLaneAndWaitForStarted(LaneSystem lane) throws SensorHubException {
-        hub.getModuleRegistry().startModule(lane.getLocalID());
-        lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-    }
-
-//    private SensorSystemConfig.SystemMember createWeatherSubmodule(ISensorHub hub, String id) throws SensorHubException {
-//        FakeWeatherConfig config = (FakeWeatherConfig) hub.getModuleRegistry().createModuleConfig(hub.getModuleRegistry().getInstalledModuleTypes(FakeWeatherSensor.class).stream().toList().get(0));
-//        assertNotNull(config);
-//        config.autoStart = true;
-//        config.name = "Weather Driver " + id;
-//        config.serialNumber = id;
-//        var newMember = new SensorSystemConfig.SystemMember();
-//        newMember.config = config;
-//        return newMember;
-//    }
-
-    private SystemDriverDatabase loadSystemDriverDatabase(ISensorHub hub) throws SensorHubException {
-        SystemDriverDatabaseConfig dbModuleConfig = new SystemDriverDatabaseConfig();
-        dbModuleConfig.id = LANE_DATABASE_ID;
-        dbModuleConfig.name = "Lane DB";
-        dbModuleConfig.autoStart = true;
-        dbModuleConfig.databaseNum = 1;
-        dbModuleConfig.systemUIDs = new HashSet<>(List.of("urn:osh:system:lane:*", "urn:osh:process:occupancy:*"));
-        MVObsSystemDatabaseConfig dbConfig = (MVObsSystemDatabaseConfig) (dbModuleConfig.dbConfig = new MVObsSystemDatabaseConfig());
-        dbConfig.storagePath = dbFile.getAbsolutePath();
-        dbConfig.readOnly = false;
-        return (SystemDriverDatabase) hub.getModuleRegistry().loadModule(dbModuleConfig);
-    }
-
-//    private LaneSystem loadLaneModule(ISensorHub hub, String id) throws SensorHubException {
-//        // This is what you should configure in the Admin UI
-//        LaneConfig laneConfig = (LaneConfig) hub.getModuleRegistry().createModuleConfig(new Descriptor());
-//        laneConfig.uniqueID = id;
-//        laneConfig.name = "Lane " + id;
-//        var opts = laneConfig.laneOptionsConfig = new LaneOptionsConfig();
-//        db.laneDatabaseId = LANE_DATABASE_ID;
-//        opts.createProcess = true;
-//        var rpm = opts.rpmConfig = new RPMConfig();
-//        rpm.rpmUniqueId = id;
-//        rpm.rpmLabel = "RPM " + id;
-//        rpm.rpmType = RPMType.RAPISCAN;
-//        rpm.remoteHost = RAPISCAN_HOST;
-//        rpm.remotePort = RAPISCAN_PORT;
-//        opts.ffmpegConfig = new ArrayList<>();
-//        return (LaneSystem) hub.getModuleRegistry().loadModule(laneConfig);
-//    }
 
     @After
-    public void cleanup()
-    {
-        try
-        {
-            if (hub != null)
-                hub.stop();
-        }
-        catch (Exception e)
-        {
-            e.printStackTrace();
-        }
-        finally
-        {
-            if (dbFile != null)
-                dbFile.delete();
-        }
+    public void cleanup() {
+        if (hub != null)
+            hub.stop();
     }
 
 }
