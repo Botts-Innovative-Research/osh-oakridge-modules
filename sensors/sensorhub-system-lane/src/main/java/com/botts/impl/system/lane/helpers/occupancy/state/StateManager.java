@@ -67,19 +67,6 @@ public abstract class StateManager {
         this.dailyFile = dailyFile;
         parseDailyFile();
         stateActionMap.get(currentState)[DURING_STATE].run();
-
-        /*
-        // Check transition conditions. If transition occurs, run transition actions and notify listeners.
-        for (Transition transition : transitionMap.get(currentState)) {
-            if (transition.condition.getAsBoolean()) {
-                stateActionMap.get(currentState)[FROM_STATE].run();
-                stateActionMap.get(transition.newState)[TO_STATE].run();
-                notifyStateTransition(currentState, transition.newState);
-                currentState = transition.newState;
-                break;
-            }
-        }
-         */
     }
 
     protected abstract void parseDailyFile();

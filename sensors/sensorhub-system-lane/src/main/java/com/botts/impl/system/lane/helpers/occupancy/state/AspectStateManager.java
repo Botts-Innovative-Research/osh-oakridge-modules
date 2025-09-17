@@ -67,15 +67,6 @@ public class AspectStateManager extends StateManager {
         nonOccupancyActions[DURING_STATE] = () -> {
             if (isOccupied())
                 transitionToState(State.OCCUPANCY);
-            // The commented code is temporary. May be needed if isOccupied does not work for some reason.
-            /*
-            int newCount = getObjectCount();
-            boolean objectCountChanged = newCount != objectCount;
-            objectCount = newCount;
-            if (objectCountChanged) {
-                transitionToState(State.OCCUPANCY);
-            }
-             */
         };
         nonOccupancyActions[FROM_STATE] = () -> {};
 
