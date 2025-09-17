@@ -41,6 +41,8 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
         var maxNeutron = radHelper.createMaxNeutron();
         var isAdjudicated = radHelper.createIsAdjudicated();
         var placeHolder = radHelper.createPlaceholder();
+        placeHolder.setName("videoFile");
+        placeHolder.setLabel("Video File");
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
