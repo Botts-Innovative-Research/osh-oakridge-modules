@@ -18,9 +18,7 @@ package com.botts.impl.process.lanevideo.config;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.processing.ProcessConfig;
 
-import java.util.List;
-
-public class OccupancyProcessConfig extends ProcessConfig {
+public class OccupancyVideoProcessConfig extends ProcessConfig {
 
     @DisplayInfo.Required
     @DisplayInfo(desc = "Serial number or unique identifier")
@@ -30,7 +28,7 @@ public class OccupancyProcessConfig extends ProcessConfig {
     @DisplayInfo(label = "RPM System (Containing RPM)", desc = "Parent system to read occupancy data from subsystem RPM. If this is blank, the process will attempt to use its parent system's UID.")
     public String systemUID;
 
-    @DisplayInfo(label = "Camera Systems")
-    public List<CameraIdConfig> cameraSystems;
-
+    @DisplayInfo.Required
+    @DisplayInfo(label = "Recording Settings")
+    public RecordingConfig recordingConfig = new RecordingConfig();
 }

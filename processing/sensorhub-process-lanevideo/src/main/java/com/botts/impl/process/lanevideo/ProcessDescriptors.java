@@ -15,7 +15,7 @@
 
 package com.botts.impl.process.lanevideo;
 
-import com.botts.impl.process.lanevideo.config.OccupancyProcessConfig;
+import com.botts.impl.process.lanevideo.config.OccupancyVideoProcessConfig;
 import org.sensorhub.api.module.IModule;
 import org.sensorhub.api.module.ModuleConfig;
 import org.sensorhub.impl.processing.AbstractProcessProvider;
@@ -43,14 +43,14 @@ public class ProcessDescriptors extends AbstractProcessProvider
     @Override
     public Class<? extends IModule<?>> getModuleClass()
     {
-        return OccupancyProcessModule.class;
+        return OccupancyVideoProcessModule.class;
     }
 
 
     @Override
     public Class<? extends ModuleConfig> getModuleConfigClass()
     {
-        return OccupancyProcessConfig.class;
+        return OccupancyVideoProcessConfig.class;
     }
 
 }

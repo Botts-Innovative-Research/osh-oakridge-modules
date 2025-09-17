@@ -14,6 +14,7 @@ import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.vast.swe.SWEHelper;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.concurrent.CompletableFuture;
@@ -39,6 +40,7 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                         .label("File I/O")
                         .addItem(CMD_OPEN_FILE, fac.createText()
                                 .label("Start File")
+                                .description("Directory for video file.")
                                 .build())
                         .addItem(CMD_CLOSE_FILE, fac.createBoolean()
                                 .value(true)
@@ -67,6 +69,14 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
             if (!fileName.isEmpty())
                 return true;
             fileName = selected.getData().getStringValue();
+            if (fileName.contains("/")) {
+                try {
+                    Files.createDirectories(Paths.get(fileName.substring(0, fileName.lastIndexOf("/") + 1)));
+                } catch (IOException e) {
+                    throw new CommandException(e.getMessage());
+                }
+            }
+
             try {
                 this.parentSensor.getProcessor().openFile(fileName);
                 this.parentSensor.reportStatus("Writing to file: " + fileName);
@@ -78,11 +88,13 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
             Boolean item = (Boolean) selected;
             try {
                 this.parentSensor.getProcessor().closeFile();
-                this.parentSensor.reportStatus("Stopped writing to file: " + fileName);
 
                 // Delete file if we do not want to save
                 if (!item.getValue()) {
-                    Files.deleteIfExists(Paths.get("./" + fileName));
+                    Files.deleteIfExists(Paths.get(fileName));
+                    this.parentSensor.reportStatus("Discarded file: " + fileName);
+                } else {
+                    this.parentSensor.reportStatus("Saved file: " + fileName);
                 }
                 fileName = "";
             } catch (Exception e) {

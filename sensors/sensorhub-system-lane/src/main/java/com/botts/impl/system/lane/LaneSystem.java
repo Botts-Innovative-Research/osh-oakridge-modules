@@ -17,6 +17,9 @@ package com.botts.impl.system.lane;
 
 
 
+import com.botts.impl.process.lanevideo.OccupancyVideoProcessModule;
+import com.botts.impl.process.lanevideo.config.OccupancyVideoProcessConfig;
+//import com.botts.impl.process.occupancy.OccupancyProcessConfig;
 import com.botts.impl.sensor.aspect.AspectConfig;
 import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProvider;
@@ -25,6 +28,7 @@ import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.system.database.OccupancyVideoPurgePolicyConfig;
 import com.botts.impl.system.lane.config.*;
+import com.botts.impl.system.lane.helpers.occupancy.OccupancyWrapper;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.DataStoreException;
@@ -44,9 +48,11 @@ import org.sensorhub.impl.database.system.SystemDriverDatabaseConfig;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
 import org.sensorhub.impl.module.AbstractModule;
 import org.sensorhub.impl.module.ModuleRegistry;
+import org.sensorhub.impl.processing.AbstractProcessModule;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
+import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensor;
 import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
@@ -69,11 +75,14 @@ public class LaneSystem extends SensorSystem {
     private static final String URN_PREFIX = "urn:";
     private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
+    private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
+    private static final String BASE_VIDEO_DIRECTORY = "./web/video/";
 
     AbstractSensorModule<?> existingRPMModule = null;
     Flow.Subscription subscription = null;
     private ExecutorService threadPool = null;
     Map<String, FFMPEGConfig> ffmpegConfigs = null;
+    OccupancyWrapper occupancyWrapper;
 
     private int groupID;
     private static final int NUM_LANES_THRESHOLD = 3;
@@ -84,6 +93,7 @@ public class LaneSystem extends SensorSystem {
         threadPool = Executors.newSingleThreadExecutor();
         ffmpegConfigs = new HashMap<>();
         Map<Integer, Integer> tempGroupIDCounts = new HashMap<>();
+        occupancyWrapper = null;
 
         // Create a frequency map of loaded modules' group IDs
         for (LaneSystem lane : getParentHub().getModuleRegistry().getLoadedModules(LaneSystem.class)) {
@@ -160,13 +170,19 @@ public class LaneSystem extends SensorSystem {
                 var config = createRPMConfig(rpmConfig);
                 existingRPMModule = (AbstractSensorModule<?>) registerSubmodule(config);
             }
+            if (existingRPMModule != null) {
+                occupancyWrapper = new OccupancyWrapper(getParentHub(), existingRPMModule);
+                occupancyWrapper.videoNamePrefix = BASE_VIDEO_DIRECTORY + "lane" + getConfiguration().groupID + "/";
+            }
             // Initial FFmpeg config
             var ffmpegConfigList = getConfiguration().laneOptionsConfig.ffmpegConfig;
             for (var simpleConfig : ffmpegConfigList) {
                 FFMPEGConfig config = createFFmpegConfig(simpleConfig, ffmpegConfigList.indexOf(simpleConfig));
-                createFFmpegModule(config);
+                var ffmpegModule = createFFmpegModule(config);
+                if (occupancyWrapper != null) {
+                    occupancyWrapper.addFFmpegSensor(ffmpegModule);
+                }
             }
-
         }
 
         String statusMsg = "Note: ";
@@ -181,6 +197,16 @@ public class LaneSystem extends SensorSystem {
         for (var module: getMembers().values()) {
             if (module != null) {
                 try {
+                    /*
+                    threadPool.execute(() -> {
+                        try {
+                            module.init();
+                        } catch (SensorHubException e) {
+                            throw new RuntimeException(e);
+                        }
+                    });
+
+                     */
                     module.init();
                 }
                 catch (Exception e) {
@@ -203,7 +229,7 @@ public class LaneSystem extends SensorSystem {
             });
     }
 
-    private void createFFmpegModule(FFMPEGConfig ffmpegConfig) throws SensorHubException {
+    private FFMPEGSensorBase<?> createFFmpegModule(FFMPEGConfig ffmpegConfig) throws SensorHubException {
         // Get ffmpeg submodule with the same unique serial num
         // If there is a module registered for this serial number, then the driver was already registered
         var ffmpegModuleOpt = getMembers().values().stream().filter(
@@ -214,11 +240,12 @@ public class LaneSystem extends SensorSystem {
 
         // Register the new module
         if (ffmpegModuleOpt.isEmpty()) {
-            registerSubmodule(ffmpegConfig);
+            return (FFMPEGSensorBase<?>) registerSubmodule(ffmpegConfig);
         } else { // If there is already a module registered, then update the config
             FFMPEGSensor module = (FFMPEGSensor) ffmpegModuleOpt.get();
             ffmpegConfig.id = module.getLocalID();
             module.updateConfig(ffmpegConfig);
+            return module;
         }
     }
 
@@ -310,8 +337,10 @@ public class LaneSystem extends SensorSystem {
             if (event.getParentGroupUID() != null && event.getParentGroupUID().equals(getUniqueIdentifier())) {
 
                 // If RPM is removed, nullify local object
-                if (event.getSystemUID().contains(RAPISCAN_URI) || event.getSystemUID().contains(ASPECT_URI))
+                if (event.getSystemUID().contains(RAPISCAN_URI) || event.getSystemUID().contains(ASPECT_URI)) {
+                    occupancyWrapper.removeRpmSensor();
                     existingRPMModule = null;
+                }
             }
 
         }
@@ -319,6 +348,10 @@ public class LaneSystem extends SensorSystem {
         else if (e instanceof ModuleEvent event) {
             // Module STATE_CHANGED events
             if (event.getType() == ModuleEvent.Type.STATE_CHANGED) {
+
+                if (event.getModule() == existingRPMModule && event.getNewState() == ModuleEvent.ModuleState.STARTED) {
+                    occupancyWrapper.start();
+                }
 
                 // New module loaded
                 if (event.getNewState() == ModuleEvent.ModuleState.LOADED) {
@@ -405,6 +438,17 @@ public class LaneSystem extends SensorSystem {
             }
 
         }
+    }
+
+    private void createVideoProcessConfig(OccupancyVideoProcessConfig config) {
+        Asserts.checkNotNull(config);
+
+        config.moduleClass = OccupancyVideoProcessModule.class.getCanonicalName();
+        config.serialNumber = "videoProcess:" + getConfiguration().uniqueID;
+        config.systemUID = getConfiguration().uniqueID;
+        config.recordingConfig.directory = BASE_VIDEO_DIRECTORY + "lane" + getConfiguration().groupID + "/";
+        config.name = getConfiguration().name + " - Video Occupancy Process";
+        config.autoStart = true;
     }
 
     private SensorConfig createRPMConfig(RPMConfig rpmConfig) {
