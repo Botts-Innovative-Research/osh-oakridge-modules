@@ -17,8 +17,7 @@ package com.botts.impl.system.lane;
 
 
 
-import com.botts.impl.process.lanevideo.OccupancyVideoProcessModule;
-import com.botts.impl.process.lanevideo.config.OccupancyVideoProcessConfig;
+
 //import com.botts.impl.process.occupancy.OccupancyProcessConfig;
 import com.botts.impl.sensor.aspect.AspectConfig;
 import com.botts.impl.sensor.aspect.AspectSensor;
@@ -438,17 +437,6 @@ public class LaneSystem extends SensorSystem {
             }
 
         }
-    }
-
-    private void createVideoProcessConfig(OccupancyVideoProcessConfig config) {
-        Asserts.checkNotNull(config);
-
-        config.moduleClass = OccupancyVideoProcessModule.class.getCanonicalName();
-        config.serialNumber = "videoProcess:" + getConfiguration().uniqueID;
-        config.systemUID = getConfiguration().uniqueID;
-        config.recordingConfig.directory = BASE_VIDEO_DIRECTORY + "lane" + getConfiguration().groupID + "/";
-        config.name = getConfiguration().name + " - Video Occupancy Process";
-        config.autoStart = true;
     }
 
     private SensorConfig createRPMConfig(RPMConfig rpmConfig) {
