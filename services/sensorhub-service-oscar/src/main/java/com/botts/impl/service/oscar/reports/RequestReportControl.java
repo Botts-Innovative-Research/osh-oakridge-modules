@@ -16,66 +16,67 @@
 package com.botts.impl.service.oscar.reports;
 
 import com.botts.impl.service.oscar.OSCARSystem;
+import com.botts.impl.service.oscar.reports.helpers.ReportType;
+import com.botts.impl.service.oscar.reports.types.*;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
-import net.opengis.swe.v20.DataEncoding;
 import org.sensorhub.api.command.*;
 import org.sensorhub.impl.command.AbstractControlInterface;
 import org.vast.swe.SWEHelper;
+import org.vast.util.TimeExtent;
 
+import java.io.File;
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Supplier;
 
-public class RequestReportControl extends AbstractControlInterface<OSCARSystem> implements IStreamingControlInterfaceWithResult {
+public class RequestReportControl extends AbstractControlInterface<OSCARSystem> {
 
     public static final String NAME = "requestReport";
     public static final String LABEL = "Request Report";
     public static final String DESCRIPTION = "Control to request operations, performance, and maintenance reports";
 
+    public static final String path = "files/reports/";
+
     DataComponent commandStructure;
     DataComponent resultStructure;
     SWEHelper fac;
-
-    enum ReportType {
-        RDS_SITE,
-        LANE,
-        OPERATIONS,
-        EVENT,
-        SECONDARY_INSPECTIONS
-    }
+    long startTime;
 
     public RequestReportControl(OSCARSystem parent) {
         super(NAME, parent);
         fac = new SWEHelper();
 
-        // TODO: Add additional parameters for lane UID, event ID, etc.
-        // TODO: Add defs
         commandStructure = fac.createRecord()
                 .name(NAME)
                 .label(LABEL)
                 .description(DESCRIPTION)
                 .addField("startDateTime", fac.createTime()
+                        .definition(SWEHelper.getPropertyUri("StartDateTime"))
                         .withIso8601Format()
                         .description("Start datetime (ISO 8601)"))
                 .addField("endDateTime", fac.createTime()
+                        .definition(SWEHelper.getPropertyUri("EndDateTime"))
                         .withIso8601Format()
                         .description("End datetime (ISO 8601)"))
                 .addField("reportType", fac.createCategory()
-                        .description("Report type to request")
+                        .label("Report Type")
+                        .definition(SWEHelper.getPropertyUri("ReportType"))
+                        .description("Type of report to request")
                         .addAllowedValues(ReportType.class))
+                .addField("laneId", fac.createText()
+                        .label("Lane ID")
+                        .definition(SWEHelper.getPropertyUri("LaneID"))
+                        .description("Identifier of the lane to request"))
+                .addField("eventID", fac.createText()
+                        .label("Event ID")
+                        .definition(SWEHelper.getPropertyUri("EventID"))
+                        .description("Identifier of the event requested"))
                 .build();
 
-        // TODO: Either have 2 urls for local and remote URL, or just handle this in client
         // e.g. localhost:8282/reports/report123.pdf vs. public.ip:8282/reports/report123.pdf
         resultStructure = fac.createRecord().name("result")
                 .addField("reportUrl", fac.createText())
                 .build();
-    }
-
-    @Override
-    public DataComponent getResultDescription() {
-        return resultStructure;
     }
 
     @Override
@@ -85,29 +86,77 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
     @Override
     public CompletableFuture<ICommandStatus> submitCommand(ICommandData command) {
+
         return CompletableFuture.supplyAsync(() -> {
-//            DataBlock paramData = command.getParams();
-//            Instant start = paramData.getTimeStamp(0);
-//            Instant end = paramData.getTimeStamp(1);
-//            ReportType type = ReportType.valueOf(paramData.getStringValue(2));
 
-            // TODO: Check if report of this type and during this time frame already exists in the filesystem
-            // Report report = getReport(start, end, type);
-            // if report == null then generate new report
+            long now = System.currentTimeMillis();
 
-            // if report is invalid then send FAILED command status
+            if (startTime == 0)
+                this.startTime = now;
 
-            // TODO: Build command result
+            DataBlock paramData = command.getParams();
+            Instant start = paramData.getTimeStamp(0);
+            Instant end = paramData.getTimeStamp(1);
+            ReportType type = ReportType.valueOf(paramData.getStringValue(2));
+            String laneId = paramData.getStringValue(3);
+            String eventId = paramData.getStringValue(4);
+
+            Report report = null;
+
+            File file;
+
+            switch (type) {
+                case LANE -> {
+                    file = new File(path + type + "_" + laneId + "_" + start + "_" + end + ".pdf");
+
+                    if (!file.exists())
+                        report = new LaneReport(start, end, laneId);
+                }
+                case RDS_SITE -> {
+                    file = new File(path + type + "_" + start + "_" + end + ".pdf");
+
+                    if (!file.exists())
+                        report = new RDSReport(start, end);
+                }
+                case EVENT -> {
+                    file = new File(path + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
+
+                    if (!file.exists())
+                        report = new EventReportTodo(start, end, eventId, laneId);
+                }
+                case ADJUDICATION -> {
+                    file = new File(path + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
+                    if (!file.exists())
+                        report = new AdjudicationReport(start, end, eventId, laneId);
+                }
+                default -> report = null;
+            }
+
+            if (report == null) System.out.println("Report not found");
+
+
+            String url = report.generate();
+
+            ICommandStatus status = null;
+
             DataBlock resultData = resultStructure.createDataBlock();
-            resultData.setStringValue("URL of report PDF in file system");
+            resultData.setStringValue(url);
             ICommandResult result = CommandResult.withData(resultData);
 
-            // TODO: Build status
-            ICommandStatus status = new CommandStatus.Builder()
-                    .withCommand(command.getID())
-                    .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
-                    .withResult(result)
-                    .build();
+            if (url == null) {
+                status = new CommandStatus.Builder()
+                        .withCommand(command.getID())
+                        .withStatusCode(ICommandStatus.CommandStatusCode.FAILED)
+                        .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
+                        .withResult(result).build();
+            } else {
+                status = new CommandStatus.Builder()
+                        .withCommand(command.getID())
+                        .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
+                        .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
+                        .withResult(result)
+                        .build();
+            }
 
             return status;
         });
