@@ -1,5 +1,6 @@
 package org.sensorhub.impl.sensor.ffmpeg;
 
+import java.io.IOException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
@@ -13,6 +14,7 @@ import org.sensorhub.impl.sensor.DefaultLocationOutput;
 import org.sensorhub.impl.sensor.DefaultLocationOutputLLA;
 import org.sensorhub.impl.sensor.ffmpeg.common.SyncTime;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
+import org.sensorhub.impl.sensor.ffmpeg.controls.FileControl;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.LocationOutput;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.Video;
 import org.sensorhub.mpegts.MpegTsProcessor;
@@ -52,6 +54,8 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
      * Sensor output for the video frames.
      */
     protected Video<FFMPEGconfigType> videoOutput;
+
+    protected FileControl fileControl;
 
     /**
      * Keeps track of the times in the data stream so that we can put an accurate phenomenon time in the data blocks.
@@ -115,10 +119,14 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
     @Override
     protected void doStop() throws SensorHubException {
         super.doStop();
-        
+        try {
+            mpegTsProcessor.closeFile();
+        } catch (Exception ignored) {}
         stopStream();
         shutdownExecutor();
     }
+
+    public MpegTsProcessor getProcessor() { return mpegTsProcessor; }
 
     /**
      * Creates the background thread that'll handle video decoding, if it hasn't already been done.
@@ -175,6 +183,16 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         }
     }
 
+    protected void createFileControl() {
+        fileControl = new FileControl<FFMPEGconfigType>(this);
+        addControlInput(fileControl);
+        try {
+            fileControl.init();
+        } catch (Exception e) {
+            logger.error("Could not initialize file control.", e);
+        }
+    }
+
     /**
      * Overridden to set the definition of the sensor to "http://www.w3.org/ns/ssn/System"
      */
@@ -222,6 +240,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	            		String codecFormat = mpegTsProcessor.getCodecName();
 	            		createVideoOutput(videoDimensions, codecFormat);
 	            	}
+                    createFileControl();
 	                // Set video stream packet listener to video output
 	                mpegTsProcessor.setVideoDataBufferListener(videoOutput);
 	            }

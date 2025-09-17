@@ -11,6 +11,7 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
+import org.vast.data.TextImpl;
 
 public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
@@ -39,6 +40,9 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
         var maxGamma = radHelper.createMaxGamma();
         var maxNeutron = radHelper.createMaxNeutron();
         var isAdjudicated = radHelper.createIsAdjudicated();
+        var placeHolder = radHelper.createPlaceholder();
+        placeHolder.setName("videoFile");
+        placeHolder.setLabel("Video File");
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
@@ -56,6 +60,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
                 .addField(maxGamma.getName(), maxGamma)
                 .addField(maxNeutron.getName(), maxNeutron)
                 .addField(isAdjudicated.getName(), isAdjudicated)
+                .addField(placeHolder.getName(), placeHolder) // TODO Set the definition here
                 .build();
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
