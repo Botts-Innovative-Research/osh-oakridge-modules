@@ -21,37 +21,54 @@ import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.module.AbstractModule;
 
+import java.util.List;
+
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
+    SiteInfoOutput siteInfoOutput;
+    RequestReportControl reportControl;
 
+    ClientConfigOutput clientConfigOutput;
 
+    OSCARSystem system;
     @Override
     protected void doInit() throws SensorHubException {
         super.doInit();
 
         // TODO: Add or update OSCAR system and client config system
-        OSCARSystem system = new OSCARSystem(config.nodeId);
-
-        RequestReportControl reportControl = new RequestReportControl(system);
-        system.addControlInput(reportControl);
-
-        SiteInfoOutput siteInfoOutput = new SiteInfoOutput(system);
-        system.addOutput(siteInfoOutput, false);
-
-        ClientConfigOutput clientConfigOutput = new ClientConfigOutput(system);
-        system.addOutput(clientConfigOutput, false);
+        system = new OSCARSystem(config.nodeId);
+        
         // TODO: Add or update report generation control interface
 
         // TODO: Add or update site info datastream
+
+        createOutputs();
+        createControls();
+
         system.updateSensorDescription();
         getParentHub().getSystemDriverRegistry().register(system);
     }
 
+    public void createOutputs(){
+        siteInfoOutput = new SiteInfoOutput(system);
+        system.addOutput(siteInfoOutput, false);
+        siteInfoOutput.init();
+
+        clientConfigOutput = new ClientConfigOutput(system);
+        system.addOutput(clientConfigOutput, false);
+//        clientConfigOutput.init(); //move record strucutre to init to match all other modules
+    }
+
+    public void createControls(){
+        reportControl = new RequestReportControl(system);
+        system.addControlInput(reportControl);
+//        reportControl.init();  move output record structure to init
+    }
     @Override
     protected void doStart() throws SensorHubException {
         super.doStart();
 
         // TODO: Publish latest site info observation
-
+        siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
     }
 
     @Override

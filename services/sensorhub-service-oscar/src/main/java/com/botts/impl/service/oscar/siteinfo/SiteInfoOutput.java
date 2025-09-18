@@ -37,7 +37,9 @@ public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
 
     public SiteInfoOutput(OSCARSystem parentSensor) {
         super(NAME, parentSensor);
+    }
 
+    public void init(){
         fac = new GeoPosHelper();
 
         this.recordStructure = fac.createRecord()
@@ -65,8 +67,7 @@ public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
 
         this.recordEncoding = new TextEncodingImpl();
     }
-
-    public void setData(String siteDiagramPath, double[] lowerLeftBound, double[] upperRightBound) {
+    public void setData(String siteDiagramPath, SiteDiagramConfig.LatLonLocation lowerLeftBound, SiteDiagramConfig.LatLonLocation upperRightBound) {
 
         long timeMillis = System.currentTimeMillis();
 
@@ -74,10 +75,10 @@ public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
 
         dataBlock.setDoubleValue(0, timeMillis/1000d);
         dataBlock.setStringValue(1, siteDiagramPath);
-        dataBlock.setDoubleValue(2, lowerLeftBound[0]);
-        dataBlock.setDoubleValue(3, lowerLeftBound[1]);
-        dataBlock.setDoubleValue(4, upperRightBound[0]);
-        dataBlock.setDoubleValue(5, upperRightBound[1]);
+        dataBlock.setDoubleValue(2, lowerLeftBound.lon);
+        dataBlock.setDoubleValue(3, lowerLeftBound.lat);
+        dataBlock.setDoubleValue(4, upperRightBound.lon);
+        dataBlock.setDoubleValue(5, upperRightBound.lat);
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();
