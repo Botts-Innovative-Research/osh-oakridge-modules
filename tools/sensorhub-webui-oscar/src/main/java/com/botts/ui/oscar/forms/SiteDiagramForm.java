@@ -57,22 +57,11 @@ public class SiteDiagramForm extends GenericConfigForm {
     }
 
     private void addSiteMapComponent(){
-        var database = getParentHub().getDatabaseRegistry().getFederatedDatabase();
-
-        var sysFilter = new SystemFilter.Builder()
-                .withUniqueIDs("urn:osh:oscar:system:")
-                .includeMembers(true)
-                .build();
-
-        if (database == null) {
-            System.out.println("database is null");
-        }
-
         try{
-            String imagePath = getSiteImagePath(database, sysFilter);
+            String imagePath = getSiteImagePath();
 
-            double[] lowerLeftBound = getBoundingBoxCoordinates(database, DEF_LL_BOUND);
-            double[] upperRightBound = getBoundingBoxCoordinates(database, DEF_UR_BOUND);
+            double[] lowerLeftBound = getBoundingBoxCoordinates(DEF_LL_BOUND);
+            double[] upperRightBound = getBoundingBoxCoordinates(DEF_UR_BOUND);
 
             VerticalLayout layout = createSiteMapLayout(imagePath, lowerLeftBound, upperRightBound);
             super.addComponents(layout);
@@ -145,77 +134,33 @@ public class SiteDiagramForm extends GenericConfigForm {
     }
 
 
-    public String getSiteImagePath(IFederatedDatabase database, SystemFilter systemFilter) throws SensorHubException {
-
-       var dataStream = database.getDataStreamStore().select(new DataStreamFilter.Builder()
-               .withSystems(systemFilter)
-               .withObservedProperties(DEF_SITE_PATH, DEF_LL_BOUND, DEF_UR_BOUND)
-               .withCurrentVersion()
-               .withLimit(1)
-               .build());
-
-       var ds = dataStream.toList();
-
-       if(ds.size() != 1) throw new SensorHubException("Cant find site map ds in system");
-
-       var siteDs = ds.get(0);
-       var siteDsId = siteDs.getSystemID().getInternalID();
-
-       var obsStore = database.getObservationStore().selectEntries(new ObsFilter.Builder()
-               .withDataStreams(siteDsId)
-               .build()).iterator();
-
-       while (obsStore.hasNext()) {
-           var obs = obsStore.next();
-
-           var result = obs.getValue().getResult();
-           System.out.println("result: " + result);
-
-           if (result instanceof DataBlockTuple) {
-               var myPath = result.getStringValue(1);
-               return myPath;
-           }
-       }
-       return "";
-    }
-
-    public double[] getBoundingBoxCoordinates(IFederatedDatabase database, String observedProperty) throws SensorHubException {
-        var dataStream = database.getDataStreamStore().select(new DataStreamFilter.Builder()
-                .withObservedProperties(observedProperty)
-                .withCurrentVersion()
-                .withLimit(1)
+    public String getSiteImagePath() throws SensorHubException {
+        var obs = getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withObservedProperties(DEF_SITE_PATH)
+                        .build())
+                .withLatestResult()
                 .build());
 
-        var ds = dataStream.toList();
+        if(obs == null) return null;
 
-        if(ds.size() == 0) throw new SensorHubException("Error");
-
-        return getCoordinates(database, ds);
+        obs.
     }
 
-    private double[] getCoordinates(IFederatedDatabase database, List<IDataStreamInfo> ds) {
-        var id = ds.get(0).getSystemID().getInternalID();
+    public double[] getBoundingBoxCoordinates( String observedProperty) throws SensorHubException {
+        var obs = getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withObservedProperties(observedProperty)
+                        .build())
+                .withLatestResult()
+                .build());
 
-        var obsStore = database.getObservationStore().selectEntries(new ObsFilter.Builder()
-                .withDataStreams(id)
-                .build()
-        ).iterator();
+        if(obs == null) return null;
 
-        while (obsStore.hasNext()) {
-            var obs = obsStore.next();
-
-            var result = obs.getValue().getResult();
-
-            if (result instanceof DataBlockTuple) {
-                var lon = result.getDoubleValue(1);
-                var lat = result.getDoubleValue(2);
-
-                return new double[]{lon, lat};
-            }
-        }
-
+//        obs.
         return new double[0];
     }
+
 
 
     // x = longitude
