@@ -44,6 +44,9 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
     public RequestReportControl(OSCARSystem parent) {
         super(NAME, parent);
+    }
+
+    public void init(){
         fac = new SWEHelper();
 
         commandStructure = fac.createRecord()

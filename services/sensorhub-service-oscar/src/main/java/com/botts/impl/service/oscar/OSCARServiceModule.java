@@ -34,13 +34,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     protected void doInit() throws SensorHubException {
         super.doInit();
 
-        // TODO: Add or update OSCAR system and client config system
         system = new OSCARSystem(config.nodeId);
-
-        // TODO: Add or update report generation control interface
-
-        // TODO: Add or update site info datastream
-
+        
         createOutputs();
         createControls();
 
@@ -48,20 +43,19 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         getParentHub().getSystemDriverRegistry().register(system);
     }
 
-    public void createOutputs(){
+    public void createOutputs() {
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
         siteInfoOutput.init();
 
         clientConfigOutput = new ClientConfigOutput(system);
         system.addOutput(clientConfigOutput, false);
-//        clientConfigOutput.init(); //move record strucutre to init to match all other modules
+        clientConfigOutput.init();
     }
-
     public void createControls(){
         reportControl = new RequestReportControl(system);
         system.addControlInput(reportControl);
-//        reportControl.init();  move output record structure to init
+        reportControl.init();
     }
     @Override
     protected void doStart() throws SensorHubException {
