@@ -10,15 +10,10 @@ import com.vaadin.v7.data.Property;
 import com.vaadin.v7.ui.Field;
 import com.vaadin.v7.ui.TextField;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.data.IDataStreamInfo;
-import org.sensorhub.api.database.IFederatedDatabase;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
-import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.api.sensor.PositionConfig;
-import org.sensorhub.ui.AdminUIModule;
 import org.sensorhub.ui.GenericConfigForm;
-import org.vast.data.DataBlockTuple;
 
 import java.io.File;
 import java.util.List;
@@ -144,7 +139,13 @@ public class SiteDiagramForm extends GenericConfigForm {
 
         if(obs == null) return null;
 
-        obs.
+        var obsRes = obs.toList();
+        if(obsRes.isEmpty()) return null;
+
+        var path = obsRes.get(0).getResult().getStringValue(1);
+        System.out.println(path);
+
+        return path;
     }
 
     public double[] getBoundingBoxCoordinates( String observedProperty) throws SensorHubException {
@@ -157,8 +158,15 @@ public class SiteDiagramForm extends GenericConfigForm {
 
         if(obs == null) return null;
 
-//        obs.
-        return new double[0];
+        var obsRes = obs.toList();
+        if(obsRes.isEmpty()) return null;
+
+        var lon = obsRes.get(0).getResult().getDoubleValue(1);
+        var lat = obsRes.get(0).getResult().getDoubleValue(2);
+
+        System.out.println("lon: " + lon);
+        System.out.println("lat: " + lat);
+        return new double[]{lon, lat};
     }
 
 
