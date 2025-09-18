@@ -36,7 +36,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         // TODO: Add or update OSCAR system and client config system
         system = new OSCARSystem(config.nodeId);
-        
+
         // TODO: Add or update report generation control interface
 
         // TODO: Add or update site info datastream
