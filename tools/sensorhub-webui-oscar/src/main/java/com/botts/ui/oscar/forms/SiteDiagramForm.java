@@ -59,10 +59,17 @@ public class SiteDiagramForm extends GenericConfigForm {
     private void addSiteMapComponent(){
         var database = getParentHub().getDatabaseRegistry().getFederatedDatabase();
 
-        if (database == null) return;
+        var sysFilter = new SystemFilter.Builder()
+                .withUniqueIDs("urn:osh:oscar:system:")
+                .includeMembers(true)
+                .build();
+
+        if (database == null) {
+            System.out.println("database is null");
+        }
 
         try{
-            String imagePath = getSiteImagePath(database);
+            String imagePath = getSiteImagePath(database, sysFilter);
 
             double[] lowerLeftBound = getBoundingBoxCoordinates(database, DEF_LL_BOUND);
             double[] upperRightBound = getBoundingBoxCoordinates(database, DEF_UR_BOUND);
@@ -87,7 +94,7 @@ public class SiteDiagramForm extends GenericConfigForm {
 
 
         HorizontalLayout coordinateLayout = new HorizontalLayout();
-        Label pixelCoordinatesTitle = new Label("Coordinates: ");
+        Label pixelCoordinatesTitle = new Label("Pixel Coordinates: ");
         Label pixelCoordinates = new Label("Click map to select location of lane");
         coordinateLayout.addComponents(pixelCoordinatesTitle, pixelCoordinates);
         layout.addComponent(coordinateLayout);
@@ -122,7 +129,7 @@ public class SiteDiagramForm extends GenericConfigForm {
         int pixelX = event.getRelativeX();
         int pixelY = event.getRelativeY();
 
-        pixelCoordinates.setValue("Pixel: " + pixelX + ", " + pixelY);
+        pixelCoordinates.setValue(pixelX + ", " + pixelY);
 
         double imgWidth = siteMap.getWidth();
         double imgHeight = siteMap.getHeight();
@@ -138,22 +145,24 @@ public class SiteDiagramForm extends GenericConfigForm {
     }
 
 
-    public String getSiteImagePath (IFederatedDatabase database) throws SensorHubException {
+    public String getSiteImagePath(IFederatedDatabase database, SystemFilter systemFilter) throws SensorHubException {
 
        var dataStream = database.getDataStreamStore().select(new DataStreamFilter.Builder()
-                .withObservedProperties(DEF_SITE_PATH)
-                .withCurrentVersion()
-                .withLimit(1)
-                .build());
+               .withSystems(systemFilter)
+               .withObservedProperties(DEF_SITE_PATH, DEF_LL_BOUND, DEF_UR_BOUND)
+               .withCurrentVersion()
+               .withLimit(1)
+               .build());
 
        var ds = dataStream.toList();
 
-       if(ds.size() == 0) throw new SensorHubException("Cant find site map ds in system");
+       if(ds.size() != 1) throw new SensorHubException("Cant find site map ds in system");
 
-       var dsId = ds.get(0).getSystemID().getInternalID();
+       var siteDs = ds.get(0);
+       var siteDsId = siteDs.getSystemID().getInternalID();
 
        var obsStore = database.getObservationStore().selectEntries(new ObsFilter.Builder()
-               .withDataStreams(dsId)
+               .withDataStreams(siteDsId)
                .build()).iterator();
 
        while (obsStore.hasNext()) {
