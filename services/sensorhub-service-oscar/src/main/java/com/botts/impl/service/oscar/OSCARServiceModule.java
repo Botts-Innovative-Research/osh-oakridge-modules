@@ -21,8 +21,6 @@ import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.module.AbstractModule;
 
-import java.util.List;
-
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     SiteInfoOutput siteInfoOutput;
     RequestReportControl reportControl;
@@ -71,6 +69,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         // TODO: Publish latest site info observation
         siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
+
     }
 
     @Override
