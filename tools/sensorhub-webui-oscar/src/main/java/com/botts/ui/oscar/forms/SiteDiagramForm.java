@@ -9,10 +9,17 @@ import com.vaadin.ui.Label;
 import com.vaadin.v7.data.Property;
 import com.vaadin.v7.ui.Field;
 import com.vaadin.v7.ui.TextField;
+import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.database.IFederatedDatabase;
+import org.sensorhub.api.datastore.obs.DataStreamFilter;
+import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.api.sensor.PositionConfig;
+import org.sensorhub.ui.AdminUIModule;
 import org.sensorhub.ui.GenericConfigForm;
 import java.io.File;
 import java.util.List;
+
+import static org.vast.swe.SWEHelper.getPropertyUri;
 
 /**
  * @author
@@ -23,12 +30,21 @@ public class SiteDiagramForm extends GenericConfigForm {
     private TextField latField;
     private TextField lonField;
 
+    public static final String DEF_SITE_PATH = getPropertyUri("SiteDiagramPath");
+    public static final String DEF_LL_BOUND = getPropertyUri("LowerLeftBound");
+    public static final String DEF_UR_BOUND = getPropertyUri("UpperRightBound");
+
+
 
     @Override
     protected Field<?> buildAndBindField(String label, String propId, Property<?> prop) {
         Field<?> field = super.buildAndBindField(label, propId, prop);
 
         if (propId.equals("location.lon")) {
+            var database = getDataFromService();
+
+            String path = getSitePathUrl(database);
+
             VerticalLayout layout = addImage("web/sitemaps/image.png");
 
             super.addComponents(layout);
@@ -47,8 +63,8 @@ public class SiteDiagramForm extends GenericConfigForm {
         final Image siteMap = new Image();
         siteMap.setSource(new FileResource(new File("web/sitemaps/image.png")));
 
-        siteMap.getWidth();
-        siteMap.getHeight();
+        double img_width = siteMap.getWidth();
+        double img_height = siteMap.getHeight();
 
         HorizontalLayout coordinateLayout = new HorizontalLayout();
         Label pixelCoordinatesTitle = new Label("Coordinates: ");
@@ -57,20 +73,58 @@ public class SiteDiagramForm extends GenericConfigForm {
         layout.addComponent(coordinateLayout);
 
         siteMap.addClickListener((MouseEvents.ClickListener) event -> {
-            int lon = event.getRelativeX();
-            int lat = event.getRelativeY();
-            System.out.println(lon + " " + lat);
+            int pixel_x = event.getRelativeX();
+            int pixel_y = event.getRelativeY();
+            System.out.println(pixel_x + " " + pixel_y);
 
-            pixelCoordinates.setValue(lon + ", " + lat);
+            pixelCoordinates.setValue(pixel_x + ", " + pixel_y);
 
-            lonField.setValue(String.valueOf(lon));
-            latField.setValue(String.valueOf(lat));
+            lonField.setValue(String.valueOf(calcLonMapping(pixel_x,null, null, img_width)));
+            latField.setValue(String.valueOf(calcLatMapping(pixel_y, null, null, img_height)));
 
         });
 
         layout.addComponent(siteMap);
 
         return layout;
+    }
+
+    public IFederatedDatabase getDataFromService(){
+        var sysFilter = new SystemFilter.Builder()
+                .withUniqueIDs("parentSystemUID")
+                .includeMembers(true)
+                .build();
+
+        var db = getParentHub().getDatabaseRegistry().getFederatedDatabase();
+        return db;
+    }
+
+
+    public String getSitePathUrl(IFederatedDatabase database){
+        var matchingDs = database.getDataStreamStore().select(new DataStreamFilter.Builder()
+                .withObservedProperties(DEF_SITE_PATH)
+                .withCurrentVersion()
+                .withLimit(1)
+                .build());
+
+        return "";
+
+    }
+
+    public void getURBoundBox(IFederatedDatabase database){
+        var matchingDs = database.getDataStreamStore().select(new DataStreamFilter.Builder()
+                .withObservedProperties(DEF_UR_BOUND)
+                .withCurrentVersion()
+                .withLimit(1)
+                .build());
+    }
+
+    public void getLLBoundBox(IFederatedDatabase database){
+        var matchingDs = database.getDataStreamStore().select(new DataStreamFilter.Builder()
+                .withObservedProperties(DEF_LL_BOUND)
+                .withCurrentVersion()
+                .withLimit(1)
+                .build());
     }
 
 
@@ -86,10 +140,18 @@ public class SiteDiagramForm extends GenericConfigForm {
      * @param pixel_x the pixel_x given from clicking the sitemap
      * @param pixel_y the pixel_y given from clicking the sitemap
      */
-    private List calcLinearMapping(int image_width, int image_height, int[] lowerLeftBound, int[] upperRightBound, int pixel_x, int pixel_y) {
+    private List calcLinearMapping(double image_width, double image_height, int[] lowerLeftBound, int[] upperRightBound, int pixel_x, int pixel_y) {
         double longitude = (pixel_x - lowerLeftBound[0]) / (upperRightBound[1] - lowerLeftBound[0]) * image_width;
         double latitude = (upperRightBound[1] - pixel_y) / (upperRightBound[1] - lowerLeftBound[1]) * image_height;
 
         return List.of(longitude,latitude);
+    }
+
+    private double calcLonMapping (int pixel_x, int[] lowerLeftBound, int[] upperRightBound, double image_width) {
+        return (pixel_x - lowerLeftBound[0]) / (upperRightBound[1] - lowerLeftBound[0]) * image_width;
+    }
+
+    private double calcLatMapping (int pixel_y, int[] lowerLeftBound, int[] upperRightBound, double image_height) {
+        return (upperRightBound[1] - pixel_y) / (upperRightBound[1] - lowerLeftBound[1]) * image_height;
     }
 }

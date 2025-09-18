@@ -37,7 +37,9 @@ public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
 
     public SiteInfoOutput(OSCARSystem parentSensor) {
         super(NAME, parentSensor);
+    }
 
+    public void init(){
         fac = new GeoPosHelper();
 
         this.recordStructure = fac.createRecord()
@@ -46,17 +48,26 @@ public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
                 .description(DESCRIPTION)
                 .addField("sampleTime", fac.createTime().asSamplingTimeIsoUTC())
                 .addField("siteDiagramPath", fac.createText()
+                        .definition(SWEHelper.getPropertyUri("SiteDiagramPath"))
+                        .label("Site Diagram Path")
                         .description("Path of site diagram image"))
                 .addField("siteBoundingBox", fac.createRecord()
+                        .label("Bounding box")
+                        .definition(SWEHelper.getPropertyUri("SiteBoundingBox"))
                         .description("Geographic bounding box coordinates of site diagram")
-                        .addField("lowerLeftBound", fac.createLocationVectorLatLon())
-                        .addField("upperRightBound", fac.createLocationVectorLatLon()))
-                .build();
+                        .addField("lowerLeftBound", fac.createLocationVectorLatLon()
+                                .label("Lower Left Bound")
+                                .definition(SWEHelper.getPropertyUri("LowerLeftBound"))
+                                .build())
+                        .addField("upperRightBound", fac.createLocationVectorLatLon()
+                                .label("Upper Right Bound")
+                                .definition(SWEHelper.getPropertyUri("UpperRightBound"))
+                                .build())
+                ).build();
 
         this.recordEncoding = new TextEncodingImpl();
     }
-
-    public void setData(String siteDiagramPath, double[] lowerLeftBound, double[] upperRightBound) {
+    public void setData(String siteDiagramPath, SiteDiagramConfig.LatLonLocation lowerLeftBound, SiteDiagramConfig.LatLonLocation upperRightBound) {
 
         long timeMillis = System.currentTimeMillis();
 
@@ -64,10 +75,10 @@ public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
 
         dataBlock.setDoubleValue(0, timeMillis/1000d);
         dataBlock.setStringValue(1, siteDiagramPath);
-        dataBlock.setDoubleValue(2, lowerLeftBound[0]);
-        dataBlock.setDoubleValue(3, lowerLeftBound[1]);
-        dataBlock.setDoubleValue(4, upperRightBound[0]);
-        dataBlock.setDoubleValue(5, upperRightBound[1]);
+        dataBlock.setDoubleValue(2, lowerLeftBound.lon);
+        dataBlock.setDoubleValue(3, lowerLeftBound.lat);
+        dataBlock.setDoubleValue(4, upperRightBound.lon);
+        dataBlock.setDoubleValue(5, upperRightBound.lat);
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();
