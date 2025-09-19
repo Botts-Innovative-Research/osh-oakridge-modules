@@ -132,41 +132,45 @@ public class SiteDiagramForm extends GenericConfigForm {
 
 
     public String getSiteImagePath() throws SensorHubException {
-        var obs = getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+        var query = getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
                 .withDataStreams(new DataStreamFilter.Builder()
                         .withObservedProperties(DEF_SITE_PATH)
                         .build())
                 .withLatestResult()
                 .build());
 
-        if(obs == null) return null;
 
-        var obsRes = obs.toList();
-        if(obsRes.isEmpty()) return null;
 
-        var path = obsRes.get(0).getResult().getStringValue(1);
-        System.out.println(path);
+        var result = query.findFirst();
 
-        return path;
+        if(result.isEmpty())
+            return null;
+
+        var obs = result.get();
+
+        return obs.getResult().getStringValue(1);
     }
 
     public double[] getBoundingBoxCoordinates() throws SensorHubException {
-        var obs = getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+        var query = getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
                 .withDataStreams(new DataStreamFilter.Builder()
                         .withObservedProperties(DEF_LL_BOUND, DEF_UR_BOUND)
                         .build())
                 .withLatestResult()
                 .build());
 
-        if(obs == null) return null;
 
-        var obsRes = obs.toList();
-        if(obsRes.isEmpty()) return null;
+        var result = query.findFirst();
 
-        var lowerLeftLon = obsRes.get(0).getResult().getDoubleValue(2);
-        var lowerLeftLat = obsRes.get(0).getResult().getDoubleValue(3);
-        var upperRightLon = obsRes.get(0).getResult().getDoubleValue(4);
-        var upperRightLat = obsRes.get(0).getResult().getDoubleValue(5);
+        if(result.isEmpty())
+            return null;
+
+        var obs = result.get();
+
+        var lowerLeftLon = obs.getResult().getDoubleValue(2);
+        var lowerLeftLat = obs.getResult().getDoubleValue(3);
+        var upperRightLon = obs.getResult().getDoubleValue(4);
+        var upperRightLat = obs.getResult().getDoubleValue(5);
 
 
         return new double[]{lowerLeftLon, lowerLeftLat, upperRightLon, upperRightLat};
