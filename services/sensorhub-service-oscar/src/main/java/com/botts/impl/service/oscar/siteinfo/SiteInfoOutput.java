@@ -39,9 +39,7 @@ public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
 
     public SiteInfoOutput(OSCARSystem parentSensor) {
         super(NAME, parentSensor);
-    }
 
-    public void init(){
         fac = new GeoPosHelper();
 
 
@@ -100,6 +98,7 @@ public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
 
         this.recordEncoding = new TextEncodingImpl();
     }
+
     public void setData(String siteDiagramPath, SiteDiagramConfig.LatLonLocation lowerLeftBound, SiteDiagramConfig.LatLonLocation upperRightBound) {
 
         long timeMillis = System.currentTimeMillis();

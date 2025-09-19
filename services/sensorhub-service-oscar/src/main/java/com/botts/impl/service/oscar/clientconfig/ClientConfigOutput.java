@@ -35,9 +35,7 @@ public class ClientConfigOutput extends AbstractSensorOutput<OSCARSystem> {
 
     public ClientConfigOutput(OSCARSystem parentSensor) {
         super(NAME, parentSensor);
-    }
 
-    public void init(){
         fac = new SWEHelper();
 
         this.recordStructure = fac.createRecord()

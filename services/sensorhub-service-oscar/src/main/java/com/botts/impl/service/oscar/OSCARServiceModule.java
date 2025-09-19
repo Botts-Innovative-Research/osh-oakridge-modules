@@ -55,17 +55,14 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
-        siteInfoOutput.init();
 
         clientConfigOutput = new ClientConfigOutput(system);
         system.addOutput(clientConfigOutput, false);
-        clientConfigOutput.init();
     }
 
     public void createControls(){
         reportControl = new RequestReportControl(system);
         system.addControlInput(reportControl);
-        reportControl.init();
     }
 
     @Override
