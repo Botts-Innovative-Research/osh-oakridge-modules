@@ -188,16 +188,4 @@ public class SiteDiagramForm extends GenericConfigForm {
 
         return upperRightBound[1] - (pixelY / imageHeight) * (upperRightBound[1] - lowerLeftBound[1]);
     }
-
-
-    /**
-     * @param image_width the width of the sitemap uploaded
-     * @param image_height the height of the sitemap uploaded
-     * @param lowerLeftBound the lower left of the bounding box coordinates
-     * @param upperRightBound the upper right of the bounding box coordinates
-     * @param pixel_x the pixel_x given from clicking the sitemap
-     * @param pixel_y the pixel_y given from clicking the sitemap
-     */
-
-
 }
