@@ -55,9 +55,10 @@ public class SiteDiagramForm extends GenericConfigForm {
         try{
             String imagePath = getSiteImagePath();
 
-            double[] lowerLeftBound = getBoundingBoxCoordinates(DEF_LL_BOUND);
-            double[] upperRightBound = getBoundingBoxCoordinates(DEF_UR_BOUND);
-
+            double[] bounds = getBoundingBoxCoordinates();
+            double[] lowerLeftBound = {bounds[0], bounds[1]};
+            double[] upperRightBound = {bounds[2], bounds[3]};
+            
             VerticalLayout layout = createSiteMapLayout(imagePath, lowerLeftBound, upperRightBound);
             super.addComponents(layout);
 
@@ -91,6 +92,8 @@ public class SiteDiagramForm extends GenericConfigForm {
             layout.addComponent(new Label("Image not found: " + imagePath));
         }
         siteMap.setSource(new FileResource(imageFile));
+        siteMap.setHeight("600px");
+        siteMap.setWidth("800px");
 
         siteMap.addClickListener((MouseEvents.ClickListener) event -> {
             handleMapClick(event, pixelCoordinates, lowerLeftBound, upperRightBound, siteMap);
@@ -112,7 +115,6 @@ public class SiteDiagramForm extends GenericConfigForm {
 
         int pixelX = event.getRelativeX();
         int pixelY = event.getRelativeY();
-
         pixelCoordinates.setValue(pixelX + ", " + pixelY);
 
         double imgWidth = siteMap.getWidth();
@@ -148,10 +150,10 @@ public class SiteDiagramForm extends GenericConfigForm {
         return path;
     }
 
-    public double[] getBoundingBoxCoordinates( String observedProperty) throws SensorHubException {
+    public double[] getBoundingBoxCoordinates() throws SensorHubException {
         var obs = getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
                 .withDataStreams(new DataStreamFilter.Builder()
-                        .withObservedProperties(observedProperty)
+                        .withObservedProperties(DEF_LL_BOUND, DEF_UR_BOUND)
                         .build())
                 .withLatestResult()
                 .build());
@@ -161,12 +163,13 @@ public class SiteDiagramForm extends GenericConfigForm {
         var obsRes = obs.toList();
         if(obsRes.isEmpty()) return null;
 
-        var lon = obsRes.get(0).getResult().getDoubleValue(1);
-        var lat = obsRes.get(0).getResult().getDoubleValue(2);
+        var lowerLeftLon = obsRes.get(0).getResult().getDoubleValue(2);
+        var lowerLeftLat = obsRes.get(0).getResult().getDoubleValue(3);
+        var upperRightLon = obsRes.get(0).getResult().getDoubleValue(4);
+        var upperRightLat = obsRes.get(0).getResult().getDoubleValue(5);
 
-        System.out.println("lon: " + lon);
-        System.out.println("lat: " + lat);
-        return new double[]{lon, lat};
+
+        return new double[]{lowerLeftLon, lowerLeftLat, upperRightLon, upperRightLat};
     }
 
 
@@ -174,11 +177,10 @@ public class SiteDiagramForm extends GenericConfigForm {
     // x = longitude
     // y = latitude
     // [x,y] = [lon, lat]
-
     private double calculateLongitude (int pixelX, double[] lowerLeftBound, double[] upperRightBound, double imageWidth) {
         if (imageWidth == 0) return 0;
 
-        return lowerLeftBound[0] + (pixelX / imageWidth)  * (upperRightBound[0] - lowerLeftBound[0]);
+        return lowerLeftBound[0] + (pixelX / imageWidth) * (upperRightBound[0] - lowerLeftBound[0]);
     }
 
     private double calcLatitude (int pixelY, double[] lowerLeftBound, double[] upperRightBound, double imageHeight) {
@@ -196,11 +198,6 @@ public class SiteDiagramForm extends GenericConfigForm {
      * @param pixel_x the pixel_x given from clicking the sitemap
      * @param pixel_y the pixel_y given from clicking the sitemap
      */
-    private List calcLinearMapping(double image_width, double image_height, double[] lowerLeftBound, double[] upperRightBound, int pixel_x, int pixel_y) {
-        double longitude = (pixel_x - lowerLeftBound[0]) / (upperRightBound[1] - lowerLeftBound[0]) * image_width;
-        double latitude = (upperRightBound[1] - pixel_y) / (upperRightBound[1] - lowerLeftBound[1]) * image_height;
 
-        return List.of(longitude,latitude);
-    }
 
 }

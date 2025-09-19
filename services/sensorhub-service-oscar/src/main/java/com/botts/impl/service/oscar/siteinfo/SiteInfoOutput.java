@@ -22,6 +22,8 @@ import net.opengis.swe.v20.DataEncoding;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.vast.data.TextEncodingImpl;
+import org.vast.swe.SWEBuilders;
+import org.vast.swe.SWEConstants;
 import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
 
@@ -42,6 +44,7 @@ public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
     public void init(){
         fac = new GeoPosHelper();
 
+
         this.recordStructure = fac.createRecord()
                 .name(NAME)
                 .label(LABEL)
@@ -55,11 +58,41 @@ public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
                         .label("Bounding box")
                         .definition(SWEHelper.getPropertyUri("SiteBoundingBox"))
                         .description("Geographic bounding box coordinates of site diagram")
-                        .addField("lowerLeftBound", fac.createLocationVectorLatLon()
+                        .addField("lowerLeftBound", fac.createVector()
+                                .addCoordinate("lat", fac.createQuantity()
+                                        .definition(SWEHelper.getPropertyUri("GeodeticLatitude"))
+                                        .refFrame(SWEConstants.REF_FRAME_4326)
+                                        .label("Geodetic Latitude")
+                                        .axisId("Lat")
+                                        .uomCode("deg")
+                                        .refFrame(null))
+                                .addCoordinate("lon", fac.createQuantity()
+                                        .definition(SWEHelper.getPropertyUri("Longitude"))
+                                        .refFrame(SWEConstants.REF_FRAME_4326)
+                                        .label("Geodetic Latitude")
+                                        .axisId("Lat")
+                                        .uomCode("deg")
+                                        .refFrame(null))
+                                .refFrame(SWEConstants.REF_FRAME_4326)
                                 .label("Lower Left Bound")
                                 .definition(SWEHelper.getPropertyUri("LowerLeftBound"))
                                 .build())
-                        .addField("upperRightBound", fac.createLocationVectorLatLon()
+                        .addField("upperRightBound", fac.createVector()
+                                .addCoordinate("lat", fac.createQuantity()
+                                        .definition(SWEHelper.getPropertyUri("GeodeticLatitude"))
+                                        .refFrame(SWEConstants.REF_FRAME_4326)
+                                        .label("Geodetic Latitude")
+                                        .axisId("Lat")
+                                        .uomCode("deg")
+                                        .refFrame(null))
+                                .addCoordinate("lon", fac.createQuantity()
+                                        .definition(SWEHelper.getPropertyUri("Longitude"))
+                                        .refFrame(SWEConstants.REF_FRAME_4326)
+                                        .label("Geodetic Latitude")
+                                        .axisId("Lat")
+                                        .uomCode("deg")
+                                        .refFrame(null))
+                                .refFrame(SWEConstants.REF_FRAME_4326)
                                 .label("Upper Right Bound")
                                 .definition(SWEHelper.getPropertyUri("UpperRightBound"))
                                 .build())
