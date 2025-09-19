@@ -53,7 +53,8 @@ public class OccupancyVideoPurgePolicy implements IObsSystemDbAutoPurgePolicy {
         long numObsRemoved = 0;
 
         // don't use a systemUID filter yet bc we need to access the rpms
-        var dataStreams = db.getDataStreamStore().selectEntries(new DataStreamFilter.Builder().build()).iterator();
+        var dataStreams = db.getDataStreamStore().selectEntries(new DataStreamFilter.Builder()
+                .build()).iterator();
 
         while (dataStreams.hasNext())
         {

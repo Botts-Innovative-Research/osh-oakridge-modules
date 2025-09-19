@@ -8,52 +8,184 @@ import com.vaadin.ui.Image;
 import com.vaadin.ui.Label;
 import com.vaadin.v7.data.Property;
 import com.vaadin.v7.ui.Field;
+import com.vaadin.v7.ui.TextField;
+import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.datastore.obs.DataStreamFilter;
+import org.sensorhub.api.datastore.obs.ObsFilter;
+import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.ui.GenericConfigForm;
 
-import java.awt.*;
 import java.io.File;
+import java.util.List;
+
+import static org.vast.swe.SWEHelper.getPropertyUri;
 
 /**
  * @author
  * @since
  */
 public class SiteDiagramForm extends GenericConfigForm {
+    private transient PositionConfig config;
+
+    private TextField latField;
+    private TextField lonField;
+
+    public static final String DEF_SITE_PATH = getPropertyUri("SiteDiagramPath");
+    public static final String DEF_LL_BOUND = getPropertyUri("LowerLeftBound");
+    public static final String DEF_UR_BOUND = getPropertyUri("UpperRightBound");
+
+
 
     @Override
     protected Field<?> buildAndBindField(String label, String propId, Property<?> prop) {
         Field<?> field = super.buildAndBindField(label, propId, prop);
 
         if (propId.equals("location.lon")) {
-            var image = addImage("web/sitemaps/image.png");
-            super.addComponents(image);
+            addSiteMapComponent();
+            lonField = (TextField) field;
         }
 
+        if(propId.equals("location.lat")) {
+            latField = (TextField) field;
+        }
         return field;
     }
 
-    private VerticalLayout addImage(String imageUrl){
+    private void addSiteMapComponent(){
+        try{
+            String imagePath = getSiteImagePath();
+
+            double[] bounds = getBoundingBoxCoordinates();
+            double[] lowerLeftBound = {bounds[0], bounds[1]};
+            double[] upperRightBound = {bounds[2], bounds[3]};
+            
+            VerticalLayout layout = createSiteMapLayout(imagePath, lowerLeftBound, upperRightBound);
+            super.addComponents(layout);
+
+        } catch (SensorHubException e){
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * @param imagePath
+     * @param lowerLeftBound
+     * @param upperRightBound
+     * @return
+     */
+    private VerticalLayout createSiteMapLayout(String imagePath, double[] lowerLeftBound, double[] upperRightBound) {
         VerticalLayout layout = new VerticalLayout();
-        final Image siteMap = new Image();
-        siteMap.setSource(new FileResource(new File("web/sitemaps/image.png")));
+        layout.setSpacing(true);
+
 
         HorizontalLayout coordinateLayout = new HorizontalLayout();
-
-        Label pixelCoordinatesTitle = new Label("Coordinates: ");
-        Label pixelCoordinates = new Label("");
+        Label pixelCoordinatesTitle = new Label("Pixel Coordinates: ");
+        Label pixelCoordinates = new Label("Click map to select location of lane");
         coordinateLayout.addComponents(pixelCoordinatesTitle, pixelCoordinates);
         layout.addComponent(coordinateLayout);
-//        layout.addComponent(new Label("Clicked at x: " + ", y: " ));
+
+
+        Image siteMap = new Image();
+        File imageFile = new File(imagePath);
+
+        if (!imageFile.exists()) {
+            layout.addComponent(new Label("Image not found: " + imagePath));
+        }
+        siteMap.setSource(new FileResource(imageFile));
+        siteMap.setHeight("600px");
+        siteMap.setWidth("800px");
 
         siteMap.addClickListener((MouseEvents.ClickListener) event -> {
-            var lon = event.getRelativeX();
-            var lat = event.getRelativeY();
-            System.out.println(lon + " " + lat);
-
-            pixelCoordinates.setValue(lon + ", " + lat);
-
+            handleMapClick(event, pixelCoordinates, lowerLeftBound, upperRightBound, siteMap);
         });
 
         layout.addComponent(siteMap);
+
         return layout;
+    }
+
+    /**
+     * @param event
+     * @param pixelCoordinates
+     * @param lowerLeftBound
+     * @param upperRightBound
+     * @param siteMap
+     */
+    public void handleMapClick(MouseEvents.ClickEvent event, Label pixelCoordinates, double[] lowerLeftBound, double[] upperRightBound, Image siteMap) {
+
+        int pixelX = event.getRelativeX();
+        int pixelY = event.getRelativeY();
+        pixelCoordinates.setValue(pixelX + ", " + pixelY);
+
+        double imgWidth = siteMap.getWidth();
+        double imgHeight = siteMap.getHeight();
+
+        double longitude = calculateLongitude(pixelX, lowerLeftBound, upperRightBound, imgWidth);
+        double latitude = calcLatitude(pixelY, lowerLeftBound, upperRightBound, imgHeight);
+
+        if (lonField != null)
+            lonField.setValue(String.valueOf(longitude));
+
+        if (latField != null)
+            latField.setValue(String.valueOf(latitude));
+    }
+
+
+    public String getSiteImagePath() throws SensorHubException {
+        var obs = getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withObservedProperties(DEF_SITE_PATH)
+                        .build())
+                .withLatestResult()
+                .build());
+
+        if(obs == null) return null;
+
+        var obsRes = obs.toList();
+        if(obsRes.isEmpty()) return null;
+
+        var path = obsRes.get(0).getResult().getStringValue(1);
+        System.out.println(path);
+
+        return path;
+    }
+
+    public double[] getBoundingBoxCoordinates() throws SensorHubException {
+        var obs = getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withObservedProperties(DEF_LL_BOUND, DEF_UR_BOUND)
+                        .build())
+                .withLatestResult()
+                .build());
+
+        if(obs == null) return null;
+
+        var obsRes = obs.toList();
+        if(obsRes.isEmpty()) return null;
+
+        var lowerLeftLon = obsRes.get(0).getResult().getDoubleValue(2);
+        var lowerLeftLat = obsRes.get(0).getResult().getDoubleValue(3);
+        var upperRightLon = obsRes.get(0).getResult().getDoubleValue(4);
+        var upperRightLat = obsRes.get(0).getResult().getDoubleValue(5);
+
+
+        return new double[]{lowerLeftLon, lowerLeftLat, upperRightLon, upperRightLat};
+    }
+
+
+
+    // x = longitude
+    // y = latitude
+    // [x,y] = [lon, lat]
+    private double calculateLongitude (int pixelX, double[] lowerLeftBound, double[] upperRightBound, double imageWidth) {
+        if (imageWidth == 0) return 0;
+
+        return lowerLeftBound[0] + (pixelX / imageWidth) * (upperRightBound[0] - lowerLeftBound[0]);
+    }
+
+    private double calcLatitude (int pixelY, double[] lowerLeftBound, double[] upperRightBound, double imageHeight) {
+        if (imageHeight == 0) return 0;
+
+        return upperRightBound[1] - (pixelY / imageHeight) * (upperRightBound[1] - lowerLeftBound[1]);
     }
 }

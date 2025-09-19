@@ -19,31 +19,50 @@ import com.botts.impl.service.oscar.clientconfig.ClientConfigOutput;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.impl.module.AbstractModule;
 
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
+    SiteInfoOutput siteInfoOutput;
+    RequestReportControl reportControl;
 
+    ClientConfigOutput clientConfigOutput;
 
+    OSCARSystem system;
     @Override
     protected void doInit() throws SensorHubException {
         super.doInit();
 
         // TODO: Add or update OSCAR system and client config system
-        OSCARSystem system = new OSCARSystem(config.nodeId);
+        system = new OSCARSystem(config.nodeId);
 
-        RequestReportControl reportControl = new RequestReportControl(system);
-        system.addControlInput(reportControl);
-
-        SiteInfoOutput siteInfoOutput = new SiteInfoOutput(system);
-        system.addOutput(siteInfoOutput, false);
-
-        ClientConfigOutput clientConfigOutput = new ClientConfigOutput(system);
-        system.addOutput(clientConfigOutput, false);
         // TODO: Add or update report generation control interface
 
         // TODO: Add or update site info datastream
+
+        createOutputs();
+        createControls();
+
         system.updateSensorDescription();
         getParentHub().getSystemDriverRegistry().register(system);
+
+        var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
+        getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
+
+    }
+
+    public void createOutputs(){
+
+        siteInfoOutput = new SiteInfoOutput(system);
+        system.addOutput(siteInfoOutput, false);
+
+        clientConfigOutput = new ClientConfigOutput(system);
+        system.addOutput(clientConfigOutput, false);
+    }
+
+    public void createControls(){
+        reportControl = new RequestReportControl(system);
+        system.addControlInput(reportControl);
     }
 
     @Override
@@ -51,6 +70,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         super.doStart();
 
         // TODO: Publish latest site info observation
+        siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
 
     }
 
