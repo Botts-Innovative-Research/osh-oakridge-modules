@@ -19,6 +19,7 @@ import com.botts.impl.service.oscar.clientconfig.ClientConfigOutput;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.impl.module.AbstractModule;
 
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
@@ -44,6 +45,10 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         system.updateSensorDescription();
         getParentHub().getSystemDriverRegistry().register(system);
+
+        var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
+        getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
+
     }
 
     public void createOutputs(){
