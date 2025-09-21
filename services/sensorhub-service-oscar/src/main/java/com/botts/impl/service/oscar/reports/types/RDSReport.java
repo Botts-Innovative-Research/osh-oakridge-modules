@@ -1,7 +1,7 @@
 package com.botts.impl.service.oscar.reports.types;
 
 import com.botts.impl.service.oscar.OSCARServiceModule;
-import com.botts.impl.service.oscar.reports.helpers.ReportType;
+import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
 import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
 import com.botts.impl.service.oscar.reports.helpers.Utils;
 import com.itextpdf.kernel.pdf.PdfDocument;
@@ -34,7 +34,7 @@ public class RDSReport extends Report {
 
     public RDSReport(Instant startTime, Instant endTime, OSCARServiceModule module) {
         try {
-            pdfFileName = ReportType.RDS_SITE.name()+ "_" + startTime + "_"+ endTime + ".pdf";
+            pdfFileName = ReportCmdType.RDS_SITE.name()+ "_" + startTime + "_"+ endTime + ".pdf";
             File file = new File("files/reports/" + pdfFileName);
             file.getParentFile().mkdirs();
 
