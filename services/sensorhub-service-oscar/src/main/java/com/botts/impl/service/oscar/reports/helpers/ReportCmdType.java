@@ -1,6 +1,6 @@
 package com.botts.impl.service.oscar.reports.helpers;
 
-public enum ReportType {
+public enum ReportCmdType {
     RDS_SITE,
     LANE,
     EVENT,

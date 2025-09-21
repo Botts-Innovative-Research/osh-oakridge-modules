@@ -13,34 +13,13 @@ public class TableGenerator {
         this.document = document;
     }
 
-    public void addTable(String[] headers, Object dataset){
-        Table table = new Table(UnitValue.createPercentArray(8)).useAllAvailableWidth();
-
-//        for(String header : headers){
-//            table.addHeaderCell(header);
-//        }
-//
-//        for(int i = 0; i < 10; i++){
-//            table.addCell("cell example");
-//        }
-
-        document.add(table);
-    }
-
     public void addTable(HashMap<String, Double> tableData){
         Table table = new Table(UnitValue.createPercentArray(8)).useAllAvailableWidth();
 
         for(String key : tableData.keySet()){
             table.addHeaderCell(key);
-//            table.addCell(String.valueOf(tableData.get(key)));
+            table.addCell(tableData.get(key).toString());
         }
-//        for(String header : headers){
-//            table.addHeaderCell(header);
-//        }
-//
-//        for(int i = 0; i < 10; i++){
-//            table.addCell("cell example");
-//        }
 
         document.add(table);
     }
