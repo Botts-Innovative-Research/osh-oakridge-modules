@@ -17,8 +17,7 @@ package com.botts.impl.service.oscar.reports;
 
 import com.botts.impl.service.oscar.OSCARServiceModule;
 import com.botts.impl.service.oscar.OSCARSystem;
-import com.botts.impl.service.oscar.reports.helpers.EventReportType;
-import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
+import com.botts.impl.service.oscar.reports.helpers.ReportType;
 import com.botts.impl.service.oscar.reports.types.*;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -26,31 +25,31 @@ import org.sensorhub.api.command.*;
 import org.sensorhub.impl.command.AbstractControlInterface;
 import org.vast.swe.SWEHelper;
 import org.vast.util.TimeExtent;
+
 import java.io.File;
 import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.concurrent.CompletableFuture;
 
-public class RequestReportControl extends AbstractControlInterface<OSCARSystem> implements IStreamingControlInterfaceWithResult {
+public class RequestReportControl extends AbstractControlInterface<OSCARSystem> {
 
     public static final String NAME = "requestReport";
     public static final String LABEL = "Request Report";
     public static final String DESCRIPTION = "Control to request operations, performance, and maintenance reports";
 
-    public static final String bucketPath = "/reports/";
+    public static final String path = "files/reports/";
 
     DataComponent commandStructure;
     DataComponent resultStructure;
     SWEHelper fac;
+    long startTime;
 
     OSCARServiceModule module;
 
-    public RequestReportControl(OSCARSystem parent, OSCARServiceModule module) {
+    public RequestReportControl(OSCARSystem parent) {
         super(NAME, parent);
 
         fac = new SWEHelper();
-        this.module = module;
+        module = new OSCARServiceModule();
 
         commandStructure = fac.createRecord()
                 .name(NAME)
@@ -68,18 +67,18 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                         .label("Report Type")
                         .definition(SWEHelper.getPropertyUri("ReportType"))
                         .description("Type of report to request")
-                        .addAllowedValues(ReportCmdType.class))
-                .addField("laneUID", fac.createText()
-                        .label("Lane Unique Identifier")
-                        .definition(SWEHelper.getPropertyUri("LaneUID"))
-                        .description("Identifier of the lane(s) to request"))
-                .addField("eventType", fac.createCategory()
-                        .label("Event Type")
-                        .definition(SWEHelper.getPropertyUri("EventType"))
-                        .description("Identifier of the event requested")
-                        .addAllowedValues(EventReportType.class))
+                        .addAllowedValues(ReportType.class))
+                .addField("laneId", fac.createText()
+                        .label("Lane ID")
+                        .definition(SWEHelper.getPropertyUri("LaneID"))
+                        .description("Identifier of the lane to request"))
+                .addField("eventID", fac.createText()
+                        .label("Event ID")
+                        .definition(SWEHelper.getPropertyUri("EventID"))
+                        .description("Identifier of the event requested"))
                 .build();
 
+        // e.g. localhost:8282/reports/report123.pdf vs. public.ip:8282/reports/report123.pdf
         resultStructure = fac.createRecord().name("result")
                 .addField("reportUrl", fac.createText())
                 .build();
@@ -95,71 +94,78 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
         return CompletableFuture.supplyAsync(() -> {
 
-            DataBlock paramData = command.getParams();
+            long now = System.currentTimeMillis();
 
+            if (startTime == 0)
+                this.startTime = now;
+
+            DataBlock paramData = command.getParams();
             Instant start = paramData.getTimeStamp(0);
             Instant end = paramData.getTimeStamp(1);
-            ReportCmdType type = ReportCmdType.valueOf(paramData.getStringValue(2));
-            String laneUIDs = paramData.getStringValue(3);
-            EventReportType eventType = EventReportType.valueOf(paramData.getStringValue(4));
+            ReportType type = ReportType.valueOf(paramData.getStringValue(2));
+            String laneId = paramData.getStringValue(3);
+            String eventId = paramData.getStringValue(4);
 
             Report report = null;
+
             File file;
 
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
-            String formattedStart = formatter.format(start);
 
-            if(type.equals(ReportCmdType.LANE)) {
-                for (var lane: laneUIDs.split(",")) {
-                    String filePath = bucketPath + type + "_" + lane + "_" + formattedStart + ".pdf";
-                    file = new File(filePath);
+            switch (type) {
+                case LANE -> {
+                    file = new File(path + type + "_" + laneId + "_" + start + "_" + end + ".pdf");
 
                     if (!file.exists())
-                        report = new LaneReport(filePath, start, end, lane, module);
+                        report = new LaneReport(start, end, laneId, module);
                 }
-            } else if(type.equals(ReportCmdType.EVENT)) {
-                for (var lane: laneUIDs.split(",")) {
-                    String filePath = bucketPath + type + "_" + eventType +  "_" +  lane + "_" + formattedStart + ".pdf";
-                    file = new File(filePath);
+                case RDS_SITE -> {
+                    file = new File(path + type + "_" + start + "_" + end + ".pdf");
 
                     if (!file.exists())
-                        report = new EventReport(filePath, start, end, eventType, lane, module);
+                        report = new RDSReport(start, end, module);
                 }
-            } else if (type.equals(ReportCmdType.ADJUDICATION)) {
-                for (var lane: laneUIDs.split(",")) {
-                    String filePath = bucketPath + type + "_" + lane + "_" + formattedStart + ".pdf";
-                    file = new File(filePath);
+                case EVENT -> {
+                    file = new File(path + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
 
                     if (!file.exists())
-                        report = new AdjudicationReport(filePath, start, end, lane, module);
+                        report = new EventReportTodo(start, end, eventId, laneId, module);
                 }
-            } else if (type.equals(ReportCmdType.RDS_SITE)) {
-                String filePath = bucketPath + type + "_" +  formattedStart + ".pdf";
-                file = new File(filePath);
-
-                if (!file.exists())
-                    report = new RDSReport(filePath, start, end, module);
+                case ADJUDICATION -> {
+                    file = new File(path + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
+                    if (!file.exists())
+                        report = new AdjudicationReport(start, end, eventId, laneId, module);
+                }
+                default -> report = null;
             }
 
+            if (report == null) System.out.println("Report not found");
 
-            assert report != null;
+
             String url = report.generate();
+
+            ICommandStatus status = null;
 
             DataBlock resultData = resultStructure.createDataBlock();
             resultData.setStringValue(url);
             ICommandResult result = CommandResult.withData(resultData);
 
+            if (url == null) {
+                status = new CommandStatus.Builder()
+                        .withCommand(command.getID())
+                        .withStatusCode(ICommandStatus.CommandStatusCode.FAILED)
+                        .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
+                        .withResult(result).build();
+            } else {
+                status = new CommandStatus.Builder()
+                        .withCommand(command.getID())
+                        .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
+                        .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
+                        .withResult(result)
+                        .build();
+            }
 
-            return new CommandStatus.Builder()
-                    .withCommand(command.getID())
-                    .withStatusCode(url == null ? ICommandStatus.CommandStatusCode.FAILED : ICommandStatus.CommandStatusCode.ACCEPTED)
-                    .withResult(result)
-                    .build();
+            return status;
         });
     }
 
-    @Override
-    public DataComponent getResultDescription() {
-        return resultStructure;
-    }
 }
