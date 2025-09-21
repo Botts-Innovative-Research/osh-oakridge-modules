@@ -145,26 +145,18 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
             String url = report.generate();
 
-            ICommandStatus status = null;
 
             DataBlock resultData = resultStructure.createDataBlock();
             resultData.setStringValue(url);
             ICommandResult result = CommandResult.withData(resultData);
 
-            if (url == null) {
-                status = new CommandStatus.Builder()
-                        .withCommand(command.getID())
-                        .withStatusCode(ICommandStatus.CommandStatusCode.FAILED)
-                        .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
-                        .withResult(result).build();
-            } else {
-                status = new CommandStatus.Builder()
-                        .withCommand(command.getID())
-                        .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
-                        .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
-                        .withResult(result)
-                        .build();
-            }
+
+            ICommandStatus status = new CommandStatus.Builder()
+                    .withCommand(command.getID())
+                    .withStatusCode(url == null ? ICommandStatus.CommandStatusCode.FAILED :ICommandStatus.CommandStatusCode.ACCEPTED )
+                    .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
+                    .withResult(result)
+                    .build();
 
             return status;
         });
