@@ -180,7 +180,7 @@ public class LaneReport extends Report {
 
         var query3 = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
                 .withDataStreams(new DataStreamFilter.Builder()
-                        
+
 
                         .withObservedProperties(DEF_ALARM, DEF_NEUTRON)
                         .build())
