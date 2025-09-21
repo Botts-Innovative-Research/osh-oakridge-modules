@@ -112,8 +112,6 @@ public class RDSReport extends Report {
             } else{
                 totalOccupancyCount++;
             }
-
-
         }
 
         double totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
@@ -121,10 +119,9 @@ public class RDSReport extends Report {
 
         emlSuppressedAverage = Utils.calcEMLAlarmRate(emlSuppressedCount, totalAlarmingCount);
 
-
-        alarmOccCounts.put("Gamma", gammaAlarmCount);
-        alarmOccCounts.put("Neutron", neutronAlarmCount);
-        alarmOccCounts.put("Gamma-Neutron", gammaNeutronAlarmCount);
+        alarmOccCounts.put("Gamma Alarm", gammaAlarmCount);
+        alarmOccCounts.put("Neutron Alarm", neutronAlarmCount);
+        alarmOccCounts.put("Gamma-Neutron Alarm", gammaNeutronAlarmCount);
         alarmOccCounts.put("EML Suppressed", emlSuppressedCount);
         alarmOccCounts.put("Total Occupancies", totalOccupancyCount);
         alarmOccCounts.put("Alarm Occupancy Rate", alarmOccupancyAverage);
