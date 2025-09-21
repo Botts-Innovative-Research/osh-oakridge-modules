@@ -15,56 +15,30 @@
 
 package com.botts.impl.service.oscar;
 
-import com.botts.api.service.bucket.IBucketService;
-import com.botts.impl.service.oscar.adjudication.AdjudicationControl;
 import com.botts.impl.service.oscar.clientconfig.ClientConfigOutput;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
-import com.botts.impl.service.oscar.siteinfo.SitemapDiagramHandler;
-import com.botts.impl.service.oscar.spreadsheet.SpreadsheetHandler;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.impl.module.AbstractModule;
 
-import java.io.FileNotFoundException;
-
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     SiteInfoOutput siteInfoOutput;
     RequestReportControl reportControl;
-    AdjudicationControl adjudicationControl;
 
     ClientConfigOutput clientConfigOutput;
-    SpreadsheetHandler spreadsheetHandler;
-    SitemapDiagramHandler sitemapDiagramHandler;
+
     OSCARSystem system;
-
-    IBucketService bucketService;
-
     @Override
     protected void doInit() throws SensorHubException {
         super.doInit();
 
+        // TODO: Add or update OSCAR system and client config system
         system = new OSCARSystem(config.nodeId);
 
-        bucketService = getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
-
-
-        spreadsheetHandler = new SpreadsheetHandler(getParentHub());
-        if (config.spreadsheetConfigPath != null && !config.spreadsheetConfigPath.isEmpty())
-            spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
+        // TODO: Add or update report generation control interface
 
         // TODO: Add or update site info datastream
-
-        sitemapDiagramHandler = new SitemapDiagramHandler(getBucketService());
-
-        if(config.siteDiagramConfig.siteDiagramPath != null && !config.siteDiagramConfig.siteDiagramPath.isEmpty()){
-            try {
-                sitemapDiagramHandler.handleFile(config.siteDiagramConfig.siteDiagramPath);
-            } catch (FileNotFoundException e) {
-                throw new RuntimeException(e);
-            }
-        }
-
 
         createOutputs();
         createControls();
@@ -78,6 +52,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public void createOutputs(){
+
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
 
@@ -86,39 +61,20 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public void createControls(){
-        reportControl = new RequestReportControl(system, this);
+        reportControl = new RequestReportControl(system);
         system.addControlInput(reportControl);
-
-        adjudicationControl = new AdjudicationControl(system, this);
-        system.addControlInput(adjudicationControl);
     }
 
     @Override
     protected void doStart() throws SensorHubException {
         super.doStart();
 
-
         // TODO: Publish latest site info observation
-        if (config.siteDiagramConfig != null
-                && config.siteDiagramConfig.siteDiagramPath != null
-                && !config.siteDiagramConfig.siteDiagramPath.isEmpty()
-                && config.siteDiagramConfig.siteLowerLeftBound != null
-                && config.siteDiagramConfig.siteUpperRightBound != null) {
-            siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
-        }
+        siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
+
+
     }
 
-    public SitemapDiagramHandler getSitemapDiagramHandler() {
-        return sitemapDiagramHandler;
-    }
-
-    public SpreadsheetHandler getSpreadsheetHandler() {
-        return spreadsheetHandler;
-    }
-
-    public IBucketService getBucketService() {
-        return bucketService;
-    }
     @Override
     protected void doStop() throws SensorHubException {
         super.doStop();
