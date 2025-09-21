@@ -3,12 +3,14 @@ package com.botts.impl.service.oscar.reports.types;
 import com.botts.impl.service.oscar.OSCARServiceModule;
 import com.botts.impl.service.oscar.reports.helpers.ReportType;
 import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
+import com.botts.impl.service.oscar.reports.helpers.Utils;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
+import org.sensorhub.api.datastore.system.SystemFilter;
 
 import java.io.File;
 import java.io.IOException;
@@ -23,6 +25,7 @@ import static com.botts.impl.service.oscar.reports.helpers.Constants.DEF_NEUTRON
 public class LaneReport extends Report {
 
     String reportTitle = "Lane Report";
+    String laneId;
     Document document;
     PdfWriter pdfWriter;
     PdfDocument pdfDocument;
@@ -45,6 +48,7 @@ public class LaneReport extends Report {
             throw new RuntimeException(e);
         }
 
+        this.laneId = laneId;
         this.module = module;
         tableGenerator = new TableGenerator(document);
     }
@@ -112,14 +116,19 @@ public class LaneReport extends Report {
 
         }
 
-//        double alarmRate = Utils.calculateAlarmingOccRate()
 
-        alarmOccCounts.put("Gamma", gammaAlarmCount);
-        alarmOccCounts.put("Neutron", neutronAlarmCount);
-        alarmOccCounts.put("Gamma-Neutron", gammaNeutronAlarmCount);
+        double totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
+        alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
+
+        emlSuppressedAverage = Utils.calcEMLAlarmRate(emlSuppressedCount, totalAlarmingCount);
+
+
+        alarmOccCounts.put("Gamma Alarm", gammaAlarmCount);
+        alarmOccCounts.put("Neutron Alarm", neutronAlarmCount);
+        alarmOccCounts.put("Gamma-Neutron Alarm", gammaNeutronAlarmCount);
         alarmOccCounts.put("EML Suppressed", emlSuppressedCount);
-        alarmOccCounts.put("Alarm Occupancy Rate", alarmOccupancyAverage);
         alarmOccCounts.put("Total Occupancies", totalOccupancyCount);
+        alarmOccCounts.put("Alarm Occupancy Rate", alarmOccupancyAverage);
         alarmOccCounts.put("EML Suppressed Rate", emlSuppressedAverage);
 
         tableGenerator.addTable(alarmOccCounts);
@@ -142,8 +151,8 @@ public class LaneReport extends Report {
 
 
         var query = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withSystems(new SystemFilter.Builder().withUniqueIDs("urn:osh:system:" + laneId).build())
                 .withDataStreams(new DataStreamFilter.Builder()
-
                         .withObservedProperties(DEF_TAMPER)
                         .build())
                 .build()).iterator();
@@ -160,6 +169,7 @@ public class LaneReport extends Report {
         }
 
         var query2 = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withSystems(new SystemFilter.Builder().withUniqueIDs("urn:osh:system:" + laneId).build())
                 .withDataStreams(new DataStreamFilter.Builder()
                         .withObservedProperties(DEF_ALARM, DEF_GAMMA)
                         .build())
@@ -179,9 +189,8 @@ public class LaneReport extends Report {
         }
 
         var query3 = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withSystems(new SystemFilter.Builder().withUniqueIDs("urn:osh:system:" + laneId).build())
                 .withDataStreams(new DataStreamFilter.Builder()
-
-
                         .withObservedProperties(DEF_ALARM, DEF_NEUTRON)
                         .build())
                 .build()).iterator();
