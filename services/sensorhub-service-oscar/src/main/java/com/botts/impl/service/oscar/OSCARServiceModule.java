@@ -15,6 +15,7 @@
 
 package com.botts.impl.service.oscar;
 
+import com.botts.impl.service.oscar.adjudication.AdjudicationControl;
 import com.botts.impl.service.oscar.clientconfig.ClientConfigOutput;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
@@ -25,6 +26,7 @@ import org.sensorhub.impl.module.AbstractModule;
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     SiteInfoOutput siteInfoOutput;
     RequestReportControl reportControl;
+    AdjudicationControl adjudicationControl;
 
     ClientConfigOutput clientConfigOutput;
 
@@ -63,6 +65,9 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     public void createControls(){
         reportControl = new RequestReportControl(system, this);
         system.addControlInput(reportControl);
+
+        adjudicationControl = new AdjudicationControl(system, this);
+        system.addControlInput(adjudicationControl);
     }
 
     @Override
