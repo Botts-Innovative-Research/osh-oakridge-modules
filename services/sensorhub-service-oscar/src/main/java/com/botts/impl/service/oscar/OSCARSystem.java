@@ -21,6 +21,7 @@ import net.opengis.gml.v32.impl.GMLFactory;
 import net.opengis.swe.v20.DataComponent;
 import org.sensorhub.api.command.IStreamingControlInterface;
 import org.sensorhub.api.data.IStreamingDataInterface;
+import org.sensorhub.api.database.IFederatedDatabase;
 import org.sensorhub.impl.sensor.AbstractSensorDriver;
 import org.vast.swe.SWEConstants;
 
@@ -109,6 +110,8 @@ public class OSCARSystem extends AbstractSensorDriver {
     public String getName() {
         return getShortID();
     }
+
+
 
     @Override
     public String getDescription() {

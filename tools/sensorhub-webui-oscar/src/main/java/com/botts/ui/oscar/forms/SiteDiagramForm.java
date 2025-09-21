@@ -77,13 +77,11 @@ public class SiteDiagramForm extends GenericConfigForm {
         VerticalLayout layout = new VerticalLayout();
         layout.setSpacing(true);
 
-
         HorizontalLayout coordinateLayout = new HorizontalLayout();
         Label pixelCoordinatesTitle = new Label("Pixel Coordinates: ");
         Label pixelCoordinates = new Label("Click map to select location of lane");
         coordinateLayout.addComponents(pixelCoordinatesTitle, pixelCoordinates);
         layout.addComponent(coordinateLayout);
-
 
         Image siteMap = new Image();
         File imageFile = new File(imagePath);
@@ -138,7 +136,6 @@ public class SiteDiagramForm extends GenericConfigForm {
                         .build())
                 .withLatestResult()
                 .build());
-
 
 
         var result = query.findFirst();
