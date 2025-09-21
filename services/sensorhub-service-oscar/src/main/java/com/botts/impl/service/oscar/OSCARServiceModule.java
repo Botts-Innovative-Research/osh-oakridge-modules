@@ -15,12 +15,9 @@
 
 package com.botts.impl.service.oscar;
 
-import com.botts.impl.service.oscar.adjudication.AdjudicationControl;
 import com.botts.impl.service.oscar.clientconfig.ClientConfigOutput;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
-import com.botts.impl.service.oscar.siteinfo.SitemapDiagramHandler;
-import com.botts.impl.service.oscar.spreadsheet.SpreadsheetHandler;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.impl.module.AbstractModule;
@@ -28,13 +25,10 @@ import org.sensorhub.impl.module.AbstractModule;
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     SiteInfoOutput siteInfoOutput;
     RequestReportControl reportControl;
-    AdjudicationControl adjudicationControl;
 
     ClientConfigOutput clientConfigOutput;
-    SpreadsheetHandler spreadsheetHandler;
-//    SitemapDiagramHandler sitemapDiagramHandler;
-    OSCARSystem system;
 
+    OSCARSystem system;
     @Override
     protected void doInit() throws SensorHubException {
         super.doInit();
@@ -44,18 +38,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         // TODO: Add or update report generation control interface
 
-
-        spreadsheetHandler = new SpreadsheetHandler(getParentHub());
-        if (config.spreadsheetConfigPath != null && !config.spreadsheetConfigPath.isEmpty())
-            spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
-
         // TODO: Add or update site info datastream
-//        sitemapDiagramHandler = new SitemapDiagramHandler(getParentHub());
-//
-//        if(config.siteDiagramConfig.siteDiagramPath != null && !config.siteDiagramConfig.siteDiagramPath.isEmpty()){
-//            sitemapDiagramHandler.handleFile(config.siteDiagramConfig.siteDiagramPath);
-//        }
-
 
         createOutputs();
         createControls();
@@ -69,6 +52,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public void createOutputs(){
+
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
 
@@ -77,34 +61,18 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public void createControls(){
-        reportControl = new RequestReportControl(system, this);
+        reportControl = new RequestReportControl(system);
         system.addControlInput(reportControl);
-
-        adjudicationControl = new AdjudicationControl(system, this);
-        system.addControlInput(adjudicationControl);
     }
 
     @Override
     protected void doStart() throws SensorHubException {
         super.doStart();
 
-
         // TODO: Publish latest site info observation
-        if (config.siteDiagramConfig != null
-                && config.siteDiagramConfig.siteDiagramPath != null
-                && !config.siteDiagramConfig.siteDiagramPath.isEmpty()
-                && config.siteDiagramConfig.siteLowerLeftBound != null
-                && config.siteDiagramConfig.siteUpperRightBound != null) {
-            siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
-        }
-    }
+        siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
 
-//    public SitemapDiagramHandler getSitemapDiagramHandler() {
-//        return sitemapDiagramHandler;
-//    }
 
-    public SpreadsheetHandler getSpreadsheetHandler() {
-        return spreadsheetHandler;
     }
 
     @Override

@@ -1,69 +1,53 @@
 package com.botts.impl.service.oscar.reports.types;
 
 import com.botts.impl.service.oscar.OSCARServiceModule;
-import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
+import com.botts.impl.service.oscar.reports.helpers.ReportType;
 import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
 import com.botts.impl.service.oscar.reports.helpers.Utils;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
-import org.sensorhub.api.data.IObsData;
+import org.sensorhub.api.database.IFederatedDatabase;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
-import org.sensorhub.impl.utils.rad.RADHelper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.FileStore;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.HashMap;
-import java.util.Map;
-import java.util.function.Predicate;
 
+import static com.botts.impl.service.oscar.reports.helpers.Constants.*;
 
 public class RDSReport extends Report {
 
-    private static final Logger log = LoggerFactory.getLogger(RDSReport.class);
     String reportTitle = "RDS Site Report";
 
     Document document;
+    PdfWriter pdfWriter;
     PdfDocument pdfDocument;
     String pdfFileName;
-
     String siteId;
-    Instant begin;
-    Instant end;
-
     TableGenerator tableGenerator;
+
     OSCARServiceModule module;
 
-    public RDSReport(String filePath, Instant startTime, Instant endTime, OSCARServiceModule module) {
+    public RDSReport(Instant startTime, Instant endTime, OSCARServiceModule module) {
         try {
-            pdfFileName = ReportCmdType.RDS_SITE.name()+ "_" + startTime + "_"+ endTime + ".pdf";
+            pdfFileName = ReportType.RDS_SITE.name()+ "_" + startTime + "_"+ endTime + ".pdf";
             File file = new File("files/reports/" + pdfFileName);
             file.getParentFile().mkdirs();
 
-            pdfDocument = new PdfDocument(new PdfWriter(file));
+            pdfWriter  = new PdfWriter(file);
+            pdfDocument = new PdfDocument(pdfWriter);
             document = new Document(pdfDocument);
-
         } catch (IOException e) {
-            document.close();
-            pdfDocument.close();
-            log.error(e.getMessage(), e);
-            return;
+            throw new RuntimeException(e);
         }
         this.module = module;
 
-        this.siteId = module.getConfiguration().nodeId;
 
-        this.begin = startTime;
-        this.end = endTime;
-        this.tableGenerator = new TableGenerator();
+        tableGenerator = new TableGenerator(document);
     }
 
     @Override
@@ -76,8 +60,6 @@ public class RDSReport extends Report {
         document.close();
         pdfDocument.close();
 
-        tableGenerator =null;
-
         return pdfFileName;
     }
 
@@ -88,49 +70,67 @@ public class RDSReport extends Report {
     }
 
     private void addAlarmStatistics(){
-
         document.add(new Paragraph("Alarm Statistics"));
 
-        Map<String, String> alarmOccCounts = new HashMap<>();
+        HashMap<String, Double> alarmOccCounts = new HashMap<>();
 
-        Predicate<IObsData> gammaNeutronPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);};
-
-        Predicate<IObsData> gammaPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);};
-
-        Predicate<IObsData> neutronPredicate = (obsData) -> {return !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);};;
-
-        Predicate<IObsData> occupancyTotalPredicate = (obsData) -> {return true;};
-
-        Predicate<IObsData> occupancyNonAlarmingPredicate = (obsData) -> {return !obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);};
-//        Predicate<IObsData> emlSuppPredicate = (obsData) -> {return obsData.getResult();};
+        double gammaAlarmCount = 0;
+        double neutronAlarmCount = 0;
+        double gammaNeutronAlarmCount = 0;
+        double emlSuppressedCount = 0;
+        double totalOccupancyCount = 0;
+        double alarmOccupancyAverage = 0;
+        double emlSuppressedAverage = 0;
 
 
-        long gammaNeutronAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, gammaNeutronPredicate, begin, end);
-        long gammaAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module ,gammaPredicate, begin, end);
-        long neutronAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, neutronPredicate, begin, end);
-        long totalOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyTotalPredicate, begin, end);
-//        long nonAlarmingOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyNonAlarmingPredicate, begin, end);
+        var query = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withObservedProperties(DEF_OCCUPANCY)
+                        .build())
+                .build()).iterator();
 
-//        long emlSuppressedCount= Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, emlSuppPredicate);
+        while (query.hasNext()) {
+            var entry = query.next();
+
+            var result = entry.getResult();
+
+            var gammaAlarm = result.getBooleanValue(5);
+            var neutronAlarm = result.getBooleanValue(6);
+
+            if (gammaAlarm && neutronAlarm) {
+                gammaNeutronAlarmCount++;
+                totalOccupancyCount++;
+
+            }  else if (gammaAlarm && !neutronAlarm) {
+                gammaAlarmCount++;
+                totalOccupancyCount++;
+
+            }   else if (!gammaAlarm && neutronAlarm) {
+                neutronAlarmCount++;
+                totalOccupancyCount++;
+
+            } else{
+                totalOccupancyCount++;
+            }
 
 
-        long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
-        long alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
+        }
 
-//        long emlSuppressedAverage = Utils.calcEMLAlarmRate(emlSuppressedCount, totalAlarmingCount);
+        double totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
+        alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
 
-        alarmOccCounts.put("Gamma Alarm", String.valueOf(gammaAlarmCount));
-        alarmOccCounts.put("Neutron Alarm", String.valueOf(neutronAlarmCount));
-        alarmOccCounts.put("Gamma-Neutron Alarm", String.valueOf(gammaNeutronAlarmCount));
-//        alarmOccCounts.put("Non-Alarming Occupancies", String.valueOf(nonAlarmingOccupancyCount));
-        alarmOccCounts.put("Total Occupancies", String.valueOf(totalOccupancyCount));
-        alarmOccCounts.put("Alarm Occupancy Rate", String.valueOf(alarmOccupancyAverage));
+        emlSuppressedAverage = Utils.calcEMLAlarmRate(emlSuppressedCount, totalAlarmingCount);
 
-        //        alarmOccCounts.put("EML Suppressed", emlSuppressedCount);
-//        alarmOccCounts.put("EML Alarm Rate", emlSuppressedAverage);
 
-        var table = tableGenerator.addTable(alarmOccCounts);
-        document.add(table);
+        alarmOccCounts.put("Gamma", gammaAlarmCount);
+        alarmOccCounts.put("Neutron", neutronAlarmCount);
+        alarmOccCounts.put("Gamma-Neutron", gammaNeutronAlarmCount);
+        alarmOccCounts.put("EML Suppressed", emlSuppressedCount);
+        alarmOccCounts.put("Total Occupancies", totalOccupancyCount);
+        alarmOccCounts.put("Alarm Occupancy Rate", alarmOccupancyAverage);
+        alarmOccCounts.put("EML Alarm Rate", emlSuppressedAverage);
+
+        tableGenerator.addTable(alarmOccCounts);
 
         document.add(new Paragraph("\n"));
     }
@@ -138,61 +138,83 @@ public class RDSReport extends Report {
     private void addFaultStatistics(){
         document.add(new Paragraph("Fault Statistics"));
 
-        HashMap<String, String> faultCounts = new HashMap<>();
+        HashMap<String, Double> faultCounts = new HashMap<>();
 
+       double tamperCount = 0;
+       double extendedOccupancyCount = 0;
+       double commsCount = 0;
+       double camCount = 0;
+       double gammaHighFaultCount = 0;
+       double gammaLowFaultCount = 0;
+       double neutronHighFaultCount = 0;
 
-        Predicate<IObsData> tamperPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
-        Predicate<IObsData> gammaHighPredicate = (obsData) -> {return obsData.getResult().getStringValue(1).equals("Fault - Gamma High");};
-        Predicate<IObsData> gammaLowPredicate = (obsData) -> {return obsData.getResult().getStringValue(1).equals("Fault - Gamma Low");};
-        Predicate<IObsData> neutronHighPredicate = (obsData) -> {return obsData.getResult().getStringValue(1).equals("Fault - Neutron High");};
-//        Predicate<IObsData> commsPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
-//        Predicate<IObsData> cameraPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
-//        Predicate<IObsData> extendedOccPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
+        var query = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withObservedProperties(DEF_TAMPER)
+                        .build())
+                .build()).iterator();
 
+        while (query.hasNext()) {
+            var entry = query.next();
 
-        long tamperCount = Utils.countObservations(new String[]{RADHelper.DEF_TAMPER}, module, tamperPredicate, begin, end);
-        long gammaHighFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM}, module,gammaHighPredicate, begin, end);
-        long gammaLowFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM}, module,gammaLowPredicate, begin, end);
-        long neutronHighFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM}, module,neutronHighPredicate, begin, end);
+            var result = entry.getResult();
 
-//        long extendedOccupancyCount = Utils.countObservations(RADHelper.DEF_TAMPER, module,extendedOccPredicate, begin, end);
+            var tamper = result.getBooleanValue(1);
+            if(tamper){
+                tamperCount++;
+            }
 
+        }
 
-        faultCounts.put("Tamper", String.valueOf(tamperCount));
+        var query2 = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withObservedProperties(DEF_ALARM, DEF_GAMMA)
+                        .build())
+                .build()).iterator();
+
+        while (query2.hasNext()) {
+            var entry = query2.next();
+            var result = entry.getResult();
+            var alarmState = result.getStringValue(1);
+
+            if(alarmState == "Fault - Gamma High"){
+                gammaHighFaultCount++;
+            }
+            else if(alarmState == "Fault - Gamma Low"){
+                gammaLowFaultCount++;
+            }
+        }
+
+        var query3 = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withObservedProperties(DEF_ALARM, DEF_NEUTRON)
+                        .build())
+                .build()).iterator();
+
+        while (query3.hasNext()) {
+            var entry = query2.next();
+            var result = entry.getResult();
+            var alarmState = result.getStringValue(1);
+
+            if(alarmState == "Fault - Neutron High"){
+                neutronHighFaultCount++;
+            }
+        }
+
+        faultCounts.put("Tamper", tamperCount);
 //        faultCounts.put("Extended Occupancy", extendedOccupancyCount);
 //        faultCounts.put("Comm", commsCount);
 //        faultCounts.put("Camera", camCount);
-        faultCounts.put("Gamma-High", String.valueOf(gammaHighFaultCount));
-        faultCounts.put("Gamma-Low", String.valueOf(gammaLowFaultCount));
-        faultCounts.put("Neutron-High", String.valueOf(neutronHighFaultCount));
+        faultCounts.put("Gamma-High", gammaHighFaultCount);
+        faultCounts.put("Gamma-Low", gammaLowFaultCount);
+        faultCounts.put("Neutron-High", neutronHighFaultCount);
 
-        var table = tableGenerator.addTable(faultCounts);
-        document.add(table);
+        tableGenerator.addTable(faultCounts);
 
         document.add(new Paragraph("\n"));
     }
 
     private void addDriveStorageAvailability(){
         document.add(new Paragraph("Drive Storage Availability"));
-
-        Map<String, String> driveStorageAvailability = new HashMap<>();
-        var roots = File.listRoots();
-
-        for(var drive: roots){
-            document.add(new Paragraph(drive.getName()));
-            long free = drive.getFreeSpace() / (1024 * 1024 * 1024);
-            long total = drive.getTotalSpace() / (1024 * 1024 * 1024);
-            long usable = drive.getUsableSpace() / (1024 * 1024 * 1024);
-
-            driveStorageAvailability.put("Free", free + " GB");
-            driveStorageAvailability.put("Total", total + " GB");
-            driveStorageAvailability.put("Usable", usable + " GB");
-
-            var table = tableGenerator.addTable(driveStorageAvailability);
-            document.add(table);
-
-            document.add(new Paragraph("\n"));
-        }
     }
-
 }
