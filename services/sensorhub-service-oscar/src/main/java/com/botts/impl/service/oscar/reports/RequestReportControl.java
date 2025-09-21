@@ -47,11 +47,11 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
     OSCARServiceModule module;
 
-    public RequestReportControl(OSCARSystem parent) {
+    public RequestReportControl(OSCARSystem parent, OSCARServiceModule module) {
         super(NAME, parent);
 
         fac = new SWEHelper();
-        module = new OSCARServiceModule();
+        this.module = module;
 
         commandStructure = fac.createRecord()
                 .name(NAME)
