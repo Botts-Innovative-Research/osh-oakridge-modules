@@ -72,6 +72,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         // TODO: Publish latest site info observation
         siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
 
+
     }
 
     @Override

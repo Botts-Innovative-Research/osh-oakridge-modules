@@ -1,10 +1,13 @@
 package com.botts.impl.service.oscar.reports.types;
 
+import com.botts.impl.service.oscar.OSCARServiceModule;
 import com.botts.impl.service.oscar.reports.helpers.ReportType;
+import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
+import org.sensorhub.api.database.IDatabaseRegistry;
 
 import java.io.File;
 import java.io.IOException;
@@ -17,9 +20,12 @@ public class EventReportTodo extends Report {
     Document document;
     PdfWriter pdfWriter;
     PdfDocument pdfDocument;
-
     String pdfFileName;
-    public EventReportTodo(Instant startTime, Instant endTime, String eventID, String laneId) {
+
+    OSCARServiceModule module;
+    TableGenerator tableGenerator;
+
+    public EventReportTodo(Instant startTime, Instant endTime, String eventID, String laneId, OSCARServiceModule module) {
         try {
 
             pdfFileName = ReportType.EVENT.name()+ "_" + laneId + "_" + eventID + "_" + startTime + "_"+ endTime + ".pdf";
@@ -32,6 +38,8 @@ public class EventReportTodo extends Report {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+        this.module = module;
+        tableGenerator = new TableGenerator(document);
     }
 
     @Override
