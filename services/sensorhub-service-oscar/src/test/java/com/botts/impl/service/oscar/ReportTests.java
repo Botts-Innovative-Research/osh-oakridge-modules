@@ -10,10 +10,9 @@ import org.sensorhub.api.command.IStreamingControlInterface;
 import java.time.Instant;
 
 public class ReportTests {
-
-    OSCARSystem system = new OSCARSystem("nodeId");
-    RequestReportControl requestReportControl = new RequestReportControl(system);
     OSCARServiceModule module = new OSCARServiceModule();
+    OSCARSystem system = new OSCARSystem("nodeId");
+    RequestReportControl requestReportControl = new RequestReportControl(system, module);
 
 
     @Test
@@ -32,7 +31,7 @@ public class ReportTests {
 
     @Test
     public void generateSiteReport() throws Exception {
-        
+
         DataChoice cmdChoice = (DataChoice) module.reportControl.getCommandDescription().copy();
 
         cmdChoice.assignNewDataBlock();
