@@ -10,5 +10,4 @@ public class Constants {
     public static final String DEF_ALARM = getPropertyUri("alarm");
     public static final String DEF_TAMPER = getPropertyUri("tamper-status");
     public static final String DEF_THRESHOLD = getPropertyUri("threshold");
-
 }

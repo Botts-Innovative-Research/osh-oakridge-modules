@@ -61,7 +61,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public void createControls(){
-        reportControl = new RequestReportControl(system);
+        reportControl = new RequestReportControl(system, this);
         system.addControlInput(reportControl);
     }
 
