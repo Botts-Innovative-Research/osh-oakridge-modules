@@ -25,7 +25,7 @@ import static com.botts.impl.service.oscar.reports.helpers.Constants.DEF_NEUTRON
 public class LaneReport extends Report {
 
     String reportTitle = "Lane Report";
-    String laneId;
+    String laneUID;
     Document document;
     PdfWriter pdfWriter;
     PdfDocument pdfDocument;
@@ -34,9 +34,9 @@ public class LaneReport extends Report {
     OSCARServiceModule module;
     TableGenerator tableGenerator;
 
-    public LaneReport(Instant startTime, Instant endTime, String laneId, OSCARServiceModule module) {
+    public LaneReport(Instant startTime, Instant endTime, String laneUID, OSCARServiceModule module) {
         try {
-            pdfFileName = ReportType.LANE.name() + "_" + laneId + "_" + startTime + "_"+ endTime + ".pdf";
+            pdfFileName = ReportType.LANE.name() + "_" + laneUID + "_" + startTime + "_"+ endTime + ".pdf";
             File file = new File("files/reports/" + pdfFileName);
             file.getParentFile().mkdirs();
 
@@ -48,7 +48,7 @@ public class LaneReport extends Report {
             throw new RuntimeException(e);
         }
 
-        this.laneId = laneId;
+        this.laneUID = laneUID;
         this.module = module;
         tableGenerator = new TableGenerator(document);
     }
@@ -89,9 +89,11 @@ public class LaneReport extends Report {
         double alarmOccupancyAverage = 0;
         double emlSuppressedAverage = 0;
 
-        // TODO: also need to sort out from specific LANE
 
         var query = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withSystems(new SystemFilter.Builder()
+                        .withUniqueIDs(laneUID)
+                        .build())
                 .withDataStreams(new DataStreamFilter.Builder()
                         .withObservedProperties(DEF_OCCUPANCY)
                         .build())
@@ -151,7 +153,9 @@ public class LaneReport extends Report {
 
 
         var query = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
-                .withSystems(new SystemFilter.Builder().withUniqueIDs("urn:osh:system:" + laneId).build())
+                .withSystems(new SystemFilter.Builder()
+                        .withUniqueIDs(laneUID)
+                        .build())
                 .withDataStreams(new DataStreamFilter.Builder()
                         .withObservedProperties(DEF_TAMPER)
                         .build())
@@ -169,7 +173,7 @@ public class LaneReport extends Report {
         }
 
         var query2 = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
-                .withSystems(new SystemFilter.Builder().withUniqueIDs("urn:osh:system:" + laneId).build())
+                .withSystems(new SystemFilter.Builder().withUniqueIDs(laneUID).build())
                 .withDataStreams(new DataStreamFilter.Builder()
                         .withObservedProperties(DEF_ALARM, DEF_GAMMA)
                         .build())
@@ -189,7 +193,9 @@ public class LaneReport extends Report {
         }
 
         var query3 = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
-                .withSystems(new SystemFilter.Builder().withUniqueIDs("urn:osh:system:" + laneId).build())
+                .withSystems(new SystemFilter.Builder()
+                        .withUniqueIDs(laneUID)
+                        .build())
                 .withDataStreams(new DataStreamFilter.Builder()
                         .withObservedProperties(DEF_ALARM, DEF_NEUTRON)
                         .build())
