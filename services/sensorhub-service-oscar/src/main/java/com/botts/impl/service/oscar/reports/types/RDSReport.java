@@ -1,36 +1,38 @@
 package com.botts.impl.service.oscar.reports.types;
 
+import com.botts.impl.service.oscar.OSCARServiceModule;
 import com.botts.impl.service.oscar.reports.helpers.ReportType;
+import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
+import com.botts.impl.service.oscar.reports.helpers.Utils;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
+import org.sensorhub.api.database.IFederatedDatabase;
+import org.sensorhub.api.datastore.obs.DataStreamFilter;
+import org.sensorhub.api.datastore.obs.ObsFilter;
 
 import java.io.File;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.HashMap;
+
+import static com.botts.impl.service.oscar.reports.helpers.Constants.*;
 
 public class RDSReport extends Report {
+
     String reportTitle = "RDS Site Report";
-
-
-    String[] alarmOccupancyHeaders =  {
-            "Neutron", "Gamma", "Gamma & Neutron", "EML Suppressed", "Total Occupancies",  "Daily Occupancy Average", "Speed (Avg)", "Alarm Rate", "EML Alarm Rate"
-    };
-
-    String[] faultHeaders =  {
-            "Gamma-High", "Gamma-Low", "Neutron-High", "Tamper", "Extended Occupancy", "Comm", "Camera"
-    };
-
 
     Document document;
     PdfWriter pdfWriter;
     PdfDocument pdfDocument;
     String pdfFileName;
-
     String siteId;
+    TableGenerator tableGenerator;
 
-    public RDSReport(Instant startTime, Instant endTime) {
+    OSCARServiceModule module;
+
+    public RDSReport(Instant startTime, Instant endTime, OSCARServiceModule module) {
         try {
             pdfFileName = ReportType.RDS_SITE.name()+ "_" + startTime + "_"+ endTime + ".pdf";
             File file = new File("files/reports/" + pdfFileName);
@@ -42,25 +44,23 @@ public class RDSReport extends Report {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+        this.module = module;
+
+
+        tableGenerator = new TableGenerator(document);
     }
 
     @Override
     public String generate(){
-
         addHeader();
-
         addAlarmStatistics();
         addFaultStatistics();
-        addStatistics();
-        addOccupancyStatistics();
         addDriveStorageAvailability();
 
         document.close();
-
         pdfDocument.close();
 
         return pdfFileName;
-
     }
 
     private void addHeader(){
@@ -71,28 +71,145 @@ public class RDSReport extends Report {
 
     private void addAlarmStatistics(){
         document.add(new Paragraph("Alarm Statistics"));
-        //        addTableToPdf(faultHeaders, null);
+
+        HashMap<String, Double> alarmOccCounts = new HashMap<>();
+
+        double gammaAlarmCount = 0;
+        double neutronAlarmCount = 0;
+        double gammaNeutronAlarmCount = 0;
+        double emlSuppressedCount = 0;
+        double totalOccupancyCount = 0;
+        double alarmOccupancyAverage = 0;
+        double emlSuppressedAverage = 0;
+
+
+        var query = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withObservedProperties(DEF_OCCUPANCY)
+                        .build())
+                .build()).iterator();
+
+        while (query.hasNext()) {
+            var entry = query.next();
+
+            var result = entry.getResult();
+
+            var gammaAlarm = result.getBooleanValue(5);
+            var neutronAlarm = result.getBooleanValue(6);
+
+            if (gammaAlarm && neutronAlarm) {
+                gammaNeutronAlarmCount++;
+                totalOccupancyCount++;
+
+            }  else if (gammaAlarm && !neutronAlarm) {
+                gammaAlarmCount++;
+                totalOccupancyCount++;
+
+            }   else if (!gammaAlarm && neutronAlarm) {
+                neutronAlarmCount++;
+                totalOccupancyCount++;
+
+            } else{
+                totalOccupancyCount++;
+            }
+
+
+        }
+
+        double totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
+        alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
+
+        emlSuppressedAverage = Utils.calcEMLAlarmRate(emlSuppressedCount, totalAlarmingCount);
+
+
+        alarmOccCounts.put("Gamma", gammaAlarmCount);
+        alarmOccCounts.put("Neutron", neutronAlarmCount);
+        alarmOccCounts.put("Gamma-Neutron", gammaNeutronAlarmCount);
+        alarmOccCounts.put("EML Suppressed", emlSuppressedCount);
+        alarmOccCounts.put("Total Occupancies", totalOccupancyCount);
+        alarmOccCounts.put("Alarm Occupancy Rate", alarmOccupancyAverage);
+        alarmOccCounts.put("EML Alarm Rate", emlSuppressedAverage);
+
+        tableGenerator.addTable(alarmOccCounts);
 
         document.add(new Paragraph("\n"));
     }
 
     private void addFaultStatistics(){
         document.add(new Paragraph("Fault Statistics"));
-        //        addTableToPdf(faultHeaders, null);
 
-        document.add(new Paragraph("\n"));
-    }
+        HashMap<String, Double> faultCounts = new HashMap<>();
 
-    private void addOccupancyStatistics(){
-        document.add(new Paragraph("Occupancy Statistics"));
-        //        addTableToPdf(faultHeaders, null);
+       double tamperCount = 0;
+       double extendedOccupancyCount = 0;
+       double commsCount = 0;
+       double camCount = 0;
+       double gammaHighFaultCount = 0;
+       double gammaLowFaultCount = 0;
+       double neutronHighFaultCount = 0;
 
-        document.add(new Paragraph("\n"));
-    }
+        var query = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withObservedProperties(DEF_TAMPER)
+                        .build())
+                .build()).iterator();
 
-    private void addStatistics() {
-        document.add(new Paragraph("Statistics").setFontSize(12));
-        //        addTableToPdf(faultHeaders, null);
+        while (query.hasNext()) {
+            var entry = query.next();
+
+            var result = entry.getResult();
+
+            var tamper = result.getBooleanValue(1);
+            if(tamper){
+                tamperCount++;
+            }
+
+        }
+
+        var query2 = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withObservedProperties(DEF_ALARM, DEF_GAMMA)
+                        .build())
+                .build()).iterator();
+
+        while (query2.hasNext()) {
+            var entry = query2.next();
+            var result = entry.getResult();
+            var alarmState = result.getStringValue(1);
+
+            if(alarmState == "Fault - Gamma High"){
+                gammaHighFaultCount++;
+            }
+            else if(alarmState == "Fault - Gamma Low"){
+                gammaLowFaultCount++;
+            }
+        }
+
+        var query3 = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withObservedProperties(DEF_ALARM, DEF_NEUTRON)
+                        .build())
+                .build()).iterator();
+
+        while (query3.hasNext()) {
+            var entry = query2.next();
+            var result = entry.getResult();
+            var alarmState = result.getStringValue(1);
+
+            if(alarmState == "Fault - Neutron High"){
+                neutronHighFaultCount++;
+            }
+        }
+
+        faultCounts.put("Tamper", tamperCount);
+//        faultCounts.put("Extended Occupancy", extendedOccupancyCount);
+//        faultCounts.put("Comm", commsCount);
+//        faultCounts.put("Camera", camCount);
+        faultCounts.put("Gamma-High", gammaHighFaultCount);
+        faultCounts.put("Gamma-Low", gammaLowFaultCount);
+        faultCounts.put("Neutron-High", neutronHighFaultCount);
+
+        tableGenerator.addTable(faultCounts);
 
         document.add(new Paragraph("\n"));
     }

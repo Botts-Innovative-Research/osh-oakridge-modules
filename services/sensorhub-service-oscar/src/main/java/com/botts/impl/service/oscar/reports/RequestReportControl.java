@@ -15,6 +15,7 @@
 
 package com.botts.impl.service.oscar.reports;
 
+import com.botts.impl.service.oscar.OSCARServiceModule;
 import com.botts.impl.service.oscar.OSCARSystem;
 import com.botts.impl.service.oscar.reports.helpers.ReportType;
 import com.botts.impl.service.oscar.reports.types.*;
@@ -42,10 +43,13 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
     SWEHelper fac;
     long startTime;
 
+    OSCARServiceModule module;
+
     public RequestReportControl(OSCARSystem parent) {
         super(NAME, parent);
 
         fac = new SWEHelper();
+        module = new OSCARServiceModule();
 
         commandStructure = fac.createRecord()
                 .name(NAME)
@@ -106,29 +110,30 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
             File file;
 
+
             switch (type) {
                 case LANE -> {
                     file = new File(path + type + "_" + laneId + "_" + start + "_" + end + ".pdf");
 
                     if (!file.exists())
-                        report = new LaneReport(start, end, laneId);
+                        report = new LaneReport(start, end, laneId, module);
                 }
                 case RDS_SITE -> {
                     file = new File(path + type + "_" + start + "_" + end + ".pdf");
 
                     if (!file.exists())
-                        report = new RDSReport(start, end);
+                        report = new RDSReport(start, end, module);
                 }
                 case EVENT -> {
                     file = new File(path + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
 
                     if (!file.exists())
-                        report = new EventReportTodo(start, end, eventId, laneId);
+                        report = new EventReportTodo(start, end, eventId, laneId, module);
                 }
                 case ADJUDICATION -> {
                     file = new File(path + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
                     if (!file.exists())
-                        report = new AdjudicationReport(start, end, eventId, laneId);
+                        report = new AdjudicationReport(start, end, eventId, laneId, module);
                 }
                 default -> report = null;
             }
