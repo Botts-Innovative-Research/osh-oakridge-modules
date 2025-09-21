@@ -103,7 +103,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             Instant start = paramData.getTimeStamp(0);
             Instant end = paramData.getTimeStamp(1);
             ReportType type = ReportType.valueOf(paramData.getStringValue(2));
-            String laneId = paramData.getStringValue(3);
+            String laneUID = paramData.getStringValue(3);
             String eventId = paramData.getStringValue(4);
 
             Report report = null;
@@ -113,10 +113,10 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
             switch (type) {
                 case LANE -> {
-                    file = new File(path + type + "_" + laneId + "_" + start + "_" + end + ".pdf");
+                    file = new File(path + type + "_" + laneUID + "_" + start + "_" + end + ".pdf");
 
                     if (!file.exists())
-                        report = new LaneReport(start, end, laneId, module);
+                        report = new LaneReport(start, end, laneUID, module);
                 }
                 case RDS_SITE -> {
                     file = new File(path + type + "_" + start + "_" + end + ".pdf");
@@ -125,15 +125,15 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                         report = new RDSReport(start, end, module);
                 }
                 case EVENT -> {
-                    file = new File(path + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
+                    file = new File(path + type + "_" + laneUID + "_" + eventId + "_" + start + "_" + end + ".pdf");
 
                     if (!file.exists())
-                        report = new EventReportTodo(start, end, eventId, laneId, module);
+                        report = new EventReportTodo(start, end, eventId, laneUID, module);
                 }
                 case ADJUDICATION -> {
-                    file = new File(path + type + "_" + laneId + "_" + eventId + "_" + start + "_" + end + ".pdf");
+                    file = new File(path + type + "_" + laneUID + "_" + eventId + "_" + start + "_" + end + ".pdf");
                     if (!file.exists())
-                        report = new AdjudicationReport(start, end, eventId, laneId, module);
+                        report = new AdjudicationReport(start, end, eventId, laneUID, module);
                 }
                 default -> report = null;
             }
