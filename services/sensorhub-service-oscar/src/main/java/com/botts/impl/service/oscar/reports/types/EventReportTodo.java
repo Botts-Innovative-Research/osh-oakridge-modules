@@ -1,7 +1,7 @@
 package com.botts.impl.service.oscar.reports.types;
 
 import com.botts.impl.service.oscar.OSCARServiceModule;
-import com.botts.impl.service.oscar.reports.helpers.ReportType;
+import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
 import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
@@ -28,7 +28,7 @@ public class EventReportTodo extends Report {
     public EventReportTodo(Instant startTime, Instant endTime, String eventID, String laneId, OSCARServiceModule module) {
         try {
 
-            pdfFileName = ReportType.EVENT.name()+ "_" + laneId + "_" + eventID + "_" + startTime + "_"+ endTime + ".pdf";
+            pdfFileName = ReportCmdType.EVENT.name()+ "_" + laneId + "_" + eventID + "_" + startTime + "_"+ endTime + ".pdf";
             File file = new File( "files/reports/" + pdfFileName);
             file.getParentFile().mkdirs();
 

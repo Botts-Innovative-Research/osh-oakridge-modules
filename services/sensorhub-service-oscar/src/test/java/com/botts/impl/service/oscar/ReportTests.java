@@ -1,38 +1,5 @@
 package com.botts.impl.service.oscar;
 
-import com.botts.impl.service.oscar.reports.RequestReportControl;
-import com.botts.impl.service.oscar.reports.helpers.ChartGenerator;
-import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
-import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
-import com.botts.impl.service.oscar.reports.helpers.Utils;
-import com.itextpdf.io.image.ImageDataFactory;
-import com.itextpdf.kernel.pdf.PdfDocument;
-import com.itextpdf.kernel.pdf.PdfWriter;
-import com.itextpdf.layout.Document;
-import com.itextpdf.layout.element.Image;
-import net.opengis.swe.v20.DataChoice;
-import org.jfree.data.category.DefaultCategoryDataset;
-import org.junit.Test;
-import org.sensorhub.api.command.CommandData;
-import org.sensorhub.api.command.ICommandStatus;
-import org.sensorhub.api.data.IObsData;
-import org.sensorhub.api.datastore.obs.DataStreamFilter;
-import org.sensorhub.api.datastore.obs.ObsFilter;
-import org.sensorhub.impl.utils.rad.RADHelper;
-
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
-import java.util.*;
-import java.util.function.Predicate;
-
-import static org.junit.Assert.*;
-
 public class ReportTests {
     OSCARServiceModule module = new OSCARServiceModule();
     OSCARSystem system = new OSCARSystem("nodeId");

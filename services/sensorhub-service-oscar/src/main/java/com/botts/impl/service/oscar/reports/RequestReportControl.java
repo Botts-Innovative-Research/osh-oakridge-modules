@@ -17,7 +17,7 @@ package com.botts.impl.service.oscar.reports;
 
 import com.botts.impl.service.oscar.OSCARServiceModule;
 import com.botts.impl.service.oscar.OSCARSystem;
-import com.botts.impl.service.oscar.reports.helpers.ReportType;
+import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
 import com.botts.impl.service.oscar.reports.types.*;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
@@ -29,6 +29,8 @@ import org.vast.util.TimeExtent;
 import java.io.File;
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
+
+import static com.botts.impl.service.oscar.reports.helpers.ReportCmdType.ADJUDICATION;
 
 public class RequestReportControl extends AbstractControlInterface<OSCARSystem> {
 
@@ -67,7 +69,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                         .label("Report Type")
                         .definition(SWEHelper.getPropertyUri("ReportType"))
                         .description("Type of report to request")
-                        .addAllowedValues(ReportType.class))
+                        .addAllowedValues(ReportCmdType.class))
                 .addField("laneId", fac.createText()
                         .label("Lane ID")
                         .definition(SWEHelper.getPropertyUri("LaneID"))
@@ -102,7 +104,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             DataBlock paramData = command.getParams();
             Instant start = paramData.getTimeStamp(0);
             Instant end = paramData.getTimeStamp(1);
-            ReportType type = ReportType.valueOf(paramData.getStringValue(2));
+            ReportCmdType type = ReportCmdType.valueOf(paramData.getStringValue(2));
             String laneUID = paramData.getStringValue(3);
             String eventId = paramData.getStringValue(4);
 
