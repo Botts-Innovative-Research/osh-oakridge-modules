@@ -1,7 +1,7 @@
 package com.botts.impl.service.oscar.reports.types;
 
 import com.botts.impl.service.oscar.OSCARServiceModule;
-import com.botts.impl.service.oscar.reports.helpers.ReportType;
+import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
 import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
 import com.botts.impl.service.oscar.reports.helpers.Utils;
 import com.itextpdf.kernel.pdf.PdfDocument;
@@ -36,7 +36,7 @@ public class LaneReport extends Report {
 
     public LaneReport(Instant startTime, Instant endTime, String laneUID, OSCARServiceModule module) {
         try {
-            pdfFileName = ReportType.LANE.name() + "_" + laneUID + "_" + startTime + "_"+ endTime + ".pdf";
+            pdfFileName = ReportCmdType.LANE.name() + "_" + laneUID + "_" + startTime + "_"+ endTime + ".pdf";
             File file = new File("files/reports/" + pdfFileName);
             file.getParentFile().mkdirs();
 
@@ -163,9 +163,7 @@ public class LaneReport extends Report {
 
         while (query.hasNext()) {
             var entry = query.next();
-
             var result = entry.getResult();
-
             var tamper = result.getBooleanValue(1);
             if(tamper){
                 tamperCount++;
