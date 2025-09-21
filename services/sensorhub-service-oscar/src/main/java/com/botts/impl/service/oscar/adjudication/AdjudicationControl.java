@@ -23,10 +23,7 @@ import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.command.*;
-import org.sensorhub.api.common.BigId;
-import org.sensorhub.api.common.IdEncoder;
 import org.sensorhub.impl.command.AbstractControlInterface;
-import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.vast.swe.SWEHelper;
 import org.vast.util.TimeExtent;
 
@@ -34,7 +31,7 @@ import java.io.File;
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 
-public class AdjudicationControl extends AbstractSensorControl<OSCARSystem> {
+public class AdjudicationControl extends AbstractControlInterface<OSCARSystem> {
 
     public static final String NAME = "adjudicationControl";
     public static final String LABEL = "Adjudication Control";
@@ -42,10 +39,11 @@ public class AdjudicationControl extends AbstractSensorControl<OSCARSystem> {
 
     public static final String path = "files/adjudication/";
 
-    DataRecord commandData;
-
+    DataComponent commandStructure;
+    DataComponent resultStructure;
     SWEHelper fac;
-    IdEncoder obsEncoder;
+    long startTime;
+
     OSCARServiceModule module;
 
     public AdjudicationControl(OSCARSystem parent, OSCARServiceModule module) {
@@ -54,54 +52,59 @@ public class AdjudicationControl extends AbstractSensorControl<OSCARSystem> {
         fac = new SWEHelper();
         this.module = module;
 
-        commandData = fac.createRecord()
-                .name(getName())
+        commandStructure = fac.createRecord()
+                .name(NAME)
                 .label(LABEL)
+                .description(DESCRIPTION)
                 .addField("observationId", fac.createText()
-                        .definition(SWEHelper.getPropertyUri("ObservationId"))
+                        .definition(SWEHelper.getPropertyUri("ObservationID"))
                         .label("Observation ID")
                         .build())
                 .addField("setAdjudicated", fac.createBoolean()
-                        .definition(SWEHelper.getPropertyUri("SetAdjudicated"))
                         .label("Set Adjudicated")
+                        .definition(SWEHelper.getPropertyUri("SetAdjudicated"))
+                        .build())
+                .build();
+
+        resultStructure = fac.createRecord().name("result")
+                .addField("isAdjudicated", fac.createBoolean()
+                        .label("Adjudicated")
+                        .definition(SWEHelper.getPropertyUri("IsAdjudicated"))
                         .build())
                 .build();
     }
 
     @Override
     public DataComponent getCommandDescription() {
-        return commandData;
+        return commandStructure;
     }
 
     @Override
-    protected boolean execCommand(DataBlock command) {
+    public CompletableFuture<ICommandStatus> submitCommand(ICommandData command) {
 
-        DataRecord commandMsg = commandData.copy();
-        commandMsg.setData(command);
+        return CompletableFuture.supplyAsync(() -> {
 
-        String observationId = commandMsg.getData().getStringValue(0);
-        boolean setAdjudicated = commandMsg.getData().getBooleanValue(1);
+            long now = System.currentTimeMillis();
 
-        if(observationId == null || observationId.equals("null"))
-            return false;
+            if (startTime == 0)
+                this.startTime = now;
 
-        BigId internalObsId = obsEncoder.decodeID(observationId);
+            DataBlock paramData = command.getParams();
+            String observationId = paramData.getStringValue(0);
+            boolean setAdjudicated = paramData.getBooleanValue(1);
 
-        var prevObs = module.getParentHub().getDatabaseRegistry()
-                .getFederatedDatabase()
-                .getObservationStore().get(internalObsId);
+            DataBlock resultData = resultStructure.createDataBlock();
+            resultData.setStringValue(observationId);
+            resultData.setBooleanValue(setAdjudicated);
+            ICommandResult result = CommandResult.withData(resultData);
 
-        prevObs.getResult().setBooleanValue(9, setAdjudicated);
-
-        String systemUID = getParentProducer().getParentSystemUID() != null ?
-                getParentProducer().getParentSystemUID() :
-                getParentProducer().getUniqueIdentifier();
-
-        var obsDb = module.getParentHub().getSystemDriverRegistry().getDatabase(systemUID);
-
-        obsDb.getObservationStore().put(internalObsId, prevObs);
-
-        return prevObs.getResult().getBooleanValue(9) == setAdjudicated;
-
+            ICommandStatus status = new CommandStatus.Builder()
+                    .withCommand(command.getID())
+                    .withStatusCode(ICommandStatus.CommandStatusCode.FAILED)
+                    .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
+                    .withResult(result).build();
+            return status;
+        });
     }
+
 }
