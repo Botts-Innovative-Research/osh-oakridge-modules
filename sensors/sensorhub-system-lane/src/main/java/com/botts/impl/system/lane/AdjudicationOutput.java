@@ -102,6 +102,7 @@ public class AdjudicationOutput extends AbstractSensorOutput<LaneSystem> {
         dataBlock.setStringValue(6, alarmSystemUID);
         dataBlock.setStringValue(7, vehicleID);
 
+
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();
         eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));
