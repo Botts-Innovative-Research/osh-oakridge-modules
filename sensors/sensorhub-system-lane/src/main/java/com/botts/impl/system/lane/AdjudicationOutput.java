@@ -13,10 +13,9 @@
 
  ******************************************************************************/
 
-package com.botts.impl.service.oscar.adjudication;
+package com.botts.impl.system.lane;
 
-import com.botts.impl.service.oscar.OSCARSystem;
-import com.botts.impl.service.oscar.siteinfo.SiteDiagramConfig;
+
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -27,7 +26,7 @@ import org.vast.swe.SWEHelper;
 
 import java.util.Arrays;
 
-public class AdjudicationOutput extends AbstractSensorOutput<OSCARSystem> {
+public class AdjudicationOutput extends AbstractSensorOutput<LaneSystem> {
 
     public static final String NAME = "adjudication";
     public static final String LABEL = "Adjudication";
@@ -37,7 +36,7 @@ public class AdjudicationOutput extends AbstractSensorOutput<OSCARSystem> {
     DataEncoding recordEncoding;
     SWEHelper fac;
 
-    public AdjudicationOutput(OSCARSystem parentSensor) {
+    public AdjudicationOutput(LaneSystem parentSensor) {
         super(NAME, parentSensor);
 
         fac = new SWEHelper();
