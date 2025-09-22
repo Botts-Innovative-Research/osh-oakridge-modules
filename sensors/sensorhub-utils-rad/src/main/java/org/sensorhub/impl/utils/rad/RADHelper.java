@@ -21,7 +21,6 @@ public class RADHelper extends GeoPosHelper {
     public static final String DEF_ALARM = getRadUri("alarm");
     public static final String DEF_TAMPER = getRadUri("tamper-status");
     public static final String DEF_THRESHOLD = getRadUri("threshold");
-    public static final String DEF_ADJUDICATION = getRadUri("adjudicationCode");
 
 
     public static String getRadUri(String propName) {
