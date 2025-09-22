@@ -27,11 +27,13 @@ import org.bytedeco.ffmpeg.global.avformat;
 import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.PointerPointer;
+import org.sensorhub.impl.sensor.ffmpeg.outputs.MP4Output;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.bytedeco.ffmpeg.global.avcodec.*;
@@ -140,14 +142,9 @@ public class MpegTsProcessor extends Thread {
     private int dataStreamId = INVALID_STREAM_ID;
 
     /**
-     * Listener for data buffers extracted from the transport stream
-     */
-    private DataBufferListener metadataDataBufferListener;
-
-    /**
      * Listener for video buffers extracted from the transport stream
      */
-    private DataBufferListener videoDataBufferListener;
+    private final List<DataBufferListener> videoDataBufferListeners = new ArrayList<>();
 
     /**
      * Flag indicating if processing of the transport stream should be terminated
@@ -192,20 +189,7 @@ public class MpegTsProcessor extends Thread {
 
     private boolean useTCP;
 
-    private volatile boolean doFileWrite = false;
 
-    private String outputFile = "";
-
-    private AVFormatContext outputContext;
-
-    private final Object contextLock = new Object();
-
-    private ArrayDeque<AVPacket> framesSinceKey = new ArrayDeque<>();
-
-    private long filePts = 0;
-    private long filePacketPos = 0;
-
-    AVStream outputVideoStream;
 
     /**
      * Constructor
@@ -238,7 +222,15 @@ public class MpegTsProcessor extends Thread {
     }
 
     public void openFile(String outputFile) throws IOException {
+        List<MP4Output> fileOutputList = getVideoDataBufferListenersByType(MP4Output.class);
+        for (var fileOutput : fileOutputList) {
+            fileOutput.openFile(outputFile, this.avFormatContext, this.videoStreamId);
+        }
+        // TODO Remove the following
+        /*
         try {
+
+
             if (doFileWrite) {
                 throw new IOException("Already writing to file " + this.outputFile);
             }
@@ -272,7 +264,7 @@ public class MpegTsProcessor extends Thread {
             outputVideoStream.position(0);
             outputVideoStream.r_frame_rate(new AVRational(inputStream.r_frame_rate()));
 
-            // TODO Make sure this is correct
+
             if ((outputContext.oformat().flags() & AVFMT_NOFILE) == 0) {
                 AVIOContext avioContext = new AVIOContext(null);
                 if (avio_open(avioContext, outputFile, AVIO_FLAG_WRITE) < 0) {
@@ -299,16 +291,23 @@ public class MpegTsProcessor extends Thread {
             }
 
             doFileWrite = true;
+
+
         } catch (Exception e) {
             throw new IOException("Could not open output file " + outputFile + ".", e);
         }
+
+         */
     }
 
+    /*
     private void logFFmpeg(int retCode) {
         BytePointer buf = new BytePointer(AV_ERROR_MAX_STRING_SIZE);
         av_strerror(retCode, buf, buf.capacity());
         logger.warn("FFmpeg returned error code {}: {}", retCode, buf.getString());
     }
+
+
 
     private void filePacketTiming(AVPacket packet) {
         logger.debug("Original: {}\tModified: {}", packet.pts(), packet.pts() - filePts);
@@ -318,7 +317,15 @@ public class MpegTsProcessor extends Thread {
         //packet.position(outputVideoStream.position());
     }
 
+     */
+
     public void closeFile() throws IOException {
+        List<MP4Output> fileOutputList = getVideoDataBufferListenersByType(MP4Output.class);
+        for (var fileOutput : fileOutputList) {
+            fileOutput.closeFile();
+        }
+        // TODO Remove the following
+        /*
         if (doFileWrite) {
             doFileWrite = false;
             try {
@@ -332,6 +339,8 @@ public class MpegTsProcessor extends Thread {
                 throw new IOException("Could not close output file " + outputFile + ".", e);
             }
         }
+
+         */
     }
 
     /**
@@ -573,6 +582,7 @@ public class MpegTsProcessor extends Thread {
 //    }
 
     /**
+     * Clears all video buffer listeners then adds this listener.
      * Registers a video buffer listener to callback if clients are interested in demuxed
      * video buffers
      *
@@ -582,13 +592,41 @@ public class MpegTsProcessor extends Thread {
      * @throws NullPointerException if the data buffer listener is null
      */
     public void setVideoDataBufferListener(DataBufferListener videoDataBufferListener) throws NullPointerException {
+        clearVideoDataBufferListeners();
+        addVideoDataBufferListener(videoDataBufferListener);
+    }
 
+    public void addVideoDataBufferListener(DataBufferListener videoDataBufferListener) throws NullPointerException {
         if (null == videoDataBufferListener) {
 
             throw new NullPointerException("Attempt to set null videoStreamPacketListener");
         }
 
-        this.videoDataBufferListener = videoDataBufferListener;
+        this.videoDataBufferListeners.add(videoDataBufferListener);
+    }
+
+    public void clearVideoDataBufferListeners() {
+        this.videoDataBufferListeners.clear();
+    }
+
+    public void removeVideoDataBufferListener(DataBufferListener videoDataBufferListener) throws NullPointerException {
+        this.videoDataBufferListeners.remove(videoDataBufferListener);
+    }
+
+    protected void notifyVideoDataBufferListeners(DataBufferRecord dataRecord) {
+        for (var videoBuffers : videoDataBufferListeners) {
+            videoBuffers.onDataBuffer(dataRecord);
+        }
+    }
+
+    public <T extends DataBufferListener> List<T> getVideoDataBufferListenersByType(Class<T> dataBufferListenerType) {
+        List<T> out = new ArrayList<>();
+        for (var listener : videoDataBufferListeners) {
+            if (dataBufferListenerType.isInstance(listener)) {
+                out.add((T) listener);
+            }
+        }
+        return out;
     }
 
     /**
@@ -653,7 +691,7 @@ public class MpegTsProcessor extends Thread {
             while (!terminateProcessing.get() && (retCode = av_read_frame(avFormatContext, avPacket)) >= 0) {
 
                 // If it is a video or data frame and there is a listener registered
-                if ((avPacket.stream_index() == videoStreamId) && (null != videoDataBufferListener)) {
+                if ((avPacket.stream_index() == videoStreamId) && (!videoDataBufferListeners.isEmpty())) {
 
                     // Process video packet
                     byte[] dataBuffer = new byte[avPacket.size()];
@@ -674,32 +712,17 @@ public class MpegTsProcessor extends Thread {
                         }
                     }
 
-                    // Pass data buffer to interested listener
+                    // Pass data buffer to interested listeners
                     frameCount++;
 
                     if (isKeyFrame && spsPpsHeader != null) {
                         byte[] combined = new byte[spsPpsHeader.length + dataBuffer.length];
                         System.arraycopy(spsPpsHeader, 0, combined, 0, spsPpsHeader.length);
                         System.arraycopy(dataBuffer, 0, combined, spsPpsHeader.length, dataBuffer.length);
-                        videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, combined));
-                    } else {
-                        videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer));
-                    }
 
-                    synchronized (contextLock) {
-                        if (doFileWrite) {
-                            if (outputContext != null) {
-                                filePacketTiming(avPacket);
-                                av_write_frame(outputContext, avPacket);
-                            } else {
-                                logger.error("Cannot write to file; output context is null");
-                            }
-                        } else {
-                            if (isKeyFrame) {
-                                framesSinceKey.clear();
-                            }
-                            framesSinceKey.add(av_packet_clone(avPacket));
-                        }
+                        notifyVideoDataBufferListeners(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, combined, isKeyFrame));
+                    } else {
+                        notifyVideoDataBufferListeners(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer, isKeyFrame));
                     }
                 }
                 // clear packet

@@ -28,6 +28,7 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
     DataRecord commandData;
     String fileName = "";
 
+
     public FileControl(FFMPEGSensorBase<FFmpegConfigType> sensor) { super(SENSOR_CONTROL_NAME, sensor); }
 
     public void init() {
