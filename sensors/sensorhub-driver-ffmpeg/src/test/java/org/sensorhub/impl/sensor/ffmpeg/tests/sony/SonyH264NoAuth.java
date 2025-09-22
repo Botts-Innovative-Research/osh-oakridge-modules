@@ -15,7 +15,7 @@ public class SonyH264NoAuth extends ConnectionTest {
         config.connection.fps = 24;
         config.name = " Sony Test without Auth";
         config.serialNumber = "test_h264_sony_no_auth";
-        config.autoStart = true;
+        config.autoStart = false;
         config.connection.connectionString = System.getenv(SONY_H264_NO_AUTH_IP);
         config.moduleClass = FFMPEGSensor.class.getCanonicalName();
         config.connectionConfig.connectTimeout = 5000;
