@@ -14,16 +14,6 @@
 package org.sensorhub.impl.sensor.ffmpeg;
 
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
-import org.bytedeco.ffmpeg.avutil.AVFrame;
-import org.jcodec.codecs.h264.H264Decoder;
-import org.jcodec.codecs.h264.BufferH264ES;
-import org.jcodec.codecs.h264.H264Utils;
-import org.jcodec.codecs.mjpeg.JpegDecoder;
-import org.jcodec.common.io.NIOUtils;
-import org.jcodec.common.VideoDecoder;
-import org.jcodec.common.model.Packet;
-import org.jcodec.common.model.Picture;
-import org.jcodec.scale.AWTUtil;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -42,14 +32,12 @@ import org.sensorhub.mpegts.MpegTsProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.bytedeco.ffmpeg.global.avutil.*;
-import static org.bytedeco.ffmpeg.global.avcodec.*;
+import static org.bytedeco.ffmpeg.global.avutil.*;;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.color.ColorSpace;
 import java.awt.image.*;
-import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Queue;
@@ -58,8 +46,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-
-import static org.bytedeco.ffmpeg.global.swscale.sws_getContext;
 import static org.junit.Assert.*;
 
 public abstract class ConnectionTest {
@@ -250,7 +236,6 @@ public abstract class ConnectionTest {
                     dimensions[0], dimensions[1]);
 
 
-
             decoder.setInQueue(inputPacketQueue);
             scaler.setInQueue(decoder.getOutQueue()); // Chain decoder -> scaler
 
@@ -261,7 +246,10 @@ public abstract class ConnectionTest {
                 inputPacketQueue.add(packetF.convertInput(dataBufferRecord.getDataBuffer()));
             });
 
-            scheduler.schedule(() -> {run.set(false); logger.info("Stop");}, SLEEP_DURATION_MS, TimeUnit.MILLISECONDS);
+            scheduler.schedule(() -> {
+                run.set(false);
+                logger.info("Stop");
+            }, SLEEP_DURATION_MS, TimeUnit.MILLISECONDS);
 
             int i = 0;
             logger.info("BEFORE FRAMES");
@@ -274,7 +262,7 @@ public abstract class ConnectionTest {
                         break;
 
                     //logger.info("Frame {}", ++i);
-                    var imgData = ((DataBufferByte)bufImg.get().getRaster().getDataBuffer()).getData();
+                    var imgData = ((DataBufferByte) bufImg.get().getRaster().getDataBuffer()).getData();
                     var frameData = rgbF.convertOutput(frame);
                     System.arraycopy(frameData, 0, imgData, 0, frameData.length);
 
@@ -295,114 +283,10 @@ public abstract class ConnectionTest {
                 scaler.join();
             } catch (InterruptedException ignored) {
                 logger.error("Error: ", ignored);
-            }
-            finally {
+            } finally {
                 driver.stop();
                 window.dispose();
             }
-
-            // TODO Delete everything below this line
-            /*
-
-            VideoDecoder decoder;
-
-            if (mpegTsProcessor.getCodecName().equalsIgnoreCase("H264")) {
-                decoder = new H264Decoder();
-                AtomicReference<BufferH264ES> es = new AtomicReference<>();
-                AtomicBoolean timer = new AtomicBoolean(true);
-
-                ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-                scheduler.schedule(() -> {timer.set(false);}, SLEEP_DURATION_MS, TimeUnit.MILLISECONDS);
-
-                mpegTsProcessor.setVideoDataBufferListener(dataBufferRecord -> {
-                    try {
-                        Picture out = Picture.create(dimensions[0], dimensions[1], colorSpace);
-                        Packet packet;
-                        H264Utils.readPPS()
-
-                        es.set(new BufferH264ES(NIOUtils.from(ByteBuffer.wrap(dataBufferRecord.getDataBuffer()), 0)));
-
-                        while (null != (packet = es.nextFrame())) {
-                            ByteBuffer data = packet.getData();
-                            out = decoder.decodeFrame(data, out.getData());
-                            BufferedImage bi = AWTUtil.toBufferedImage(out);
-                            window.getContentPane().getGraphics().drawImage(bi, 0, 0, null);
-                        }
-
-                    } catch (Exception e) {
-                        logger.error("Error: ", e);
-                    }
-                });
-                while (timer.get()) {
-
-                }
-
-            } else {
-                decoder = new JpegDecoder();
-
-                mpegTsProcessor.setVideoDataBufferListener(dataBufferRecord -> {
-                    try {
-                        Picture out = Picture.create(dimensions[0], dimensions[1], colorSpace);
-
-                        ByteBuffer data = NIOUtils.from(ByteBuffer.wrap(dataBufferRecord.getDataBuffer()), 0);
-                        out = decoder.decodeFrame(data, out.getData());
-                        BufferedImage bi = AWTUtil.toBufferedImage(out);
-                        window.getContentPane().getGraphics().drawImage(bi, 0, 0, null);
-                    } catch (Exception e) {
-                        logger.error("Error: ", e);
-                    }
-                });
-                try {
-
-                    Thread.sleep(SLEEP_DURATION_MS*10);
-
-                } catch (Exception e) {
-
-                    System.out.println(e);
-
-                } finally {
-
-                    driver.stop();
-
-                    window.dispose();
-                }
-            }
-
-            /*
-            mpegTsProcessor.setVideoDataBufferListener(dataBufferRecord -> {
-
-                try {
-                    if () {
-                        MappedH264ES es = new MappedH264ES(NIOUtils.from(ByteBuffer.wrap(dataBufferRecord.getDataBuffer()), 0));
-                        Picture out = Picture.create(dimensions[0], dimensions[1], colorSpace);
-                        H264Decoder decoder = new H264Decoder();
-                        Packet packet;
-
-                        while (null != (packet = es.nextFrame())) {
-
-                            ByteBuffer data = packet.getData();
-                            Picture res = decoder.decodeFrame(data, out.getData());
-                            BufferedImage bi = AWTUtil.toBufferedImage(res);
-                            window.getContentPane().getGraphics().drawImage(bi, 0, 0, null);
-                        }
-                    } else {
-                        Picture out = Picture.create(dimensions[0], dimensions[1], colorSpace);
-                        JpegDecoder decoder = new JpegDecoder();
-
-                        ByteBuffer data = NIOUtils.from(ByteBuffer.wrap(dataBufferRecord.getDataBuffer()), 0);
-                        Picture res = decoder.decodeFrame(data, out.getData());
-                        BufferedImage bi = AWTUtil.toBufferedImage(res);
-                        window.getContentPane().getGraphics().drawImage(bi, 0, 0, null);
-                    }
-
-                } catch (Exception ignored) {}
-            });
-
-             */
         }
-
-        //mpegTsProcessor.processStream();
-
-
     }
 }
