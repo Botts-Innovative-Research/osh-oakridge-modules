@@ -8,19 +8,19 @@ import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
+import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
+import org.sensorhub.impl.utils.rad.RADHelper;
 
 import java.io.File;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.Map;
+import java.util.function.Predicate;
 
-import static com.botts.impl.service.oscar.reports.helpers.Constants.*;
-import static com.botts.impl.service.oscar.reports.helpers.Constants.DEF_ALARM;
-import static com.botts.impl.service.oscar.reports.helpers.Constants.DEF_GAMMA;
-import static com.botts.impl.service.oscar.reports.helpers.Constants.DEF_NEUTRON;
 
 public class LaneReport extends Report {
 
@@ -30,7 +30,8 @@ public class LaneReport extends Report {
     PdfWriter pdfWriter;
     PdfDocument pdfDocument;
     String pdfFileName;
-
+    Instant begin;
+    Instant end;
     OSCARServiceModule module;
     TableGenerator tableGenerator;
 
@@ -50,6 +51,8 @@ public class LaneReport extends Report {
 
         this.laneUID = laneUID;
         this.module = module;
+        this.begin = startTime;
+        this.end = endTime;
         tableGenerator = new TableGenerator(document);
     }
 
@@ -64,7 +67,6 @@ public class LaneReport extends Report {
         pdfDocument.close();
 
         return pdfFileName;
-
     }
 
     private void addHeader(){
@@ -76,62 +78,46 @@ public class LaneReport extends Report {
 
 
     private void addAlarmStatistics(){
+
         document.add(new Paragraph("Alarm Statistics"));
 
-        HashMap<String, Double> alarmOccCounts = new HashMap<>();
+        Map<String, String> alarmOccCounts = new HashMap<>();
 
-        double gammaAlarmCount = 0;
-        double neutronAlarmCount = 0;
-        double gammaNeutronAlarmCount = 0;
-        double emlSuppressedCount = 0;
-        double totalOccupancyCount = 0;
+        Predicate<IObsData> gammaNeutronPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);};
 
-        double alarmOccupancyAverage = 0;
-        double emlSuppressedAverage = 0;
+        Predicate<IObsData> gammaPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);};
 
+        Predicate<IObsData> neutronPredicate = (obsData) -> {return !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);};;
 
-        var query = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
-                .withSystems(new SystemFilter.Builder()
-                        .withUniqueIDs(laneUID)
-                        .build())
-                .withDataStreams(new DataStreamFilter.Builder()
-                        .withObservedProperties(DEF_OCCUPANCY)
-                        .build())
-                .build()).iterator();
+        Predicate<IObsData> occupancyTotalPredicate = (obsData) -> {return true;};
 
-        while (query.hasNext()) {
-            var entry = query.next();
-
-            var result = entry.getResult();
-
-            var gammaAlarm = result.getBooleanValue(5);
-            var neutronAlarm = result.getBooleanValue(6);
-
-            if (gammaAlarm && neutronAlarm) {
-                gammaNeutronAlarmCount++;
-
-            }  else if (gammaAlarm && !neutronAlarm) {
-                gammaAlarmCount++;
-            }   else if (!gammaAlarm && neutronAlarm) {
-                neutronAlarmCount++;
-            }
-
-        }
+        Predicate<IObsData> occupancyNonAlarmingPredicate = (obsData) -> {return !obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);};
+//        Predicate<IObsData> emlSuppPredicate = (obsData) -> {return obsData.getResult();};
 
 
-        double totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
-        alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
+        long gammaNeutronAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, gammaNeutronPredicate, begin, end);
+        long gammaAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module ,gammaPredicate, begin, end);
+        long neutronAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, neutronPredicate, begin, end);
+        long totalOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyTotalPredicate, begin, end);
+//        long nonAlarmingOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyNonAlarmingPredicate, begin, end);
 
-        emlSuppressedAverage = Utils.calcEMLAlarmRate(emlSuppressedCount, totalAlarmingCount);
+//        long emlSuppressedCount= Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, emlSuppPredicate);
 
 
-        alarmOccCounts.put("Gamma Alarm", gammaAlarmCount);
-        alarmOccCounts.put("Neutron Alarm", neutronAlarmCount);
-        alarmOccCounts.put("Gamma-Neutron Alarm", gammaNeutronAlarmCount);
-        alarmOccCounts.put("EML Suppressed", emlSuppressedCount);
-        alarmOccCounts.put("Total Occupancies", totalOccupancyCount);
-        alarmOccCounts.put("Alarm Occupancy Rate", alarmOccupancyAverage);
-        alarmOccCounts.put("EML Suppressed Rate", emlSuppressedAverage);
+        long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
+        long alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
+
+//        long emlSuppressedAverage = Utils.calcEMLAlarmRate(emlSuppressedCount, totalAlarmingCount);
+
+        alarmOccCounts.put("Gamma Alarm", String.valueOf(gammaAlarmCount));
+        alarmOccCounts.put("Neutron Alarm", String.valueOf(neutronAlarmCount));
+        alarmOccCounts.put("Gamma-Neutron Alarm", String.valueOf(gammaNeutronAlarmCount));
+//        alarmOccCounts.put("Non-Alarming Occupancies", String.valueOf(nonAlarmingOccupancyCount));
+        alarmOccCounts.put("Total Occupancies", String.valueOf(totalOccupancyCount));
+        alarmOccCounts.put("Alarm Occupancy Rate", String.valueOf(alarmOccupancyAverage));
+
+        //        alarmOccCounts.put("EML Suppressed", emlSuppressedCount);
+//        alarmOccCounts.put("EML Alarm Rate", emlSuppressedAverage);
 
         tableGenerator.addTable(alarmOccCounts);
 
@@ -141,85 +127,37 @@ public class LaneReport extends Report {
     private void addFaultStatistics(){
         document.add(new Paragraph("Fault Statistics"));
 
-        HashMap<String, Double> faultCounts = new HashMap<>();
-
-        double tamperCount = 0;
-        double extendedOccupancyCount = 0;
-        double commsCount = 0;
-        double camCount = 0;
-        double gammaHighFaultCount = 0;
-        double gammaLowFaultCount = 0;
-        double neutronHighFaultCount = 0;
+        HashMap<String, String> faultCounts = new HashMap<>();
 
 
-        var query = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
-                .withSystems(new SystemFilter.Builder()
-                        .withUniqueIDs(laneUID)
-                        .build())
-                .withDataStreams(new DataStreamFilter.Builder()
-                        .withObservedProperties(DEF_TAMPER)
-                        .build())
-                .build()).iterator();
-
-        while (query.hasNext()) {
-            var entry = query.next();
-            var result = entry.getResult();
-            var tamper = result.getBooleanValue(1);
-            if(tamper){
-                tamperCount++;
-            }
-        }
-
-        var query2 = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
-                .withSystems(new SystemFilter.Builder().withUniqueIDs(laneUID).build())
-                .withDataStreams(new DataStreamFilter.Builder()
-                        .withObservedProperties(DEF_ALARM, DEF_GAMMA)
-                        .build())
-                .build()).iterator();
-
-        while (query2.hasNext()) {
-            var entry = query2.next();
-            var result = entry.getResult();
-            var alarmState = result.getStringValue(1);
-
-            if(alarmState == "Fault - Gamma High"){
-                gammaHighFaultCount++;
-            }
-            else if(alarmState == "Fault - Gamma Low"){
-                gammaLowFaultCount++;
-            }
-        }
-
-        var query3 = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
-                .withSystems(new SystemFilter.Builder()
-                        .withUniqueIDs(laneUID)
-                        .build())
-                .withDataStreams(new DataStreamFilter.Builder()
-                        .withObservedProperties(DEF_ALARM, DEF_NEUTRON)
-                        .build())
-                .build()).iterator();
-
-        while (query3.hasNext()) {
-            var entry = query2.next();
-            var result = entry.getResult();
-            var alarmState = result.getStringValue(1);
-
-            if(alarmState == "Fault - Neutron High"){
-                neutronHighFaultCount++;
-            }
-        }
+        Predicate<IObsData> tamperPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
+        Predicate<IObsData> gammaHighPredicate = (obsData) -> {return obsData.getResult().getStringValue(1).equals("Fault - Gamma High");};
+        Predicate<IObsData> gammaLowPredicate = (obsData) -> {return obsData.getResult().getStringValue(1).equals("Fault - Gamma Low");};
+        Predicate<IObsData> neutronHighPredicate = (obsData) -> {return obsData.getResult().getStringValue(1).equals("Fault - Neutron High");};
+//        Predicate<IObsData> commsPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
+//        Predicate<IObsData> cameraPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
+//        Predicate<IObsData> extendedOccPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
 
 
-        faultCounts.put("Tamper", tamperCount);
-        faultCounts.put("Extended Occupancy", extendedOccupancyCount);
-        faultCounts.put("Comm", commsCount);
-        faultCounts.put("Camera", camCount);
-        faultCounts.put("Gamma-High", gammaHighFaultCount);
-        faultCounts.put("Gamma-Low", gammaLowFaultCount);
-        faultCounts.put("Neutron-High", neutronHighFaultCount);
+        long tamperCount = Utils.countObservations(new String[]{RADHelper.DEF_TAMPER}, module, tamperPredicate, begin, end);
+        long gammaHighFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM}, module,gammaHighPredicate, begin, end);
+        long gammaLowFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM}, module,gammaLowPredicate, begin, end);
+        long neutronHighFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM}, module,neutronHighPredicate, begin, end);
+
+//        long extendedOccupancyCount = Utils.countObservations(RADHelper.DEF_TAMPER, module,extendedOccPredicate, begin, end);
+
+
+        faultCounts.put("Tamper", String.valueOf(tamperCount));
+//        faultCounts.put("Extended Occupancy", extendedOccupancyCount);
+//        faultCounts.put("Comm", commsCount);
+//        faultCounts.put("Camera", camCount);
+        faultCounts.put("Gamma-High", String.valueOf(gammaHighFaultCount));
+        faultCounts.put("Gamma-Low", String.valueOf(gammaLowFaultCount));
+        faultCounts.put("Neutron-High", String.valueOf(neutronHighFaultCount));
 
         tableGenerator.addTable(faultCounts);
 
         document.add(new Paragraph("\n"));
     }
+
 }
