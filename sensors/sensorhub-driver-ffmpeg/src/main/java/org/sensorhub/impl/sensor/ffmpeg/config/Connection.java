@@ -44,4 +44,7 @@ public class Connection {
 
     @DisplayInfo(label = "TCP", desc = "Select if using TCP network protocol. Otherwise driver will use UDP.")
     public boolean useTCP = false;
+
+    @DisplayInfo(label="Output HLS", desc = "Output HLS .m3u8 file.")
+    public boolean outputHLS = true;
 }

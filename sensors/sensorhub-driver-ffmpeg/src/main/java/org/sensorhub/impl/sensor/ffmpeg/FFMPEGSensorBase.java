@@ -1,26 +1,19 @@
 package org.sensorhub.impl.sensor.ffmpeg;
 
-import java.io.IOException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.function.Consumer;
 
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.event.Event;
-import org.sensorhub.api.event.IEventListener;
 import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
-import org.sensorhub.impl.sensor.DefaultLocationOutput;
-import org.sensorhub.impl.sensor.DefaultLocationOutputLLA;
 import org.sensorhub.impl.sensor.ffmpeg.common.SyncTime;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.ffmpeg.controls.FileControl;
-import org.sensorhub.impl.sensor.ffmpeg.outputs.LocationOutput;
+import org.sensorhub.impl.sensor.ffmpeg.outputs.MP4Output;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.Video;
 import org.sensorhub.mpegts.MpegTsProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vast.ogc.om.MovingFeature;
 import org.vast.swe.SWEConstants;
 import org.vast.util.Asserts;
 
@@ -186,6 +179,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
     protected void createFileControl() {
         fileControl = new FileControl<FFMPEGconfigType>(this);
         addControlInput(fileControl);
+        mpegTsProcessor.addVideoDataBufferListener(new MP4Output());
         try {
             fileControl.init();
         } catch (Exception e) {
@@ -233,6 +227,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	        	mpegTsProcessor.queryEmbeddedStreams();
 	            // If there is a video content in the stream
 	            if (mpegTsProcessor.hasVideoStream()) {
+                    mpegTsProcessor.clearVideoDataBufferListeners();
 	            	// In case we were waiting until we got video data to make the video frame output, we go ahead and do
 	            	// that now.
 	            	if (videoOutput == null) {
@@ -242,7 +237,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	            	}
                     createFileControl();
 	                // Set video stream packet listener to video output
-	                mpegTsProcessor.setVideoDataBufferListener(videoOutput);
+	                mpegTsProcessor.addVideoDataBufferListener(videoOutput);
 	            }
 	        } else {
 	        	throw new SensorHubException("Unable to open stream from data source");
