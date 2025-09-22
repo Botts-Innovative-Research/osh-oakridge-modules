@@ -803,21 +803,6 @@ public class MpegTsProcessor extends Thread {
         }
     }
 
-    public int getColorSpace() {
-        logger.debug("getColorSpace");
-
-        if (INVALID_STREAM_ID == videoStreamId) {
-
-            String message = "Stream does not contain video frames";
-
-            logger.error(message);
-
-            throw new IllegalStateException(message);
-        }
-
-        return avFormatContext.streams(videoStreamId).codecpar().color_space();
-    }
-
     public int getCodecId() {
         logger.debug("getCodecId");
 
