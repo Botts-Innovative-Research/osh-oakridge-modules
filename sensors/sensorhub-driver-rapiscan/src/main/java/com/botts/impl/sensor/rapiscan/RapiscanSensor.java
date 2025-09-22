@@ -13,7 +13,6 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.rapiscan;
 
-import com.botts.impl.sensor.rapiscan.control.AdjudicationControl;
 import com.botts.impl.sensor.rapiscan.eml.EMLService;
 import com.botts.impl.sensor.rapiscan.eml.outputs.EMLAnalysisOutput;
 import com.botts.impl.sensor.rapiscan.eml.outputs.EMLContextualOutput;
@@ -61,7 +60,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     private GammaThresholdOutput gammaThresholdOutput;
     private DailyFileOutput dailyFileOutput;
     private ConnectionStatusOutput connectionStatusOutput;
-    private AdjudicationControl adjudicationControl;
 
     private EMLAnalysisOutput emlAnalysisOutput;
     private EMLScanContextualOutput emlScanContextualOutput;
@@ -84,7 +82,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
         // Add outputs
         createOutputs();
-        createControls();
 
         // Register GammaThresholdOutput as a listener to SetupGammaOutput
         setupGammaOutput.registerListener(gammaThresholdOutput);
@@ -201,11 +198,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         connectionStatusOutput.init();
     }
 
-    public void createControls() {
-        adjudicationControl = new AdjudicationControl(this);
-        addControlInput(adjudicationControl);
-        adjudicationControl.init();
-    }
 
     @Override
     protected void doStart() throws SensorHubException {
