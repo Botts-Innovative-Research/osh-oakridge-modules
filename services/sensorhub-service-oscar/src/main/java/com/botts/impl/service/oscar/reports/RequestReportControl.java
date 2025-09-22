@@ -30,9 +30,7 @@ import java.io.File;
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 
-import static com.botts.impl.service.oscar.reports.helpers.ReportCmdType.ADJUDICATION;
-
-public class RequestReportControl extends AbstractControlInterface<OSCARSystem> {
+public class RequestReportControl extends AbstractControlInterface<OSCARSystem> implements IStreamingControlInterfaceWithResult {
 
     public static final String NAME = "requestReport";
     public static final String LABEL = "Request Report";
@@ -70,11 +68,11 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                         .definition(SWEHelper.getPropertyUri("ReportType"))
                         .description("Type of report to request")
                         .addAllowedValues(ReportCmdType.class))
-                .addField("laneId", fac.createText()
-                        .label("Lane ID")
-                        .definition(SWEHelper.getPropertyUri("LaneID"))
+                .addField("laneUID", fac.createText()
+                        .label("Lane Unique Identifier")
+                        .definition(SWEHelper.getPropertyUri("LaneUID"))
                         .description("Identifier of the lane to request"))
-                .addField("eventID", fac.createText()
+                .addField("eventId", fac.createText()
                         .label("Event ID")
                         .definition(SWEHelper.getPropertyUri("EventID"))
                         .description("Identifier of the event requested"))
@@ -96,12 +94,13 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
         return CompletableFuture.supplyAsync(() -> {
 
-            long now = System.currentTimeMillis();
-
-            if (startTime == 0)
-                this.startTime = now;
+//            long now = System.currentTimeMillis();
+//
+//            if (startTime == 0)
+//                this.startTime = now;
 
             DataBlock paramData = command.getParams();
+            getLogger().debug("PARAM " + paramData.toString());
             Instant start = paramData.getTimeStamp(0);
             Instant end = paramData.getTimeStamp(1);
             ReportCmdType type = ReportCmdType.valueOf(paramData.getStringValue(2));
@@ -121,7 +120,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                         report = new LaneReport(start, end, laneUID, module);
                 }
                 case RDS_SITE -> {
-                    file = new File(path + type + "_" + start + "_" + end + ".pdf");
+                    file = new File(path + type.name() + "_" + start + "_" + end + ".pdf");
 
                     if (!file.exists())
                         report = new RDSReport(start, end, module);
@@ -140,7 +139,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                 default -> report = null;
             }
 
-            if (report == null) System.out.println("Report not found");
+            if (report == null) getLogger().debug("Report not found");
 
 
             String url = report.generate();
@@ -154,7 +153,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             ICommandStatus status = new CommandStatus.Builder()
                     .withCommand(command.getID())
                     .withStatusCode(url == null ? ICommandStatus.CommandStatusCode.FAILED :ICommandStatus.CommandStatusCode.ACCEPTED )
-                    .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
+//                    .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
                     .withResult(result)
                     .build();
 
@@ -162,4 +161,8 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
         });
     }
 
+    @Override
+    public DataComponent getResultDescription() {
+        return resultStructure;
+    }
 }
