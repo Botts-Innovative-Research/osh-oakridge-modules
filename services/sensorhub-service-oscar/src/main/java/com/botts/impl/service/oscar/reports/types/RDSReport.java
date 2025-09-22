@@ -55,7 +55,7 @@ public class RDSReport extends Report {
         addHeader();
         addAlarmStatistics();
         addFaultStatistics();
-        addDriveStorageAvailability();
+//        addDriveStorageAvailability();
 
         document.close();
         pdfDocument.close();
