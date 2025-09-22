@@ -678,9 +678,13 @@ public class MpegTsProcessor extends Thread {
                     frameCount++;
 
                     if (isKeyFrame && spsPpsHeader != null) {
-                        videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, spsPpsHeader));
+                        byte[] combined = new byte[spsPpsHeader.length + dataBuffer.length];
+                        System.arraycopy(spsPpsHeader, 0, combined, 0, spsPpsHeader.length);
+                        System.arraycopy(dataBuffer, 0, combined, spsPpsHeader.length, dataBuffer.length);
+                        videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, combined));
+                    } else {
+                        videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer));
                     }
-                    videoDataBufferListener.onDataBuffer(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer));
 
                     synchronized (contextLock) {
                         if (doFileWrite) {
@@ -797,5 +801,35 @@ public class MpegTsProcessor extends Thread {
 
             throw new IllegalStateException(message);
         }
+    }
+
+    public int getColorSpace() {
+        logger.debug("getColorSpace");
+
+        if (INVALID_STREAM_ID == videoStreamId) {
+
+            String message = "Stream does not contain video frames";
+
+            logger.error(message);
+
+            throw new IllegalStateException(message);
+        }
+
+        return avFormatContext.streams(videoStreamId).codecpar().color_space();
+    }
+
+    public int getCodecId() {
+        logger.debug("getCodecId");
+
+        if (INVALID_STREAM_ID == videoStreamId) {
+
+            String message = "Stream does not contain video frames";
+
+            logger.error(message);
+
+            throw new IllegalStateException(message);
+        }
+
+        return avFormatContext.streams(videoStreamId).codecpar().codec_id();
     }
 }
