@@ -102,7 +102,4 @@ public class AdjudicationControl extends AbstractSensorControl<OSCARSystem> {
         return prevObs.getResult().getBooleanValue(9) == setAdjudicated;
 
     }
-
-
-
 }
