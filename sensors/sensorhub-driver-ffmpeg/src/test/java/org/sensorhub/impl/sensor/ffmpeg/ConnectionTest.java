@@ -223,8 +223,7 @@ public abstract class ConnectionTest {
             AtomicBoolean run = new AtomicBoolean(true);
             ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
-            int processorColor = mpegTsProcessor.getColorSpace();
-            processorColor = AV_PIX_FMT_YUVJ420P;
+            int processorColor = AV_PIX_FMT_YUVJ420P;
             HashMap<String, Integer> options = new HashMap<>();
             options.put("width", dimensions[0]);
             options.put("height", dimensions[1]);
@@ -251,8 +250,6 @@ public abstract class ConnectionTest {
                 logger.info("Stop");
             }, SLEEP_DURATION_MS, TimeUnit.MILLISECONDS);
 
-            int i = 0;
-            logger.info("BEFORE FRAMES");
             var outQueue = scaler.getOutQueue();
             //var outQueue = decoder.getOutQueue();
             while (run.get()) {
