@@ -100,7 +100,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 //                this.startTime = now;
 
             DataBlock paramData = command.getParams();
-            getLogger().debug("PARAM " + paramData.toString());
+
             Instant start = paramData.getTimeStamp(0);
             Instant end = paramData.getTimeStamp(1);
             ReportCmdType type = ReportCmdType.valueOf(paramData.getStringValue(2));
