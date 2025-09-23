@@ -32,14 +32,14 @@ public class RDSReport extends Report {
     String reportTitle = "RDS Site Report";
 
     Document document;
-    PdfWriter pdfWriter;
     PdfDocument pdfDocument;
     String pdfFileName;
-    String siteId;
-    TableGenerator tableGenerator;
 
+    String siteId;
     Instant begin;
     Instant end;
+
+    TableGenerator tableGenerator;
     OSCARServiceModule module;
 
     public RDSReport(Instant startTime, Instant endTime, OSCARServiceModule module) {
@@ -48,7 +48,7 @@ public class RDSReport extends Report {
             File file = new File("files/reports/" + pdfFileName);
             file.getParentFile().mkdirs();
 
-            pdfDocument = new PdfDocument(new PdfWriter(pdfFileName));
+            pdfDocument = new PdfDocument(new PdfWriter(file));
             document = new Document(pdfDocument);
 
         } catch (IOException e) {
@@ -61,7 +61,7 @@ public class RDSReport extends Report {
 
         this.begin = startTime;
         this.end = endTime;
-        tableGenerator = new TableGenerator(document);
+        this.tableGenerator = new TableGenerator(document);
     }
 
     @Override
