@@ -18,7 +18,7 @@ import org.sensorhub.impl.module.ModuleRegistry;
 
 public class TestRapiscanSensor {
 
-    private static final String REMOTE_HOST = "192.168.1.211";
+    private static final String REMOTE_HOST = System.getenv("RPM_HOST");//"192.168.1.211";
     private static final int REMOTE_PORT = 1601;
     ISensorHub hub;
     ModuleRegistry reg;

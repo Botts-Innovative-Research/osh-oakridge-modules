@@ -12,39 +12,21 @@
  Developer are Copyright (C) 2025 the Initial Developer. All Rights Reserved.
  ******************************************************************************/
 
-import com.botts.impl.process.occupancy.OccupancyProcessModule;
 import com.botts.impl.sensor.rapiscan.EMLConfig;
-import com.botts.impl.sensor.rapiscan.RapiscanConfig;
-import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.system.lane.Descriptor;
 import com.botts.impl.system.lane.LaneSystem;
 import com.botts.impl.system.lane.config.*;
 import org.junit.*;
 import org.junit.runners.MethodSorters;
-import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.SensorHub;
-import org.sensorhub.impl.database.system.SystemDriverDatabase;
-import org.sensorhub.impl.database.system.SystemDriverDatabaseConfig;
-import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
 import org.sensorhub.impl.module.ModuleRegistry;
-import org.sensorhub.impl.processing.AbstractProcessModule;
-//import org.sensorhub.impl.sensor.fakeweather.FakeWeatherConfig;
-//import org.sensorhub.impl.sensor.fakeweather.FakeWeatherSensor;
-import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
-import org.sensorhub.utils.Async;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.concurrent.Flow;
-import java.util.concurrent.TimeoutException;
-
-import static org.junit.Assert.*;
 
 /**
  * @author Alex Almanza
@@ -59,7 +41,7 @@ public class LaneTests {
     private String LANE_UID = "1";
     private String LANE_NAME = "Test Lane";
 
-    private static final String RPM_HOST = "192.168.1.211";
+    private static final String RPM_HOST = System.getenv("RPM_HOST");//"192.168.1.211";
     private static final int RAPISCAN_PORT = 1601;
     private static final int ASPECT_PORT = 502;
 
