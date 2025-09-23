@@ -18,20 +18,29 @@ package com.botts.impl.service.oscar;
 import com.botts.impl.service.oscar.clientconfig.ClientConfigOutput;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
+import com.botts.impl.service.oscar.spreadsheet.SpreadsheetHandler;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.impl.module.AbstractModule;
+
+import java.io.File;
+import java.io.FileInputStream;
 
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     SiteInfoOutput siteInfoOutput;
     RequestReportControl reportControl;
 
     ClientConfigOutput clientConfigOutput;
-
+    SpreadsheetHandler spreadsheetHandler;
     OSCARSystem system;
+
     @Override
     protected void doInit() throws SensorHubException {
         super.doInit();
+
+        spreadsheetHandler = new SpreadsheetHandler(getParentHub());
+        if (config.spreadsheetConfigPath != null && !config.spreadsheetConfigPath.isEmpty())
+            spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
 
         // TODO: Add or update OSCAR system and client config system
         system = new OSCARSystem(config.nodeId);
@@ -42,13 +51,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         createOutputs();
         createControls();
-
         system.updateSensorDescription();
-        getParentHub().getSystemDriverRegistry().register(system);
-
-        var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
-        getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
-
     }
 
     public void createOutputs(){
@@ -69,8 +72,20 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     protected void doStart() throws SensorHubException {
         super.doStart();
 
+        getParentHub().getSystemDriverRegistry().register(system);
+
+        var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
+        if (getParentHub().getSystemDriverRegistry().getDatabase(system.getUniqueIdentifier()) == null)
+            getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
+
         // TODO: Publish latest site info observation
-        siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
+        if (config.siteDiagramConfig != null
+                && config.siteDiagramConfig.siteDiagramPath != null
+                && !config.siteDiagramConfig.siteDiagramPath.isEmpty()
+                && config.siteDiagramConfig.siteLowerLeftBound != null
+                && config.siteDiagramConfig.siteUpperRightBound != null) {
+            siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
+        }
 
     }
 
@@ -79,4 +94,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         super.doStop();
     }
 
+    public SpreadsheetHandler getSpreadsheetHandler() {
+        return spreadsheetHandler;
+    }
 }

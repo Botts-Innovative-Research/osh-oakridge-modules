@@ -17,23 +17,26 @@ package com.botts.impl.service.oscar.spreadsheet;
 
 import org.sensorhub.api.ISensorHub;
 
-import java.io.File;
+import java.io.*;
 
 public class SpreadsheetHandler {
 
     ISensorHub hub;
+    String[] schema = { "", "", "", "", "", "", "", "", "", ""};
 
     public SpreadsheetHandler(ISensorHub hub) {
         this.hub = hub;
     }
 
-    // TODO: Pick an implementation
-    public void upload(File file) {
+    public void handleFile(String filepath) {
 
     }
 
-    public void upload(String fileContents) {
-
+    public OutputStream handleUpload(String filename) throws FileNotFoundException {
+        System.out.println("Receiving file: " + filename);
+        // TODO: Better logic to specify where config should be
+        File file = new File(filename);
+        return new FileOutputStream(file);
     }
 
 }
