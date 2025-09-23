@@ -29,11 +29,10 @@ public class EventReportTodo extends Report {
         try {
 
             pdfFileName = ReportCmdType.EVENT.name()+ "_" + laneId + "_" + eventID + "_" + startTime + "_"+ endTime + ".pdf";
-            File file = new File( "files/reports/" + pdfFileName);
+            File file = new File("files/reports/" + pdfFileName);
             file.getParentFile().mkdirs();
 
-            pdfWriter  = new PdfWriter(file);
-            pdfDocument = new PdfDocument(pdfWriter);
+            pdfDocument = new PdfDocument(new PdfWriter(pdfFileName));
             document = new Document(pdfDocument);
         } catch (IOException e) {
             throw new RuntimeException(e);
