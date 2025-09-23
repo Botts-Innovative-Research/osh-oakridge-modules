@@ -9,9 +9,6 @@ import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
 import org.sensorhub.api.data.IObsData;
-import org.sensorhub.api.datastore.obs.DataStreamFilter;
-import org.sensorhub.api.datastore.obs.ObsFilter;
-import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.impl.utils.rad.RADHelper;
 
 import java.io.File;
@@ -41,9 +38,7 @@ public class LaneReport extends Report {
             File file = new File("files/reports/" + pdfFileName);
             file.getParentFile().mkdirs();
 
-            pdfWriter  = new PdfWriter(file);
-
-            pdfDocument = new PdfDocument(pdfWriter);
+            pdfDocument = new PdfDocument(new PdfWriter(file));
             document = new Document(pdfDocument);
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -53,7 +48,7 @@ public class LaneReport extends Report {
         this.module = module;
         this.begin = startTime;
         this.end = endTime;
-        tableGenerator = new TableGenerator(document);
+        this.tableGenerator = new TableGenerator(document);
     }
 
     @Override

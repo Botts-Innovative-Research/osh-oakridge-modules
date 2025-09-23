@@ -5,6 +5,7 @@ import org.jfree.chart.ChartUtilities;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.data.category.CategoryDataset;
+import org.jfree.data.category.DefaultCategoryDataset;
 
 import java.io.File;
 import java.io.IOException;
@@ -12,7 +13,7 @@ import java.io.IOException;
 public class ChartGenerator {
 
 
-    public void createChart(String title, String xAxisLabel, String yAxisLabel, CategoryDataset dataset, String chartType, String outputFilePath) throws IOException {
+    public String createChart(String title, String xAxisLabel, String yAxisLabel, DefaultCategoryDataset dataset, String chartType, String outputFilePath) throws IOException {
         JFreeChart chart = null;
 
         switch(chartType.toLowerCase()) {
@@ -34,7 +35,15 @@ public class ChartGenerator {
         }
 
 
-        if(chart != null)
-            ChartUtilities.saveChartAsPNG(new File(outputFilePath), chart, 800, 600);
+        if(chart != null){
+            File file = new File("files/reports/" + outputFilePath);
+            file.getParentFile().mkdirs();
+            ChartUtilities.saveChartAsPNG(file, chart, 800, 600);
+
+            return file.getAbsolutePath();
+        }
+
+        return null;
+
     }
 }
