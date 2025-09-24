@@ -58,9 +58,11 @@ public class AdjudicationControl extends AbstractSensorControl<OSCARSystem> {
                 .name(getName())
                 .label(LABEL)
                 .addField("observationId", fac.createText()
+                        .definition(SWEHelper.getPropertyUri("ObservationId"))
                         .label("Observation ID")
                         .build())
                 .addField("setAdjudicated", fac.createBoolean()
+                        .definition(SWEHelper.getPropertyUri("SetAdjudicated"))
                         .label("Set Adjudicated")
                         .build())
                 .build();
