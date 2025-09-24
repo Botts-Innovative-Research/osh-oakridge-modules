@@ -54,9 +54,11 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public void createOutputs(){
+        if(config.siteDiagramConfig != null){
+            siteInfoOutput = new SiteInfoOutput(system);
+            system.addOutput(siteInfoOutput, false);
+        }
 
-        siteInfoOutput = new SiteInfoOutput(system);
-        system.addOutput(siteInfoOutput, false);
 
         clientConfigOutput = new ClientConfigOutput(system);
         system.addOutput(clientConfigOutput, false);
@@ -75,8 +77,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         super.doStart();
 
         // TODO: Publish latest site info observation
-        siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
-
+        if (config.siteDiagramConfig != null)
+            siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
 
     }
 
