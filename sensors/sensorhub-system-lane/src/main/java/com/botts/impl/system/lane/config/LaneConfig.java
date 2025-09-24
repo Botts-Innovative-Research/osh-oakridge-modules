@@ -33,9 +33,4 @@ public class LaneConfig extends SensorSystemConfig {
 
     @DisplayInfo(label = "Delete Data on Lane Removal", desc = "Select this to automatically delete all records of this lane when the lane is deleted.")
     public boolean autoDelete = true;
-
-    @DisplayInfo(label = "Lane Group ID", desc = "ID used for grouping lanes together in their own database. " +
-            "The default (-1) means that lanes will have no group and use the default UID of urn:osh:system:lane:*")
-    public int groupID = -1;
-
 }

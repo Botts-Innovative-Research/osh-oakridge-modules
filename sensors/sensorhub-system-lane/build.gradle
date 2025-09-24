@@ -5,12 +5,10 @@ version = '1.0.0'
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     implementation 'org.sensorhub:sensorhub-datastore-h2:' + oshCoreVersion
-    testImplementation 'org.sensorhub:sensorhub-datastore-h2'
     implementation project(':sensorhub-utils-rad')
     implementation project(':sensorhub-driver-aspect')
     implementation project(':sensorhub-driver-rapiscan')
     implementation project(':sensorhub-driver-videocam')
-    implementation project(':sensorhub-database-purge')
     // NOTE: Uncomment and use if you want to run specific lane module unit tests
 //    testImplementation project(':sensorhub-driver-fakeweather')
     implementation project(':sensorhub-driver-ffmpeg')
@@ -50,6 +48,18 @@ ext.pom >>= {
         developer {
             id 'earocorn'
             name 'Alex Almanza'
+            organization 'Botts Innovative Research, Inc.'
+            organizationUrl 'https://www.botts-inc.com'
+        }
+        developer {
+            id 'kalynstricklin'
+            name 'Kalyn Stricklin'
+            organization 'Botts Innovative Research, Inc.'
+            organizationUrl 'https://www.botts-inc.com'
+        }
+        developer {
+            id 'kyle-fitzp'
+            name 'Kyle Fitzpatrick'
             organization 'Botts Innovative Research, Inc.'
             organizationUrl 'https://www.botts-inc.com'
         }

@@ -16,16 +16,12 @@
 package com.botts.impl.system.lane;
 
 
-
-
-//import com.botts.impl.process.occupancy.OccupancyProcessConfig;
 import com.botts.impl.sensor.aspect.AspectConfig;
 import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProvider;
 import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProviderConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
-import com.botts.impl.system.database.OccupancyVideoPurgePolicyConfig;
 import com.botts.impl.system.lane.config.*;
 import com.botts.impl.system.lane.helpers.occupancy.OccupancyWrapper;
 import org.sensorhub.api.common.SensorHubException;
@@ -42,12 +38,8 @@ import org.sensorhub.api.sensor.SensorConfig;
 import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.api.system.SystemRemovedEvent;
 import org.sensorhub.impl.comm.TCPCommProviderConfig;
-import org.sensorhub.impl.database.system.SystemDriverDatabase;
-import org.sensorhub.impl.database.system.SystemDriverDatabaseConfig;
-import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
 import org.sensorhub.impl.module.AbstractModule;
 import org.sensorhub.impl.module.ModuleRegistry;
-import org.sensorhub.impl.processing.AbstractProcessModule;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
@@ -74,7 +66,6 @@ public class LaneSystem extends SensorSystem {
     private static final String URN_PREFIX = "urn:";
     private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
-    private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
     private static final String BASE_VIDEO_DIRECTORY = "./web/video/";
 
     AbstractSensorModule<?> existingRPMModule = null;
@@ -83,55 +74,12 @@ public class LaneSystem extends SensorSystem {
     Map<String, FFMPEGConfig> ffmpegConfigs = null;
     OccupancyWrapper occupancyWrapper;
 
-    private int groupID;
-    private static final int NUM_LANES_THRESHOLD = 3;
-    private static final int DEFAULT_PURGE_PERIOD = 90;
 
     @Override
     protected void doInit() throws SensorHubException {
         threadPool = Executors.newSingleThreadExecutor();
         ffmpegConfigs = new HashMap<>();
-        Map<Integer, Integer> tempGroupIDCounts = new HashMap<>();
         occupancyWrapper = null;
-
-        // Create a frequency map of loaded modules' group IDs
-        for (LaneSystem lane : getParentHub().getModuleRegistry().getLoadedModules(LaneSystem.class)) {
-            int laneGroupID = lane.getConfiguration().groupID;
-            if (laneGroupID != -1)
-                tempGroupIDCounts.put(laneGroupID, tempGroupIDCounts.getOrDefault(laneGroupID, 0) + 1);
-        }
-
-        // Use persisted or default groupID
-        groupID = getConfiguration().groupID;
-
-        if (groupID == -1) {
-            // Get or create a group ID based on lane module configs and database numbers
-            int tryID = 0;
-            while (true) {
-                int count = tempGroupIDCounts.getOrDefault(tryID, 0);
-
-                IObsSystemDatabase existing = getParentHub().getDatabaseRegistry().getObsDatabaseByNum(getGroupDatabaseNum(tryID));
-                if (existing != null) {
-                    SystemFilter filter = new SystemFilter.Builder()
-                            .withUniqueIDs(createGroupUIDPattern(tryID))
-                            .withCurrentVersion()
-                            .withNoParent()
-                            .build();
-                    long existingCount = existing.getSystemDescStore().select(filter).count();
-                    count = Math.toIntExact(Math.max(count, existingCount));
-                }
-
-                if (count < NUM_LANES_THRESHOLD) {
-                    groupID = tryID;
-                    break;
-                }
-                tryID++;
-            }
-        }
-
-        // Create database if absent
-        if (getParentHub().getDatabaseRegistry().getObsDatabaseByNum(getGroupDatabaseNum(groupID)) == null)
-            getParentHub().getModuleRegistry().loadModule(createLaneGroupDatabaseConfig(groupID));
 
         // generate unique ID
         if (config.uniqueID != null && !config.uniqueID.equals(AUTO_ID)) {
@@ -140,12 +88,11 @@ public class LaneSystem extends SensorSystem {
                 String suffix = config.uniqueID.replace(URN_PREFIX, "");
                 generateXmlID(DEFAULT_XMLID_PREFIX, suffix);
             } else {
-                this.uniqueID = createLaneUID(config.uniqueID, groupID);
+                this.uniqueID = createLaneUID(config.uniqueID);
                 generateXmlID(DEFAULT_XMLID_PREFIX, config.uniqueID);
             }
         }
 
-        getConfiguration().groupID = groupID;
 
         // Ensure name is at most 12 characters
         if (config.name.length() > 12)
@@ -171,7 +118,7 @@ public class LaneSystem extends SensorSystem {
             }
             if (existingRPMModule != null) {
                 occupancyWrapper = new OccupancyWrapper(getParentHub(), existingRPMModule);
-                occupancyWrapper.videoNamePrefix = BASE_VIDEO_DIRECTORY + "lane" + getConfiguration().groupID + "/";
+                occupancyWrapper.videoNamePrefix = BASE_VIDEO_DIRECTORY + "lane"  + "/";
             }
             // Initial FFmpeg config
             var ffmpegConfigList = getConfiguration().laneOptionsConfig.ffmpegConfig;
@@ -258,7 +205,7 @@ public class LaneSystem extends SensorSystem {
 
             String laneUID = getUniqueIdentifier();
             if(laneUID == null)
-                laneUID = createLaneUID(config.uniqueID, groupID);
+                laneUID = createLaneUID(config.uniqueID);
             if (db != null) {
                 // Remove lane if nothing else
                 List<String> removalList = new ArrayList<>(List.of(laneUID));
@@ -274,12 +221,8 @@ public class LaneSystem extends SensorSystem {
         }
     }
 
-    private String createLaneUID(String suffix, int groupID) {
-        return URN_PREFIX + "osh:system:group:" + groupID + ":lane:" + suffix;
-    }
-
-    private String createGroupUIDPattern(int groupID) {
-        return URN_PREFIX + "osh:system:group:" + groupID + ":*";
+    private String createLaneUID(String suffix) {
+        return URN_PREFIX + "osh:system:lane:" + suffix;
     }
 
     private synchronized void deleteSystemsFromDatabase(List<String> systemUIDs) {
@@ -529,40 +472,6 @@ public class LaneSystem extends SensorSystem {
         config.connectionConfig.connectTimeout = 5000;
         config.connectionConfig.reconnectAttempts = 10;
         return config;
-    }
-
-    private SystemDriverDatabaseConfig createLaneGroupDatabaseConfig(int groupID) {
-        SystemDriverDatabaseConfig config = new SystemDriverDatabaseConfig();
-        config.name = "Group " + groupID + " Lanes";
-        config.dbConfig = new MVObsSystemDatabaseConfig();
-        config.autoStart = true;
-
-        config.databaseNum = getGroupDatabaseNum(groupID);
-        config.systemUIDs = new HashSet<>(List.of(createGroupUIDPattern(groupID)));
-
-        OccupancyVideoPurgePolicyConfig purgeConfig = new OccupancyVideoPurgePolicyConfig();
-        purgeConfig.purgePeriod = DEFAULT_PURGE_PERIOD;
-        config.autoPurgeConfig.add(purgeConfig);
-
-        MVObsSystemDatabaseConfig dbConfig = (MVObsSystemDatabaseConfig) (config.dbConfig = new MVObsSystemDatabaseConfig());
-        dbConfig.storagePath = "group" + groupID + "lanes.db";
-        dbConfig.readOnly = false;
-        return config;
-    }
-
-    private int getGroupDatabaseNum(int groupID) {
-        return getLargestNonGroupDatabaseNumber() + groupID + 1;
-    }
-
-    private int getLargestNonGroupDatabaseNumber() {
-        int highestDbNum = 0;
-        for (var otherDb: getParentHub().getModuleRegistry().getLoadedModules(IObsSystemDatabase.class))
-        {
-            if (otherDb.getDatabaseNum() == null || (otherDb instanceof SystemDriverDatabase db && db.getName().contains("Group") && db.getName().contains("Lanes")))
-                continue;
-            highestDbNum = Math.max(otherDb.getDatabaseNum(), highestDbNum);
-        }
-        return highestDbNum;
     }
 
     @Override
