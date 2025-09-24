@@ -90,13 +90,13 @@ public class LaneReport extends Report {
 //        Predicate<IObsData> emlSuppPredicate = (obsData) -> {return obsData.getResult();};
 
 
-        long gammaNeutronAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, gammaNeutronPredicate, begin, end);
-        long gammaAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module ,gammaPredicate, begin, end);
-        long neutronAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, neutronPredicate, begin, end);
-        long totalOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyTotalPredicate, begin, end);
-//        long nonAlarmingOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyNonAlarmingPredicate, begin, end);
+        long gammaNeutronAlarmCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_OCCUPANCY}, module, gammaNeutronPredicate, begin, end);
+        long gammaAlarmCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_OCCUPANCY}, module ,gammaPredicate, begin, end);
+        long neutronAlarmCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_OCCUPANCY}, module, neutronPredicate, begin, end);
+        long totalOccupancyCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyTotalPredicate, begin, end);
+//        long nonAlarmingOccupancyCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyNonAlarmingPredicate, begin, end);
 
-//        long emlSuppressedCount= Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, emlSuppPredicate);
+//        long emlSuppressedCount= Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_OCCUPANCY}, module, emlSuppPredicate);
 
 
         long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
@@ -134,12 +134,12 @@ public class LaneReport extends Report {
 //        Predicate<IObsData> extendedOccPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
 
 
-        long tamperCount = Utils.countObservations(new String[]{RADHelper.DEF_TAMPER}, module, tamperPredicate, begin, end);
-        long gammaHighFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM}, module,gammaHighPredicate, begin, end);
-        long gammaLowFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM}, module,gammaLowPredicate, begin, end);
-        long neutronHighFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM}, module,neutronHighPredicate, begin, end);
+        long tamperCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_TAMPER}, module, tamperPredicate, begin, end);
+        long gammaHighFaultCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM}, module,gammaHighPredicate, begin, end);
+        long gammaLowFaultCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM}, module,gammaLowPredicate, begin, end);
+        long neutronHighFaultCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM}, module,neutronHighPredicate, begin, end);
 
-//        long extendedOccupancyCount = Utils.countObservations(RADHelper.DEF_TAMPER, module,extendedOccPredicate, begin, end);
+//        long extendedOccupancyCount = Utils.countObservationsFromLane(laneUID, RADHelper.DEF_TAMPER, module,extendedOccPredicate, begin, end);
 
 
         faultCounts.put("Tamper", String.valueOf(tamperCount));
