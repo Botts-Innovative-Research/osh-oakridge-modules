@@ -1,5 +1,5 @@
-description = 'Object Storage Service'
-ext.details = 'Generic object storage service to easily serve large objects/files'
+description = 'Bucket Storage Service'
+ext.details = 'Generic object storage service to easily serve objects/files'
 version = '1.0.0'
 
 dependencies {

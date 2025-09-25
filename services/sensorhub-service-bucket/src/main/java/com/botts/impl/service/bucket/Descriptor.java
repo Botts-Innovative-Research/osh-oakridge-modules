@@ -23,12 +23,12 @@ public class Descriptor extends JarModuleProvider {
 
     @Override
     public Class<? extends IModuleBase<?>> getModuleClass() {
-        return BucketStorageService.class;
+        return BucketService.class;
     }
 
     @Override
     public Class<? extends ModuleConfigBase> getModuleConfigClass() {
-        return BucketStorageServiceConfig.class;
+        return BucketServiceConfig.class;
     }
 
 }
