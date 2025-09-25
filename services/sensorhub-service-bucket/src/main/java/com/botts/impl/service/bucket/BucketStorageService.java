@@ -15,10 +15,14 @@
 
 package com.botts.impl.service.bucket;
 
+import com.botts.api.service.bucket.IBucketStore;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.service.AbstractHttpServiceModule;
 import org.sensorhub.utils.NamedThreadFactory;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -27,6 +31,7 @@ public class BucketStorageService extends AbstractHttpServiceModule<BucketStorag
 
     private BucketStorageServlet servlet;
     private ScheduledExecutorService threadPool;
+    private IBucketStore bucketStore;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -37,7 +42,15 @@ public class BucketStorageService extends AbstractHttpServiceModule<BucketStorag
     protected void doStart() throws SensorHubException {
         super.doStart();
 
-        this.securityHandler = new BucketStorageSecurity(this, config.security.enableAccessControl);
+        if (config.initialBuckets != null && !config.initialBuckets.isEmpty()) {
+            for (String bucket : config.initialBuckets)
+                if (!bucketStore.bucketExists(bucket))
+                    bucketStore.createBucket(bucket);
+        }
+
+        List<String> buckets = bucketStore.listBuckets();
+
+        this.securityHandler = new BucketStorageSecurity(this, buckets, config.security.enableAccessControl);
 
         this.servlet = new BucketStorageServlet(this, securityHandler);
 

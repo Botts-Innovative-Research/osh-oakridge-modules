@@ -15,6 +15,7 @@
 
 package com.botts.impl.service.bucket;
 
+import com.botts.api.service.bucket.BucketStoreConfig;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.security.SecurityConfig;
 import org.sensorhub.api.service.HttpServiceConfig;
@@ -31,7 +32,9 @@ public class BucketStorageServiceConfig extends HttpServiceConfig {
     public boolean enableCORS = true;
 
     @DisplayInfo(desc = "Use this to initialize creation of buckets")
-    public Set<String> buckets;
+    public Set<String> initialBuckets;
+
+    public BucketStoreConfig bucketConfig;
 
     public BucketStorageServiceConfig()
     {
