@@ -1,0 +1,42 @@
+package com.botts.api.service.bucket;
+
+import org.sensorhub.api.datastore.DataStoreException;
+
+import java.io.InputStream;
+import java.util.List;
+
+public interface IBucketStore {
+
+    String BUCKET_NOT_FOUND = "Bucket not found";
+    String FAILED_CREATE_BUCKET = "Failed to create bucket ";
+    String FAILED_DELETE_BUCKET = "Failed to delete bucket ";
+    String FAILED_GET_BUCKET = "Failed to get bucket ";
+    String FAILED_LIST_BUCKETS = "Failed to list buckets";
+
+    String OBJECT_NOT_FOUND = "Object not found in bucket ";
+    String FAILED_PUT_OBJECT = "Failed to put object in bucket ";
+    String FAILED_DELETE_OBJECT = "Failed to delete object in bucket ";
+    String FAILED_GET_OBJECT = "Failed to get object from bucket ";
+    String FAILED_LIST_OBJECTS = "Failed to list objects in bucket ";
+
+
+    // Buckets
+    boolean bucketExists(String bucketName);
+
+    void createBucket(String bucketName) throws DataStoreException;
+
+    void deleteBucket(String bucketName) throws DataStoreException;
+
+    List<String> listBuckets() throws DataStoreException;
+
+    // Objects
+
+    void putObject(String bucketName, String key, InputStream data) throws DataStoreException;
+
+    InputStream getObject(String bucketName, String key) throws DataStoreException;
+
+    void deleteObject(String bucketName, String key) throws DataStoreException;
+
+    List<String> listObjects(String bucketName) throws DataStoreException;
+
+}

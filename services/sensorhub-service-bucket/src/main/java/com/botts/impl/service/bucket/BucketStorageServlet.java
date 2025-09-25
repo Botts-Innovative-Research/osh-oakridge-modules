@@ -29,7 +29,7 @@ public class BucketStorageServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        resp.getOutputStream().println("<html><body>I AM A FILE SERVICE HAHA</body></html>");
+        req.getContextPath();
     }
 
     @Override
