@@ -15,21 +15,23 @@
 
 package com.botts.impl.service.bucket;
 
+import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
+import com.botts.impl.service.bucket.filesystem.FileSystemBucketStore;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.service.AbstractHttpServiceModule;
 import org.sensorhub.utils.NamedThreadFactory;
 
-import java.util.HashSet;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
-public class BucketStorageService extends AbstractHttpServiceModule<BucketStorageServiceConfig> {
+public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig> implements IBucketService {
 
-    private BucketStorageServlet servlet;
+    private BucketServlet servlet;
     private ScheduledExecutorService threadPool;
     private IBucketStore bucketStore;
 
@@ -42,6 +44,12 @@ public class BucketStorageService extends AbstractHttpServiceModule<BucketStorag
     protected void doStart() throws SensorHubException {
         super.doStart();
 
+        try {
+            bucketStore = new FileSystemBucketStore(Path.of("web"));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
         if (config.initialBuckets != null && !config.initialBuckets.isEmpty()) {
             for (String bucket : config.initialBuckets)
                 if (!bucketStore.bucketExists(bucket))
@@ -50,9 +58,11 @@ public class BucketStorageService extends AbstractHttpServiceModule<BucketStorag
 
         List<String> buckets = bucketStore.listBuckets();
 
-        this.securityHandler = new BucketStorageSecurity(this, buckets, config.security.enableAccessControl);
+        this.securityHandler = new BucketSecurity(this, buckets, config.security.enableAccessControl);
 
-        this.servlet = new BucketStorageServlet(this, securityHandler);
+        BucketHandler bucketHandler = new BucketHandler();
+        ObjectHandler objectHandler = new ObjectHandler();
+        this.servlet = new BucketServlet(this, securityHandler, bucketHandler, objectHandler);
 
         this.threadPool = Executors.newScheduledThreadPool(
                 Runtime.getRuntime().availableProcessors(),
@@ -65,6 +75,7 @@ public class BucketStorageService extends AbstractHttpServiceModule<BucketStorag
         var wildcardEndpoint = config.endPoint + "/*";
 
         httpServer.deployServlet(servlet, wildcardEndpoint);
+        httpServer.addServletSecurity(wildcardEndpoint, config.security.requireAuth);
     }
 
     private void undeploy() {
@@ -83,15 +94,34 @@ public class BucketStorageService extends AbstractHttpServiceModule<BucketStorag
     @Override
     protected void doStop() throws SensorHubException {
         undeploy();
-        super.doStop();
+
+        if (threadPool != null)
+            threadPool.shutdown();
     }
 
+    @Override
+    public void cleanup() throws SensorHubException {
+        if (securityHandler != null)
+            securityHandler.unregister();
+    }
+
+    @Override
     public String getPublicEndpointUrl() {
         return config.endPoint;
     }
 
+    @Override
     public ExecutorService getThreadPool() {
         return threadPool;
+    }
+
+    @Override
+    public IBucketStore getBucketStore() {
+        return bucketStore;
+    }
+
+    public BucketSecurity getSecurityHandler() {
+        return (BucketSecurity) securityHandler;
     }
 
 }

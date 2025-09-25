@@ -29,14 +29,23 @@ public interface IBucketStore {
 
     List<String> listBuckets() throws DataStoreException;
 
+    long getNumBuckets();
+
     // Objects
+
+    boolean objectExists(String bucketName, String objectName);
 
     void putObject(String bucketName, String key, InputStream data) throws DataStoreException;
 
     InputStream getObject(String bucketName, String key) throws DataStoreException;
 
+    String getObjectMimeType(String bucketName, String key) throws DataStoreException;
+
     void deleteObject(String bucketName, String key) throws DataStoreException;
 
     List<String> listObjects(String bucketName) throws DataStoreException;
 
+    long getNumObjects(String bucketName);
+
+    String getResourceURI(String bucketName, String key) throws DataStoreException;
 }

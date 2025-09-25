@@ -20,9 +20,9 @@ import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.security.SecurityConfig;
 import org.sensorhub.api.service.HttpServiceConfig;
 
-import java.util.Set;
+import java.util.List;
 
-public class BucketStorageServiceConfig extends HttpServiceConfig {
+public class BucketServiceConfig extends HttpServiceConfig {
 
 
     @DisplayInfo(desc="Security related options")
@@ -32,13 +32,13 @@ public class BucketStorageServiceConfig extends HttpServiceConfig {
     public boolean enableCORS = true;
 
     @DisplayInfo(desc = "Use this to initialize creation of buckets")
-    public Set<String> initialBuckets;
+    public List<String> initialBuckets;
 
     public BucketStoreConfig bucketConfig;
 
-    public BucketStorageServiceConfig()
+    public BucketServiceConfig()
     {
-        this.moduleClass = BucketStorageService.class.getCanonicalName();
+        this.moduleClass = BucketService.class.getCanonicalName();
         this.endPoint = "/buckets";
     }
 
