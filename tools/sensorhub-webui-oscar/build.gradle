@@ -7,6 +7,7 @@ dependencies {
     implementation 'org.sensorhub:sensorhub-webui-core:' + oshCoreVersion
     implementation project(':sensorhub-system-lane')
     implementation project(':sensorhub-database-purge')
+    implementation project(':sensorhub-service-oscar')
     // TODO: Check which of these we don't need. Using all of them worked but I'm sure they're not all needed
     embeddedImpl 'com.vaadin:vaadin-server:8.14.3'
     embeddedImpl 'com.vaadin:vaadin-push:8.14.3'
