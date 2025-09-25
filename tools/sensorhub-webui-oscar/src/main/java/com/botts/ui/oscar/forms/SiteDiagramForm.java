@@ -16,7 +16,6 @@ import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.ui.GenericConfigForm;
 
 import java.io.File;
-import java.util.List;
 
 import static org.vast.swe.SWEHelper.getPropertyUri;
 
@@ -48,6 +47,8 @@ public class SiteDiagramForm extends GenericConfigForm {
         if(propId.equals("location.lat")) {
             latField = (TextField) field;
         }
+
+
         return field;
     }
 
