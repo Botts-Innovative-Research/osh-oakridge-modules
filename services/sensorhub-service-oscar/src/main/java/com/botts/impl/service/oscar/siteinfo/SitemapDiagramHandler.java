@@ -16,57 +16,34 @@
 package com.botts.impl.service.oscar.siteinfo;
 
 
-import com.botts.api.service.bucket.IBucketService;
-import com.botts.api.service.bucket.IBucketStore;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.datastore.DataStoreException;
 
-import java.io.*;
-import java.util.Collection;
-import java.util.Collections;
-
-import static com.botts.impl.service.oscar.Constants.SITE_MAP_BUCKET;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 
 public class SitemapDiagramHandler {
 
-    IBucketService bucketService;
-    IBucketStore bucketStore;
+    ISensorHub hub;
 
-    public SitemapDiagramHandler (IBucketService bucketService) {
-        this.bucketService = bucketService;
+//    FileService fileService;
+
+    public SitemapDiagramHandler(ISensorHub hub) {
+        this.hub = hub;
+    }
+
+    public void handleFile(String filename) {
+        File file = new File(filename);
 
     }
 
-    public void handleFile(String filename) throws DataStoreException, FileNotFoundException {
+    public OutputStream handleUpload(String filename) throws FileNotFoundException {
+        System.out.println("Receiving file: " + filename);
+        // TODO: Better logic to specify where config should be
+        File file = new File(filename);
 
-        bucketStore = bucketService.getBucketStore();
-
-        if (bucketStore == null) {
-            return;
-        }
-        boolean siteMapBucketExists = bucketStore.bucketExists(SITE_MAP_BUCKET);
-
-        if (!siteMapBucketExists) {
-            bucketStore.createBucket(SITE_MAP_BUCKET);
-        }
-
-        bucketStore.putObject(SITE_MAP_BUCKET, filename, Collections.emptyMap());
-    }
-
-    public OutputStream handleUpload(String filename) throws DataStoreException {
-
-        bucketStore = bucketService.getBucketStore();
-
-        if (bucketStore == null) {
-            return null;
-        }
-        boolean siteMapBucketExists = bucketStore.bucketExists(SITE_MAP_BUCKET);
-
-        if (!siteMapBucketExists) {
-            bucketStore.createBucket(SITE_MAP_BUCKET);
-        }
-
-        return bucketStore.putObject(SITE_MAP_BUCKET, filename, Collections.emptyMap());
+        return new FileOutputStream(file);
     }
 }

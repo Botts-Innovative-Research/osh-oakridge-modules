@@ -6,7 +6,6 @@ import com.vaadin.v7.data.Property;
 import com.vaadin.v7.ui.Field;
 import com.vaadin.v7.ui.TextField;
 import com.vaadin.v7.ui.Upload;
-import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.ui.FieldWrapper;
 import org.sensorhub.ui.GenericConfigForm;
 
@@ -79,8 +78,8 @@ public class OSCARServiceForm extends GenericConfigForm {
                                     try {
                                         siteDiagramPath.setValue(filename);
                                         return oscarService.getSitemapDiagramHandler().handleUpload(filename);
-                                    } catch (DataStoreException e) {
-                                        throw new RuntimeException(e);
+                                    } catch (FileNotFoundException e) {
+                                        throw new IllegalStateException(e);
                                     }
                                 }
                             }
