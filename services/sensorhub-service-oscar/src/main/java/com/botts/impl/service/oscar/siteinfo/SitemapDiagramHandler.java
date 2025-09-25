@@ -13,25 +13,29 @@
 
  ******************************************************************************/
 
-package com.botts.impl.service.oscar.spreadsheet;
+package com.botts.impl.service.oscar.siteinfo;
+
 
 import org.sensorhub.api.ISensorHub;
+import org.sensorhub.api.common.SensorHubException;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 
-public class SpreadsheetHandler {
+public class SitemapDiagramHandler {
 
     ISensorHub hub;
 
-    public SpreadsheetHandler(ISensorHub hub) {
+//    FileService fileService;
+
+    public SitemapDiagramHandler(ISensorHub hub) {
         this.hub = hub;
     }
 
-
-    public void handleFile(String filepath) {
+    public void handleFile(String filename) {
+        File file = new File(filename);
 
     }
 
