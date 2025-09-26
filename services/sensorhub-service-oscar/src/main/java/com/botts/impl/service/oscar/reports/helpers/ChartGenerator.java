@@ -40,6 +40,8 @@ public class ChartGenerator {
             file.getParentFile().mkdirs();
             ChartUtilities.saveChartAsPNG(file, chart, 800, 600);
 
+
+
             return file.getAbsolutePath();
         }
 
