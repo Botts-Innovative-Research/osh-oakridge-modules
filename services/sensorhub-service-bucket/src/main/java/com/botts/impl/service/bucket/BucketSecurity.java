@@ -10,7 +10,7 @@ import java.util.Map;
 
 public class BucketSecurity extends ModuleSecurity {
 
-    private final Map<String, BucketPermission> bucketPermissions;
+    private final Map<String, BucketPermissions> bucketPermissions;
 
     public final IPermission api_get;
     public final IPermission api_put;
@@ -18,7 +18,7 @@ public class BucketSecurity extends ModuleSecurity {
     public final IPermission api_create;
     public final IPermission api_list;
 
-    public class BucketPermission {
+    public class BucketPermissions {
         public IPermission get;
         public IPermission put;
         public IPermission delete;
@@ -37,25 +37,35 @@ public class BucketSecurity extends ModuleSecurity {
         this.api_create = new ItemPermission(rootPerm, "create");
         this.api_list = new ItemPermission(rootPerm, "list");
 
-        buckets.forEach(bucket -> {
-            BucketPermission bucketPermission = new BucketPermission();
-            bucketPermission.get = new ItemPermission(api_get, bucket);
-            bucketPermission.create = new ItemPermission(api_create, bucket);
-            bucketPermission.delete = new ItemPermission(api_delete, bucket);
-            bucketPermission.put = new ItemPermission(api_put, bucket);
-            bucketPermission.list = new ItemPermission(api_list, bucket);
-            bucketPermissions.put(bucket, bucketPermission);
-        });
+        buckets.forEach(this::addBucket);
 
         module.getParentHub().getSecurityManager().registerModulePermissions(rootPerm);
     }
 
-    public Map<String, BucketPermission> getBucketPermissions() {
+    public void addBucket(String bucket) {
+        bucketPermissions.put(bucket, createBucketPermissions(bucket));
+    }
+
+    private BucketPermissions createBucketPermissions(String bucket) {
+        BucketPermissions perms = new BucketPermissions();
+        perms.get = new ItemPermission(this.api_get, bucket);
+        perms.create = new ItemPermission(this.api_create, bucket);
+        perms.delete = new ItemPermission(this.api_delete, bucket);
+        perms.put = new ItemPermission(this.api_put, bucket);
+        perms.list = new ItemPermission(this.api_list, bucket);
+        return perms;
+    }
+
+    public Map<String, BucketPermissions> getBucketPermissions() {
         return bucketPermissions;
     }
 
-    public BucketPermission getBucketPermission(String bucket) {
+    public BucketPermissions getBucketPermission(String bucket) {
         return bucketPermissions.get(bucket);
+    }
+
+    public void checkParentPermission(IPermission permission, String bucket) {
+
     }
 
 }
