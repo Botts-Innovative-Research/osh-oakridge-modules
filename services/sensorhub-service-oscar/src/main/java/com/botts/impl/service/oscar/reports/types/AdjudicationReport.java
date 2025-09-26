@@ -50,14 +50,17 @@ public class AdjudicationReport extends Report {
             pdfDocument = new PdfDocument(new PdfWriter(file));
             document = new Document(pdfDocument);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            document.close();
+            pdfDocument.close();
+            log.error(e.getMessage(), e);
+            return;
         }
         this.module = module;
         this.eventId = eventId;
         this.laneUID = laneUID;
         this.begin = startTime;
         this.end = endTime;
-        this.tableGenerator = new TableGenerator(document);
+        this.tableGenerator = new TableGenerator();
         this.chartGenerator = new ChartGenerator();
     }
 
@@ -70,6 +73,8 @@ public class AdjudicationReport extends Report {
 
         document.close();
         pdfDocument.close();
+        chartGenerator = null;
+        tableGenerator = null;
 
         return pdfFileName;
     }
@@ -137,16 +142,17 @@ public class AdjudicationReport extends Report {
             Image image = new Image(ImageDataFactory.create(chartPath)).setAutoScale(true);
             document.add(image);
 
+
+
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            log.error(e.getMessage(), e);
+            return;
         }
         document.add(new Paragraph("\n"));
     }
 
     private void addSecondaryInspectionResults(){
         document.add(new Paragraph("Secondary Inspection Results").setFontSize(12));
-
-
 
         addSecondaryInspectionIsotopeResults();
 
@@ -211,7 +217,9 @@ public class AdjudicationReport extends Report {
         secInsDetailsMap.put("Cargo", "");
         secInsDetailsMap.put("Disposition #", "");
 
-        tableGenerator.addTable(secInsDetailsMap);
+        var table = tableGenerator.addTable(secInsDetailsMap);
+        document.add(table);
+
         document.add(new Paragraph("\n"));
     }
 }
