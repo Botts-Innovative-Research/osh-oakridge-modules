@@ -10,6 +10,8 @@ import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.impl.utils.rad.RADHelper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -21,6 +23,7 @@ import java.util.function.Predicate;
 
 public class LaneReport extends Report {
 
+    private static final Logger log = LoggerFactory.getLogger(LaneReport.class);
     String reportTitle = "Lane Report";
     String laneUID;
     Document document;
@@ -41,14 +44,17 @@ public class LaneReport extends Report {
             pdfDocument = new PdfDocument(new PdfWriter(file));
             document = new Document(pdfDocument);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            document.close();
+            pdfDocument.close();
+            log.error(e.getMessage(), e);
+            return;
         }
 
         this.laneUID = laneUID;
         this.module = module;
         this.begin = startTime;
         this.end = endTime;
-        this.tableGenerator = new TableGenerator(document);
+        this.tableGenerator = new TableGenerator();
     }
 
     @Override
@@ -61,12 +67,12 @@ public class LaneReport extends Report {
         document.close();
         pdfDocument.close();
 
+        tableGenerator = null;
         return pdfFileName;
     }
 
     private void addHeader(){
         document.add(new Paragraph(reportTitle).setFontSize(16).simulateBold());
-        document.add(new Paragraph("Lane Report").setFontSize(16).simulateBold());
         document.add(new Paragraph("Lane Name: " + "TODO: lane name").setFontSize(12));
         document.add(new Paragraph("\n"));
     }
@@ -114,7 +120,8 @@ public class LaneReport extends Report {
         //        alarmOccCounts.put("EML Suppressed", emlSuppressedCount);
 //        alarmOccCounts.put("EML Alarm Rate", emlSuppressedAverage);
 
-        tableGenerator.addTable(alarmOccCounts);
+        var table = tableGenerator.addTable(alarmOccCounts);
+        document.add(table);
 
         document.add(new Paragraph("\n"));
     }
