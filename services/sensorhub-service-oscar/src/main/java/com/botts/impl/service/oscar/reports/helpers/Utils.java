@@ -7,6 +7,9 @@ import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.function.Predicate;
 
 
@@ -34,7 +37,7 @@ public class Utils {
                 .build()).count();
     }
 
-    public static long countObservationsFromLane(String laneUID, String[] observedProperties, OSCARServiceModule module, Predicate<IObsData> valuePredicate,Instant begin, Instant end){
+    public static long countObservationsFromLane(String laneUID, String[] observedProperties, OSCARServiceModule module, Predicate<IObsData> valuePredicate, Instant begin, Instant end){
         return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
                 .withSystems(new SystemFilter.Builder()
                         .withUniqueIDs(laneUID)
@@ -48,4 +51,22 @@ public class Utils {
                 .count();
     }
 
+    public static Map<Instant, Long> countObservationsByDay(String[] observedProperties, OSCARServiceModule module, Predicate<IObsData> predicate,  Instant startDate, Instant endDate){
+        Map<Instant, Long> result = new HashMap<>();
+
+        while (startDate.isBefore(endDate)) {
+            Instant currentDay = startDate;
+            Instant endOfCurrentDay = currentDay.plus(1, ChronoUnit.DAYS);
+
+            if(endOfCurrentDay.isAfter(endDate)){
+                endOfCurrentDay = endDate;
+            }
+
+            long count = Utils.countObservations(observedProperties, module,  predicate, currentDay, endOfCurrentDay);
+            result.put(currentDay, count);
+
+            startDate = endOfCurrentDay;
+        }
+        return result;
+    }
 }
