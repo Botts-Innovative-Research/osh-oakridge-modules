@@ -132,7 +132,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                         report = new EventReportTodo(start, end, eventId, laneUID, module);
                 }
                 case ADJUDICATION -> {
-                    file = new File(path + type + "_" + laneUID + "_" + eventId + "_" + start + "_" + end + ".pdf");
+                    file = new File(path + type + "_" + laneUID + "_"  + "_" + start + "_" + end + ".pdf");
                     if (!file.exists())
                         report = new AdjudicationReport(start, end, eventId, laneUID, module);
                 }
@@ -142,8 +142,11 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             if (report == null) getLogger().debug("Report not found");
 
 
-            String url = report.generate();
+            String url = null;
 
+            url = report.generate();
+
+            System.out.println("MUY REPORT URL: " + url);
 
             DataBlock resultData = resultStructure.createDataBlock();
             resultData.setStringValue(url);
@@ -152,7 +155,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
             ICommandStatus status = new CommandStatus.Builder()
                     .withCommand(command.getID())
-                    .withStatusCode(url == null ? ICommandStatus.CommandStatusCode.FAILED :ICommandStatus.CommandStatusCode.ACCEPTED )
+                    .withStatusCode(url == null ? ICommandStatus.CommandStatusCode.FAILED : ICommandStatus.CommandStatusCode.ACCEPTED)
 //                    .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
                     .withResult(result)
                     .build();
