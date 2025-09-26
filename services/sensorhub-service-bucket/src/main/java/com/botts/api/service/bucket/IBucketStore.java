@@ -4,6 +4,7 @@ import org.sensorhub.api.datastore.DataStoreException;
 
 import java.io.InputStream;
 import java.util.List;
+import java.util.Map;
 
 public interface IBucketStore {
 
@@ -14,10 +15,13 @@ public interface IBucketStore {
     String FAILED_LIST_BUCKETS = "Failed to list buckets";
 
     String OBJECT_NOT_FOUND = "Object not found in bucket ";
+    String FAILED_CREATE_OBJECT = "Failed to create object in bucket ";
     String FAILED_PUT_OBJECT = "Failed to put object in bucket ";
     String FAILED_DELETE_OBJECT = "Failed to delete object in bucket ";
     String FAILED_GET_OBJECT = "Failed to get object from bucket ";
     String FAILED_LIST_OBJECTS = "Failed to list objects in bucket ";
+
+    String UNABLE_DETERMINE_MIME_TYPE = "Unable to determine mime type for object ";
 
 
     // Buckets
@@ -35,7 +39,9 @@ public interface IBucketStore {
 
     boolean objectExists(String bucketName, String objectName);
 
-    void putObject(String bucketName, String key, InputStream data) throws DataStoreException;
+    String createObject(String bucketName, InputStream data, Map<String, String> metadata) throws DataStoreException;
+
+    void putObject(String bucketName, String key, InputStream data, Map<String, String> metadata) throws DataStoreException;
 
     InputStream getObject(String bucketName, String key) throws DataStoreException;
 
@@ -48,4 +54,5 @@ public interface IBucketStore {
     long getNumObjects(String bucketName);
 
     String getResourceURI(String bucketName, String key) throws DataStoreException;
+
 }

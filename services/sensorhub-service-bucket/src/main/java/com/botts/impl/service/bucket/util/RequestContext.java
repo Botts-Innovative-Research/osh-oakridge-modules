@@ -1,10 +1,14 @@
-package com.botts.impl.service.bucket;
+package com.botts.impl.service.bucket.util;
 
-import javax.servlet.ServletInputStream;
-import javax.servlet.ServletOutputStream;
+import com.botts.impl.service.bucket.BucketSecurity;
+import com.botts.impl.service.bucket.BucketServlet;
+import com.google.gson.stream.JsonWriter;
+
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 public class RequestContext {
 
@@ -14,11 +18,20 @@ public class RequestContext {
 
     private String bucketName = "";
     private String objectKey = "";
+    private JsonWriter jsonWriter = null;
+    private Map<String, String> headers;
 
     public RequestContext(HttpServletRequest request, HttpServletResponse response, BucketServlet servlet) throws IOException {
         this.request = request;
         this.response = response;
         this.servlet = servlet;
+
+        var headersIter = request.getHeaderNames().asIterator();
+        headers = new HashMap<>();
+        while (headersIter.hasNext()) {
+            var headerName = headersIter.next();
+            headers.put(headerName, request.getHeader(headerName));
+        }
 
         var pathInfo = request.getPathInfo();
         if (pathInfo == null)
@@ -29,7 +42,7 @@ public class RequestContext {
         if (parts.length > 1)
             bucketName = parts[1];
 
-        if ((parts.length == 2 && !bucketName.isBlank()) || (parts.length == 3 && parts[2].isBlank()))
+        if ((parts.length == 3 && !bucketName.isBlank()) && !parts[2].isBlank())
             objectKey = parts[2];
     }
 
@@ -49,10 +62,6 @@ public class RequestContext {
         return objectKey;
     }
 
-    public BucketServlet getServlet() {
-        return servlet;
-    }
-
     public HttpServletRequest getRequest() {
         return request;
     }
@@ -61,16 +70,28 @@ public class RequestContext {
         return response;
     }
 
-    public ServletInputStream getInputStream() throws IOException {
-        return request.getInputStream();
-    }
+    public String getResourceURL(String resource) {
+        String url = request.getRequestURL().toString();
 
-    public ServletOutputStream getOutputStream() throws IOException {
-        return response.getOutputStream();
+        if (url.endsWith("/"))
+            url += resource;
+        else
+            url += "/" + resource;
+        return url;
     }
 
     public BucketSecurity getSecurityHandler() {
         return servlet.getSecurityHandler();
+    }
+
+    public JsonWriter getJsonWriter() throws IOException {
+        if (jsonWriter == null)
+            jsonWriter = new JsonWriter(response.getWriter());
+        return jsonWriter;
+    }
+
+    public Map<String, String> getHeaders() {
+        return headers;
     }
 
 }

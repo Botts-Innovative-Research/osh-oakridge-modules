@@ -1,21 +1,34 @@
 package com.botts.impl.service.bucket;
 
 import com.botts.api.service.bucket.IBucketStore;
-import org.sensorhub.api.datastore.DataStoreException;
-import org.sensorhub.api.security.IPermission;
+import com.botts.impl.service.bucket.handler.BucketHandler;
+import com.botts.impl.service.bucket.handler.ObjectHandler;
+import com.botts.impl.service.bucket.util.InvalidRequestException;
+import com.botts.impl.service.bucket.util.RequestContext;
+import org.sensorhub.api.security.ISecurityManager;
 import org.sensorhub.impl.module.ModuleSecurity;
 import org.slf4j.Logger;
 
+import javax.servlet.AsyncContext;
 import javax.servlet.ServletException;
-import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.io.InputStream;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 
+import static javax.servlet.http.HttpServletResponse.*;
+import static javax.servlet.http.HttpServletResponse.SC_FORBIDDEN;
+import static javax.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
+
 public class BucketServlet extends HttpServlet {
+
+    static final String LOG_REQUEST_MSG = "{} {}{} (from ip={}, user={})";
+    static final String INTERNAL_ERROR_MSG = "Internal server error";
+    static final String INTERNAL_ERROR_LOG_MSG = INTERNAL_ERROR_MSG + " while processing request " + LOG_REQUEST_MSG;
+    static final String ACCESS_DENIED_ERROR_MSG = "Permission denied";
+    static final String JSON_CONTENT_TYPE = "application/json";
 
     private final String rootUrl;
     private final ExecutorService threadPool;
@@ -35,130 +48,280 @@ public class BucketServlet extends HttpServlet {
 
         var endpointUrl = service.getPublicEndpointUrl();
         this.rootUrl = endpointUrl.endsWith("/") ? endpointUrl.substring(0, endpointUrl.length()-1) : endpointUrl;
-    }
-
-    private String getBucketName(String pathInfo) {
-        return pathInfo.split("/")[1];
-    }
-
-    private String getObjectKey(String pathInfo) {
-        return pathInfo.split("/", 3)[2];
+        this.bucketHandler = bucketHandler;
+        this.objectHandler = objectHandler;
     }
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-//        if (!sec.hasPermission(sec.api_get)) {
-//            showUnauthorized(sec.api_get, req, resp);
-//            return;
-//        }
-
-        // List all buckets
-        if (!sec.hasPermission(sec.api_list)) {
-            showUnauthorized(sec.api_get, req, resp);
-            return;
-        }
-
-        listBuckets(req, resp);
-        var pathInfo = req.getPathInfo();
-        if (pathInfo == null || pathInfo.equals("/")) {
-            long numBuckets = bucketStore.getNumBuckets();
-
-            if (numBuckets == 0) {
-                resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
-                return;
-            }
-
-            try {
-                printBuckets(resp.getOutputStream());
-            } catch (DataStoreException e) {
-                sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, IBucketStore.FAILED_LIST_BUCKETS, req, resp);
-            }
-
-            return;
-        }
-
-        String[] pathParts = pathInfo.split("/", 3);
-
-        // Check bucket exists
-        String bucketName = "";
-        if (pathParts.length > 1) {
-            bucketName = pathParts[1];
-            if (!bucketStore.bucketExists(bucketName)) {
-                sendError(HttpServletResponse.SC_NOT_FOUND, IBucketStore.BUCKET_NOT_FOUND, req, resp);
-                return;
-            }
-        }
-
-        // List objects in bucket
-        if ((pathParts.length == 2 && !bucketName.isBlank()) || (pathParts.length == 3 && pathParts[2].isBlank())) {
-            long numObjects = bucketStore.getNumObjects(bucketName);
-
-            if (numObjects == 0) {
-                resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
-                return;
-            }
-
-            try {
-                printObjectKeys(bucketName, resp.getOutputStream());
-            } catch (DataStoreException e) {
-                sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, IBucketStore.FAILED_LIST_OBJECTS + bucketName, req, resp);
-            }
-
-            return;
-        }
-
-        String objectKey = pathParts[2];
-        if (!bucketStore.objectExists(bucketName, objectKey)) {
-            sendError(HttpServletResponse.SC_NOT_FOUND, IBucketStore.OBJECT_NOT_FOUND + bucketName, req, resp);
-            return;
-        }
-
         try {
-            String mimeType = bucketStore.getObjectMimeType(bucketName, objectKey);
-            resp.setContentType(mimeType);
-            InputStream objectData = bucketStore.getObject(bucketName, objectKey);
-            objectData.transferTo(resp.getOutputStream());
-        } catch (DataStoreException e) {
-            sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, IBucketStore.FAILED_GET_OBJECT + bucketName, req, resp);
+            resp.setContentType(JSON_CONTENT_TYPE);
+            var ctx = new RequestContext(req, resp, this);
+
+            final AsyncContext aCtx = req.startAsync(req, resp);
+            CompletableFuture.runAsync(() -> {
+                try {
+                    setCurrentUser(req);
+                    bucketHandler.doGet(ctx);
+                } catch (InvalidRequestException e) {
+                    handleInvalidRequestException(req, resp, e);
+                } catch (SecurityException e) {
+                    handleAuthException(req, resp, e);
+                } catch (Exception e) {
+                    if (e.getCause() instanceof InvalidRequestException) {
+                        handleInvalidRequestException(req, resp, (InvalidRequestException) e.getCause());
+                    } else {
+                        logError(req, e);
+                        sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+                    }
+                } finally {
+                    clearCurrentUser();
+                    aCtx.complete();
+                }
+            }, threadPool);
+        } catch (Exception e) {
+            logError(req, e);
+            sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
         }
-    }
-
-    private void printBuckets(ServletOutputStream out) throws DataStoreException {
-        bucketStore.listBuckets().forEach(bucketName -> {
-            try {
-                out.println(bucketName);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        });
-    }
-
-    private void printObjectKeys(String bucketName, ServletOutputStream out) throws DataStoreException {
-        bucketStore.listObjects(bucketName).forEach(objectKey -> {
-            try {
-                out.println(objectKey);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        });
     }
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        super.doPost(req, resp);
+        try {
+            resp.setContentType(JSON_CONTENT_TYPE);
+            var ctx = new RequestContext(req, resp, this);
+
+            final AsyncContext aCtx = req.startAsync(req, resp);
+            CompletableFuture.runAsync(() -> {
+                try {
+                    setCurrentUser(req);
+                    bucketHandler.doPost(ctx);
+                } catch (InvalidRequestException e) {
+                    handleInvalidRequestException(req, resp, e);
+                } catch (SecurityException e) {
+                    handleAuthException(req, resp, e);
+                } catch (Exception e) {
+                    if (e.getCause() instanceof InvalidRequestException) {
+                        handleInvalidRequestException(req, resp, (InvalidRequestException) e.getCause());
+                    } else {
+                        logError(req, e);
+                        sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+                    }
+                } finally {
+                    clearCurrentUser();
+                    aCtx.complete();
+                }
+            }, threadPool);
+        } catch (Exception e) {
+            logError(req, e);
+            sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+        }
     }
 
     @Override
     protected void doPut(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        super.doPut(req, resp);
+        try {
+            resp.setContentType(JSON_CONTENT_TYPE);
+            var ctx = new RequestContext(req, resp, this);
+
+            final AsyncContext aCtx = req.startAsync(req, resp);
+            CompletableFuture.runAsync(() -> {
+                try {
+                    setCurrentUser(req);
+                    bucketHandler.doPut(ctx);
+                } catch (InvalidRequestException e) {
+                    handleInvalidRequestException(req, resp, e);
+                } catch (SecurityException e) {
+                    handleAuthException(req, resp, e);
+                } catch (Exception e) {
+                    if (e.getCause() instanceof InvalidRequestException) {
+                        handleInvalidRequestException(req, resp, (InvalidRequestException) e.getCause());
+                    } else {
+                        logError(req, e);
+                        sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+                    }
+                } finally {
+                    clearCurrentUser();
+                    aCtx.complete();
+                }
+            }, threadPool);
+        } catch (Exception e) {
+            logError(req, e);
+            sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+        }
     }
 
     @Override
     protected void doDelete(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        super.doDelete(req, resp);
+        try {
+            resp.setContentType(JSON_CONTENT_TYPE);
+            var ctx = new RequestContext(req, resp, this);
+
+            final AsyncContext aCtx = req.startAsync(req, resp);
+            CompletableFuture.runAsync(() -> {
+                try {
+                    setCurrentUser(req);
+                    bucketHandler.doDelete(ctx);
+                    ctx.getResponse().setStatus(HttpServletResponse.SC_NO_CONTENT);
+                } catch (InvalidRequestException e) {
+                    handleInvalidRequestException(req, resp, e);
+                } catch (SecurityException e) {
+                    handleAuthException(req, resp, e);
+                } catch (Exception e) {
+                    if (e.getCause() instanceof InvalidRequestException) {
+                        handleInvalidRequestException(req, resp, (InvalidRequestException) e.getCause());
+                    } else {
+                        logError(req, e);
+                        sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+                    }
+                } finally {
+                    clearCurrentUser();
+                    aCtx.complete();
+                }
+            }, threadPool);
+        } catch (Exception e) {
+            logError(req, e);
+            sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+        }
+    }
+
+    private void handleInvalidRequestException(HttpServletRequest req, HttpServletResponse resp, InvalidRequestException e) {
+        log.debug("Invalid request ({}): {}", e.getErrorCode(), e.getMessage());
+
+        switch (e.getErrorCode())
+        {
+            case UNSUPPORTED_OPERATION:
+                sendError(SC_METHOD_NOT_ALLOWED, e.getMessage(), req, resp);
+                break;
+
+            case BAD_REQUEST:
+            case BAD_PAYLOAD:
+            case REQUEST_REJECTED:
+                sendError(SC_BAD_REQUEST, e.getMessage(), req, resp);
+                break;
+
+            case NOT_FOUND:
+                sendError(SC_NOT_FOUND, e.getMessage(), req, resp);
+                break;
+
+            case FORBIDDEN:
+                sendError(SC_FORBIDDEN, e.getMessage(), req, resp);
+                break;
+
+            case REQUEST_ACCEPTED_TIMEOUT:
+                sendError(202, e.getMessage(), req, resp);
+                break;
+
+            default:
+                sendError(SC_INTERNAL_SERVER_ERROR, e.getMessage(), req, resp);
+        }
+    }
+
+    private void sendError(int code, String msg, HttpServletRequest req, HttpServletResponse resp) {
+        try {
+            var accept = req.getHeader("Accept");
+
+            if (accept == null || accept.contains("json")) {
+                resp.setStatus(code);
+                if (msg != null) {
+                    var json =
+                            "{\n" +
+                                    "  \"status\": " + code + ",\n" +
+                                    "  \"message\": \"" + msg.replace("\"", "\\\"") + "\"\n" +
+                                    "}";
+                    resp.getOutputStream().write(json.getBytes());
+                }
+            } else
+                resp.sendError(code, msg);
+        } catch (IOException e) {
+            log.error("Could not send error response", e);
+        }
     }
 
     public BucketSecurity getSecurityHandler() {
         return sec;
     }
+
+    private void setCurrentUser(HttpServletRequest req) {
+        String userID = ISecurityManager.ANONYMOUS_USER;
+        if (req.getRemoteUser() != null)
+            userID = req.getRemoteUser();
+        securityHandler.setCurrentUser(userID);
+    }
+
+    private void clearCurrentUser() {
+        securityHandler.clearCurrentUser();
+    }
+
+    protected void handleAuthException(HttpServletRequest req, HttpServletResponse resp, SecurityException e)
+    {
+        try
+        {
+            log.debug("Not authorized: {}", e.getMessage());
+
+            if (req != null && resp != null)
+            {
+                if (req.getRemoteUser() == null)
+                    req.authenticate(resp);
+                else
+                    sendError(SC_FORBIDDEN, ACCESS_DENIED_ERROR_MSG, req, resp);
+            }
+        }
+        catch (Exception e1)
+        {
+            log.error("Could not send authentication request", e1);
+        }
+    }
+
+    @Override
+    protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        logRequest(req);
+        super.service(req, resp);
+    }
+
+    protected void logRequest(HttpServletRequest req)
+    {
+        if (log.isInfoEnabled())
+            logRequestInfo(req, null);
+    }
+
+
+    protected void logError(HttpServletRequest req, Throwable e)
+    {
+        if (log.isErrorEnabled())
+            logRequestInfo(req, e);
+    }
+
+
+    protected void logRequestInfo(HttpServletRequest req, Throwable error)
+    {
+        String method = req.getMethod();
+        String url = req.getRequestURI();
+        String ip = req.getRemoteAddr();
+        String user = req.getRemoteUser() != null ? req.getRemoteUser() : "anonymous";
+
+        // if proxy header present, use source ip instead of proxy ip
+        String proxyHeader = req.getHeader("X-Forwarded-For");
+        if (proxyHeader != null)
+        {
+            String[] ips = proxyHeader.split(",");
+            if (ips.length >= 1)
+                ip = ips[0];
+        }
+
+        // detect websocket upgrade
+        if ("websocket".equalsIgnoreCase(req.getHeader("Upgrade")))
+            method += "/Websocket";
+
+        // append decoded request if any
+        String query = "";
+        if (req.getQueryString() != null)
+            query = "?" + req.getQueryString();
+
+        if (error != null)
+            log.error(INTERNAL_ERROR_LOG_MSG, method, url, query, ip, user, error);
+        else
+            log.info(LOG_REQUEST_MSG, method, url, query, ip, user);
+    }
+
 }

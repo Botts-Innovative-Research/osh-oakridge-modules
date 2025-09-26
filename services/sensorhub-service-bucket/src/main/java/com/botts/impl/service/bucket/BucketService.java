@@ -18,6 +18,8 @@ package com.botts.impl.service.bucket;
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.service.bucket.filesystem.FileSystemBucketStore;
+import com.botts.impl.service.bucket.handler.BucketHandler;
+import com.botts.impl.service.bucket.handler.ObjectHandler;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.service.AbstractHttpServiceModule;
 import org.sensorhub.utils.NamedThreadFactory;
@@ -60,13 +62,14 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
 
         this.securityHandler = new BucketSecurity(this, buckets, config.security.enableAccessControl);
 
-        BucketHandler bucketHandler = new BucketHandler();
-        ObjectHandler objectHandler = new ObjectHandler();
-        this.servlet = new BucketServlet(this, securityHandler, bucketHandler, objectHandler);
-
         this.threadPool = Executors.newScheduledThreadPool(
                 Runtime.getRuntime().availableProcessors(),
                 new NamedThreadFactory("BucketStorageService-Pool"));
+
+        ObjectHandler objectHandler = new ObjectHandler(bucketStore);
+        BucketHandler bucketHandler = new BucketHandler(bucketStore, objectHandler);
+
+        this.servlet = new BucketServlet(this, securityHandler, bucketHandler, objectHandler);
 
         deploy();
     }

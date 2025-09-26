@@ -10,10 +10,21 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 public class FileSystemBucketStore implements IBucketStore {
 
+    private static final Map<String, String> MIME_EXTENSION_MAP = Map.ofEntries(
+            Map.entry("image/jpeg", ".jpg"),
+            Map.entry("image/png", ".png"),
+            Map.entry("image/gif", ".gif"),
+            Map.entry("video/mp4", ".mp4"),
+            Map.entry("application/pdf", ".pdf"),
+            Map.entry("text/plain", ".txt"),
+            Map.entry("application/json", ".json")
+    );
     private final Path rootDirectory;
 
     public FileSystemBucketStore(Path rootDirectory) throws IOException {
@@ -79,16 +90,29 @@ public class FileSystemBucketStore implements IBucketStore {
     @Override
     public boolean objectExists(String bucketName, String objectName) {
         Path path = getBucketPath(bucketName).resolve(objectName);
-        return Files.exists(path);
+        return Files.exists(path) && path.toFile().isFile();
     }
 
     @Override
-    public void putObject(String bucketName, String key, InputStream data) throws DataStoreException {
+    public String createObject(String bucketName, InputStream data, Map<String, String> metadata) throws DataStoreException {
+        String uuid = UUID.randomUUID().toString();
+
+        var contentType = metadata.get("Content-Type");
+        if (contentType != null)
+            uuid += MIME_EXTENSION_MAP.get(contentType);
+
+        putObject(bucketName, uuid, data, metadata);
+
+        return uuid;
+    }
+
+    @Override
+    public void putObject(String bucketName, String key, InputStream data, Map<String, String> metadata) throws DataStoreException {
         try {
             Path path = getBucketPath(bucketName);
             if (!Files.exists(path))
                 throw new DataStoreException(BUCKET_NOT_FOUND, new IllegalArgumentException());
-            Files.copy(data, path, StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(data, path.resolve(key), StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new DataStoreException(FAILED_PUT_OBJECT + bucketName, e);
         }
