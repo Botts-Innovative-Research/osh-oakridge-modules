@@ -52,8 +52,10 @@ public class RDSReport extends Report {
             document = new Document(pdfDocument);
 
         } catch (IOException e) {
-            module.getLogger().debug("failed to create pdf");
-            throw new RuntimeException(e);
+            document.close();
+            pdfDocument.close();
+            log.error(e.getMessage(), e);
+            return;
         }
         this.module = module;
 
@@ -61,7 +63,7 @@ public class RDSReport extends Report {
 
         this.begin = startTime;
         this.end = endTime;
-        this.tableGenerator = new TableGenerator(document);
+        this.tableGenerator = new TableGenerator();
     }
 
     @Override
@@ -74,6 +76,7 @@ public class RDSReport extends Report {
         document.close();
         pdfDocument.close();
 
+        tableGenerator =null;
 
         return pdfFileName;
     }
@@ -126,7 +129,8 @@ public class RDSReport extends Report {
         //        alarmOccCounts.put("EML Suppressed", emlSuppressedCount);
 //        alarmOccCounts.put("EML Alarm Rate", emlSuppressedAverage);
 
-        tableGenerator.addTable(alarmOccCounts);
+        var table = tableGenerator.addTable(alarmOccCounts);
+        document.add(table);
 
         document.add(new Paragraph("\n"));
     }
@@ -162,7 +166,8 @@ public class RDSReport extends Report {
         faultCounts.put("Gamma-Low", String.valueOf(gammaLowFaultCount));
         faultCounts.put("Neutron-High", String.valueOf(neutronHighFaultCount));
 
-        tableGenerator.addTable(faultCounts);
+        var table = tableGenerator.addTable(faultCounts);
+        document.add(table);
 
         document.add(new Paragraph("\n"));
     }
@@ -183,7 +188,9 @@ public class RDSReport extends Report {
             driveStorageAvailability.put("Total", total + " GB");
             driveStorageAvailability.put("Usable", usable + " GB");
 
-            tableGenerator.addTable(driveStorageAvailability);
+            var table = tableGenerator.addTable(driveStorageAvailability);
+            document.add(table);
+
             document.add(new Paragraph("\n"));
         }
     }

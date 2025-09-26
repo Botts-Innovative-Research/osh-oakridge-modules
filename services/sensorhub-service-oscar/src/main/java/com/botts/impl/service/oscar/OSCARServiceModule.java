@@ -51,8 +51,11 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         // TODO: Add or update site info datastream
         sitemapDiagramHandler = new SitemapDiagramHandler(getParentHub());
-        if(config.siteDiagramConfig.siteDiagramPath != null && !config.siteDiagramConfig.siteDiagramPath.isEmpty())
+
+        if(config.siteDiagramConfig.siteDiagramPath != null && !config.siteDiagramConfig.siteDiagramPath.isEmpty()){
             sitemapDiagramHandler.handleFile(config.siteDiagramConfig.siteDiagramPath);
+        }
+
 
         createOutputs();
         createControls();
