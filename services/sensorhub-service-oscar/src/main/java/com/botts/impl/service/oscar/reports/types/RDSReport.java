@@ -42,7 +42,7 @@ public class RDSReport extends Report {
     TableGenerator tableGenerator;
     OSCARServiceModule module;
 
-    public RDSReport(Instant startTime, Instant endTime, OSCARServiceModule module) {
+    public RDSReport(String filePath, Instant startTime, Instant endTime, OSCARServiceModule module) {
         try {
             pdfFileName = ReportCmdType.RDS_SITE.name()+ "_" + startTime + "_"+ endTime + ".pdf";
             File file = new File("files/reports/" + pdfFileName);
