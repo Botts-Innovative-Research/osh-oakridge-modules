@@ -12,7 +12,7 @@ public class TestFileSystemStore extends AbstractBucketStoreTest {
 
     @Override
     IBucketStore initBucketStore() throws IOException {
-        bucketStore = new FileSystemBucketStore(Path.of("src/test/resources/test-bucket"));
+        bucketStore = new FileSystemBucketStore(Path.of("src/test/resources/test-root"));
         return bucketStore;
     }
 
