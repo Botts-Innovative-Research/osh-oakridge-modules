@@ -38,9 +38,9 @@ public class ChartGenerator {
                 chart.getLegend().setItemFont(new Font("SansSerif", Font.PLAIN, 12));
 
 
-
                 BarRenderer renderer = (BarRenderer) chart.getCategoryPlot().getRenderer();
-                Color color = new Color(109, 162, 231);
+
+                Color color = new Color(98, 216, 236);
                 renderer.setSeriesPaint(0, color);
 
                 break;
