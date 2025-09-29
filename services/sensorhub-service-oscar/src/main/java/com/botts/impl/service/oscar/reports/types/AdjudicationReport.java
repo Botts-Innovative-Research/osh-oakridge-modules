@@ -1,10 +1,7 @@
 package com.botts.impl.service.oscar.reports.types;
 
 import com.botts.impl.service.oscar.OSCARServiceModule;
-import com.botts.impl.service.oscar.reports.helpers.ChartGenerator;
-import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
-import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
-import com.botts.impl.service.oscar.reports.helpers.Utils;
+import com.botts.impl.service.oscar.reports.helpers.*;
 import com.itextpdf.io.image.ImageDataFactory;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
@@ -26,7 +23,7 @@ import java.util.Map;
 import java.util.function.Predicate;
 
 public class AdjudicationReport extends Report {
-    private static final Logger log = LoggerFactory.getLogger(RDSReport.class);
+    private static final Logger log = LoggerFactory.getLogger(AdjudicationReport.class);
 
     String reportTitle = "Adjudication Report";
     Document document;
@@ -37,14 +34,13 @@ public class AdjudicationReport extends Report {
     TableGenerator tableGenerator;
     ChartGenerator chartGenerator;
 
-    String eventId;
     String laneUID;
     Instant begin;
     Instant end;
-    public AdjudicationReport(Instant startTime, Instant endTime, String eventId, String laneUID, OSCARServiceModule module) {
+    public AdjudicationReport(String filePath, Instant startTime, Instant endTime, String laneUID, OSCARServiceModule module) {
         try {
-            pdfFileName = ReportCmdType.ADJUDICATION.name() + "_" + startTime + "_"+ endTime + ".pdf";
-            File file = new File("files/reports/" + pdfFileName);
+            pdfFileName = filePath;
+            File file = new File(pdfFileName);
             file.getParentFile().mkdirs();
 
             pdfDocument = new PdfDocument(new PdfWriter(file));
@@ -56,7 +52,6 @@ public class AdjudicationReport extends Report {
             return;
         }
         this.module = module;
-        this.eventId = eventId;
         this.laneUID = laneUID;
         this.begin = startTime;
         this.end = endTime;
@@ -68,8 +63,8 @@ public class AdjudicationReport extends Report {
     public String generate() {
         addHeader();
         addDisposition();
-//        addSecondaryInspectionResults();
-//        addSecondaryInspectionDetails();
+        addSecondaryInspectionIsotopeResults();
+        addSecondaryInspectionDetails();
 
         document.close();
         pdfDocument.close();
@@ -82,7 +77,6 @@ public class AdjudicationReport extends Report {
     private void addHeader(){
         document.add(new Paragraph(reportTitle).setFontSize(16).simulateBold());
         document.add(new Paragraph("Lane UID: " + laneUID).setFontSize(12));
-        document.add(new Paragraph("Event ID: " + eventId).setFontSize(12));
         document.add(new Paragraph("\n"));
     }
 
@@ -93,18 +87,17 @@ public class AdjudicationReport extends Report {
         String yLabel = "% of Total Number of Records";
         String xLabel = "Type";
 
-        Predicate<IObsData> realAlarmOtherPredicate = (obsData) -> {return obsData.getResult().getStringValue(3).contains("Real Alarm - Other");};
-        Predicate<IObsData> falseAlarmOtherPredicate = (obsData) -> {return obsData.getResult().getStringValue(3).contains("False Alarm - Other");};
-        Predicate<IObsData> phyInsPredicate = (obsData) -> {return obsData.getResult().getStringValue(3).contains("Physical Inspection");};
-        Predicate<IObsData> incMedPredicate = (obsData) -> {return obsData.getResult().getStringValue(3).contains("Innocent Alarm - Medical Isotope Found");};
-        Predicate<IObsData> incRadioPredicate = (obsData) -> {return obsData.getResult().getStringValue(3).contains("Innocent Alarm - Declared Shipment of Radioactive Material");};
-        Predicate<IObsData> noDisPredicate = (obsData) -> {return obsData.getResult().getStringValue(3).contains("No Disposition");};
-        Predicate<IObsData> falseAlarmRIIDPredicate = (obsData) -> {return obsData.getResult().getStringValue(3).contains("False Alarm - RIID/ASP Indicates Background Only");};
-        Predicate<IObsData> realAlarmContraPredicate = (obsData) -> {return obsData.getResult().getStringValue(3).contains("Real Alarm - Contraband Found");};
-        Predicate<IObsData> tamperFaultPredicate = (obsData) -> {return obsData.getResult().getStringValue(3).contains("Tamper/Fault - Unauthorized Activity");};
-        Predicate<IObsData> alarmTamperFaultPredicate = (obsData) -> {return obsData.getResult().getStringValue(3).contains("Alarm/Tamper/Fault- Authorized Test/Maintenance/Training Activity");};
-        Predicate<IObsData> alarmNORMPredicate = (obsData) -> {return obsData.getResult().getStringValue(3).contains("Alarm - Naturally Occurring Radioactive Material (NORM) Found");};
-
+        Predicate<IObsData> realAlarmOtherPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Real Alarm - Other");
+        Predicate<IObsData> falseAlarmOtherPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("False Alarm - Other");
+        Predicate<IObsData> phyInsPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Physical Inspection");
+        Predicate<IObsData> incMedPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Innocent Alarm - Medical Isotope Found");
+        Predicate<IObsData> incRadioPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Innocent Alarm - Declared Shipment of Radioactive Material");
+        Predicate<IObsData> noDisPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("No Disposition");
+        Predicate<IObsData> falseAlarmRIIDPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("False Alarm - RIID/ASP Indicates Background Only");
+        Predicate<IObsData> realAlarmContraPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Real Alarm - Contraband Found");
+        Predicate<IObsData> tamperFaultPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Tamper/Fault - Unauthorized Activity");
+        Predicate<IObsData> alarmTamperFaultPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Alarm/Tamper/Fault- Authorized Test/Maintenance/Training Activity");
+        Predicate<IObsData> alarmNORMPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Alarm - Naturally Occurring Radioactive Material (NORM) Found");
 
         long realAlarmOtherCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, realAlarmOtherPredicate, begin, end);
         long falseAlarmOtherCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, falseAlarmOtherPredicate, begin, end);
@@ -134,15 +127,14 @@ public class AdjudicationReport extends Report {
 
 
         try {
-            String chartPath = chartGenerator.createChart(title, xLabel, yLabel,dataset, "bar", eventId + "_" + laneUID + "_dispostion_chart.png");
+            String chartPath = chartGenerator.createChart(title, xLabel, yLabel, dataset, "bar",  laneUID + "_dispostion_chart.png");
 
             if(chartPath == null){
               document.add(new Paragraph("Disposition chart failed to create"));
+              return;
             }
             Image image = new Image(ImageDataFactory.create(chartPath)).setAutoScale(true);
             document.add(image);
-
-
 
         } catch (IOException e) {
             log.error(e.getMessage(), e);
@@ -151,20 +143,13 @@ public class AdjudicationReport extends Report {
         document.add(new Paragraph("\n"));
     }
 
-    private void addSecondaryInspectionResults(){
-        document.add(new Paragraph("Secondary Inspection Results").setFontSize(12));
-
-        addSecondaryInspectionIsotopeResults();
-
-        document.add(new Paragraph("\n"));
-    }
 
     private void addSecondaryInspectionIsotopeResults(){
-        document.add(new Paragraph("\n"));
+        document.add(new Paragraph("Secondary Inspection Results").setFontSize(12));
 
         Map<String, String> isotopeResults = new HashMap<>();
 
-        Predicate<IObsData> predicate = (obsData) -> {return true;};
+        Predicate<IObsData> predicate = (obsData) -> true;
 
         long value = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, predicate, begin, end);
 
@@ -198,6 +183,8 @@ public class AdjudicationReport extends Report {
         isotopeResults.put("Potassium", "");
         isotopeResults.put("Radium", "");
         isotopeResults.put("Thorium", "");
+
+        document.add(new Paragraph("\n"));
     }
 
     private void addSecondaryInspectionDetails(){
@@ -205,7 +192,7 @@ public class AdjudicationReport extends Report {
 
         Map<String, String> secInsDetailsMap = new HashMap<>();
 
-        Predicate<IObsData> predicate = (obsData) -> {return true;};
+        Predicate<IObsData> predicate = (obsData) -> true;
 
         long value = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, predicate, begin, end);
 
