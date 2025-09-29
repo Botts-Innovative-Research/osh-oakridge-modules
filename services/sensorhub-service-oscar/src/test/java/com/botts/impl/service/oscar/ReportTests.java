@@ -24,10 +24,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Predicate;
 
 import static org.junit.Assert.*;
@@ -215,7 +216,7 @@ public class ReportTests {
 
 
     @Test
-    public void TestChart(){
+    public void TestBarChart(){
         String dest = "chart_test.pdf";
 
         try{
@@ -258,5 +259,141 @@ public class ReportTests {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Test
+    public void TestStackedBarChart(){
+        String dest = "stackedbar_chart_test.pdf";
+        String outFileName = "stackedbar_chart_test.png";
+
+        try{
+            PdfWriter pdfWriter = new PdfWriter(dest);
+            PdfDocument pdfDocument = new PdfDocument(pdfWriter);
+            Document document = new Document(pdfDocument);
+
+            int days = 10;
+
+            Map<Instant, Long> gammaDaily = generateFakeData(days, 10, 50);
+            Map<Instant, Long> gammaNeutronDaily = generateFakeData(days, 20, 60);
+            Map<Instant, Long> neutronDaily = generateFakeData(days, 5, 30);
+            Map<Instant, Long> emlSuppressedDaily = generateFakeData(days, 0, 10);
+
+
+            DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+            for(Map.Entry<Instant, Long> entry : gammaDaily.entrySet()){
+                dataset.addValue(entry.getValue(), "Gamma", formatter.format(entry.getKey()));
+            }
+
+            for(Map.Entry<Instant, Long> entry : gammaNeutronDaily.entrySet()){
+                dataset.addValue(entry.getValue(), "Gamma-Neutron",  formatter.format(entry.getKey()));
+            }
+
+            for(Map.Entry<Instant, Long> entry : neutronDaily.entrySet()){
+                dataset.addValue(entry.getValue(), "Neutron",  formatter.format(entry.getKey()));
+            }
+
+            for(Map.Entry<Instant, Long> entry : emlSuppressedDaily.entrySet()){
+                dataset.addValue(entry.getValue(), "EML-Suppressed",  formatter.format(entry.getKey()));
+            }
+
+            String title = "Test Chart";
+            String yLabel = "Count";
+            String xLabel = "Date";
+
+            ChartGenerator chartGenerator = new ChartGenerator();
+            String chartPath = chartGenerator.createStackedBarChart(title, xLabel, yLabel, dataset, outFileName);
+
+            assertNotNull(chartPath);
+            Files.exists(Path.of(chartPath));
+
+            Image image = new Image(ImageDataFactory.create(chartPath)).setAutoScale(true);
+
+            document.add(image);
+
+            document.close();
+
+            System.out.println("PDF created with chart: "+ dest);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+    private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
+
+    @Test
+    public void TestStackedBarLineOverlayChart(){
+        String dest = "bar_line_chart.pdf";
+
+        try{
+            PdfWriter pdfWriter = new PdfWriter(dest);
+            PdfDocument pdfDocument = new PdfDocument(pdfWriter);
+            Document document = new Document(pdfDocument);
+
+            int days = 10;
+
+            Map<Instant, Long> gammaDaily = generateFakeData(days, 10, 50);
+            Map<Instant, Long> gammaNeutronDaily = generateFakeData(days, 20, 60);
+            Map<Instant, Long> neutronDaily = generateFakeData(days, 5, 30);
+            Map<Instant, Long> emlSuppressedDaily = generateFakeData(days, 0, 10);
+            Map<Instant, Long> totalOccupancyDaily = generateFakeData(days, 100, 200);
+
+
+            DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+            for(Map.Entry<Instant, Long> entry : gammaDaily.entrySet()){
+                dataset.addValue(entry.getValue(), "Gamma", formatter.format(entry.getKey()));
+            }
+
+            for(Map.Entry<Instant, Long> entry : gammaNeutronDaily.entrySet()){
+                dataset.addValue(entry.getValue(), "Gamma-Neutron",  formatter.format(entry.getKey()));
+            }
+
+            for(Map.Entry<Instant, Long> entry : neutronDaily.entrySet()){
+                dataset.addValue(entry.getValue(), "Neutron",  formatter.format(entry.getKey()));
+            }
+
+            for(Map.Entry<Instant, Long> entry : emlSuppressedDaily.entrySet()){
+                dataset.addValue(entry.getValue(), "EML-Suppressed",  formatter.format(entry.getKey()));
+            }
+
+            DefaultCategoryDataset dataset2 = new DefaultCategoryDataset();
+            for(Map.Entry<Instant, Long> entry : totalOccupancyDaily.entrySet()){
+                dataset2.addValue(entry.getValue(), "Total occupancy",  formatter.format(entry.getKey()));
+            }
+            String title = "Test Chart";
+            String yLabel = "Count";
+            String xLabel = "Date";
+
+            ChartGenerator chartGenerator = new ChartGenerator();
+            String chartPath = chartGenerator.createStackedBarLineOverlayChart(title, xLabel, yLabel, dataset,dataset2, "bar_line_chart.png");
+
+            assertNotNull(chartPath);
+            Files.exists(Path.of(chartPath));
+
+            Image image = new Image(ImageDataFactory.create(chartPath)).setAutoScale(true);
+
+            document.add(image);
+
+            document.close();
+
+            System.out.println("PDF created with chart: "+ dest);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    // from chatgpt sorry -- used to simualte fake data for testing my charts to see if they work mwahhahahahaha
+    public static Map<Instant, Long> generateFakeData(int days, long min, long max) {
+        Map<Instant, Long> data = new LinkedHashMap<>();
+        LocalDate today = LocalDate.now();
+
+        Random rand = new Random();
+
+        for (int i = days - 1; i >= 0; i--) {
+            LocalDate date = today.minusDays(i);
+            Instant instant = date.atStartOfDay(ZoneId.systemDefault()).toInstant();
+            long value = min + (long)(rand.nextDouble() * (max - min));
+            data.put(instant, value);
+        }
+
+        return data;
     }
 }
