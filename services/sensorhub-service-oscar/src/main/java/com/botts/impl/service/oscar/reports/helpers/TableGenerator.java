@@ -15,12 +15,19 @@ public class TableGenerator {
     public TableGenerator() {}
 
     public Table addTable(Map<String, String> tableData){
-        float[] columnWidths = {2, 4};
+        int columnCount = tableData.size();
+        float[] columnWidths = new float[columnCount];
+        for (int i = 0; i < columnCount; i++) {
+            columnWidths[i] = 1;
+        }
         Table table = new Table(UnitValue.createPercentArray(columnWidths));
         table.setWidth(UnitValue.createPercentValue(100));
 
         for(Map.Entry<String, String> entry : tableData.entrySet()){
             table.addHeaderCell(createHeaderCell(entry.getKey()));
+        }
+
+        for(Map.Entry<String, String> entry : tableData.entrySet()){
             table.addCell(createValueCell(entry.getValue()));
         }
 
@@ -30,7 +37,7 @@ public class TableGenerator {
     public Cell createHeaderCell(String header){
         return new Cell()
                 .add(new Paragraph(header))
-                .setFontSize(12)
+                .setFontSize(10)
                 .setBackgroundColor(DeviceGray.GRAY)
                 .setTextAlignment(TextAlignment.LEFT)
                 .setVerticalAlignment(VerticalAlignment.MIDDLE);
@@ -39,7 +46,7 @@ public class TableGenerator {
     public Cell createValueCell(String value){
         return new Cell()
                 .add(new Paragraph(value))
-                .setFontSize(10)
+                .setFontSize(9)
                 .setBackgroundColor(DeviceGray.WHITE)
                 .setTextAlignment(TextAlignment.LEFT)
                 .setVerticalAlignment(VerticalAlignment.MIDDLE);
