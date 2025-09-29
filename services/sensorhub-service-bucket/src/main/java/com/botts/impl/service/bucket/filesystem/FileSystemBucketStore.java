@@ -110,7 +110,10 @@ public class FileSystemBucketStore implements IBucketStore {
             Path path = getBucketPath(bucketName);
             if (!Files.exists(path))
                 throw new DataStoreException(BUCKET_NOT_FOUND, new IllegalArgumentException());
-            Files.copy(data, path.resolve(key), StandardCopyOption.REPLACE_EXISTING);
+            Path resolved = path.resolve(key);
+            if (!Files.exists(resolved))
+                Files.createDirectories(resolved);
+            Files.copy(data, resolved, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new DataStoreException(FAILED_PUT_OBJECT + bucketName, e);
         }
@@ -194,17 +197,13 @@ public class FileSystemBucketStore implements IBucketStore {
         }
     }
 
-    private long getNumFiles(File file) {
-        if (file.isFile())
-            return 1;
-        else if (file.isDirectory())
-            return getNumFiles(file);
-        return 0;
-    }
-
     @Override
     public String getResourceURI(String bucketName, String key) throws DataStoreException {
-        return rootDirectory + "/" + bucketName + "/" + key;
+        if (!bucketExists(bucketName))
+            throw new DataStoreException(BUCKET_NOT_FOUND);
+        if (!objectExists(bucketName, key))
+            throw new DataStoreException(OBJECT_NOT_FOUND + bucketName);
+        return rootDirectory.resolve(bucketName).resolve(key).toString();
     }
 
 }
