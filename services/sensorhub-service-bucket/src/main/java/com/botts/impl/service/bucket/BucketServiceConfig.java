@@ -34,7 +34,9 @@ public class BucketServiceConfig extends HttpServiceConfig {
     @DisplayInfo(desc = "Use this to initialize creation of buckets")
     public List<String> initialBuckets;
 
-    public BucketStoreConfig bucketConfig;
+    // TODO: When changed later using datastore API, implement bucket store config for filesystem. This is simplest for now
+    @DisplayInfo(desc = "Root directory for filesystem bucket store")
+    public String fileStoreRootDir;
 
     public BucketServiceConfig()
     {
