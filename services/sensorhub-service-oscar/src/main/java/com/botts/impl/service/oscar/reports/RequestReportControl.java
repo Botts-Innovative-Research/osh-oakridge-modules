@@ -17,6 +17,7 @@ package com.botts.impl.service.oscar.reports;
 
 import com.botts.impl.service.oscar.OSCARServiceModule;
 import com.botts.impl.service.oscar.OSCARSystem;
+import com.botts.impl.service.oscar.reports.helpers.EventReportType;
 import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
 import com.botts.impl.service.oscar.reports.types.*;
 import net.opengis.swe.v20.DataBlock;
@@ -25,9 +26,10 @@ import org.sensorhub.api.command.*;
 import org.sensorhub.impl.command.AbstractControlInterface;
 import org.vast.swe.SWEHelper;
 import org.vast.util.TimeExtent;
-
 import java.io.File;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.concurrent.CompletableFuture;
 
 public class RequestReportControl extends AbstractControlInterface<OSCARSystem> implements IStreamingControlInterfaceWithResult {
@@ -36,12 +38,11 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
     public static final String LABEL = "Request Report";
     public static final String DESCRIPTION = "Control to request operations, performance, and maintenance reports";
 
-    public static final String path = "files/reports/";
+    public static final String bucketPath = "/reports/";
 
     DataComponent commandStructure;
     DataComponent resultStructure;
     SWEHelper fac;
-    long startTime;
 
     OSCARServiceModule module;
 
@@ -71,14 +72,14 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                 .addField("laneUID", fac.createText()
                         .label("Lane Unique Identifier")
                         .definition(SWEHelper.getPropertyUri("LaneUID"))
-                        .description("Identifier of the lane to request"))
-                .addField("eventId", fac.createText()
-                        .label("Event ID")
-                        .definition(SWEHelper.getPropertyUri("EventID"))
-                        .description("Identifier of the event requested"))
+                        .description("Identifier of the lane(s) to request"))
+                .addField("eventType", fac.createCategory()
+                        .label("Event Type")
+                        .definition(SWEHelper.getPropertyUri("EventType"))
+                        .description("Identifier of the event requested")
+                        .addAllowedValues(EventReportType.class))
                 .build();
 
-        // e.g. localhost:8282/reports/report123.pdf vs. public.ip:8282/reports/report123.pdf
         resultStructure = fac.createRecord().name("result")
                 .addField("reportUrl", fac.createText())
                 .build();
@@ -94,73 +95,66 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
         return CompletableFuture.supplyAsync(() -> {
 
-//            long now = System.currentTimeMillis();
-//
-//            if (startTime == 0)
-//                this.startTime = now;
-
             DataBlock paramData = command.getParams();
 
             Instant start = paramData.getTimeStamp(0);
             Instant end = paramData.getTimeStamp(1);
             ReportCmdType type = ReportCmdType.valueOf(paramData.getStringValue(2));
-            String laneUID = paramData.getStringValue(3);
-            String eventId = paramData.getStringValue(4);
+            String laneUIDs = paramData.getStringValue(3);
+            EventReportType eventType = EventReportType.valueOf(paramData.getStringValue(4));
 
             Report report = null;
-
             File file;
 
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
+            String formattedStart = formatter.format(start);
 
-            switch (type) {
-                case LANE -> {
-                    file = new File(path + type + "_" + laneUID + "_" + start + "_" + end + ".pdf");
-
-                    if (!file.exists())
-                        report = new LaneReport(start, end, laneUID, module);
-                }
-                case RDS_SITE -> {
-                    file = new File(path + type.name() + "_" + start + "_" + end + ".pdf");
+            if(type.equals(ReportCmdType.LANE)) {
+                for (var lane: laneUIDs.split(",")) {
+                    String filePath = bucketPath + type + "_" + lane + "_" + formattedStart + ".pdf";
+                    file = new File(filePath);
 
                     if (!file.exists())
-                        report = new RDSReport(start, end, module);
+                        report = new LaneReport(filePath, start, end, lane, module);
                 }
-                case EVENT -> {
-                    file = new File(path + type + "_" + laneUID + "_" + eventId + "_" + start + "_" + end + ".pdf");
+            } else if(type.equals(ReportCmdType.EVENT)) {
+                for (var lane: laneUIDs.split(",")) {
+                    String filePath = bucketPath + type + "_" + eventType +  "_" +  lane + "_" + formattedStart + ".pdf";
+                    file = new File(filePath);
 
                     if (!file.exists())
-                        report = new EventReportTodo(start, end, eventId, laneUID, module);
+                        report = new EventReport(filePath, start, end, eventType, lane, module);
                 }
-                case ADJUDICATION -> {
-                    file = new File(path + type + "_" + laneUID + "_"  + "_" + start + "_" + end + ".pdf");
+            } else if (type.equals(ReportCmdType.ADJUDICATION)) {
+                for (var lane: laneUIDs.split(",")) {
+                    String filePath = bucketPath + type + "_" + lane + "_" + formattedStart + ".pdf";
+                    file = new File(filePath);
+
                     if (!file.exists())
-                        report = new AdjudicationReport(start, end, eventId, laneUID, module);
+                        report = new AdjudicationReport(filePath, start, end, lane, module);
                 }
-                default -> report = null;
+            } else if (type.equals(ReportCmdType.RDS_SITE)) {
+                String filePath = bucketPath + type + "_" +  formattedStart + ".pdf";
+                file = new File(filePath);
+
+                if (!file.exists())
+                    report = new RDSReport(filePath, start, end, module);
             }
 
-            if (report == null) getLogger().debug("Report not found");
 
-
-            String url = null;
-
-            url = report.generate();
-
-            System.out.println("MUY REPORT URL: " + url);
+            assert report != null;
+            String url = report.generate();
 
             DataBlock resultData = resultStructure.createDataBlock();
             resultData.setStringValue(url);
             ICommandResult result = CommandResult.withData(resultData);
 
 
-            ICommandStatus status = new CommandStatus.Builder()
+            return new CommandStatus.Builder()
                     .withCommand(command.getID())
                     .withStatusCode(url == null ? ICommandStatus.CommandStatusCode.FAILED : ICommandStatus.CommandStatusCode.ACCEPTED)
-//                    .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(now)))
                     .withResult(result)
                     .build();
-
-            return status;
         });
     }
 
