@@ -15,11 +15,11 @@ import java.io.OutputStream;
 public class OSCARServiceForm extends GenericConfigForm {
 
     private static final String PROP_SPREADSHEET = "spreadsheetConfigPath";
-    private static final String PROP_SITEMAP = "siteDiagramConfig.siteDiagramPath";
+//    private static final String PROP_SITEMAP = "siteDiagramConfig.siteDiagramPath";
     private final OSCARServiceModule oscarService;
 
     private TextField spreadsheetPath;
-    private TextField siteDiagramPath;
+//    private TextField siteDiagramPath;
 
     public OSCARServiceForm() {
         oscarService = getParentHub().getModuleRegistry().getModuleByType(OSCARServiceModule.class);
@@ -30,12 +30,12 @@ public class OSCARServiceForm extends GenericConfigForm {
         Field<?> field = super.buildAndBindField(label, propId, prop);
 
 
-        if(propId.endsWith(PROP_SPREADSHEET) || propId.endsWith(PROP_SITEMAP)) {
+        if(propId.endsWith(PROP_SPREADSHEET) ){ //|| propId.endsWith(PROP_SITEMAP)) {
             if (propId.endsWith(PROP_SPREADSHEET))
                 spreadsheetPath = (TextField) field;
 
-            if (propId.endsWith(PROP_SITEMAP))
-                siteDiagramPath = (TextField) field;
+//            if (propId.endsWith(PROP_SITEMAP))
+//                siteDiagramPath = (TextField) field;
 
             return new FieldWrapper<String>((Field<String>) field) {
                 @Override
@@ -73,16 +73,16 @@ public class OSCARServiceForm extends GenericConfigForm {
                                 }
                             }
 
-                            if(propId.endsWith(PROP_SITEMAP)) {
-                                if (filename.endsWith(".png") || mimeType.contains("jpg")) {
-                                    try {
-                                        siteDiagramPath.setValue(filename);
-                                        return oscarService.getSitemapDiagramHandler().handleUpload(filename);
-                                    } catch (FileNotFoundException e) {
-                                        throw new IllegalStateException(e);
-                                    }
-                                }
-                            }
+//                            if(propId.endsWith(PROP_SITEMAP)) {
+//                                if (filename.endsWith(".png") || mimeType.contains("jpg")) {
+//                                    try {
+//                                        siteDiagramPath.setValue(filename);
+//                                        return oscarService.getSitemapDiagramHandler().handleUpload(filename);
+//                                    } catch (FileNotFoundException e) {
+//                                        throw new IllegalStateException(e);
+//                                    }
+//                                }
+//                            }
 
                             return new OutputStream() {
                                 @Override
