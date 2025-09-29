@@ -3,6 +3,7 @@ package com.botts.api.service.bucket;
 import org.sensorhub.api.datastore.DataStoreException;
 
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.List;
 import java.util.Map;
 
@@ -42,6 +43,8 @@ public interface IBucketStore {
     String createObject(String bucketName, InputStream data, Map<String, String> metadata) throws DataStoreException;
 
     void putObject(String bucketName, String key, InputStream data, Map<String, String> metadata) throws DataStoreException;
+
+    OutputStream putObject(String bucketName, String key, Map<String, String> metadata) throws DataStoreException;
 
     InputStream getObject(String bucketName, String key) throws DataStoreException;
 
