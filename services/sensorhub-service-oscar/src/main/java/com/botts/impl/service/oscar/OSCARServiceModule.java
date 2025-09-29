@@ -32,7 +32,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
     ClientConfigOutput clientConfigOutput;
     SpreadsheetHandler spreadsheetHandler;
-    SitemapDiagramHandler sitemapDiagramHandler;
+//    SitemapDiagramHandler sitemapDiagramHandler;
     OSCARSystem system;
 
     @Override
@@ -50,24 +50,27 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
             spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
 
         // TODO: Add or update site info datastream
-        sitemapDiagramHandler = new SitemapDiagramHandler(getParentHub());
-
-        if(config.siteDiagramConfig.siteDiagramPath != null && !config.siteDiagramConfig.siteDiagramPath.isEmpty()){
-            sitemapDiagramHandler.handleFile(config.siteDiagramConfig.siteDiagramPath);
-        }
+//        sitemapDiagramHandler = new SitemapDiagramHandler(getParentHub());
+//
+//        if(config.siteDiagramConfig.siteDiagramPath != null && !config.siteDiagramConfig.siteDiagramPath.isEmpty()){
+//            sitemapDiagramHandler.handleFile(config.siteDiagramConfig.siteDiagramPath);
+//        }
 
 
         createOutputs();
         createControls();
 
         system.updateSensorDescription();
+        getParentHub().getSystemDriverRegistry().register(system);
+
+        var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
+        getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
 
     }
 
     public void createOutputs(){
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
-
 
         clientConfigOutput = new ClientConfigOutput(system);
         system.addOutput(clientConfigOutput, false);
@@ -85,12 +88,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     protected void doStart() throws SensorHubException {
         super.doStart();
 
-        getParentHub().getSystemDriverRegistry().register(system);
-
-        var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
-        if (getParentHub().getSystemDriverRegistry().getDatabase(system.getUniqueIdentifier()) == null)
-            getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
-
 
         // TODO: Publish latest site info observation
         if (config.siteDiagramConfig != null
@@ -102,9 +99,9 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         }
     }
 
-    public SitemapDiagramHandler getSitemapDiagramHandler() {
-        return sitemapDiagramHandler;
-    }
+//    public SitemapDiagramHandler getSitemapDiagramHandler() {
+//        return sitemapDiagramHandler;
+//    }
 
     public SpreadsheetHandler getSpreadsheetHandler() {
         return spreadsheetHandler;
