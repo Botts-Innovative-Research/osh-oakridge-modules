@@ -18,18 +18,20 @@ package com.botts.impl.service.oscar.spreadsheet;
 import org.sensorhub.api.ISensorHub;
 
 import java.io.*;
+import java.nio.file.Path;
 
 public class SpreadsheetHandler {
 
     ISensorHub hub;
-    String[] schema = { "", "", "", "", "", "", "", "", "", ""};
+    CSVParser parser;
 
     public SpreadsheetHandler(ISensorHub hub) {
         this.hub = hub;
+        this.parser = CSVParserFactory.createCSVParser(schema);
     }
 
     public void handleFile(String filepath) {
-
+        parser.loadFile(Path.of(filepath));
     }
 
     public OutputStream handleUpload(String filename) throws FileNotFoundException {
@@ -37,6 +39,10 @@ public class SpreadsheetHandler {
         // TODO: Better logic to specify where config should be
         File file = new File(filename);
         return new FileOutputStream(file);
+    }
+
+    private void handleCSV(String csvData) {
+        parser.load(csvData);
     }
 
 }
