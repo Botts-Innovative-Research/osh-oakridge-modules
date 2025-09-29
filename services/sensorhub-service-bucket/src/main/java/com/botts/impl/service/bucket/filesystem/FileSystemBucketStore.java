@@ -3,9 +3,7 @@ package com.botts.impl.service.bucket.filesystem;
 import com.botts.api.service.bucket.IBucketStore;
 import org.sensorhub.api.datastore.DataStoreException;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -116,6 +114,22 @@ public class FileSystemBucketStore implements IBucketStore {
         } catch (IOException e) {
             throw new DataStoreException(FAILED_PUT_OBJECT + bucketName, e);
         }
+    }
+
+    @Override
+    public OutputStream putObject(String bucketName, String key, Map<String, String> metadata) throws DataStoreException {
+        Path path = getBucketPath(bucketName);
+        if (!Files.exists(path))
+            throw new DataStoreException(BUCKET_NOT_FOUND, new IllegalArgumentException());
+        if (!Files.exists(path.resolve(key).toFile().toPath())) {
+            try {
+                Files.createFile(path.resolve(key));
+                return new FileOutputStream(path.resolve(key).toFile());
+            } catch (IOException e) {
+                throw new DataStoreException(FAILED_PUT_OBJECT + bucketName, e);
+            }
+        }
+        throw new DataStoreException(FAILED_PUT_OBJECT + bucketName, new IllegalArgumentException());
     }
 
     @Override
