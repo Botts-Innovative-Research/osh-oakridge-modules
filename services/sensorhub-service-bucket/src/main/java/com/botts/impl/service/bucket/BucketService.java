@@ -23,6 +23,7 @@ import com.botts.impl.service.bucket.handler.ObjectHandler;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.service.AbstractHttpServiceModule;
 import org.sensorhub.utils.NamedThreadFactory;
+import org.vast.util.Asserts;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -40,23 +41,24 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
     @Override
     protected void doInit() throws SensorHubException {
         super.doInit();
+
+        Asserts.checkNotNull(config.fileStoreRootDir);
+
+        try {
+            bucketStore = new FileSystemBucketStore(Path.of(config.fileStoreRootDir));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        if (config.initialBuckets != null && !config.initialBuckets.isEmpty())
+            for (String bucket : config.initialBuckets)
+                if (!bucketStore.bucketExists(bucket))
+                    bucketStore.createBucket(bucket);
     }
 
     @Override
     protected void doStart() throws SensorHubException {
         super.doStart();
-
-        try {
-            bucketStore = new FileSystemBucketStore(Path.of("web"));
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-
-        if (config.initialBuckets != null && !config.initialBuckets.isEmpty()) {
-            for (String bucket : config.initialBuckets)
-                if (!bucketStore.bucketExists(bucket))
-                    bucketStore.createBucket(bucket);
-        }
 
         List<String> buckets = bucketStore.listBuckets();
 
@@ -121,10 +123,6 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
     @Override
     public IBucketStore getBucketStore() {
         return bucketStore;
-    }
-
-    public BucketSecurity getSecurityHandler() {
-        return (BucketSecurity) securityHandler;
     }
 
 }
