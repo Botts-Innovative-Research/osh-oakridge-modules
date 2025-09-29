@@ -1,7 +1,6 @@
 package com.botts.impl.service.oscar.reports.types;
 
 import com.botts.impl.service.oscar.OSCARServiceModule;
-import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
 import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
 import com.botts.impl.service.oscar.reports.helpers.Utils;
 import com.itextpdf.kernel.pdf.PdfDocument;
@@ -25,27 +24,26 @@ public class LaneReport extends Report {
 
     private static final Logger log = LoggerFactory.getLogger(LaneReport.class);
     String reportTitle = "Lane Report";
-    String laneUID;
+
     Document document;
-    PdfWriter pdfWriter;
     PdfDocument pdfDocument;
     String pdfFileName;
+
+    String laneUID;
     Instant begin;
     Instant end;
     OSCARServiceModule module;
     TableGenerator tableGenerator;
 
-    public LaneReport(Instant startTime, Instant endTime, String laneUID, OSCARServiceModule module) {
+    public LaneReport(String filePath, Instant startTime, Instant endTime, String laneUID, OSCARServiceModule module) {
         try {
-            pdfFileName = ReportCmdType.LANE.name() + "_" + laneUID + "_" + startTime + "_"+ endTime + ".pdf";
-            File file = new File("files/reports/" + pdfFileName);
+            pdfFileName = filePath;
+            File file = new File(pdfFileName);
             file.getParentFile().mkdirs();
 
             pdfDocument = new PdfDocument(new PdfWriter(file));
             document = new Document(pdfDocument);
         } catch (IOException e) {
-            document.close();
-            pdfDocument.close();
             log.error(e.getMessage(), e);
             return;
         }
@@ -84,15 +82,11 @@ public class LaneReport extends Report {
 
         Map<String, String> alarmOccCounts = new HashMap<>();
 
-        Predicate<IObsData> gammaNeutronPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);};
-
-        Predicate<IObsData> gammaPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);};
-
-        Predicate<IObsData> neutronPredicate = (obsData) -> {return !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);};;
-
-        Predicate<IObsData> occupancyTotalPredicate = (obsData) -> {return true;};
-
-        Predicate<IObsData> occupancyNonAlarmingPredicate = (obsData) -> {return !obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);};
+        Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> occupancyTotalPredicate = (obsData) -> true;
+//        Predicate<IObsData> occupancyNonAlarmingPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
 //        Predicate<IObsData> emlSuppPredicate = (obsData) -> {return obsData.getResult();};
 
 
@@ -101,14 +95,13 @@ public class LaneReport extends Report {
         long neutronAlarmCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_OCCUPANCY}, module, neutronPredicate, begin, end);
         long totalOccupancyCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyTotalPredicate, begin, end);
 //        long nonAlarmingOccupancyCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyNonAlarmingPredicate, begin, end);
-
 //        long emlSuppressedCount= Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_OCCUPANCY}, module, emlSuppPredicate);
 
-
         long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
-        long alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
 
+        long alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
 //        long emlSuppressedAverage = Utils.calcEMLAlarmRate(emlSuppressedCount, totalAlarmingCount);
+
 
         alarmOccCounts.put("Gamma Alarm", String.valueOf(gammaAlarmCount));
         alarmOccCounts.put("Neutron Alarm", String.valueOf(neutronAlarmCount));
@@ -132,10 +125,10 @@ public class LaneReport extends Report {
         HashMap<String, String> faultCounts = new HashMap<>();
 
 
-        Predicate<IObsData> tamperPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
-        Predicate<IObsData> gammaHighPredicate = (obsData) -> {return obsData.getResult().getStringValue(1).equals("Fault - Gamma High");};
-        Predicate<IObsData> gammaLowPredicate = (obsData) -> {return obsData.getResult().getStringValue(1).equals("Fault - Gamma Low");};
-        Predicate<IObsData> neutronHighPredicate = (obsData) -> {return obsData.getResult().getStringValue(1).equals("Fault - Neutron High");};
+        Predicate<IObsData> tamperPredicate = (obsData) -> obsData.getResult().getBooleanValue(1);
+        Predicate<IObsData> gammaHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma High");
+        Predicate<IObsData> gammaLowPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma Low");
+        Predicate<IObsData> neutronHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Neutron High");
 //        Predicate<IObsData> commsPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
 //        Predicate<IObsData> cameraPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
 //        Predicate<IObsData> extendedOccPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
