@@ -5,6 +5,7 @@ version = '1.0.0'
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
 
+    implementation project(':sensorhub-system-lane') // Lane for loading via spreadsheet
     implementation("jfree:jfreechart:1.0.13") // charts
     implementation("com.itextpdf:itext7-core:9.3.0") //pdfs
 }
