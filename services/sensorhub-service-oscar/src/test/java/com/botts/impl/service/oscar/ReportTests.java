@@ -62,14 +62,15 @@ public class ReportTests {
         String resPath = results.get(0).getResult().getStringValue();
         assertNotNull(resPath);
 
-        // check if file exists
-//        Files.exists(Path.of("web/" + resPath));
 
+        var stream = module.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
+
+        String contents = stream.toString();;
+        assertNotNull(contents);
     }
 
     @Test
     public void generateSiteReport() throws Exception {
-
         DataChoice cmdChoice = (DataChoice) module.reportControl.getCommandDescription().copy();
 
         cmdChoice.assignNewDataBlock();
@@ -88,14 +89,14 @@ public class ReportTests {
         assertNotNull(resPath);
 
         // check if file exists
-        Files.exists(Path.of("web/" + resPath));
-    }
+        var stream = module.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
+
+        String contents = stream.toString();;
+        assertNotNull(contents);    }
 
 
     @Test
     public void generateAdjudicationReport() throws Exception {
-
-
         DataChoice cmdChoice = (DataChoice) module.reportControl.getCommandDescription().copy();
 
         cmdChoice.assignNewDataBlock();
@@ -114,13 +115,13 @@ public class ReportTests {
         assertNotNull(resPath);
 
         // check if file exists
-        Files.exists(Path.of("web/" + resPath));
-    }
+        var stream = module.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
+
+        String contents = stream.toString();;
+        assertNotNull(contents);    }
 
     @Test
     public void generateEventReport() throws Exception {
-
-
         DataChoice cmdChoice = (DataChoice) module.reportControl.getCommandDescription().copy();
 
         cmdChoice.assignNewDataBlock();
@@ -139,7 +140,10 @@ public class ReportTests {
         assertNotNull(resPath);
 
         // check if file exists
-        Files.exists(Path.of("web/" + resPath));
+        var stream = module.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
+
+        String contents = stream.toString();;
+        assertNotNull(contents);
     }
 
 
