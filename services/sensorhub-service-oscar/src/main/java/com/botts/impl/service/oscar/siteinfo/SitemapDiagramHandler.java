@@ -32,40 +32,33 @@ public class SitemapDiagramHandler {
 
     IBucketService bucketService;
     IBucketStore bucketStore;
-
-    public SitemapDiagramHandler (IBucketService bucketService) {
+    SiteInfoOutput siteInfoOutput;
+    public SitemapDiagramHandler(IBucketService bucketService, SiteInfoOutput siteInfoOutput) {
         this.bucketService = bucketService;
-
+        this.siteInfoOutput = siteInfoOutput;
+        this.bucketStore = bucketService.getBucketStore();
     }
 
     public void handleFile(String filename) throws DataStoreException, FileNotFoundException {
-
-        bucketStore = bucketService.getBucketStore();
-
-        if (bucketStore == null) {
+        if (bucketStore == null)
             return;
-        }
-        boolean siteMapBucketExists = bucketStore.bucketExists(SITE_MAP_BUCKET);
 
-        if (!siteMapBucketExists) {
+        if (!bucketStore.bucketExists(SITE_MAP_BUCKET))
             bucketStore.createBucket(SITE_MAP_BUCKET);
-        }
+
 
         bucketStore.putObject(SITE_MAP_BUCKET, filename, Collections.emptyMap());
     }
 
-    public OutputStream handleUpload(String filename) throws DataStoreException {
-
-        bucketStore = bucketService.getBucketStore();
-
-        if (bucketStore == null) {
+    public OutputStream handleUpload(String filename, SiteDiagramConfig.LatLonLocation siteLowerLeftBound, SiteDiagramConfig.LatLonLocation siteUpperRightBound) throws DataStoreException {
+        if (bucketStore == null)
             return null;
-        }
-        boolean siteMapBucketExists = bucketStore.bucketExists(SITE_MAP_BUCKET);
 
-        if (!siteMapBucketExists) {
+        if (!bucketStore.bucketExists(SITE_MAP_BUCKET))
             bucketStore.createBucket(SITE_MAP_BUCKET);
-        }
+
+
+        siteInfoOutput.setData(filename, siteLowerLeftBound, siteUpperRightBound);
 
         return bucketStore.putObject(SITE_MAP_BUCKET, filename, Collections.emptyMap());
     }

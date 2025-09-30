@@ -48,14 +48,14 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         bucketService = getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
 
+        createOutputs();
+        createControls();
 
         spreadsheetHandler = new SpreadsheetHandler(getParentHub());
         if (config.spreadsheetConfigPath != null && !config.spreadsheetConfigPath.isEmpty())
             spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
 
-        // TODO: Add or update site info datastream
-
-        sitemapDiagramHandler = new SitemapDiagramHandler(getBucketService());
+        sitemapDiagramHandler = new SitemapDiagramHandler(getBucketService(), siteInfoOutput);
 
         if(config.siteDiagramConfig.siteDiagramPath != null && !config.siteDiagramConfig.siteDiagramPath.isEmpty()){
             try {
@@ -65,9 +65,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
             }
         }
 
-
-        createOutputs();
-        createControls();
 
         system.updateSensorDescription();
         getParentHub().getSystemDriverRegistry().register(system);
@@ -98,14 +95,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         super.doStart();
 
 
-        // TODO: Publish latest site info observation
-        if (config.siteDiagramConfig != null
-                && config.siteDiagramConfig.siteDiagramPath != null
-                && !config.siteDiagramConfig.siteDiagramPath.isEmpty()
-                && config.siteDiagramConfig.siteLowerLeftBound != null
-                && config.siteDiagramConfig.siteUpperRightBound != null) {
-            siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
-        }
+
     }
 
     public SitemapDiagramHandler getSitemapDiagramHandler() {
