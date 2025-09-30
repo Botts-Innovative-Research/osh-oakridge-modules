@@ -9,17 +9,13 @@ import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
 import org.sensorhub.api.data.IObsData;
-import org.sensorhub.api.datastore.obs.DataStreamFilter;
-import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.FileStore;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.io.OutputStream;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -33,7 +29,6 @@ public class RDSReport extends Report {
 
     Document document;
     PdfDocument pdfDocument;
-    String pdfFileName;
 
     String siteId;
     Instant begin;
@@ -42,32 +37,19 @@ public class RDSReport extends Report {
     TableGenerator tableGenerator;
     OSCARServiceModule module;
 
-    public RDSReport(String filePath, Instant startTime, Instant endTime, OSCARServiceModule module) {
-        try {
-            pdfFileName = ReportCmdType.RDS_SITE.name()+ "_" + startTime + "_"+ endTime + ".pdf";
-            File file = new File("files/reports/" + pdfFileName);
-            file.getParentFile().mkdirs();
+    public RDSReport(OutputStream out, Instant startTime, Instant endTime, OSCARServiceModule module) {
+        pdfDocument = new PdfDocument(new PdfWriter(out));
+        document = new Document(pdfDocument);
 
-            pdfDocument = new PdfDocument(new PdfWriter(file));
-            document = new Document(pdfDocument);
-
-        } catch (IOException e) {
-            document.close();
-            pdfDocument.close();
-            log.error(e.getMessage(), e);
-            return;
-        }
         this.module = module;
-
         this.siteId = module.getConfiguration().nodeId;
-
         this.begin = startTime;
         this.end = endTime;
         this.tableGenerator = new TableGenerator();
     }
 
     @Override
-    public String generate(){
+    public void generate(){
         addHeader();
         addAlarmStatistics();
         addFaultStatistics();
@@ -77,8 +59,6 @@ public class RDSReport extends Report {
         pdfDocument.close();
 
         tableGenerator =null;
-
-        return pdfFileName;
     }
 
     private void addHeader(){
@@ -88,35 +68,25 @@ public class RDSReport extends Report {
     }
 
     private void addAlarmStatistics(){
-
         document.add(new Paragraph("Alarm Statistics"));
 
         Map<String, String> alarmOccCounts = new HashMap<>();
 
-        Predicate<IObsData> gammaNeutronPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);};
-
-        Predicate<IObsData> gammaPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);};
-
-        Predicate<IObsData> neutronPredicate = (obsData) -> {return !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);};;
-
-        Predicate<IObsData> occupancyTotalPredicate = (obsData) -> {return true;};
-
-        Predicate<IObsData> occupancyNonAlarmingPredicate = (obsData) -> {return !obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);};
+        Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> occupancyTotalPredicate = (obsData) -> true;
+        Predicate<IObsData> occupancyNonAlarmingPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
 //        Predicate<IObsData> emlSuppPredicate = (obsData) -> {return obsData.getResult();};
-
 
         long gammaNeutronAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, gammaNeutronPredicate, begin, end);
         long gammaAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module ,gammaPredicate, begin, end);
         long neutronAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, neutronPredicate, begin, end);
         long totalOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyTotalPredicate, begin, end);
 //        long nonAlarmingOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyNonAlarmingPredicate, begin, end);
-
 //        long emlSuppressedCount= Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, emlSuppPredicate);
-
-
         long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
         long alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
-
 //        long emlSuppressedAverage = Utils.calcEMLAlarmRate(emlSuppressedCount, totalAlarmingCount);
 
         alarmOccCounts.put("Gamma Alarm", String.valueOf(gammaAlarmCount));
@@ -140,21 +110,18 @@ public class RDSReport extends Report {
 
         HashMap<String, String> faultCounts = new HashMap<>();
 
-
-        Predicate<IObsData> tamperPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
-        Predicate<IObsData> gammaHighPredicate = (obsData) -> {return obsData.getResult().getStringValue(1).equals("Fault - Gamma High");};
-        Predicate<IObsData> gammaLowPredicate = (obsData) -> {return obsData.getResult().getStringValue(1).equals("Fault - Gamma Low");};
-        Predicate<IObsData> neutronHighPredicate = (obsData) -> {return obsData.getResult().getStringValue(1).equals("Fault - Neutron High");};
+        Predicate<IObsData> tamperPredicate = (obsData) -> obsData.getResult().getBooleanValue(1);
+        Predicate<IObsData> gammaHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma High");
+        Predicate<IObsData> gammaLowPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma Low");
+        Predicate<IObsData> neutronHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Neutron High");
 //        Predicate<IObsData> commsPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
 //        Predicate<IObsData> cameraPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
 //        Predicate<IObsData> extendedOccPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
-
 
         long tamperCount = Utils.countObservations(new String[]{RADHelper.DEF_TAMPER}, module, tamperPredicate, begin, end);
         long gammaHighFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM}, module,gammaHighPredicate, begin, end);
         long gammaLowFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM}, module,gammaLowPredicate, begin, end);
         long neutronHighFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM}, module,neutronHighPredicate, begin, end);
-
 //        long extendedOccupancyCount = Utils.countObservations(RADHelper.DEF_TAMPER, module,extendedOccPredicate, begin, end);
 
 

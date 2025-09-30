@@ -24,6 +24,7 @@ import com.botts.impl.service.oscar.siteinfo.SitemapDiagramHandler;
 import com.botts.impl.service.oscar.spreadsheet.SpreadsheetHandler;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
+import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.module.AbstractModule;
 
 import java.io.FileNotFoundException;
@@ -83,6 +84,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public void createControls(){
+
+
         reportControl = new RequestReportControl(system, this);
         system.addControlInput(reportControl);
 

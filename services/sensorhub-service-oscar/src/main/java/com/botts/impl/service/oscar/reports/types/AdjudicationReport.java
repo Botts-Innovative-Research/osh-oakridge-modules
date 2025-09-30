@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -28,7 +29,6 @@ public class AdjudicationReport extends Report {
     String reportTitle = "Adjudication Report";
     Document document;
     PdfDocument pdfDocument;
-    String pdfFileName;
 
     OSCARServiceModule module;
     TableGenerator tableGenerator;
@@ -37,20 +37,10 @@ public class AdjudicationReport extends Report {
     String laneUID;
     Instant begin;
     Instant end;
-    public AdjudicationReport(String filePath, Instant startTime, Instant endTime, String laneUID, OSCARServiceModule module) {
-        try {
-            pdfFileName = filePath;
-            File file = new File(pdfFileName);
-            file.getParentFile().mkdirs();
+    public AdjudicationReport(OutputStream out, Instant startTime, Instant endTime, String laneUID, OSCARServiceModule module) {
+        pdfDocument = new PdfDocument(new PdfWriter(out));
+        document = new Document(pdfDocument);
 
-            pdfDocument = new PdfDocument(new PdfWriter(file));
-            document = new Document(pdfDocument);
-        } catch (IOException e) {
-            document.close();
-            pdfDocument.close();
-            log.error(e.getMessage(), e);
-            return;
-        }
         this.module = module;
         this.laneUID = laneUID;
         this.begin = startTime;
@@ -60,7 +50,7 @@ public class AdjudicationReport extends Report {
     }
 
     @Override
-    public String generate() {
+    public void generate() {
         addHeader();
         addDisposition();
         addSecondaryInspectionIsotopeResults();
@@ -70,8 +60,6 @@ public class AdjudicationReport extends Report {
         pdfDocument.close();
         chartGenerator = null;
         tableGenerator = null;
-
-        return pdfFileName;
     }
 
     private void addHeader(){

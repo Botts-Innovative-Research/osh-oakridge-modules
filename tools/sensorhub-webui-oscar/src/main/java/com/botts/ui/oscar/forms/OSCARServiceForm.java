@@ -65,7 +65,7 @@ public class OSCARServiceForm extends GenericConfigForm {
                     textField.setReadOnly(true);
                     layout.addComponent(textField);
                     layout.setComponentAlignment(textField, Alignment.MIDDLE_LEFT);
-                    
+
                     // Create upload button
                     Upload upload = new Upload();
                     layout.addComponent(upload);

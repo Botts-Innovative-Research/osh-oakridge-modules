@@ -63,7 +63,8 @@ public class ReportTests {
         assertNotNull(resPath);
 
         // check if file exists
-        Files.exists(Path.of("web/" + resPath));
+//        Files.exists(Path.of("web/" + resPath));
+
     }
 
     @Test

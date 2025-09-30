@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -43,18 +44,10 @@ public class EventReport extends Report {
     Instant start;
     Instant end;
 
-    public EventReport(String filePath, Instant startTime, Instant endTime, EventReportType eventType, String laneUID, OSCARServiceModule module) {
-        try {
-            pdfFileName = filePath;
-            File file = new File(pdfFileName);
-            file.getParentFile().mkdirs();
+    public EventReport(OutputStream outputStream, Instant startTime, Instant endTime, EventReportType eventType, String laneUID, OSCARServiceModule module) {
+        pdfDocument = new PdfDocument(new PdfWriter(outputStream));
+        document = new Document(pdfDocument);
 
-            pdfDocument = new PdfDocument(new PdfWriter(file));
-            document = new Document(pdfDocument);
-        } catch (IOException e) {
-            log.error(e.getMessage(), e);
-            return;
-        }
         this.eventType = eventType;
         this.laneUID = laneUID;
         this.module = module;
@@ -65,7 +58,7 @@ public class EventReport extends Report {
     }
 
     @Override
-    public String generate() {
+    public void generate() {
         addHeader();
 
         if (eventType.equals(EventReportType.ALARMS_OCCUPANCIES))
@@ -81,7 +74,6 @@ public class EventReport extends Report {
         pdfDocument.close();
         chartGenerator = null;
         tableGenerator = null;
-        return pdfFileName;
     }
 
     private void addHeader(){
