@@ -148,6 +148,24 @@ public abstract class AbstractBucketStoreTest {
     }
 
     @Test
+    public void testOverwriteObjectWithOutputStream() throws DataStoreException, IOException {
+        testPutObjectWithOutputStream();
+
+        // Overwrite object
+        String testObjName = "new-object2.txt";
+        OutputStream out = bucketStore.putObject(TEST_BUCKET, testObjName, Collections.emptyMap());
+        getTestObjectData().transferTo(out);
+
+        // Test object exists and has the test data
+        assertTrue(bucketStore.objectExists(TEST_BUCKET, testObjName));
+        InputStream stream = bucketStore.getObject(TEST_BUCKET, testObjName);
+        String objectContents = new String(stream.readAllBytes());
+        assertNotNull(objectContents);
+        assertFalse(objectContents.isBlank());
+        System.out.println(objectContents);
+    }
+
+    @Test
     public void testGetObjectMimeType() throws DataStoreException, FileNotFoundException {
         addTestBucket();
         String key = "new-object3.txt";
