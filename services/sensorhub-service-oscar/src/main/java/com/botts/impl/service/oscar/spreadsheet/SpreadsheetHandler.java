@@ -23,11 +23,10 @@ import java.nio.file.Path;
 public class SpreadsheetHandler {
 
     ISensorHub hub;
-    CSVParser parser;
+    SpreadsheetParser parser;
 
     public SpreadsheetHandler(ISensorHub hub) {
         this.hub = hub;
-        this.parser = CSVParserFactory.createCSVParser(schema);
     }
 
     public void handleFile(String filepath) {
