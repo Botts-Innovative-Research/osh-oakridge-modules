@@ -88,23 +88,27 @@ public class OSCARServiceForm extends GenericConfigForm {
                         public OutputStream receiveUpload(String filename, String mimeType) {
 
                             try {
-                                if(propId.endsWith(PROP_SPREADSHEET)) {
+                                if (propId.endsWith(PROP_SPREADSHEET)) {
                                     if (filename.endsWith(".csv") || mimeType.contains("csv")) {
                                         spreadsheetPath.setValue(filename);
-                                        return oscarService.getSpreadsheetHandler().handleUpload(filename);
+                                        return null;
+//                                        return oscarService.getSpreadsheetHandler().handleUpload(filename);
                                     }
                                 }
 
-                                if(propId.endsWith(PROP_SITEMAP)) {
+                                if (propId.endsWith(PROP_SITEMAP)) {
                                     if (filename.endsWith(".png") || mimeType.contains("jpg")) {
                                         siteDiagramPath.setValue(filename);
                                         return oscarService.getSitemapDiagramHandler().handleUpload(filename, siteLowerLeftBound, siteUpperRightBound);
                                     }
                                 }
 
-                            } catch (FileNotFoundException e) {
-                                throw new IllegalStateException(e);
                             } catch (DataStoreException e) {
+                                if (propId.endsWith(PROP_SPREADSHEET)) {
+                                    getOshLogger().error("Error during spreadsheet upload", e);
+                                } else  if (propId.endsWith(PROP_SITEMAP)) {
+                                    getOshLogger().error("Error during sitemap upload", e);
+                                }
                             }
 
                             return new OutputStream() {

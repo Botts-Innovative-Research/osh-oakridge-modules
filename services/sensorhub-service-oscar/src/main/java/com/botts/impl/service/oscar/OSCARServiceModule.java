@@ -19,6 +19,7 @@ import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
 import com.botts.api.service.bucket.IBucketService;
+import com.botts.impl.service.bucket.BucketService;
 import com.botts.impl.service.oscar.clientconfig.ClientConfigOutput;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
@@ -31,10 +32,7 @@ import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.module.AbstractModule;
 
 import java.io.FileNotFoundException;
-
-import java.io.FileNotFoundException;
-
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     SiteInfoOutput siteInfoOutput;
@@ -77,16 +75,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         createOutputs();
         createControls();
 
-        sitemapDiagramHandler = new SitemapDiagramHandler(getBucketService(), siteInfoOutput);
-
-        if(config.siteDiagramConfig.siteDiagramPath != null && !config.siteDiagramConfig.siteDiagramPath.isEmpty()){
-            try {
-                sitemapDiagramHandler.handleFile(config.siteDiagramConfig.siteDiagramPath);
-            } catch (FileNotFoundException e) {
-                throw new RuntimeException(e);
-            }
-        }
-
+        sitemapDiagramHandler = new SitemapDiagramHandler(getBucketService(), siteInfoOutput, this);
 
         system.updateSensorDescription();
         getParentHub().getSystemDriverRegistry().register(system);
