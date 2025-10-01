@@ -40,7 +40,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     OSCARSystem system;
     IBucketStore bucketStore;
 
-
     @Override
     protected void doInit() throws SensorHubException {
         super.doInit();
@@ -79,7 +78,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public void createControls(){
-        reportControl = new RequestReportControl(system);
+        reportControl = new RequestReportControl(system, this);
         system.addControlInput(reportControl);
     }
 
