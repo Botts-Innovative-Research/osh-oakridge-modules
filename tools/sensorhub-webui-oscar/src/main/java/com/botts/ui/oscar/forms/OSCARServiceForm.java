@@ -111,6 +111,7 @@ public class OSCARServiceForm extends GenericConfigForm {
                                 @Override
                                 public void write(int b) {}
                             };
+                        }
                     });
 
                     upload.addSucceededListener((e) -> {
@@ -145,5 +146,5 @@ public class OSCARServiceForm extends GenericConfigForm {
         }
         return field;
     }
-
 }
+

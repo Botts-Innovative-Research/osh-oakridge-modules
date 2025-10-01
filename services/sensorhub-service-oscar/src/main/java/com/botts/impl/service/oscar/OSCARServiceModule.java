@@ -16,17 +16,21 @@
 package com.botts.impl.service.oscar;
 
 import com.botts.api.service.bucket.IBucketService;
+import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.impl.service.oscar.clientconfig.ClientConfigOutput;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
+import com.botts.impl.service.oscar.siteinfo.SitemapDiagramHandler;
 import com.botts.impl.service.oscar.spreadsheet.SpreadsheetHandler;
 import com.botts.impl.service.oscar.siteinfo.SitemapDiagramHandler;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.module.AbstractModule;
+
+import java.io.FileNotFoundException;
 
 import java.io.FileNotFoundException;
 
@@ -38,10 +42,13 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     ClientConfigOutput clientConfigOutput;
     SitemapDiagramHandler sitemapDiagramHandler;
     IBucketService bucketService;
+    SitemapDiagramHandler sitemapDiagramHandler;
+    IBucketService bucketService;
     SpreadsheetHandler spreadsheetHandler;
     OSCARSystem system;
     IBucketService bucketService;
     IBucketStore bucketStore;
+
 
 
     @Override
@@ -66,6 +73,9 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         system = new OSCARSystem(config.nodeId);
         bucketService = getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
 
+        // TODO: Add or update report generation control interface
+
+        // TODO: Add or update site info datastream
 
         createOutputs();
         createControls();
@@ -82,9 +92,15 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
 
         system.updateSensorDescription();
+        getParentHub().getSystemDriverRegistry().register(system);
+
+        var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
+        getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
+
     }
 
     public void createOutputs(){
+
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
 
