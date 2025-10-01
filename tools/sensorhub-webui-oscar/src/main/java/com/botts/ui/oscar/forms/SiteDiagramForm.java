@@ -53,32 +53,41 @@ public class SiteDiagramForm extends GenericConfigForm {
     protected Field<?> buildAndBindField(String label, String propId, Property<?> prop) {
         Field<?> field = super.buildAndBindField(label, propId, prop);
 
-        if (propId.equals("location.lon")) {
-            addSiteMapComponent();
-            lonField = (TextField) field;
-        }
 
-        if(propId.equals("location.lat")) {
-            latField = (TextField) field;
+        try {
+            String imagePath = getSiteImagePath();
+            if (imagePath != null && !imagePath.isEmpty()) {
+                if (propId.equals("location.lon")) {
+                    addSiteMapComponent(imagePath);
+                    lonField = (TextField) field;
+                }
+
+                if(propId.equals("location.lat")) {
+                    latField = (TextField) field;
+                }
+            }
+        } catch (SensorHubException e) {
+            getOshLogger().error("Error building SiteMap Diagram field", e);
         }
 
 
         return field;
     }
 
-    private void addSiteMapComponent(){
+    private void addSiteMapComponent(String imagePath){
         try{
-            String imagePath = getSiteImagePath();
 
             double[] bounds = getBoundingBoxCoordinates();
             double[] lowerLeftBound = {bounds[0], bounds[1]};
             double[] upperRightBound = {bounds[2], bounds[3]};
 
             VerticalLayout layout = createSiteMapLayout(imagePath, lowerLeftBound, upperRightBound);
-            super.addComponents(layout);
+
+            if(layout != null)
+                addComponent(layout);
 
         } catch (SensorHubException e){
-            e.printStackTrace();
+            getOshLogger().error("Error building SiteMap Diagram field", e);
         }
     }
 
@@ -121,10 +130,8 @@ public class SiteDiagramForm extends GenericConfigForm {
 
             layout.addComponent(siteMap);
         } catch (DataStoreException e) {
-            throw new RuntimeException(e);
+            getOshLogger().error("Error building SiteMap layout for image: " + imagePath, e);
         }
-
-
 
         return layout;
     }

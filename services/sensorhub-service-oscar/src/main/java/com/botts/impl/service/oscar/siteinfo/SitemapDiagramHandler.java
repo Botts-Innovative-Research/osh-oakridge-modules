@@ -19,9 +19,12 @@ package com.botts.impl.service.oscar.siteinfo;
 
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
+import com.botts.impl.service.oscar.OSCARServiceModule;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.datastore.DataStoreException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.util.Collection;
@@ -34,10 +37,13 @@ public class SitemapDiagramHandler {
     IBucketService bucketService;
     IBucketStore bucketStore;
     SiteInfoOutput siteInfoOutput;
-    public SitemapDiagramHandler(IBucketService bucketService, SiteInfoOutput siteInfoOutput) {
+    OSCARServiceModule module;
+
+    public SitemapDiagramHandler(IBucketService bucketService, SiteInfoOutput siteInfoOutput, OSCARServiceModule module) {
         this.bucketService = bucketService;
         this.siteInfoOutput = siteInfoOutput;
         this.bucketStore = bucketService.getBucketStore();
+        this.module = module;
     }
 
     public void handleFile(String filename) throws DataStoreException, FileNotFoundException {
@@ -52,11 +58,14 @@ public class SitemapDiagramHandler {
     }
 
     public OutputStream handleUpload(String filename, SiteDiagramConfig.LatLonLocation siteLowerLeftBound, SiteDiagramConfig.LatLonLocation siteUpperRightBound) throws DataStoreException {
-        if (bucketStore == null)
+        if (bucketStore == null) {
+            module.getLogger().warn("Bucket store is null");
             return null;
-
-        if (!bucketStore.bucketExists(SITE_MAP_BUCKET))
+        }
+        if (!bucketStore.bucketExists(SITE_MAP_BUCKET)){
+            module.getLogger().warn("Bucket does not exist, creating new bucket: " + SITE_MAP_BUCKET);
             bucketStore.createBucket(SITE_MAP_BUCKET);
+        }
 
 
         siteInfoOutput.setData(filename, siteLowerLeftBound, siteUpperRightBound);
