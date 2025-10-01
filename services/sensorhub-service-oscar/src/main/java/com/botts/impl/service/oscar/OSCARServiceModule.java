@@ -80,10 +80,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     @Override
     protected void doStart() throws SensorHubException {
         super.doStart();
-
-        // TODO: Publish latest site info observation
-        siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
-
     }
 
     @Override

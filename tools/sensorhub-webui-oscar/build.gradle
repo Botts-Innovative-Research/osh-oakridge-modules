@@ -6,7 +6,6 @@ dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     implementation 'org.sensorhub:sensorhub-webui-core:' + oshCoreVersion
     implementation project(':sensorhub-system-lane')
-    implementation project(':sensorhub-database-purge')
     implementation project(':sensorhub-service-oscar')
     implementation project(':sensorhub-service-bucket')
 
