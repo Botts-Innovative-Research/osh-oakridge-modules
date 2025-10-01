@@ -1,66 +1,65 @@
+
 package com.botts.impl.service.oscar.reports.types;
 
-import com.botts.impl.service.oscar.reports.helpers.ReportType;
+import com.botts.impl.service.oscar.OSCARServiceModule;
+import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
+import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
+import com.botts.impl.service.oscar.reports.helpers.Utils;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
+import org.sensorhub.api.data.IObsData;
+import org.sensorhub.impl.utils.rad.RADHelper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.function.Predicate;
+
 
 public class RDSReport extends Report {
+
+    private static final Logger log = LoggerFactory.getLogger(RDSReport.class);
     String reportTitle = "RDS Site Report";
 
-
-    String[] alarmOccupancyHeaders =  {
-            "Neutron", "Gamma", "Gamma & Neutron", "EML Suppressed", "Total Occupancies",  "Daily Occupancy Average", "Speed (Avg)", "Alarm Rate", "EML Alarm Rate"
-    };
-
-    String[] faultHeaders =  {
-            "Gamma-High", "Gamma-Low", "Neutron-High", "Tamper", "Extended Occupancy", "Comm", "Camera"
-    };
-
-
     Document document;
-    PdfWriter pdfWriter;
     PdfDocument pdfDocument;
-    String pdfFileName;
 
     String siteId;
+    Instant begin;
+    Instant end;
 
-    public RDSReport(Instant startTime, Instant endTime) {
-        try {
-            pdfFileName = ReportType.RDS_SITE.name()+ "_" + startTime + "_"+ endTime + ".pdf";
-            File file = new File("files/reports/" + pdfFileName);
-            file.getParentFile().mkdirs();
+    TableGenerator tableGenerator;
+    OSCARServiceModule module;
 
-            pdfWriter  = new PdfWriter(file);
-            pdfDocument = new PdfDocument(pdfWriter);
-            document = new Document(pdfDocument);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+    public RDSReport(OutputStream out, Instant startTime, Instant endTime, OSCARServiceModule module) {
+        pdfDocument = new PdfDocument(new PdfWriter(out));
+        document = new Document(pdfDocument);
+
+        this.module = module;
+        this.siteId = module.getConfiguration().nodeId;
+        this.begin = startTime;
+        this.end = endTime;
+        this.tableGenerator = new TableGenerator();
     }
 
     @Override
-    public String generate(){
-
+    public void generate(){
         addHeader();
-
         addAlarmStatistics();
         addFaultStatistics();
-        addStatistics();
-        addOccupancyStatistics();
         addDriveStorageAvailability();
 
         document.close();
-
         pdfDocument.close();
 
-        return pdfFileName;
-
+        tableGenerator =null;
     }
 
     private void addHeader(){
@@ -71,33 +70,97 @@ public class RDSReport extends Report {
 
     private void addAlarmStatistics(){
         document.add(new Paragraph("Alarm Statistics"));
-        //        addTableToPdf(faultHeaders, null);
+
+        Map<String, String> alarmOccCounts = new HashMap<>();
+
+        Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> occupancyTotalPredicate = (obsData) -> true;
+        Predicate<IObsData> occupancyNonAlarmingPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
+//        Predicate<IObsData> emlSuppPredicate = (obsData) -> {return obsData.getResult();};
+
+        long gammaNeutronAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, gammaNeutronPredicate, begin, end);
+        long gammaAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module ,gammaPredicate, begin, end);
+        long neutronAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, neutronPredicate, begin, end);
+        long totalOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyTotalPredicate, begin, end);
+//        long nonAlarmingOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyNonAlarmingPredicate, begin, end);
+//        long emlSuppressedCount= Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, emlSuppPredicate);
+        long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
+        long alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
+//        long emlSuppressedAverage = Utils.calcEMLAlarmRate(emlSuppressedCount, totalAlarmingCount);
+
+        alarmOccCounts.put("Gamma Alarm", String.valueOf(gammaAlarmCount));
+        alarmOccCounts.put("Neutron Alarm", String.valueOf(neutronAlarmCount));
+        alarmOccCounts.put("Gamma-Neutron Alarm", String.valueOf(gammaNeutronAlarmCount));
+//        alarmOccCounts.put("Non-Alarming Occupancies", String.valueOf(nonAlarmingOccupancyCount));
+        alarmOccCounts.put("Total Occupancies", String.valueOf(totalOccupancyCount));
+        alarmOccCounts.put("Alarm Occupancy Rate", String.valueOf(alarmOccupancyAverage));
+
+        //        alarmOccCounts.put("EML Suppressed", emlSuppressedCount);
+//        alarmOccCounts.put("EML Alarm Rate", emlSuppressedAverage);
+
+        var table = tableGenerator.addTable(alarmOccCounts);
+        document.add(table);
 
         document.add(new Paragraph("\n"));
     }
 
     private void addFaultStatistics(){
         document.add(new Paragraph("Fault Statistics"));
-        //        addTableToPdf(faultHeaders, null);
 
-        document.add(new Paragraph("\n"));
-    }
+        HashMap<String, String> faultCounts = new HashMap<>();
 
-    private void addOccupancyStatistics(){
-        document.add(new Paragraph("Occupancy Statistics"));
-        //        addTableToPdf(faultHeaders, null);
+        Predicate<IObsData> tamperPredicate = (obsData) -> obsData.getResult().getBooleanValue(1);
+        Predicate<IObsData> gammaHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma High");
+        Predicate<IObsData> gammaLowPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma Low");
+        Predicate<IObsData> neutronHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Neutron High");
+//        Predicate<IObsData> commsPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
+//        Predicate<IObsData> cameraPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
+//        Predicate<IObsData> extendedOccPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(1);};
 
-        document.add(new Paragraph("\n"));
-    }
+        long tamperCount = Utils.countObservations(new String[]{RADHelper.DEF_TAMPER}, module, tamperPredicate, begin, end);
+        long gammaHighFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM}, module,gammaHighPredicate, begin, end);
+        long gammaLowFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM}, module,gammaLowPredicate, begin, end);
+        long neutronHighFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM}, module,neutronHighPredicate, begin, end);
+//        long extendedOccupancyCount = Utils.countObservations(RADHelper.DEF_TAMPER, module,extendedOccPredicate, begin, end);
 
-    private void addStatistics() {
-        document.add(new Paragraph("Statistics").setFontSize(12));
-        //        addTableToPdf(faultHeaders, null);
+
+        faultCounts.put("Tamper", String.valueOf(tamperCount));
+//        faultCounts.put("Extended Occupancy", extendedOccupancyCount);
+//        faultCounts.put("Comm", commsCount);
+//        faultCounts.put("Camera", camCount);
+        faultCounts.put("Gamma-High", String.valueOf(gammaHighFaultCount));
+        faultCounts.put("Gamma-Low", String.valueOf(gammaLowFaultCount));
+        faultCounts.put("Neutron-High", String.valueOf(neutronHighFaultCount));
+
+        var table = tableGenerator.addTable(faultCounts);
+        document.add(table);
 
         document.add(new Paragraph("\n"));
     }
 
     private void addDriveStorageAvailability(){
         document.add(new Paragraph("Drive Storage Availability"));
+
+        Map<String, String> driveStorageAvailability = new HashMap<>();
+        var roots = File.listRoots();
+
+        for(var drive: roots){
+            document.add(new Paragraph(drive.getName()));
+            long free = drive.getFreeSpace() / (1024 * 1024 * 1024);
+            long total = drive.getTotalSpace() / (1024 * 1024 * 1024);
+            long usable = drive.getUsableSpace() / (1024 * 1024 * 1024);
+
+            driveStorageAvailability.put("Free", free + " GB");
+            driveStorageAvailability.put("Total", total + " GB");
+            driveStorageAvailability.put("Usable", usable + " GB");
+
+            var table = tableGenerator.addTable(driveStorageAvailability);
+            document.add(table);
+
+            document.add(new Paragraph("\n"));
+        }
     }
+
 }

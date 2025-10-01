@@ -65,10 +65,17 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         createOutputs();
         createControls();
+
         system.updateSensorDescription();
+        getParentHub().getSystemDriverRegistry().register(system);
+
+        var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
+        getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
+
     }
 
     public void createOutputs(){
+
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
 
@@ -77,7 +84,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public void createControls(){
-        reportControl = new RequestReportControl(system);
+        reportControl = new RequestReportControl(system, this);
         system.addControlInput(reportControl);
     }
 
@@ -107,16 +114,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         super.doStop();
     }
 
-    public SpreadsheetHandler getSpreadsheetHandler() {
-        return spreadsheetHandler;
-    }
-
     public IBucketService getBucketService() {
         return bucketService;
-    }
-
-    public IBucketStore getBucketStore() {
-        return bucketStore;
     }
 
 }
