@@ -14,7 +14,6 @@ package com.botts.impl.sensor.aspect;
 
 
 import com.botts.impl.sensor.aspect.comm.IModbusTCPCommProvider;
-import com.botts.impl.sensor.aspect.control.AdjudicationControl;
 import com.botts.impl.sensor.aspect.output.*;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import com.ghgande.j2mod.modbus.ModbusException;
@@ -47,7 +46,6 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     SpeedOutput speedOutput;
     SensorLocationOutput sensorLocationOutput;
     DailyFileOutput dailyFileOutput;
-    AdjudicationControl adjudicationControl;
     ConnectionStatusOutput connectionStatusOutput;
 
     public int laneID;
@@ -103,12 +101,6 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         connectionStatusOutput = new ConnectionStatusOutput(this);
         addOutput(connectionStatusOutput, false);
         connectionStatusOutput.init();
-
-        adjudicationControl = new AdjudicationControl(this);
-        addControlInput(adjudicationControl);
-        adjudicationControl.init();
-
-
     }
 
     public void tryConnection() throws SensorHubException {
