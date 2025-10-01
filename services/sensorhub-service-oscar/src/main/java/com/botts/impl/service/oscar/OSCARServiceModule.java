@@ -31,7 +31,6 @@ import java.util.concurrent.ExecutionException;
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     SiteInfoOutput siteInfoOutput;
     RequestReportControl reportControl;
-
     ClientConfigOutput clientConfigOutput;
     SpreadsheetHandler spreadsheetHandler;
     OSCARSystem system;
@@ -60,9 +59,9 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         // TODO: Add or update OSCAR system and client config system
         system = new OSCARSystem(config.nodeId);
 
-        bucketService = getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
+        // TODO: Add or update report generation control interface
 
-
+        // TODO: Add or update site info datastream
 
         createOutputs();
         createControls();
@@ -80,6 +79,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public void createOutputs(){
+
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
 
