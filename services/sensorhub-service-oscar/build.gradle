@@ -4,6 +4,8 @@ version = '1.0.0'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation project(':sensorhub-utils-rad')
+    implementation project(':sensorhub-service-bucket')
 
     implementation project(':sensorhub-system-lane') // Lane for loading via spreadsheet
     implementation project(':sensorhub-service-bucket') // service for file system

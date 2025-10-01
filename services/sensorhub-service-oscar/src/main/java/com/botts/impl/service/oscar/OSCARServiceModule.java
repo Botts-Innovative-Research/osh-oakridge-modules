@@ -17,26 +17,32 @@ package com.botts.impl.service.oscar;
 
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
+import com.botts.api.service.bucket.IBucketService;
 import com.botts.impl.service.oscar.clientconfig.ClientConfigOutput;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
 import com.botts.impl.service.oscar.spreadsheet.SpreadsheetHandler;
+import com.botts.impl.service.oscar.siteinfo.SitemapDiagramHandler;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.module.AbstractModule;
+
+import java.io.FileNotFoundException;
 
 import java.util.concurrent.ExecutionException;
 
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     SiteInfoOutput siteInfoOutput;
     RequestReportControl reportControl;
-
     ClientConfigOutput clientConfigOutput;
+    SitemapDiagramHandler sitemapDiagramHandler;
+    IBucketService bucketService;
     SpreadsheetHandler spreadsheetHandler;
     OSCARSystem system;
     IBucketService bucketService;
     IBucketStore bucketStore;
+
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -58,13 +64,23 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         // TODO: Add or update OSCAR system and client config system
         system = new OSCARSystem(config.nodeId);
+        bucketService = getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
 
-        // TODO: Add or update report generation control interface
-
-        // TODO: Add or update site info datastream
 
         createOutputs();
         createControls();
+
+        sitemapDiagramHandler = new SitemapDiagramHandler(getBucketService(), siteInfoOutput);
+
+        if(config.siteDiagramConfig.siteDiagramPath != null && !config.siteDiagramConfig.siteDiagramPath.isEmpty()){
+            try {
+                sitemapDiagramHandler.handleFile(config.siteDiagramConfig.siteDiagramPath);
+            } catch (FileNotFoundException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+
         system.updateSensorDescription();
     }
 
@@ -107,16 +123,12 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         super.doStop();
     }
 
-    public SpreadsheetHandler getSpreadsheetHandler() {
-        return spreadsheetHandler;
+    public SitemapDiagramHandler getSitemapDiagramHandler() {
+        return sitemapDiagramHandler;
     }
 
     public IBucketService getBucketService() {
         return bucketService;
-    }
-
-    public IBucketStore getBucketStore() {
-        return bucketStore;
     }
 
 }

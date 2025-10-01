@@ -1,6 +1,9 @@
 package com.botts.ui.oscar.forms;
 
 
+import com.botts.api.service.bucket.IBucketService;
+import com.botts.api.service.bucket.IBucketStore;
+import com.botts.impl.service.bucket.BucketService;
 import com.vaadin.event.MouseEvents;
 import com.vaadin.server.FileResource;
 import com.vaadin.ui.*;
@@ -10,14 +13,16 @@ import com.vaadin.v7.data.Property;
 import com.vaadin.v7.ui.Field;
 import com.vaadin.v7.ui.TextField;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.ui.GenericConfigForm;
+import org.sensorhub.ui.data.ComplexProperty;
 
 import java.io.File;
-import java.util.List;
 
+import static com.botts.impl.service.oscar.Constants.SITE_MAP_BUCKET;
 import static org.vast.swe.SWEHelper.getPropertyUri;
 
 /**
@@ -34,7 +39,15 @@ public class SiteDiagramForm extends GenericConfigForm {
     public static final String DEF_LL_BOUND = getPropertyUri("LowerLeftBound");
     public static final String DEF_UR_BOUND = getPropertyUri("UpperRightBound");
 
+    IBucketService bucketService;
+    IBucketStore bucketStore;
 
+    @Override
+    public void build(String propId, ComplexProperty prop, boolean includeSubForms) {
+        bucketService = getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
+        bucketStore = bucketService.getBucketStore();
+        super.build(propId, prop, includeSubForms);
+    }
 
     @Override
     protected Field<?> buildAndBindField(String label, String propId, Property<?> prop) {
@@ -48,6 +61,8 @@ public class SiteDiagramForm extends GenericConfigForm {
         if(propId.equals("location.lat")) {
             latField = (TextField) field;
         }
+
+
         return field;
     }
 
@@ -58,7 +73,7 @@ public class SiteDiagramForm extends GenericConfigForm {
             double[] bounds = getBoundingBoxCoordinates();
             double[] lowerLeftBound = {bounds[0], bounds[1]};
             double[] upperRightBound = {bounds[2], bounds[3]};
-            
+
             VerticalLayout layout = createSiteMapLayout(imagePath, lowerLeftBound, upperRightBound);
             super.addComponents(layout);
 
@@ -77,29 +92,39 @@ public class SiteDiagramForm extends GenericConfigForm {
         VerticalLayout layout = new VerticalLayout();
         layout.setSpacing(true);
 
-
         HorizontalLayout coordinateLayout = new HorizontalLayout();
         Label pixelCoordinatesTitle = new Label("Pixel Coordinates: ");
         Label pixelCoordinates = new Label("Click map to select location of lane");
         coordinateLayout.addComponents(pixelCoordinatesTitle, pixelCoordinates);
         layout.addComponent(coordinateLayout);
 
-
         Image siteMap = new Image();
-        File imageFile = new File(imagePath);
 
-        if (!imageFile.exists()) {
-            layout.addComponent(new Label("Image not found: " + imagePath));
+        try {
+            if(bucketService == null || bucketStore == null)
+                return null;
+
+            var resolvedImagePath = bucketStore.getResourceURI(SITE_MAP_BUCKET, imagePath);
+
+            File imageFile = new File(resolvedImagePath);
+
+            if (!imageFile.exists()) {
+                layout.addComponent(new Label("Image not found: " + imageFile.getAbsolutePath()));
+            }
+            siteMap.setSource(new FileResource(imageFile));
+            siteMap.setHeight("600px");
+            siteMap.setWidth("800px");
+
+            siteMap.addClickListener((MouseEvents.ClickListener) event -> {
+                handleMapClick(event, pixelCoordinates, lowerLeftBound, upperRightBound, siteMap);
+            });
+
+            layout.addComponent(siteMap);
+        } catch (DataStoreException e) {
+            throw new RuntimeException(e);
         }
-        siteMap.setSource(new FileResource(imageFile));
-        siteMap.setHeight("600px");
-        siteMap.setWidth("800px");
 
-        siteMap.addClickListener((MouseEvents.ClickListener) event -> {
-            handleMapClick(event, pixelCoordinates, lowerLeftBound, upperRightBound, siteMap);
-        });
 
-        layout.addComponent(siteMap);
 
         return layout;
     }
@@ -138,7 +163,6 @@ public class SiteDiagramForm extends GenericConfigForm {
                         .build())
                 .withLatestResult()
                 .build());
-
 
 
         var result = query.findFirst();
