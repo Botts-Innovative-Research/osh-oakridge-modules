@@ -25,6 +25,7 @@ import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
 import com.botts.impl.service.oscar.reports.types.*;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
+import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.command.*;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.datastore.DataStoreException;
@@ -49,7 +50,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
     public static final String LABEL = "Request Report";
     public static final String DESCRIPTION = "Control to request operations, performance, and maintenance reports";
 
-    DataComponent commandStructure;
+    DataRecord commandStructure;
     DataComponent resultStructure;
     SWEHelper fac;
 
@@ -68,6 +69,11 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                 .name(NAME)
                 .label(LABEL)
                 .description(DESCRIPTION)
+                .addField("reportType", fac.createCategory()
+                        .label("Report Type")
+                        .definition(SWEHelper.getPropertyUri("ReportType"))
+                        .description("Type of report to request")
+                        .addAllowedValues(ReportCmdType.class))
                 .addField("startDateTime", fac.createTime()
                         .definition(SWEHelper.getPropertyUri("StartDateTime"))
                         .withIso8601Format()
@@ -76,11 +82,6 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                         .definition(SWEHelper.getPropertyUri("EndDateTime"))
                         .withIso8601Format()
                         .description("End datetime (ISO 8601)"))
-                .addField("reportType", fac.createCategory()
-                        .label("Report Type")
-                        .definition(SWEHelper.getPropertyUri("ReportType"))
-                        .description("Type of report to request")
-                        .addAllowedValues(ReportCmdType.class))
                 .addField("laneUID", fac.createText()
                         .label("Lane Unique Identifier")
                         .definition(SWEHelper.getPropertyUri("LaneUID"))
@@ -116,12 +117,11 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
         return CompletableFuture.supplyAsync(() -> {
             DataBlock paramData = command.getParams();
 
-            Instant start = paramData.getTimeStamp(0);
-            Instant end = paramData.getTimeStamp(1);
-            ReportCmdType type = ReportCmdType.valueOf(paramData.getStringValue(2));
+            ReportCmdType type = ReportCmdType.valueOf(paramData.getStringValue(0));
+            Instant start = paramData.getTimeStamp(1);
+            Instant end = paramData.getTimeStamp(2);
             String laneUIDs = paramData.getStringValue(3);
             EventReportType eventType = EventReportType.valueOf(paramData.getStringValue(4));
-
 
             String resourceURI = "";
 
@@ -167,7 +167,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             report.generate();
         }
 
-        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
+        return filePath;
     }
 
     private String generateEventReport(EventReportType eventType, String laneUIDs, String formattedStart, Instant start, Instant end) throws DataStoreException {
@@ -179,8 +179,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             report = new EventReport(out, start, end, eventType, laneUIDs, module);
             report.generate();
         }
-
-        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
+        return filePath;
     }
 
     private String generateAdjudicationReport(String laneUIDs, String formattedStart, Instant start, Instant end) throws DataStoreException {
@@ -192,8 +191,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             report = new AdjudicationReport(out, start, end, laneUIDs, module);
             report.generate();
         }
-
-        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
+        return filePath;
     }
 
     private String generateRDSReport(String formattedStart, Instant start, Instant end) throws DataStoreException {
@@ -206,8 +204,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             report = new RDSReport(out, start, end, module);
             report.generate();
         }
-
-        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
+        return filePath;
     }
 
     // checks if a report file already exists in object store and only creates a new output if it doesnt exist

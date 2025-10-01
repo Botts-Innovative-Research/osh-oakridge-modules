@@ -1,26 +1,36 @@
 package com.botts.impl.service.oscar;
 
+import com.botts.api.service.bucket.IBucketService;
+import com.botts.api.service.bucket.IBucketStore;
+import com.botts.impl.service.bucket.BucketService;
+import com.botts.impl.service.bucket.BucketServiceConfig;
+import com.botts.impl.service.bucket.filesystem.FileSystemBucketStore;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
-import com.botts.impl.service.oscar.reports.helpers.ChartGenerator;
-import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
-import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
-import com.botts.impl.service.oscar.reports.helpers.Utils;
+import com.botts.impl.service.oscar.reports.helpers.*;
+import com.itextpdf.io.font.otf.GsubLookupType1;
 import com.itextpdf.io.image.ImageDataFactory;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Image;
+import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataChoice;
+import net.opengis.swe.v20.DataComponent;
 import org.jfree.data.category.DefaultCategoryDataset;
+import org.junit.Before;
 import org.junit.Test;
 import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.command.ICommandStatus;
+import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.data.IObsData;
+import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.impl.utils.rad.RADHelper;
+import org.vast.data.DataChoiceImpl;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -34,25 +44,52 @@ import java.util.function.Predicate;
 import static org.junit.Assert.*;
 
 public class ReportTests {
-    OSCARServiceModule module = new OSCARServiceModule();
-    OSCARSystem system = new OSCARSystem("nodeId");
-    RequestReportControl requestReportControl = new RequestReportControl(system, module);
+
+    OSCARServiceModule module;
+    OSCARSystem system;
+    RequestReportControl requestReportControl;
+
     public static Instant now = Instant.now();
     public static Instant begin = now.minus(365, ChronoUnit.DAYS);
     public static Instant end = now;
 
+
+    @Before
+    public void setup() throws IOException, SensorHubException {
+        BucketService testBucketService = new BucketService();
+
+        BucketServiceConfig config = new BucketServiceConfig();
+        config.fileStoreRootDir = "kalyntest";
+
+        testBucketService.setConfiguration(config);
+
+        testBucketService.doInit();
+        OSCARServiceConfig serviceConfig = new OSCARServiceConfig();
+        serviceConfig.nodeId = "test-node-id";
+
+
+        system = new OSCARSystem("test-node-id");
+        module = new OSCARServiceModule();
+        module.setConfiguration(serviceConfig);
+
+        module.bucketService = testBucketService;
+        requestReportControl = new RequestReportControl(system, module);
+        module.reportControl = requestReportControl;
+    }
+
     @Test
     public void generateLaneReport() throws Exception {
+        DataComponent commandDesc =  module.reportControl.getCommandDescription().copy();
 
-        DataChoice cmdChoice = (DataChoice) module.reportControl.getCommandDescription().copy();
+        DataBlock commandData;
+        commandData = commandDesc.createDataBlock();
+        commandData.setStringValue(0, ReportCmdType.LANE.name());
+        commandData.setTimeStamp(1, begin);
+        commandData.setTimeStamp(2, end);
+        commandData.setStringValue(3, "urn:osh:system:lane1");
+        commandData.setStringValue(4, EventReportType.ALARMS.name());
 
-        cmdChoice.assignNewDataBlock();
-        cmdChoice.setSelectedItem(ReportCmdType.LANE.name());
-        cmdChoice.getSelectedItem().getData().setTimeStamp(0, begin);
-        cmdChoice.getSelectedItem().getData().setTimeStamp(1, end);
-        cmdChoice.getSelectedItem().getData().setStringValue(2, "urn:osh:system:lane1");
-
-        var res = requestReportControl.submitCommand(new CommandData(1, cmdChoice.getData())).get();
+        var res = requestReportControl.submitCommand(new CommandData(1, commandData)).get();
 
         assertEquals(res.getStatusCode(), ICommandStatus.CommandStatusCode.ACCEPTED);
         assertNotNull(res.getResult());
@@ -62,23 +99,25 @@ public class ReportTests {
         String resPath = results.get(0).getResult().getStringValue();
         assertNotNull(resPath);
 
-
         var stream = module.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
 
-        String contents = stream.toString();;
+        String contents = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
         assertNotNull(contents);
     }
 
     @Test
     public void generateSiteReport() throws Exception {
-        DataChoice cmdChoice = (DataChoice) module.reportControl.getCommandDescription().copy();
+        DataComponent commandDesc =  module.reportControl.getCommandDescription().copy();
 
-        cmdChoice.assignNewDataBlock();
-        cmdChoice.setSelectedItem(ReportCmdType.RDS_SITE.name());
-        cmdChoice.getSelectedItem().getData().setTimeStamp(0,Instant.now());
-        cmdChoice.getSelectedItem().getData().setTimeStamp(1, Instant.now());
+        DataBlock commandData;
+        commandData = commandDesc.createDataBlock();
+        commandData.setStringValue(0, ReportCmdType.RDS_SITE.name());
+        commandData.setTimeStamp(1, begin);
+        commandData.setTimeStamp(2, end);
+        commandData.setStringValue(3, "urn:osh:system:lane1");
+        commandData.setStringValue(4, EventReportType.ALARMS.name());
 
-        var res = requestReportControl.submitCommand(new CommandData(2, cmdChoice.getData())).get();
+        var res = requestReportControl.submitCommand(new CommandData(1, commandData)).get();
 
         assertEquals(res.getStatusCode(), ICommandStatus.CommandStatusCode.ACCEPTED);
         assertNotNull(res.getResult());
@@ -88,23 +127,26 @@ public class ReportTests {
         String resPath = results.get(0).getResult().getStringValue();
         assertNotNull(resPath);
 
-        // check if file exists
         var stream = module.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
 
-        String contents = stream.toString();;
-        assertNotNull(contents);    }
+        String contents = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        assertNotNull(contents);
+    }
 
 
     @Test
     public void generateAdjudicationReport() throws Exception {
-        DataChoice cmdChoice = (DataChoice) module.reportControl.getCommandDescription().copy();
+        DataComponent commandDesc =  module.reportControl.getCommandDescription().copy();
 
-        cmdChoice.assignNewDataBlock();
-        cmdChoice.setSelectedItem(ReportCmdType.ADJUDICATION.name());
-        cmdChoice.getSelectedItem().getData().setTimeStamp(0,Instant.now());
-        cmdChoice.getSelectedItem().getData().setTimeStamp(1, Instant.now());
+        DataBlock commandData;
+        commandData = commandDesc.createDataBlock();
+        commandData.setStringValue(0, ReportCmdType.ADJUDICATION.name());
+        commandData.setTimeStamp(1, begin);
+        commandData.setTimeStamp(2, end);
+        commandData.setStringValue(3, "urn:osh:system:lane1");
+        commandData.setStringValue(4, EventReportType.ALARMS.name());
 
-        var res = requestReportControl.submitCommand(new CommandData(3, cmdChoice.getData())).get();
+        var res = requestReportControl.submitCommand(new CommandData(1, commandData)).get();
 
         assertEquals(res.getStatusCode(), ICommandStatus.CommandStatusCode.ACCEPTED);
         assertNotNull(res.getResult());
@@ -114,22 +156,25 @@ public class ReportTests {
         String resPath = results.get(0).getResult().getStringValue();
         assertNotNull(resPath);
 
-        // check if file exists
         var stream = module.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
 
-        String contents = stream.toString();;
-        assertNotNull(contents);    }
+        String contents = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        assertNotNull(contents);
+    }
 
     @Test
     public void generateEventReport() throws Exception {
-        DataChoice cmdChoice = (DataChoice) module.reportControl.getCommandDescription().copy();
+        DataComponent commandDesc =  module.reportControl.getCommandDescription().copy();
 
-        cmdChoice.assignNewDataBlock();
-        cmdChoice.setSelectedItem(ReportCmdType.EVENT.name());
-        cmdChoice.getSelectedItem().getData().setTimeStamp(0,Instant.now());
-        cmdChoice.getSelectedItem().getData().setTimeStamp(1, Instant.now());
+        DataBlock commandData;
+        commandData = commandDesc.createDataBlock();
+        commandData.setStringValue(0, ReportCmdType.EVENT.name());
+        commandData.setTimeStamp(1, begin);
+        commandData.setTimeStamp(2, end);
+        commandData.setStringValue(3, "urn:osh:system:lane1");
+        commandData.setStringValue(4, EventReportType.ALARMS_OCCUPANCIES.name());
 
-        var res = requestReportControl.submitCommand(new CommandData(4, cmdChoice.getData())).get();
+        var res = requestReportControl.submitCommand(new CommandData(1, commandData)).get();
 
         assertEquals(res.getStatusCode(), ICommandStatus.CommandStatusCode.ACCEPTED);
         assertNotNull(res.getResult());
@@ -139,10 +184,9 @@ public class ReportTests {
         String resPath = results.get(0).getResult().getStringValue();
         assertNotNull(resPath);
 
-        // check if file exists
         var stream = module.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
 
-        String contents = stream.toString();;
+        String contents = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
         assertNotNull(contents);
     }
 

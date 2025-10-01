@@ -66,13 +66,11 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
             }
         }
 
-
         system.updateSensorDescription();
         getParentHub().getSystemDriverRegistry().register(system);
 
         var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
         getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
-
     }
 
     public void createOutputs(){
@@ -84,8 +82,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public void createControls(){
-
-
         reportControl = new RequestReportControl(system, this);
         system.addControlInput(reportControl);
 
@@ -96,9 +92,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     @Override
     protected void doStart() throws SensorHubException {
         super.doStart();
-
-
-
     }
 
     public SitemapDiagramHandler getSitemapDiagramHandler() {
