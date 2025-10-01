@@ -15,6 +15,13 @@ import java.io.StringReader;
 
 public class RADHelper extends GeoPosHelper {
 
+    public static final String DEF_GAMMA = getRadUri("gamma-gross-count");
+    public static final String DEF_NEUTRON = getRadUri("neutron-gross-count");
+    public static final String DEF_OCCUPANCY = getRadUri("pillar-occupancy-count");
+    public static final String DEF_ALARM = getRadUri("alarm");
+    public static final String DEF_TAMPER = getRadUri("tamper-status");
+    public static final String DEF_THRESHOLD = getRadUri("threshold");
+    public static final String DEF_ADJUDICATION = getRadUri("adjudicationCode");
 
     public static String getRadUri(String propName) {
         return RADConstants.RAD_URI + propName;
