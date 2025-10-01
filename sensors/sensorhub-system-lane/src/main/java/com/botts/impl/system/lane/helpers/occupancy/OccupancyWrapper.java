@@ -55,8 +55,6 @@ public class OccupancyWrapper {
     List<String> fileNames = new ArrayList<>();
     private long cmdId = 0;
 
-    public String videoNamePrefix = "";
-
     public OccupancyWrapper(ISensorHub hub) {
         this.hub = hub;
     }
@@ -148,7 +146,7 @@ public class OccupancyWrapper {
                     if (!item.hasData()) {
                         item.renewDataBlock();
                     }
-                    String fileName = videoNamePrefix + "cam" + i + "_" + System.currentTimeMillis() + ".mp4";
+                    String fileName = System.currentTimeMillis() + ".mp4";
                     item.getData().setStringValue(fileName); // TODO Make sure this file name works, maybe add which alarm triggered
                     fileNames.add(fileName);
                     commandInterface.submitCommand(new CommandData(++cmdId, command.getData()));

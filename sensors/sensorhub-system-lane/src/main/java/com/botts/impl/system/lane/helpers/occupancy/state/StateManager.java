@@ -3,6 +3,7 @@ package com.botts.impl.system.lane.helpers.occupancy.state;
 import net.opengis.swe.v20.DataComponent;
 
 import java.util.*;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BooleanSupplier;
 
 public abstract class StateManager {
@@ -26,6 +27,7 @@ public abstract class StateManager {
     public static final int DURING_STATE = 1;
     public static final int FROM_STATE = 2;
 
+    final ReentrantLock lock = new ReentrantLock(true);
     DataComponent dailyFile;
     State currentState;
     List<IStateListener> listeners = new ArrayList<IStateListener>();
@@ -64,9 +66,14 @@ public abstract class StateManager {
     }
 
     public void updateDailyFile(DataComponent dailyFile) {
-        this.dailyFile = dailyFile;
-        parseDailyFile();
-        stateActionMap.get(currentState)[DURING_STATE].run();
+        lock.lock();
+        try {
+            this.dailyFile = dailyFile;
+            parseDailyFile();
+            stateActionMap.get(currentState)[DURING_STATE].run();
+        } finally {
+            lock.unlock();
+        }
     }
 
     protected abstract void parseDailyFile();

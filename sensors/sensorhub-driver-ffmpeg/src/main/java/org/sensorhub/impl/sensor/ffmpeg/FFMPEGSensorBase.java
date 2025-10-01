@@ -9,7 +9,8 @@ import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.ffmpeg.common.SyncTime;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.ffmpeg.controls.FileControl;
-import org.sensorhub.impl.sensor.ffmpeg.outputs.MP4Output;
+import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
+import org.sensorhub.impl.sensor.ffmpeg.outputs.HLSOutput;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.Video;
 import org.sensorhub.mpegts.MpegTsProcessor;
 import org.slf4j.Logger;
@@ -48,7 +49,9 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
      */
     protected Video<FFMPEGconfigType> videoOutput;
 
-    protected FileControl fileControl;
+    protected FileControl<FFMPEGconfigType> fileControl;
+
+    protected HLSOutput<FFMPEGconfigType> hlsOutput;
 
     /**
      * Keeps track of the times in the data stream so that we can put an accurate phenomenon time in the data blocks.
@@ -96,6 +99,8 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         // We also have to clear out the video output since its settings may have changed (based on having a new input
         // video, for example).
         videoOutput = null;
+        fileControl = null;
+        hlsOutput = null;
 
         // The non-on-demand subclass will override this method to also open up the stream to get video frame size.
 
@@ -176,10 +181,16 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         }
     }
 
+    protected void createHLSOutput() {
+        hlsOutput = new HLSOutput<>(this, config.fileConfig.hlsDirectory);
+        addOutput(hlsOutput, false);
+        mpegTsProcessor.addVideoDataBufferListener(hlsOutput);
+    }
+
     protected void createFileControl() {
-        fileControl = new FileControl<FFMPEGconfigType>(this);
+        fileControl = new FileControl<>(this, config.fileConfig.videoClipDirectory);
         addControlInput(fileControl);
-        mpegTsProcessor.addVideoDataBufferListener(new MP4Output());
+        mpegTsProcessor.addVideoDataBufferListener(new FileOutput());
         try {
             fileControl.init();
         } catch (Exception e) {
@@ -233,8 +244,12 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	            	if (videoOutput == null) {
 	            		int[] videoDimensions = mpegTsProcessor.getVideoStreamFrameDimensions();
 	            		String codecFormat = mpegTsProcessor.getCodecName();
-	            		createVideoOutput(videoDimensions, codecFormat);
+	            		//createVideoOutput(videoDimensions, codecFormat);
+                        createVideoOutput(videoDimensions, "h264");
 	            	}
+                    if (config.connection.useHLS) {
+                        createHLSOutput();
+                    }
                     createFileControl();
 	                // Set video stream packet listener to video output
 	                mpegTsProcessor.addVideoDataBufferListener(videoOutput);

@@ -18,27 +18,26 @@ import org.bytedeco.ffmpeg.avcodec.AVCodecContext;
 import org.bytedeco.ffmpeg.avcodec.AVCodecParameters;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avformat.AVFormatContext;
-import org.bytedeco.ffmpeg.avformat.AVIOContext;
-import org.bytedeco.ffmpeg.avformat.AVStream;
 import org.bytedeco.ffmpeg.avutil.AVDictionary;
 import org.bytedeco.ffmpeg.avutil.AVRational;
 import org.bytedeco.ffmpeg.global.avcodec;
 import org.bytedeco.ffmpeg.global.avformat;
 import org.bytedeco.ffmpeg.global.avutil;
-import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.PointerPointer;
-import org.sensorhub.impl.sensor.ffmpeg.outputs.MP4Output;
+import org.sensorhub.impl.process.video.transcoder.coders.Coder;
+import org.sensorhub.impl.process.video.transcoder.coders.Decoder;
+import org.sensorhub.impl.process.video.transcoder.coders.Encoder;
+import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
+import org.sensorhub.impl.sensor.ffmpeg.outputs.HLSOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.bytedeco.ffmpeg.global.avcodec.*;
 import static org.bytedeco.ffmpeg.global.avformat.*;
-import static org.bytedeco.ffmpeg.global.avutil.*;
+import static org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_YUVJ420P;
 
 /**
  * The class provides a wrapper to bytedeco.org JavaCpp-Platform.
@@ -189,6 +188,13 @@ public class MpegTsProcessor extends Thread {
 
     private boolean useTCP;
 
+    private Decoder decoder;
+
+    private Encoder encoder;
+
+    private boolean doTranscode = false;
+
+    private final Queue<AVPacket> decodeQueue = new ArrayDeque<>();
 
 
     /**
@@ -222,7 +228,7 @@ public class MpegTsProcessor extends Thread {
     }
 
     public void openFile(String outputFile) throws IOException {
-        List<MP4Output> fileOutputList = getVideoDataBufferListenersByType(MP4Output.class);
+        List<FileOutput> fileOutputList = getVideoDataBufferListenersByType(FileOutput.class);
         for (var fileOutput : fileOutputList) {
             fileOutput.openFile(outputFile, this.avFormatContext, this.videoStreamId);
         }
@@ -320,7 +326,7 @@ public class MpegTsProcessor extends Thread {
      */
 
     public void closeFile() throws IOException {
-        List<MP4Output> fileOutputList = getVideoDataBufferListenersByType(MP4Output.class);
+        List<FileOutput> fileOutputList = getVideoDataBufferListenersByType(FileOutput.class);
         for (var fileOutput : fileOutputList) {
             fileOutput.closeFile();
         }
@@ -440,6 +446,9 @@ public class MpegTsProcessor extends Thread {
                 spsPpsHeader = new byte[extraSize];
                 avFormatContext.streams(streamId).codecpar().extradata().get(spsPpsHeader);
             }
+
+            // Transcode if not h264
+            doTranscode = avFormatContext.streams(streamId).codecpar().codec_id() != avcodec.AV_CODEC_ID_H264;
 
 
 //            if (INVALID_STREAM_ID == dataStreamId && avutil.AVMEDIA_TYPE_DATA == codecType) {
@@ -643,9 +652,30 @@ public class MpegTsProcessor extends Thread {
         logger.debug("processStream");
 
         if (streamOpened) {
-
+            avutil.av_log_set_level(avutil.AV_LOG_DEBUG);
             // Allocate the codec contexts and attempt to open them
             openCodecContext();
+            for (var hls : getVideoDataBufferListenersByType(HLSOutput.class)) {
+                try {
+                    hls.initStream(avFormatContext, videoStreamId);
+                } catch (Exception e) {
+                    logger.error("Could not initialize HLS stream.", e);
+                }
+            }
+
+            if (doTranscode) {
+                var settings = new HashMap<String, Integer>();
+                var dims = getVideoStreamFrameDimensions();
+                settings.put("width", dims[0]);
+                settings.put("height", dims[1]);
+                settings.put("pix_fmt", avutil.AV_PIX_FMT_YUV420P);
+                decoder = new Decoder(getCodecId(), settings);
+                encoder = new Encoder(avcodec.AV_CODEC_ID_H264, settings);
+                decoder.setInQueue(decodeQueue);
+                encoder.setInQueue(decoder.getOutQueue());
+                decoder.start();
+                encoder.start();
+            }
 
             start();
 
@@ -670,6 +700,27 @@ public class MpegTsProcessor extends Thread {
             }
         }
         while (loop);
+
+        if (encoder != null) {
+            encoder.doRun.set(false);
+            try {
+                encoder.join();
+            } catch (Exception ignored) {}
+        }
+        if (decoder != null) {
+            decoder.doRun.set(false);
+            try {
+                decoder.join();
+            } catch (Exception ignored) {}
+        }
+
+        for (var hls : getVideoDataBufferListenersByType(HLSOutput.class)) {
+            try {
+                hls.stopStream();
+            } catch (Exception e) {
+                logger.error("Could not stop HLS stream.", e);
+            }
+        }
     }
 
     /**
@@ -693,11 +744,6 @@ public class MpegTsProcessor extends Thread {
                 // If it is a video or data frame and there is a listener registered
                 if ((avPacket.stream_index() == videoStreamId) && (!videoDataBufferListeners.isEmpty())) {
 
-                    // Process video packet
-                    byte[] dataBuffer = new byte[avPacket.size()];
-                    avPacket.data().get(dataBuffer);
-                    boolean isKeyFrame = (avPacket.flags() & avcodec.AV_PKT_FLAG_KEY) != 0;
-
                     // if FPS is set, we may have to wait a little
                     if (fps > 0) {
                         var now = System.currentTimeMillis();
@@ -711,6 +757,22 @@ public class MpegTsProcessor extends Thread {
                             }
                         }
                     }
+
+                    if (doTranscode) {
+                        decodeQueue.add(avcodec.av_packet_clone(avPacket));
+                        var outQueue = encoder.getOutQueue();
+
+                        if (outQueue.isEmpty())
+                            continue;
+                        else
+                            avPacket = outQueue.poll();
+                    }
+
+                    boolean isKeyFrame = (avPacket.flags() & avcodec.AV_PKT_FLAG_KEY) != 0;
+
+                    // Process video packet
+                    byte[] dataBuffer = new byte[avPacket.size()];
+                    avPacket.data().get(dataBuffer);
 
                     // Pass data buffer to interested listeners
                     frameCount++;
