@@ -9,23 +9,28 @@ import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Image;
 import com.itextpdf.layout.element.Paragraph;
 import org.jfree.data.category.DefaultCategoryDataset;
+import org.sensorhub.api.data.IObsData;
 import org.sensorhub.impl.utils.rad.RADHelper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.function.Predicate;
 
 public class EventReport extends Report {
+    private static final Logger log = LoggerFactory.getLogger(EventReport.class);
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
+
+    String reportTitle = "Event Report";
 
     Document document;
     PdfDocument pdfDocument;
+    String pdfFileName;
 
     OSCARServiceModule module;
     TableGenerator tableGenerator;
@@ -35,7 +40,6 @@ public class EventReport extends Report {
     EventReportType eventType;
     Instant start;
     Instant end;
-    String[] observedProperties = new String[]{RADHelper.DEF_OCCUPANCY};
 
     public EventReport(OutputStream outputStream, Instant startTime, Instant endTime, EventReportType eventType, String laneUID, OSCARServiceModule module) {
         pdfDocument = new PdfDocument(new PdfWriter(outputStream));
@@ -47,7 +51,7 @@ public class EventReport extends Report {
         this.start = startTime;
         this.end = endTime;
         this.tableGenerator = new TableGenerator();
-        this.chartGenerator = new ChartGenerator(module);
+        this.chartGenerator = new ChartGenerator();
     }
 
     @Override
@@ -64,24 +68,33 @@ public class EventReport extends Report {
             addFaultStatisticsByDay();
 
         document.close();
+        pdfDocument.close();
         chartGenerator = null;
         tableGenerator = null;
     }
 
     private void addHeader(){
+        document.add(new Paragraph(reportTitle).setFontSize(16).simulateBold());
         document.add(new Paragraph("Event Report").setFontSize(16).simulateBold());
         document.add(new Paragraph("Event Type:" + eventType).setFontSize(12));
-        document.add(new Paragraph("Lane UIDs:" + laneUID).setFontSize(12));
+        document.add(new Paragraph("Lane ID:" + laneUID).setFontSize(12));
         document.add(new Paragraph("\n"));
     }
 
     private void addAlarmStatisticsByDay(){
         document.add(new Paragraph("Alarm Statistics").setFontSize(12));
 
-        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaPredicate, start, end);
-        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(observedProperties, module, Utils.neutronPredicate, start, end);
-        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaNeutronPredicate, start, end);
-//        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(observedProperties, module, Utils.emlAlarmPredicate, start, end);
+        String[] observedProperties = new String[]{RADHelper.DEF_OCCUPANCY};
+
+        Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> emlSuppressedPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+
+        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(observedProperties, module, gammaPredicate, start, end);
+        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(observedProperties, module, neutronPredicate, start, end);
+        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(observedProperties, module, gammaNeutronPredicate, start, end);
+        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(observedProperties, module, emlSuppressedPredicate, start, end);
 
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
@@ -98,9 +111,10 @@ public class EventReport extends Report {
             dataset.addValue(entry.getValue(), "Neutron",  formatter.format(entry.getKey()));
         }
 
-//        for(Map.Entry<Instant, Long> entry : emlSuppressedDaily.entrySet()){
-//            dataset.addValue(entry.getValue(), "EML-Suppressed",  formatter.format(entry.getKey()));
-//        }
+        for(Map.Entry<Instant, Long> entry : emlSuppressedDaily.entrySet()){
+            dataset.addValue(entry.getValue(), "EML-Suppressed",  formatter.format(entry.getKey()));
+        }
+
 
         String title = "Alarms";
         String xAxis = "Dates";
@@ -108,29 +122,23 @@ public class EventReport extends Report {
         String outFileName = "alarm_chart.png";
 
         try{
-            var chart = chartGenerator.createStackedBarChart(
+            String chartPath = chartGenerator.createStackedBarChart(
                     title,
                     xAxis,
-                    yAxis,
-                    dataset
+                    yAxis, dataset,
+                    outFileName
             );
 
-            if(chart == null){
+            if(chartPath == null){
                 document.add(new Paragraph("Alarm Chart failed to create"));
                 return;
             }
 
-            BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
-            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-            ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
-
-            byte[] imageBytes = byteArrayOutputStream.toByteArray();
-            Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
-
+            Image image = new Image(ImageDataFactory.create(chartPath)).setAutoScale(true);
             document.add(image);
 
         } catch (IOException e) {
-            module.getLogger().error("Error creating Alarm chart", e);
+            log.error(e.getMessage(), e);
             return;
         }
 
@@ -139,13 +147,23 @@ public class EventReport extends Report {
 
     private void addFaultStatisticsByDay(){
 
-        Map<Instant, Long> gammaHighDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaHighPredicate, start, end);
-        Map<Instant, Long> gammaLowDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaLowPredicate, start, end);
-        Map<Instant, Long> neutronHighDaily = Utils.countObservationsByDay(observedProperties, module, Utils.neutronHighPredicate, start, end);
-        Map<Instant, Long> extendedOccupancyDaily = Utils.countObservationsByDay(observedProperties, module, Utils.extendedOccPredicate, start, end);
-        Map<Instant, Long> tamperDaily = Utils.countObservationsByDay(observedProperties, module, Utils.tamperPredicate, start, end);
-        Map<Instant, Long> commDaily = Utils.countObservationsByDay(observedProperties, module, Utils.commsPredicate, start, end);
-        Map<Instant, Long> cameraDaily = Utils.countObservationsByDay(observedProperties, module, Utils.cameraPredicate, start, end);
+        String[] observedProperties = new String[]{RADHelper.DEF_OCCUPANCY};
+
+        Predicate<IObsData> gammaHighPredicate = (obsData) -> true;
+        Predicate<IObsData> gammaLowPredicate = (obsData) -> true;
+        Predicate<IObsData> neutronHighPredicate = (obsData) -> true;
+        Predicate<IObsData> extendedOccupancyPredicate = (obsData) -> true;
+        Predicate<IObsData> tamperPredicate = (obsData) -> true;
+        Predicate<IObsData> commPredicate = (obsData) -> true;
+        Predicate<IObsData> cameraPredicate = (obsData) -> true;
+
+        Map<Instant, Long> gammaHighDaily = Utils.countObservationsByDay(observedProperties, module, gammaHighPredicate, start, end);
+        Map<Instant, Long> gammaLowDaily = Utils.countObservationsByDay(observedProperties, module, gammaLowPredicate, start, end);
+        Map<Instant, Long> neutronHighDaily = Utils.countObservationsByDay(observedProperties, module, neutronHighPredicate, start, end);
+        Map<Instant, Long> extendedOccupancyDaily = Utils.countObservationsByDay(observedProperties, module, extendedOccupancyPredicate, start, end);
+        Map<Instant, Long> tamperDaily = Utils.countObservationsByDay(observedProperties, module, tamperPredicate, start, end);
+        Map<Instant, Long> commDaily = Utils.countObservationsByDay(observedProperties, module, commPredicate, start, end);
+        Map<Instant, Long> cameraDaily = Utils.countObservationsByDay(observedProperties, module, cameraPredicate, start, end);
 
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
@@ -180,32 +198,27 @@ public class EventReport extends Report {
         String title = "SOH";
         String xAxis = "Date";
         String yAxis = "Count";
+        String outFileName = "soh_chart.png";
 
         try{
-            var chart = chartGenerator.createStackedBarChart(
+            String chartPath = chartGenerator.createStackedBarChart(
                     title,
                     xAxis,
                     yAxis,
-                    dataset
+                    dataset,
+                    outFileName
             );
 
-            if(chart == null){
+            if(chartPath == null){
                 document.add(new Paragraph("SOH Chart failed to create"));
                 return;
             }
 
-
-            BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
-            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-            ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
-
-            byte[] imageBytes = byteArrayOutputStream.toByteArray();
-            Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
-
+            Image image = new Image(ImageDataFactory.create(chartPath)).setAutoScale(true);
             document.add(image);
 
         } catch (IOException e) {
-            module.getLogger().error("Error creating SOH chart", e);
+            log.error(e.getMessage(), e);
             return;
         }
 
@@ -214,11 +227,19 @@ public class EventReport extends Report {
 
     private void addAlarmOccStatisticsByDay(){
 
-        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaPredicate, start, end);
-        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(observedProperties, module, Utils.neutronPredicate, start, end);
-        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaNeutronPredicate, start, end);
-        Map<Instant, Long> totalOccupancyDaily = Utils.countObservationsByDay(observedProperties, module, Utils.occupancyTotalPredicate, start, end);
-//        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(observedProperties, module, Utils.emlSuppressedPredicate, start, end);
+        String[] observedProperties = new String[]{RADHelper.DEF_OCCUPANCY};
+
+        Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> emlSuppressedPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+        Predicate<IObsData> occupancyTotalPredicate = (obsData) -> true;
+
+        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(observedProperties, module, gammaPredicate, start, end);
+        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(observedProperties, module, neutronPredicate, start, end);
+        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(observedProperties, module, gammaNeutronPredicate, start, end);
+        Map<Instant, Long> totalOccupancyDaily = Utils.countObservationsByDay(observedProperties, module, occupancyTotalPredicate, start, end);
+        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(observedProperties, module, emlSuppressedPredicate, start, end);
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
@@ -234,11 +255,11 @@ public class EventReport extends Report {
             dataset.addValue(entry.getValue(), "Neutron",  formatter.format(entry.getKey()));
         }
 
-//        for(Map.Entry<Instant, Long> entry : emlSuppressedDaily.entrySet()){
-//            dataset.addValue(entry.getValue(), "EML-Suppressed",  formatter.format(entry.getKey()));
-//        }
+        for(Map.Entry<Instant, Long> entry : emlSuppressedDaily.entrySet()){
+            dataset.addValue(entry.getValue(), "EML-Suppressed",  formatter.format(entry.getKey()));
+        }
 
-        // this will be a linegraph on top of the bar chart
+        // this will be a linagraph on top of the bar chart
         DefaultCategoryDataset occDataset = new DefaultCategoryDataset();
 
         for(Map.Entry<Instant, Long> entry : totalOccupancyDaily.entrySet()){
@@ -248,34 +269,28 @@ public class EventReport extends Report {
         String title = "Alarms and Occupancies";
         String xAxis = "Date";
         String yAxis = "Count";
+        String outFileName = "alarm_occupancy_chart.png";
 
         try{
-            var chart = chartGenerator.createStackedBarLineOverlayChart(
+            String chartPath = chartGenerator.createStackedBarLineOverlayChart(
                     title,
                     xAxis,
                     yAxis,
                     dataset,
-                    occDataset
+                    occDataset,
+                    outFileName
             );
 
-            if(chart == null){
+            if(chartPath == null){
                 document.add(new Paragraph("Alarm-Occupancy Chart failed to create"));
-                module.getLogger().error("Chart failed to create");
                 return;
             }
 
-
-            BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
-            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-            ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
-
-            byte[] imageBytes = byteArrayOutputStream.toByteArray();
-            Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
-
+            Image image = new Image(ImageDataFactory.create(chartPath)).setAutoScale(true);
             document.add(image);
 
         } catch (IOException e) {
-            module.getLogger().error("Error creating Alarm-Occupancy chart", e);
+            log.error(e.getMessage(), e);
             return;
         }
 

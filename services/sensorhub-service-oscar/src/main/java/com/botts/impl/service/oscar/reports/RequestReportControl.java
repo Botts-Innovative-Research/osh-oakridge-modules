@@ -16,6 +16,7 @@
 package com.botts.impl.service.oscar.reports;
 
 import com.botts.api.service.bucket.IBucketService;
+import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.service.oscar.Constants;
 import com.botts.impl.service.oscar.OSCARServiceModule;
 import com.botts.impl.service.oscar.OSCARSystem;
@@ -26,9 +27,13 @@ import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.command.*;
+import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.command.AbstractControlInterface;
 import org.vast.swe.SWEHelper;
+import org.vast.util.TimeExtent;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -37,6 +42,7 @@ import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 
 import static com.botts.impl.service.oscar.Constants.REPORT_BUCKET;
+import static com.botts.impl.service.oscar.Constants.SITE_MAP_BUCKET;
 
 public class RequestReportControl extends AbstractControlInterface<OSCARSystem> implements IStreamingControlInterfaceWithResult {
 
@@ -88,16 +94,16 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                 .build();
 
         resultStructure = fac.createRecord().name("result")
-                .addField("reportPath", fac.createText())
+                .addField("reportUrl", fac.createText())
                 .build();
 
 
         try {
-            if (!bucketService.getBucketStore().bucketExists(REPORT_BUCKET))
-                bucketService.getBucketStore().createBucket(REPORT_BUCKET);
+            if (!bucketService.getBucketStore().bucketExists(Constants.REPORT_BUCKET))
+                bucketService.getBucketStore().createBucket(Constants.REPORT_BUCKET);
 
         } catch (DataStoreException e) {
-            module.getLogger().error("Bucket already exists.", e);
+            throw new RuntimeException(e);
         }
     }
 
@@ -132,7 +138,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                 else if (type.equals(ReportCmdType.RDS_SITE))
                     resourceURI = generateRDSReport(formattedStart, start, end);
             } catch (DataStoreException e) {
-                module.getLogger().error("Failed to generate reports for " + type, e);
+                throw new RuntimeException(e);
             }
 
             DataBlock resultData = resultStructure.createDataBlock();
@@ -153,7 +159,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
     }
 
     private String generateLaneReport(String laneUIDs, String formattedStart, Instant start, Instant end) throws DataStoreException {
-        String filePath = (module.getOSCARSystem().getNodeId() + "_" + ReportCmdType.LANE + "_" + laneUIDs + "_" + formattedStart + ".pdf").toLowerCase();
+        String filePath = ReportCmdType.LANE + "_" + laneUIDs + "_" + formattedStart + ".pdf";
 
         OutputStream out = checkBucketForOutputStream(filePath);
         if (out != null){
@@ -161,24 +167,23 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             report.generate();
         }
 
-        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
+        return filePath;
     }
 
     private String generateEventReport(EventReportType eventType, String laneUIDs, String formattedStart, Instant start, Instant end) throws DataStoreException {
-        String filePath = (module.getOSCARSystem().getNodeId() + "_" + ReportCmdType.EVENT + "_" + eventType + "_" + laneUIDs + "_" + formattedStart + ".pdf").toLowerCase();
+        String filePath = ReportCmdType.EVENT + "_" + eventType + "_" + laneUIDs + "_" + formattedStart + ".pdf";
 
         OutputStream out = checkBucketForOutputStream(filePath);
 
-        if (out != null) {
+        if (out != null){
             report = new EventReport(out, start, end, eventType, laneUIDs, module);
             report.generate();
         }
-
-        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
+        return filePath;
     }
 
     private String generateAdjudicationReport(String laneUIDs, String formattedStart, Instant start, Instant end) throws DataStoreException {
-        String filePath = (module.getOSCARSystem().getNodeId() + "_" + ReportCmdType.ADJUDICATION + "_" + laneUIDs + "_" + formattedStart + ".pdf").toLowerCase();
+        String filePath = ReportCmdType.ADJUDICATION + "_" + laneUIDs + "_" + formattedStart + ".pdf";
 
         OutputStream out = checkBucketForOutputStream(filePath);
 
@@ -186,11 +191,11 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             report = new AdjudicationReport(out, start, end, laneUIDs, module);
             report.generate();
         }
-        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
+        return filePath;
     }
 
     private String generateRDSReport(String formattedStart, Instant start, Instant end) throws DataStoreException {
-        String filePath = (module.getOSCARSystem().getNodeId() + "_" + ReportCmdType.RDS_SITE + "_" + formattedStart + ".pdf").toLowerCase();
+        String filePath = ReportCmdType.RDS_SITE + "_" + formattedStart + ".pdf";
 
         OutputStream out = checkBucketForOutputStream(filePath);
 
@@ -199,7 +204,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             report = new RDSReport(out, start, end, module);
             report.generate();
         }
-        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
+        return filePath;
     }
 
     // checks if a report file already exists in object store and only creates a new output if it doesnt exist
