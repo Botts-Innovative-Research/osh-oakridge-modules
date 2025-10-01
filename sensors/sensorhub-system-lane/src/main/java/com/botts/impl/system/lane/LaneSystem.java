@@ -66,6 +66,11 @@ public class LaneSystem extends SensorSystem {
     private static final String URN_PREFIX = "urn:";
     private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
+    private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
+    private static final String VIDEO_CLIPS_DIRECTORY = "./web/video/clips/";
+    private String videoClipsPath = "";
+    private static final String VIDEO_STREAMING_DIRECTORY = "./web/video/streaming/";
+    private String videoStreamingPath = "";
     private static final String BASE_VIDEO_DIRECTORY = "./web/video/";
 
     AbstractSensorModule<?> existingRPMModule = null;
@@ -118,7 +123,7 @@ public class LaneSystem extends SensorSystem {
             }
             if (existingRPMModule != null) {
                 occupancyWrapper = new OccupancyWrapper(getParentHub(), existingRPMModule);
-                occupancyWrapper.videoNamePrefix = BASE_VIDEO_DIRECTORY + "lane"  + "/";
+                //occupancyWrapper.videoNamePrefix = BASE_VIDEO_DIRECTORY + "lane" + getConfiguration().groupID + "/";
             }
             // Initial FFmpeg config
             var ffmpegConfigList = getConfiguration().laneOptionsConfig.ffmpegConfig;
@@ -471,6 +476,9 @@ public class LaneSystem extends SensorSystem {
         config.moduleClass = FFMPEGSensor.class.getCanonicalName();
         config.connectionConfig.connectTimeout = 5000;
         config.connectionConfig.reconnectAttempts = 10;
+        config.connection.useHLS = true;
+        config.fileConfig.hlsDirectory = videoStreamingPath;
+        config.fileConfig.videoClipDirectory = videoClipsPath;
         return config;
     }
 

@@ -11,6 +11,7 @@ import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensor;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
+import org.sensorhub.impl.service.HttpServer;
 import org.vast.swe.SWEHelper;
 
 import java.io.File;
@@ -27,9 +28,13 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
     public static final String FILE_IO = "fileIO";
     DataRecord commandData;
     String fileName = "";
+    String directory = "";
 
 
-    public FileControl(FFMPEGSensorBase<FFmpegConfigType> sensor) { super(SENSOR_CONTROL_NAME, sensor); }
+    public FileControl(FFMPEGSensorBase<FFmpegConfigType> sensor, String directory) {
+        super(SENSOR_CONTROL_NAME, sensor);
+        this.directory = directory;
+    }
 
     public void init() {
         SWEHelper fac = new SWEHelper();
@@ -64,12 +69,20 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
         commandData.setData(cmdData);
         var selected = ((DataChoice)commandData.getComponent(0)).getSelectedItem();
         if (selected == null)
-            return true;
+            return false;
 
         if (selected.getName().equals(CMD_OPEN_FILE)) {
             if (!fileName.isEmpty())
-                return true;
-            fileName = selected.getData().getStringValue();
+                return false;
+
+            fileName = directory
+                    + parentSensor.getUniqueIdentifier().replace(':', '-')
+                    + "/" + selected.getData().getStringValue();
+
+            if (!fileName.contains(".")) {
+                fileName += ".mp4";
+            }
+            /*
             if (fileName.contains("/")) {
                 try {
                     Files.createDirectories(Paths.get(fileName.substring(0, fileName.lastIndexOf("/") + 1)));
@@ -78,8 +91,23 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                 }
             }
 
+             */
+
+            String path = fileName;
+            if (fileName.contains("/")) {
+                if (fileName.contains("http:")) { // assuming we're writing to this osh node
+                    var url = parent.getParentHub().getModuleRegistry().getModuleByType(HttpServer.class).getServletsBaseUrl();
+                    path = fileName.replace(url, "./");
+                }
+                try {
+                    Files.createDirectories(Paths.get(path.substring(0, path.lastIndexOf("/") + 1)));
+                } catch (IOException e) {
+                    throw new CommandException(e.getMessage());
+                }
+            }
+
             try {
-                this.parentSensor.getProcessor().openFile(fileName);
+                this.parentSensor.getProcessor().openFile(path);
                 this.parentSensor.reportStatus("Writing to file: " + fileName);
             } catch (Exception e) {
                 commandStatus = false;

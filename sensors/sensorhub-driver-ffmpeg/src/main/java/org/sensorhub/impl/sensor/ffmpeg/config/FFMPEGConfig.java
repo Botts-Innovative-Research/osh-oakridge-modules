@@ -47,6 +47,11 @@ public class FFMPEGConfig extends SensorConfig {
     @DisplayInfo(label = "Connection", desc = "Configuration options for source of MISB STANAG 4609 MPEG-TS")
     public Connection connection = new Connection();
 
+    @DisplayInfo.Required
+    @DisplayInfo(label = "Files", desc = "Configuration options for saving video files")
+    public FileConfig fileConfig = new FileConfig();
+
+
     public PositionConfig positionConfig = new PositionConfig();
 
     @Override
