@@ -73,7 +73,7 @@ public class OSCARServiceForm extends GenericConfigForm {
                     upload.addSucceededListener(event -> {
                         if(propId.endsWith(PROP_SITEMAP))
                             oscarService.reportStatus("Successfully uploaded sitemap diagram");
-                        if(propId.endsWith(PROP_SITEMAP))
+                        if(propId.endsWith(PROP_SPREADSHEET))
                             oscarService.reportStatus("Successfully uploaded spreadsheet");
                     });
                     upload.setReceiver(new Upload.Receiver() {
