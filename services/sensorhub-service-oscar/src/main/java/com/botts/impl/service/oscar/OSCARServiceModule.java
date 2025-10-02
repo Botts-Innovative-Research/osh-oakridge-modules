@@ -44,7 +44,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     protected void doInit() throws SensorHubException {
         super.doInit();
 
-        // Block here for bucket service
+        system = new OSCARSystem(config.nodeId);
+
         try {
             this.bucketService = getParentHub().getModuleRegistry()
                     .waitForModuleType(IBucketService.class, ModuleEvent.ModuleState.STARTED)

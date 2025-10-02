@@ -33,7 +33,7 @@ public class OSCARServiceConfig extends ServiceConfig {
     @DisplayInfo(label = "Node ID", desc = "Unique identifier of this OSCAR node")
     public String nodeId;
 
-    @DisplayInfo.Required
+//    @DisplayInfo.Required
     @DisplayInfo.ModuleType(IObsSystemDatabaseModule.class)
     @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.MODULE_ID)
     @DisplayInfo(desc = "Database connected to this OSCAR service")

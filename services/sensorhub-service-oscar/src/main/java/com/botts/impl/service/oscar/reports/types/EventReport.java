@@ -73,7 +73,6 @@ public class EventReport extends Report {
 
     private void addHeader(){
         document.add(new Paragraph(reportTitle).setFontSize(16).simulateBold());
-        document.add(new Paragraph("Event Report").setFontSize(16).simulateBold());
         document.add(new Paragraph("Event Type:" + eventType).setFontSize(12));
         document.add(new Paragraph("Lane ID:" + laneUID).setFontSize(12));
         document.add(new Paragraph("\n"));
