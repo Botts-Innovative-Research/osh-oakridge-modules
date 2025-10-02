@@ -7,7 +7,6 @@ import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Image;
-import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.data.category.DefaultCategoryDataset;
 import org.junit.Before;
 import org.junit.Test;
@@ -116,30 +115,25 @@ public class ReportHelperTests {
 
             DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
-            dataset.addValue(.01 * 100.0, "Real Alarm - Other","Real Alarm - Other");
-            dataset.addValue(.05 * 100.0, "False Alarm - Other", "False Alarm - Other");
-            dataset.addValue(.02 * 100.0, "Physical Inspection Negative", "Physical Inspection Negative");
-            dataset.addValue(0.04 * 100.0, "Innocent Alarm - Medical Isotope Found", "Innocent Alarm - Medical Isotope Found");
-            dataset.addValue(.07 * 100.0, "Innocent Alarm - Declared Shipment of Radioactive Material", "Innocent Alarm - Declared Shipment of Radioactive Material");
-            dataset.addValue(0, "No Disposition", "No Disposition");
-            dataset.addValue(.15 * 100.0, "False Alarm - RIID/ASP Indicates Background Only", "False Alarm - RIID/ASP Indicates Background Only");
-            dataset.addValue(.05 * 100.0, "Real Alarm - Contraband Found", "Real Alarm - Contraband Found");
-            dataset.addValue(.02 * 100.0, "Tamper/Fault - Unauthorized Activity", "Tamper/Fault - Unauthorized Activity");
-            dataset.addValue(.0 * 100.0, "Alarm/Tamper/Fault- Authorized Test/Maintenance/Training Activity", "Alarm/Tamper/Fault- Authorized Test/Maintenance/Training Activity");
-            dataset.addValue(.25 * 100.0, "Alarm - Naturally Occurring Radioactive Material (NORM) Found", "Alarm - Naturally Occurring Radioactive Material (NORM) Found");
+            dataset.addValue(10, "Disposition","Real Alarm - Other");
+            dataset.addValue(15, "Disposition", "False Alarm - Other");
+            dataset.addValue(12, "Disposition", "Physical Inspection Negative");
+            dataset.addValue(4, "Disposition", "Innocent Alarm - Medical Isotope Found");
+            dataset.addValue(2, "Disposition", "Innocent Alarm - Declared Shipment of Radioactive Material");
+            dataset.addValue(0, "Disposition", "No Disposition");
+            dataset.addValue(1, "Disposition", "False Alarm - RIID/ASP Indicates Background Only");
+            dataset.addValue(12, "Disposition", "Real Alarm - Contraband Found");
+            dataset.addValue(12, "Disposition", "Tamper/Fault - Unauthorized Activity");
+            dataset.addValue(4, "Disposition", "Alarm/Tamper/Fault- Authorized Test/Maintenance/Training Activity");
+            dataset.addValue(5, "Disposition", "Alarm - Naturally Occurring Radioactive Material (NORM) Found");
 
 
             String title = "Test Chart";
             String yLabel = "% of Total Number of Records";
+            String xLabel = "Type";
 
             ChartGenerator chartGenerator = new ChartGenerator(new OSCARServiceModule());
-            var chart = chartGenerator.createChart(
-                    title,
-                    null,
-                    yLabel, dataset,
-                    "bar",
-                    PlotOrientation.HORIZONTAL
-            );
+            var chart = chartGenerator.createChart(title, xLabel, yLabel, dataset,"bar", "test_chart.png");
 
             assertNotNull(chart);
 
@@ -164,6 +158,7 @@ public class ReportHelperTests {
     @Test
     public void TestStackedBarChart(){
         String dest = "stacked_bar_chart_test.pdf";
+        String outFileName = "stacked_bar_chart_test.png";
 
         try{
             PdfWriter pdfWriter = new PdfWriter(dest);
@@ -200,12 +195,7 @@ public class ReportHelperTests {
             String xLabel = "Date";
 
             ChartGenerator chartGenerator = new ChartGenerator(new OSCARServiceModule());
-            var chart = chartGenerator.createStackedBarChart(
-                    title,
-                    xLabel,
-                    yLabel,
-                    dataset
-            );
+            var chart = chartGenerator.createStackedBarChart(title, xLabel, yLabel, dataset, outFileName);
 
             assertNotNull(chart);
 
@@ -271,13 +261,7 @@ public class ReportHelperTests {
             String xLabel = "Date";
 
             ChartGenerator chartGenerator = new ChartGenerator(new OSCARServiceModule());
-            var chart = chartGenerator.createStackedBarLineOverlayChart(
-                    title,
-                    xLabel,
-                    yLabel,
-                    dataset,
-                    dataset2
-            );
+            var chart = chartGenerator.createStackedBarLineOverlayChart(title, xLabel, yLabel, dataset,dataset2, "bar_line_chart.png");
 
             assertNotNull(chart);
 
@@ -298,7 +282,7 @@ public class ReportHelperTests {
         }
     }
 
-    // from chatgpt sorry -- used to simulate fake data for testing my charts to see if they work mwahhahahahaha
+    // from chatgpt sorry -- used to simualte fake data for testing my charts to see if they work mwahhahahahaha
     public static Map<Instant, Long> generateFakeData(int days, long min, long max) {
         Map<Instant, Long> data = new LinkedHashMap<>();
         LocalDate today = LocalDate.now();
