@@ -59,8 +59,12 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         if (config.spreadsheetConfigPath != null && !config.spreadsheetConfigPath.isEmpty())
             spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
 
+        // TODO: Add or update OSCAR system and client config system
         system = new OSCARSystem(config.nodeId);
-        bucketService = getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
+
+        // TODO: Add or update report generation control interface
+
+
 
         createOutputs();
         createControls();
