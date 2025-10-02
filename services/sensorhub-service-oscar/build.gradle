@@ -11,6 +11,8 @@ dependencies {
     implementation project(':sensorhub-service-bucket') // service for file system
     implementation("jfree:jfreechart:1.0.13") // charts
     implementation("com.itextpdf:itext7-core:9.3.0") //pdfs
+
+    testImplementation 'org.sensorhub:sensorhub-service-consys:' + oshCoreVersion
 }
   
 // add info to OSGi manifest
