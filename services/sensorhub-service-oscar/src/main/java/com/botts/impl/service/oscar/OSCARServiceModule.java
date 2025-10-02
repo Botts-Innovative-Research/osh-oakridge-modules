@@ -70,6 +70,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public void createOutputs(){
+
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
 
@@ -107,6 +108,10 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         return sitemapDiagramHandler;
     }
 
+
+    public OSCARSystem getOSCARSystem() {
+        return system;
+    }
     public IBucketService getBucketService() {
         return bucketService;
     }
