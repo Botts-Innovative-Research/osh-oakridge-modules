@@ -11,9 +11,10 @@ import com.itextpdf.layout.element.Paragraph;
 import org.jfree.data.category.DefaultCategoryDataset;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.impl.utils.rad.RADHelper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.time.Instant;
@@ -23,14 +24,12 @@ import java.util.Map;
 import java.util.function.Predicate;
 
 public class EventReport extends Report {
-    private static final Logger log = LoggerFactory.getLogger(EventReport.class);
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
 
     String reportTitle = "Event Report";
 
     Document document;
     PdfDocument pdfDocument;
-    String pdfFileName;
 
     OSCARServiceModule module;
     TableGenerator tableGenerator;
@@ -51,7 +50,7 @@ public class EventReport extends Report {
         this.start = startTime;
         this.end = endTime;
         this.tableGenerator = new TableGenerator();
-        this.chartGenerator = new ChartGenerator();
+        this.chartGenerator = new ChartGenerator(module);
     }
 
     @Override
@@ -68,7 +67,6 @@ public class EventReport extends Report {
             addFaultStatisticsByDay();
 
         document.close();
-        pdfDocument.close();
         chartGenerator = null;
         tableGenerator = null;
     }
@@ -115,30 +113,35 @@ public class EventReport extends Report {
             dataset.addValue(entry.getValue(), "EML-Suppressed",  formatter.format(entry.getKey()));
         }
 
-
         String title = "Alarms";
         String xAxis = "Dates";
         String yAxis = "Counts";
         String outFileName = "alarm_chart.png";
 
         try{
-            String chartPath = chartGenerator.createStackedBarChart(
+            var chart = chartGenerator.createStackedBarChart(
                     title,
                     xAxis,
                     yAxis, dataset,
                     outFileName
             );
 
-            if(chartPath == null){
+            if(chart == null){
                 document.add(new Paragraph("Alarm Chart failed to create"));
                 return;
             }
 
-            Image image = new Image(ImageDataFactory.create(chartPath)).setAutoScale(true);
+            BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
+
+            byte[] imageBytes = byteArrayOutputStream.toByteArray();
+            Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
+
             document.add(image);
 
         } catch (IOException e) {
-            log.error(e.getMessage(), e);
+            module.getLogger().error("Error creating Alarm chart", e);
             return;
         }
 
@@ -201,7 +204,7 @@ public class EventReport extends Report {
         String outFileName = "soh_chart.png";
 
         try{
-            String chartPath = chartGenerator.createStackedBarChart(
+            var chart = chartGenerator.createStackedBarChart(
                     title,
                     xAxis,
                     yAxis,
@@ -209,16 +212,23 @@ public class EventReport extends Report {
                     outFileName
             );
 
-            if(chartPath == null){
+            if(chart == null){
                 document.add(new Paragraph("SOH Chart failed to create"));
                 return;
             }
 
-            Image image = new Image(ImageDataFactory.create(chartPath)).setAutoScale(true);
+
+            BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
+
+            byte[] imageBytes = byteArrayOutputStream.toByteArray();
+            Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
+
             document.add(image);
 
         } catch (IOException e) {
-            log.error(e.getMessage(), e);
+            module.getLogger().error("Error creating SOH chart", e);
             return;
         }
 
@@ -259,7 +269,7 @@ public class EventReport extends Report {
             dataset.addValue(entry.getValue(), "EML-Suppressed",  formatter.format(entry.getKey()));
         }
 
-        // this will be a linagraph on top of the bar chart
+        // this will be a linegraph on top of the bar chart
         DefaultCategoryDataset occDataset = new DefaultCategoryDataset();
 
         for(Map.Entry<Instant, Long> entry : totalOccupancyDaily.entrySet()){
@@ -272,7 +282,7 @@ public class EventReport extends Report {
         String outFileName = "alarm_occupancy_chart.png";
 
         try{
-            String chartPath = chartGenerator.createStackedBarLineOverlayChart(
+            var chart = chartGenerator.createStackedBarLineOverlayChart(
                     title,
                     xAxis,
                     yAxis,
@@ -281,16 +291,24 @@ public class EventReport extends Report {
                     outFileName
             );
 
-            if(chartPath == null){
+            if(chart == null){
                 document.add(new Paragraph("Alarm-Occupancy Chart failed to create"));
+                module.getLogger().error("Chart failed to create");
                 return;
             }
 
-            Image image = new Image(ImageDataFactory.create(chartPath)).setAutoScale(true);
+
+            BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
+
+            byte[] imageBytes = byteArrayOutputStream.toByteArray();
+            Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
+
             document.add(image);
 
         } catch (IOException e) {
-            log.error(e.getMessage(), e);
+            module.getLogger().error("Error creating Alarm-Occupancy chart", e);
             return;
         }
 

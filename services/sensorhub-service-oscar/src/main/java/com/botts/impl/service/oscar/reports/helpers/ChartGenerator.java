@@ -1,7 +1,7 @@
 package com.botts.impl.service.oscar.reports.helpers;
 
-import com.itextpdf.layout.renderer.LineRenderer;
-import org.checkerframework.checker.units.qual.C;
+import com.botts.api.service.bucket.IBucketService;
+import com.botts.impl.service.oscar.OSCARServiceModule;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartUtilities;
 import org.jfree.chart.JFreeChart;
@@ -11,20 +11,29 @@ import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.plot.CategoryPlot;
 import org.jfree.chart.plot.DatasetRenderingOrder;
 import org.jfree.chart.plot.PlotOrientation;
-import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.category.*;
-import org.jfree.data.category.CategoryDataset;
 import org.jfree.data.category.DefaultCategoryDataset;
-import org.jfree.data.xy.XYSeriesCollection;
+import org.sensorhub.api.datastore.DataStoreException;
 
+import javax.imageio.ImageIO;
 import java.awt.*;
-import java.io.File;
-import java.io.IOException;
+import java.awt.image.BufferedImage;
+import java.io.*;
+import java.util.Collections;
+
+import static com.botts.impl.service.oscar.Constants.REPORT_BUCKET;
 
 public class ChartGenerator {
 
+    OSCARServiceModule module;
+    IBucketService bucketService;
 
-    public String createChart(String title, String xAxisLabel, String yAxisLabel, DefaultCategoryDataset dataset, String chartType, String outputFilePath) throws IOException {
+    public ChartGenerator(OSCARServiceModule module) {
+        this.module = module;
+        this.bucketService = module.getBucketService();
+    }
+
+    public JFreeChart createChart(String title, String xAxisLabel, String yAxisLabel, DefaultCategoryDataset dataset, String chartType, String outputFilePath) throws IOException {
         JFreeChart chart = null;
 
 
@@ -43,7 +52,6 @@ public class ChartGenerator {
                 chart.getTitle().setFont(new Font("SansSerif", Font.BOLD, 16));
                 chart.getLegend().setItemFont(new Font("SansSerif", Font.PLAIN, 12));
 
-
                 BarRenderer renderer = (BarRenderer) chart.getCategoryPlot().getRenderer();
 
                 Color color = new Color(98, 216, 236);
@@ -56,38 +64,24 @@ public class ChartGenerator {
                         PlotOrientation.VERTICAL, true, true, false
                 );
 
-
                 break;
             default:
-                throw new IllegalArgumentException("Unknown chart type: " + chartType);
+                module.getLogger().error("Unknown chart type: " + chartType);
         }
 
-        if(chart != null){
+        if(chart == null)
+            return null;
 
-            File file = new File("files/reports/" + outputFilePath);
-            file.getParentFile().mkdirs();
-            ChartUtilities.saveChartAsPNG(file, chart, 1200, 600);
-
-            return file.getAbsolutePath();
-        }
-
-        return null;
-
+        return chart;
     }
 
 
-    public String createStackedBarChart(String title, String xAxisLabel, String yAxisLabel, DefaultCategoryDataset dataset, String outputFilePath) throws IOException {
-        JFreeChart chart = ChartFactory.createStackedBarChart(title, xAxisLabel, yAxisLabel, dataset, PlotOrientation.VERTICAL, true, true, false);
-
-        File file = new File("files/reports/" + outputFilePath);
-        file.getParentFile().mkdirs();
-        ChartUtilities.saveChartAsPNG(file, chart, 1200, 600);
-
-        return file.getAbsolutePath();
+    public JFreeChart createStackedBarChart(String title, String xAxisLabel, String yAxisLabel, DefaultCategoryDataset dataset, String outputFilePath) throws IOException {
+        return ChartFactory.createStackedBarChart(title, xAxisLabel, yAxisLabel, dataset, PlotOrientation.VERTICAL, true, true, false);
     }
 
 
-    public String createStackedBarLineOverlayChart(String title, String xAxisLabel, String yAxisLabel, DefaultCategoryDataset stackedBarDataset, DefaultCategoryDataset lineDataset, String outputFilePath) throws IOException {
+    public JFreeChart createStackedBarLineOverlayChart(String title, String xAxisLabel, String yAxisLabel, DefaultCategoryDataset stackedBarDataset, DefaultCategoryDataset lineDataset, String outputFilePath) throws IOException {
         CategoryPlot plot = new CategoryPlot();
 
         CategoryAxis domainAxis = new CategoryAxis(xAxisLabel);
@@ -108,13 +102,13 @@ public class ChartGenerator {
 
         plot.setOrientation(PlotOrientation.VERTICAL);
 
-        JFreeChart chart = new JFreeChart(title, plot);
+//        JFreeChart chart = new JFreeChart(title, plot);
 
-        File file = new File("files/reports/" + outputFilePath);
-        file.getParentFile().mkdirs();
-        ChartUtilities.saveChartAsPNG(file, chart, 1200, 600);
+//        File file = new File("files/reports/" + outputFilePath);
+//        file.getParentFile().mkdirs();
+//        ChartUtilities.saveChartAsPNG(file, chart, 1200, 600);
 
-        return file.getAbsolutePath();
+        return new JFreeChart(title, plot);
 
     }
 }

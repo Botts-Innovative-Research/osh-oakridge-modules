@@ -59,9 +59,9 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         // TODO: Add or update OSCAR system and client config system
         system = new OSCARSystem(config.nodeId);
 
-        // TODO: Add or update report generation control interface
+        bucketService = getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
 
-        // TODO: Add or update site info datastream
+
 
         createOutputs();
         createControls();
@@ -74,8 +74,11 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
     }
 
-    public void createOutputs(){
+    public void createHandlers() {
 
+    }
+
+    public void createOutputs(){
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
 
@@ -114,6 +117,10 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         super.doStop();
     }
 
+
+    public OSCARSystem getOSCARSystem() {
+        return system;
+    }
     public IBucketService getBucketService() {
         return bucketService;
     }
