@@ -3,7 +3,6 @@ package com.botts.impl.service.oscar.reports.helpers;
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.impl.service.oscar.OSCARServiceModule;
 import org.jfree.chart.ChartFactory;
-import org.jfree.chart.ChartUtilities;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.CategoryAxis;
 import org.jfree.chart.axis.CategoryLabelPositions;
@@ -13,15 +12,9 @@ import org.jfree.chart.plot.DatasetRenderingOrder;
 import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.renderer.category.*;
 import org.jfree.data.category.DefaultCategoryDataset;
-import org.sensorhub.api.datastore.DataStoreException;
 
-import javax.imageio.ImageIO;
 import java.awt.*;
-import java.awt.image.BufferedImage;
 import java.io.*;
-import java.util.Collections;
-
-import static com.botts.impl.service.oscar.Constants.REPORT_BUCKET;
 
 public class ChartGenerator {
 
@@ -101,12 +94,6 @@ public class ChartGenerator {
         plot.setDatasetRenderingOrder(DatasetRenderingOrder.FORWARD);
 
         plot.setOrientation(PlotOrientation.VERTICAL);
-
-//        JFreeChart chart = new JFreeChart(title, plot);
-
-//        File file = new File("files/reports/" + outputFilePath);
-//        file.getParentFile().mkdirs();
-//        ChartUtilities.saveChartAsPNG(file, chart, 1200, 600);
 
         return new JFreeChart(title, plot);
 

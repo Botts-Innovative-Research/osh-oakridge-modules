@@ -30,6 +30,7 @@ import java.util.concurrent.ExecutionException;
 
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     SiteInfoOutput siteInfoOutput;
+
     RequestReportControl reportControl;
     ClientConfigOutput clientConfigOutput;
     SpreadsheetHandler spreadsheetHandler;
@@ -69,8 +70,14 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         system.updateSensorDescription();
         getParentHub().getSystemDriverRegistry().register(system);
 
-        var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
-        getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
+        if (config.databaseID != null && !config.databaseID.isBlank()) {
+            var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
+            if (module != null)
+                getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
+        }
+    }
+
+    public void createHandlers() {
 
     }
 
@@ -78,12 +85,12 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
 
-        clientConfigOutput = new ClientConfigOutput(system);
+        var clientConfigOutput = new ClientConfigOutput(system);
         system.addOutput(clientConfigOutput, false);
     }
 
     public void createControls(){
-        reportControl = new RequestReportControl(system, this);
+        var reportControl = new RequestReportControl(system, this);
         system.addControlInput(reportControl);
     }
 
