@@ -25,6 +25,8 @@ import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.SensorHub;
 import org.sensorhub.impl.module.ModuleRegistry;
+import org.sensorhub.impl.service.HttpServer;
+import org.sensorhub.impl.service.HttpServerConfig;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -44,8 +46,8 @@ public class ReportTests {
     static ModuleRegistry reg;
 
     OSCARServiceModule oscarServiceModule;
+    RequestReportControl reportControl;
     OSCARSystem system;
-    RequestReportControl requestReportControl;
     BucketService bucketService;
 
     public static Instant now = Instant.now();
@@ -59,14 +61,26 @@ public class ReportTests {
         hub.start();
         reg = hub.getModuleRegistry();
 
+        loadHTTPServer();
+        loadConSysApiService();
+
         var bucketServiceConfig = createBucketServiceConfig();
         var serviceConfig = createOscarServiceConfig();
 
         loadAndStartBucketService(bucketServiceConfig);
         loadAndStartOscarService(serviceConfig);
+    }
 
-        requestReportControl = new RequestReportControl(system, oscarServiceModule);
-        oscarServiceModule.reportControl = requestReportControl;
+    private void loadHTTPServer() throws SensorHubException {
+        HttpServerConfig httpConfig = new HttpServerConfig();
+        httpConfig.autoStart = true;
+        httpConfig.moduleClass = HttpServer.class.getCanonicalName();
+        httpConfig.id = UUID.randomUUID().toString();
+        reg.loadModule(httpConfig);
+    }
+
+    private void loadConSysApiService() throws SensorHubException {
+
     }
 
     private void loadAndStartBucketService(BucketServiceConfig config) throws SensorHubException {
@@ -79,6 +93,7 @@ public class ReportTests {
 
     private void loadAndStartOscarService(OSCARServiceConfig config) throws SensorHubException {
         oscarServiceModule = (OSCARServiceModule) reg.loadModule(config);
+        reportControl = (RequestReportControl) oscarServiceModule.getOSCARSystem().getCommandInputs().get(RequestReportControl.NAME);
 
         reg.startModule(oscarServiceModule.getLocalID());
         var isStarted = oscarServiceModule.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
@@ -100,16 +115,16 @@ public class ReportTests {
 
     private OSCARServiceConfig createOscarServiceConfig() throws SensorHubException {
         OSCARServiceConfig serviceConfig = (OSCARServiceConfig) reg.createModuleConfig(new Descriptor());
+        serviceConfig.autoStart = true;
         serviceConfig.siteDiagramConfig = new SiteDiagramConfig();
         serviceConfig.nodeId = "test-node-id";
-        serviceConfig.databaseID = "test-database-id";
 
         return  serviceConfig;
     }
 
     @Test
     public void generateLaneReport() throws Exception {
-        DataComponent commandDesc =  oscarServiceModule.reportControl.getCommandDescription().copy();
+        DataComponent commandDesc =  reportControl.getCommandDescription().copy();
 
         DataBlock commandData;
         commandData = commandDesc.createDataBlock();
@@ -119,7 +134,7 @@ public class ReportTests {
         commandData.setStringValue(3, "urn:osh:system:lane1");
         commandData.setStringValue(4, EventReportType.ALARMS.name());
 
-        var res = requestReportControl.submitCommand(new CommandData(1, commandData)).get();
+        var res = reportControl.submitCommand(new CommandData(1, commandData)).get();
 
         assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
         assertNotNull(res.getResult());
@@ -138,7 +153,7 @@ public class ReportTests {
 
     @Test
     public void generateSiteReport() throws Exception {
-        DataComponent commandDesc =  oscarServiceModule.reportControl.getCommandDescription().copy();
+        DataComponent commandDesc =  reportControl.getCommandDescription().copy();
 
         DataBlock commandData;
         commandData = commandDesc.createDataBlock();
@@ -148,7 +163,7 @@ public class ReportTests {
         commandData.setStringValue(3, "urn:osh:system:lane1");
         commandData.setStringValue(4, EventReportType.ALARMS.name());
 
-        var res = requestReportControl.submitCommand(new CommandData(1, commandData)).get();
+        var res = reportControl.submitCommand(new CommandData(1, commandData)).get();
 
         assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
         assertNotNull(res.getResult());
@@ -164,7 +179,7 @@ public class ReportTests {
 
     @Test
     public void generateAdjudicationReport() throws Exception {
-        DataComponent commandDesc =  oscarServiceModule.reportControl.getCommandDescription().copy();
+        DataComponent commandDesc =  reportControl.getCommandDescription().copy();
 
         DataBlock commandData;
         commandData = commandDesc.createDataBlock();
@@ -174,7 +189,7 @@ public class ReportTests {
         commandData.setStringValue(3, "urn:osh:system:lane1");
         commandData.setStringValue(4, EventReportType.ALARMS.name());
 
-        var res = requestReportControl.submitCommand(new CommandData(1, commandData)).get();
+        var res = reportControl.submitCommand(new CommandData(1, commandData)).get();
 
         assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
         assertNotNull(res.getResult());
@@ -191,7 +206,7 @@ public class ReportTests {
 
     @Test
     public void generateEventReport() throws Exception {
-        DataComponent commandDesc =  oscarServiceModule.reportControl.getCommandDescription().copy();
+        DataComponent commandDesc =  reportControl.getCommandDescription().copy();
 
         DataBlock commandData;
         commandData = commandDesc.createDataBlock();
@@ -201,7 +216,7 @@ public class ReportTests {
         commandData.setStringValue(3, "urn:osh:system:lane1");
         commandData.setStringValue(4, EventReportType.ALARMS_OCCUPANCIES.name());
 
-        var res = requestReportControl.submitCommand(new CommandData(1, commandData)).get();
+        var res = reportControl.submitCommand(new CommandData(1, commandData)).get();
 
         assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
         assertNotNull(res.getResult());
@@ -248,12 +263,53 @@ public class ReportTests {
         return gammaCount;
     }
 
-
     public long predicateCount(){
         Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
         return Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, oscarServiceModule, gammaPredicate, begin, end);
     }
 
+    @Test
+    public void TestLanesTable(){
+        String dest = "table_lanes_test.pdf";
+
+        try{
+            PdfWriter pdfWriter = new PdfWriter(dest);
+            PdfDocument pdfDocument = new PdfDocument(pdfWriter);
+            Document document = new Document(pdfDocument);
+
+            Map<String, String> testData1 = new HashMap<>();
+            testData1.put("Alarm Occupancy Rate", "1");
+            testData1.put("Neutron Alarm", "10");
+            testData1.put("Gamma Alarm", "15");
+            testData1.put("Gamma-Neutron Alarm", "5");
+            testData1.put("Total Occupancies", "20");
+            testData1.put("Primary Occupancies", "20");
+            testData1.put("Another Name", "20");
+            testData1.put("Total", "20");
+
+            Map<String, String> testData2 = new HashMap<>();
+            testData2.put("Alarm Occupancy Rate", "1");
+            testData2.put("Neutron Alarm", "10");
+            testData2.put("Gamma Alarm", "15");
+            testData2.put("Gamma-Neutron Alarm", "5");
+            testData2.put("Total Occupancies", "20");
+            testData2.put("Primary Occupancies", "20");
+            testData2.put("Another Name", "20");
+            testData2.put("Total", "20");
+
+            Map<String, Map<String, String>> testData = new HashMap<>();
+            testData.put("uid:lane:1", testData1);
+            testData.put("uid:lane:2", testData2);
+
+            TableGenerator tableGenerator = new TableGenerator();
+            document.add(tableGenerator.addLanesTable(testData));
+            document.close();
+
+            System.out.println("PDF Created with table: "+ dest);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     @Test
     public void TestTable(){
@@ -264,18 +320,18 @@ public class ReportTests {
             PdfDocument pdfDocument = new PdfDocument(pdfWriter);
             Document document = new Document(pdfDocument);
 
-            Map<String, String> testData = new HashMap<>();
-            testData.put("Alarm Occupancy Rate", "1");
-            testData.put("Neutron Alarm", "10");
-            testData.put("Gamma Alarm", "15");
-            testData.put("Gamma-Neutron Alarm", "5");
-            testData.put("Total Occupancies", "20");
-            testData.put("Primary occ", "20");
-            testData.put("Another Name", "20");
-            testData.put("Total", "20");
+            Map<String, String> testData1 = new HashMap<>();
+            testData1.put("Alarm Occupancy Rate", "1");
+            testData1.put("Neutron Alarm", "10");
+            testData1.put("Gamma Alarm", "15");
+            testData1.put("Gamma-Neutron Alarm", "5");
+            testData1.put("Total Occupancies", "20");
+            testData1.put("Primary Occupancies", "20");
+            testData1.put("Another Name", "20");
+            testData1.put("Total", "20");
 
             TableGenerator tableGenerator = new TableGenerator();
-            document.add(tableGenerator.addTable(testData));
+            document.add(tableGenerator.addTable(testData1));
             document.close();
 
             System.out.println("PDF Created with table: "+ dest);
@@ -283,7 +339,6 @@ public class ReportTests {
             throw new RuntimeException(e);
         }
     }
-
 
     @Test
     public void TestBarChart(){
@@ -479,7 +534,6 @@ public class ReportTests {
 
         return data;
     }
-
 
     @After
     public void cleanup() {

@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Predicate;
 
@@ -31,16 +32,16 @@ public class AdjudicationReport extends Report {
     TableGenerator tableGenerator;
     ChartGenerator chartGenerator;
 
-    String laneUID;
+    String laneUIDs;
     Instant begin;
     Instant end;
 
-    public AdjudicationReport(OutputStream out, Instant startTime, Instant endTime, String laneUID, OSCARServiceModule module) {
+    public AdjudicationReport(OutputStream out, Instant startTime, Instant endTime, String laneUIDs, OSCARServiceModule module) {
         pdfDocument = new PdfDocument(new PdfWriter(out));
         document = new Document(pdfDocument);
 
         this.module = module;
-        this.laneUID = laneUID;
+        this.laneUIDs = laneUIDs;
         this.begin = startTime;
         this.end = endTime;
         this.tableGenerator = new TableGenerator();
@@ -59,13 +60,13 @@ public class AdjudicationReport extends Report {
         tableGenerator = null;
     }
 
-    private void addHeader(){
+    private void addHeader() {
         document.add(new Paragraph(reportTitle).setFontSize(16).simulateBold());
-        document.add(new Paragraph("Lane UID: " + laneUID).setFontSize(12));
+        document.add(new Paragraph("Lane UID: " + laneUIDs).setFontSize(12));
         document.add(new Paragraph("\n"));
     }
 
-    private void addDisposition(){
+    private void addDisposition() {
         document.add(new Paragraph("Disposition").setFontSize(12));
 
         String title = "Disposition";
@@ -86,9 +87,9 @@ public class AdjudicationReport extends Report {
 
         long realAlarmOtherCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, realAlarmOtherPredicate, begin, end);
         long falseAlarmOtherCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, falseAlarmOtherPredicate, begin, end);
-        long physicalInspecNegCount =  Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, phyInsPredicate, begin, end);
-        long innAlarmMedicalCount =  Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, incMedPredicate, begin, end);
-        long incRadioMatCount =  Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, incRadioPredicate, begin, end);
+        long physicalInspecNegCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, phyInsPredicate, begin, end);
+        long innAlarmMedicalCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, incMedPredicate, begin, end);
+        long incRadioMatCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, incRadioPredicate, begin, end);
         long noDisCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, noDisPredicate, begin, end);
         long falseAlarmRiidCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, falseAlarmRIIDPredicate, begin, end);
         long realAlarmContCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, realAlarmContraPredicate, begin, end);
@@ -98,7 +99,7 @@ public class AdjudicationReport extends Report {
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
-        dataset.addValue(realAlarmOtherCount, "Disposition","Real Alarm - Other");
+        dataset.addValue(realAlarmOtherCount, "Disposition", "Real Alarm - Other");
         dataset.addValue(falseAlarmOtherCount, "Disposition", "False Alarm - Other");
         dataset.addValue(physicalInspecNegCount, "Disposition", "Physical Inspection Negative");
         dataset.addValue(innAlarmMedicalCount, "Disposition", "Innocent Alarm - Medical Isotope Found");
@@ -118,10 +119,10 @@ public class AdjudicationReport extends Report {
                     yLabel,
                     dataset,
                     "bar",
-                    laneUID + "_dispostion_chart.png"
+                    laneUIDs + "_dispostion_chart.png"
             );
 
-            if(chart == null){
+            if (chart == null) {
                 document.add(new Paragraph("Disposition chart failed to create"));
                 return;
             }
@@ -143,7 +144,7 @@ public class AdjudicationReport extends Report {
     }
 
 
-    private void addSecondaryInspectionIsotopeResults(){
+    private void addSecondaryInspectionIsotopeResults() {
         document.add(new Paragraph("Secondary Inspection Results").setFontSize(12));
 
         Map<String, String> isotopeResults = new HashMap<>();
@@ -186,14 +187,32 @@ public class AdjudicationReport extends Report {
         document.add(new Paragraph("\n"));
     }
 
-    private void addSecondaryInspectionDetails(){
+    private void addSecondaryInspectionDetails() {
         document.add(new Paragraph("Secondary Inspection Details").setFontSize(12));
 
+        Map<String, Map<String, String>> countsLane = new LinkedHashMap<>();
+
+        for (var lane : laneUIDs.split(",")) {
+            var counts = calculateDetailsCounts(lane);
+            countsLane.put(lane, counts);
+        }
+
+        var table = tableGenerator.addLanesTable(countsLane);
+        if (table == null) {
+            document.add(new Paragraph("Failed to secondary inspection details to pdf"));
+            return;
+        }
+
+        document.add(table);
+        document.add(new Paragraph("\n"));
+    }
+
+    private Map<String, String> calculateDetailsCounts(String laneUID) {
         Map<String, String> secInsDetailsMap = new HashMap<>();
 
         Predicate<IObsData> predicate = (obsData) -> true;
 
-        long value = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, predicate, begin, end);
+        long value = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_ADJUDICATION}, module, predicate, begin, end);
 
         secInsDetailsMap.put("Primary Date", "");
         secInsDetailsMap.put("Primary Time", "");
@@ -203,9 +222,6 @@ public class AdjudicationReport extends Report {
         secInsDetailsMap.put("Cargo", "");
         secInsDetailsMap.put("Disposition #", "");
 
-        var table = tableGenerator.addTable(secInsDetailsMap);
-        document.add(table);
-
-        document.add(new Paragraph("\n"));
+        return secInsDetailsMap;
     }
 }
