@@ -1,38 +1,35 @@
 package com.botts.impl.service.oscar;
 
-import com.botts.api.service.bucket.IBucketService;
-import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.service.bucket.BucketService;
 import com.botts.impl.service.bucket.BucketServiceConfig;
-import com.botts.impl.service.bucket.filesystem.FileSystemBucketStore;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.reports.helpers.*;
-import com.itextpdf.io.font.otf.GsubLookupType1;
+import com.botts.impl.service.oscar.siteinfo.SiteDiagramConfig;
 import com.itextpdf.io.image.ImageDataFactory;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Image;
 import net.opengis.swe.v20.DataBlock;
-import net.opengis.swe.v20.DataChoice;
 import net.opengis.swe.v20.DataComponent;
 import org.jfree.data.category.DefaultCategoryDataset;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.data.IObsData;
-import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
+import org.sensorhub.api.module.ModuleEvent;
+import org.sensorhub.impl.SensorHub;
+import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.utils.rad.RADHelper;
-import org.vast.data.DataChoiceImpl;
-
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -40,14 +37,16 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.function.Predicate;
-
 import static org.junit.Assert.*;
 
 public class ReportTests {
+    static SensorHub hub;
+    static ModuleRegistry reg;
 
-    OSCARServiceModule module;
+    OSCARServiceModule oscarServiceModule;
     OSCARSystem system;
     RequestReportControl requestReportControl;
+    BucketService bucketService;
 
     public static Instant now = Instant.now();
     public static Instant begin = now.minus(365, ChronoUnit.DAYS);
@@ -55,31 +54,62 @@ public class ReportTests {
 
 
     @Before
-    public void setup() throws IOException, SensorHubException {
-        BucketService testBucketService = new BucketService();
+    public void setup() throws SensorHubException {
+        hub = new SensorHub();
+        hub.start();
+        reg = hub.getModuleRegistry();
 
-        BucketServiceConfig config = new BucketServiceConfig();
-        config.fileStoreRootDir = "kalyntest";
+        var bucketServiceConfig = createBucketServiceConfig();
+        var serviceConfig = createOscarServiceConfig();
 
-        testBucketService.setConfiguration(config);
+        loadAndStartBucketService(bucketServiceConfig);
+        loadAndStartOscarService(serviceConfig);
 
-        testBucketService.doInit();
-        OSCARServiceConfig serviceConfig = new OSCARServiceConfig();
+        requestReportControl = new RequestReportControl(system, oscarServiceModule);
+        oscarServiceModule.reportControl = requestReportControl;
+    }
+
+    private void loadAndStartBucketService(BucketServiceConfig config) throws SensorHubException {
+        bucketService = (BucketService) reg.loadModule(config);
+
+        reg.startModule(bucketService.getLocalID());
+        var isStarted = bucketService.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+        assertTrue(isStarted);
+    }
+
+    private void loadAndStartOscarService(OSCARServiceConfig config) throws SensorHubException {
+        oscarServiceModule = (OSCARServiceModule) reg.loadModule(config);
+
+        reg.startModule(oscarServiceModule.getLocalID());
+        var isStarted = oscarServiceModule.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+        assertTrue(isStarted);
+    }
+
+    private BucketServiceConfig createBucketServiceConfig() throws SensorHubException {
+        BucketServiceConfig bucketServiceConfig = (BucketServiceConfig) reg.createModuleConfig(new com.botts.impl.service.bucket.Descriptor());
+        bucketServiceConfig.fileStoreRootDir = "oscar-test";
+
+        List<String> buckets = new ArrayList<>();
+        buckets.add("reports");
+        buckets.add("videos");
+        buckets.add("sitemap");
+
+        bucketServiceConfig.initialBuckets = buckets;
+        return  bucketServiceConfig;
+    }
+
+    private OSCARServiceConfig createOscarServiceConfig() throws SensorHubException {
+        OSCARServiceConfig serviceConfig = (OSCARServiceConfig) reg.createModuleConfig(new Descriptor());
+        serviceConfig.siteDiagramConfig = new SiteDiagramConfig();
         serviceConfig.nodeId = "test-node-id";
+        serviceConfig.databaseID = "test-database-id";
 
-
-        system = new OSCARSystem("test-node-id");
-        module = new OSCARServiceModule();
-        module.setConfiguration(serviceConfig);
-
-        module.bucketService = testBucketService;
-        requestReportControl = new RequestReportControl(system, module);
-        module.reportControl = requestReportControl;
+        return  serviceConfig;
     }
 
     @Test
     public void generateLaneReport() throws Exception {
-        DataComponent commandDesc =  module.reportControl.getCommandDescription().copy();
+        DataComponent commandDesc =  oscarServiceModule.reportControl.getCommandDescription().copy();
 
         DataBlock commandData;
         commandData = commandDesc.createDataBlock();
@@ -91,7 +121,7 @@ public class ReportTests {
 
         var res = requestReportControl.submitCommand(new CommandData(1, commandData)).get();
 
-        assertEquals(res.getStatusCode(), ICommandStatus.CommandStatusCode.ACCEPTED);
+        assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
         assertNotNull(res.getResult());
         List<IObsData> results = res.getResult().getObservations().stream().toList();
         assertFalse(results.isEmpty());
@@ -99,15 +129,16 @@ public class ReportTests {
         String resPath = results.get(0).getResult().getStringValue();
         assertNotNull(resPath);
 
-        var stream = module.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
+        var stream = oscarServiceModule.getBucketService()
+                .getBucketStore()
+                .getObject(Constants.REPORT_BUCKET, resPath);
 
-        String contents = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-        assertNotNull(contents);
+        assertNotNull(stream);
     }
 
     @Test
     public void generateSiteReport() throws Exception {
-        DataComponent commandDesc =  module.reportControl.getCommandDescription().copy();
+        DataComponent commandDesc =  oscarServiceModule.reportControl.getCommandDescription().copy();
 
         DataBlock commandData;
         commandData = commandDesc.createDataBlock();
@@ -119,7 +150,7 @@ public class ReportTests {
 
         var res = requestReportControl.submitCommand(new CommandData(1, commandData)).get();
 
-        assertEquals(res.getStatusCode(), ICommandStatus.CommandStatusCode.ACCEPTED);
+        assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
         assertNotNull(res.getResult());
         List<IObsData> results = res.getResult().getObservations().stream().toList();
         assertFalse(results.isEmpty());
@@ -127,16 +158,13 @@ public class ReportTests {
         String resPath = results.get(0).getResult().getStringValue();
         assertNotNull(resPath);
 
-        var stream = module.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
-
-        String contents = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-        assertNotNull(contents);
+        var stream = oscarServiceModule.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
+        assertNotNull(stream);
     }
-
 
     @Test
     public void generateAdjudicationReport() throws Exception {
-        DataComponent commandDesc =  module.reportControl.getCommandDescription().copy();
+        DataComponent commandDesc =  oscarServiceModule.reportControl.getCommandDescription().copy();
 
         DataBlock commandData;
         commandData = commandDesc.createDataBlock();
@@ -148,7 +176,7 @@ public class ReportTests {
 
         var res = requestReportControl.submitCommand(new CommandData(1, commandData)).get();
 
-        assertEquals(res.getStatusCode(), ICommandStatus.CommandStatusCode.ACCEPTED);
+        assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
         assertNotNull(res.getResult());
         List<IObsData> results = res.getResult().getObservations().stream().toList();
         assertFalse(results.isEmpty());
@@ -156,15 +184,14 @@ public class ReportTests {
         String resPath = results.get(0).getResult().getStringValue();
         assertNotNull(resPath);
 
-        var stream = module.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
+        var stream = oscarServiceModule.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
+        assertNotNull(stream);
 
-        String contents = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-        assertNotNull(contents);
     }
 
     @Test
     public void generateEventReport() throws Exception {
-        DataComponent commandDesc =  module.reportControl.getCommandDescription().copy();
+        DataComponent commandDesc =  oscarServiceModule.reportControl.getCommandDescription().copy();
 
         DataBlock commandData;
         commandData = commandDesc.createDataBlock();
@@ -176,7 +203,7 @@ public class ReportTests {
 
         var res = requestReportControl.submitCommand(new CommandData(1, commandData)).get();
 
-        assertEquals(res.getStatusCode(), ICommandStatus.CommandStatusCode.ACCEPTED);
+        assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
         assertNotNull(res.getResult());
         List<IObsData> results = res.getResult().getObservations().stream().toList();
         assertFalse(results.isEmpty());
@@ -184,13 +211,10 @@ public class ReportTests {
         String resPath = results.get(0).getResult().getStringValue();
         assertNotNull(resPath);
 
-        var stream = module.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
+        var stream = oscarServiceModule.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
+        assertNotNull(stream);
 
-        String contents = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-        assertNotNull(contents);
     }
-
-
 
     @Test
     public void compareCounts() throws Exception {
@@ -200,9 +224,8 @@ public class ReportTests {
         assertEquals("Counts should be equal", gammaCount1, gammaCount2);
     }
 
-
-    public long iterateCount() throws Exception {
-        var query = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+    public long iterateCount() {
+        var query = oscarServiceModule.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
                 .withDataStreams(new DataStreamFilter.Builder()
                         .withObservedProperties(RADHelper.DEF_OCCUPANCY)
                         .withValidTimeDuring(begin, end)
@@ -226,11 +249,9 @@ public class ReportTests {
     }
 
 
-    public long predicateCount() throws Exception {
-        Predicate<IObsData> gammaPredicate = (obsData) -> {return obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);};
-        long gammaAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, gammaPredicate, begin, end);
-
-        return gammaAlarmCount;
+    public long predicateCount(){
+        Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
+        return Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, oscarServiceModule, gammaPredicate, begin, end);
     }
 
 
@@ -292,13 +313,18 @@ public class ReportTests {
             String yLabel = "% of Total Number of Records";
             String xLabel = "Type";
 
-            ChartGenerator chartGenerator = new ChartGenerator();
-            String chartPath = chartGenerator.createChart(title, xLabel, yLabel, dataset,"bar", "test_chart.png");
+            ChartGenerator chartGenerator = new ChartGenerator(oscarServiceModule);
+            var chart = chartGenerator.createChart(title, xLabel, yLabel, dataset,"bar", "test_chart.png");
 
-            assertNotNull(chartPath);
-            Files.exists(Path.of(chartPath));
+            assertNotNull(chart);
 
-            Image image = new Image(ImageDataFactory.create(chartPath)).setAutoScale(true);
+
+            BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
+
+            byte[] imageBytes = byteArrayOutputStream.toByteArray();
+            Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
 
             document.add(image);
 
@@ -312,8 +338,8 @@ public class ReportTests {
 
     @Test
     public void TestStackedBarChart(){
-        String dest = "stackedbar_chart_test.pdf";
-        String outFileName = "stackedbar_chart_test.png";
+        String dest = "stacked_bar_chart_test.pdf";
+        String outFileName = "stacked_bar_chart_test.png";
 
         try{
             PdfWriter pdfWriter = new PdfWriter(dest);
@@ -349,13 +375,17 @@ public class ReportTests {
             String yLabel = "Count";
             String xLabel = "Date";
 
-            ChartGenerator chartGenerator = new ChartGenerator();
-            String chartPath = chartGenerator.createStackedBarChart(title, xLabel, yLabel, dataset, outFileName);
+            ChartGenerator chartGenerator = new ChartGenerator(oscarServiceModule);
+            var chart = chartGenerator.createStackedBarChart(title, xLabel, yLabel, dataset, outFileName);
 
-            assertNotNull(chartPath);
-            Files.exists(Path.of(chartPath));
+            assertNotNull(chart);
 
-            Image image = new Image(ImageDataFactory.create(chartPath)).setAutoScale(true);
+            BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
+
+            byte[] imageBytes = byteArrayOutputStream.toByteArray();
+            Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
 
             document.add(image);
 
@@ -411,13 +441,17 @@ public class ReportTests {
             String yLabel = "Count";
             String xLabel = "Date";
 
-            ChartGenerator chartGenerator = new ChartGenerator();
-            String chartPath = chartGenerator.createStackedBarLineOverlayChart(title, xLabel, yLabel, dataset,dataset2, "bar_line_chart.png");
+            ChartGenerator chartGenerator = new ChartGenerator(oscarServiceModule);
+            var chart = chartGenerator.createStackedBarLineOverlayChart(title, xLabel, yLabel, dataset,dataset2, "bar_line_chart.png");
 
-            assertNotNull(chartPath);
-            Files.exists(Path.of(chartPath));
+            assertNotNull(chart);
 
-            Image image = new Image(ImageDataFactory.create(chartPath)).setAutoScale(true);
+            BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
+
+            byte[] imageBytes = byteArrayOutputStream.toByteArray();
+            Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
 
             document.add(image);
 
@@ -444,5 +478,12 @@ public class ReportTests {
         }
 
         return data;
+    }
+
+
+    @After
+    public void cleanup() {
+        if (hub != null)
+            hub.stop();
     }
 }

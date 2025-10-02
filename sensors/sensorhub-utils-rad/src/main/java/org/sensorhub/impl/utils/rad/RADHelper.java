@@ -15,11 +15,11 @@ import java.io.StringReader;
 
 public class RADHelper extends GeoPosHelper {
 
-    public static final String DEF_GAMMA = getRadUri("gamma-gross-count");
-    public static final String DEF_NEUTRON = getRadUri("neutron-gross-count");
-    public static final String DEF_OCCUPANCY = getRadUri("pillar-occupancy-count");
+    public static final String DEF_GAMMA = getRadUri("gammaGrossCount");
+    public static final String DEF_NEUTRON = getRadUri("neutronGrossCount");
+    public static final String DEF_OCCUPANCY = getRadUri("pillarOccupancyCount");
     public static final String DEF_ALARM = getRadUri("alarm");
-    public static final String DEF_TAMPER = getRadUri("tamper-status");
+    public static final String DEF_TAMPER = getRadUri("tamperStatus");
     public static final String DEF_THRESHOLD = getRadUri("threshold");
     public static final String DEF_ADJUDICATION = getRadUri("adjudicationCode");
 
@@ -31,10 +31,10 @@ public class RADHelper extends GeoPosHelper {
         return RADConstants.RAD_INSTRUMENT_URI + propName;
     }
     public static String getRadDetectorURI(String propName) {
-        return RADConstants.RAD_URI + "rad-detector-" + propName;
+        return RADConstants.RAD_URI + "radDetector-" + propName;
     }
     public static String getRadItemURI(String propName) {
-        return RADConstants.RAD_URI + "rad-item-" + propName;
+        return RADConstants.RAD_URI + "radItem-" + propName;
     }
 
     ///////// UNMARSHALLER ///////////////
@@ -63,7 +63,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("speedTime")
                 .label("Speed Time")
-                .definition(getRadUri("speed-time"))
+                .definition(getRadUri("speedTime"))
                 .description("time it takes to cover 1 foot of distance")
                 .uomCode("s")
                 .build();
@@ -73,7 +73,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("maxGamma")
                 .label("Max Gamma")
-                .definition(getRadUri("max-gamma"))
+                .definition(getRadUri("maxGamma"))
                 .build();
     }
 
@@ -81,7 +81,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("maxNeutron")
                 .label("Max Neutron")
-                .definition(getRadUri("max-neutron"))
+                .definition(getRadUri("maxNeutron"))
                 .build();
     }
 
@@ -89,7 +89,7 @@ public class RADHelper extends GeoPosHelper {
         return createBoolean()
                 .name("isAdjudicated")
                 .label("Is Adjudicated")
-                .definition(getRadUri("is-adjudicated"))
+                .definition(getRadUri("isAdjudicated"))
                 .build();
     }
 
@@ -97,7 +97,7 @@ public class RADHelper extends GeoPosHelper {
         return createText()
                 .name("aspectMessage")
                 .label("Aspect Message")
-                .definition(getRadUri("aspect-message"))
+                .definition(getRadUri("aspectMessage"))
                 .build();
     }
 
@@ -105,7 +105,7 @@ public class RADHelper extends GeoPosHelper {
         return createTime()
                 .name("backgroundTime")
                 .name("Background Time")
-                .definition(getRadUri("background-time"))
+                .definition(getRadUri("backgroundTime"))
                 //range 20-120seconds
                 .build();
     }
@@ -114,7 +114,7 @@ public class RADHelper extends GeoPosHelper {
                 .asPhenomenonTimeIsoUTC()
                 .name("startTime")
                 .label("Start Time")
-                .definition(getRadUri("occupancy-start-time"))
+                .definition(getRadUri("occupancyStartTime"))
                 .description("The start time of occupancy data")
                 .build();
     }
@@ -124,7 +124,7 @@ public class RADHelper extends GeoPosHelper {
                 .asPhenomenonTimeIsoUTC()
                 .name("endTime")
                 .label("End Time")
-                .definition(getRadUri("occupancy-end-time"))
+                .definition(getRadUri("occupancyEndTime"))
                 .description("The end time of occupancy data")
                 .build();
     }
@@ -133,7 +133,7 @@ public class RADHelper extends GeoPosHelper {
         return createBoolean()
                 .name("gammaAlarm")
                 .label("Gamma Alarm")
-                .definition(getRadUri("gamma-alarm"))
+                .definition(getRadUri("gammaAlarm"))
                 .build();
     }
 
@@ -141,7 +141,7 @@ public class RADHelper extends GeoPosHelper {
         return createBoolean()
                 .name("neutronAlarm")
                 .label("Neutron Alarm")
-                .definition(getRadUri("neutron-alarm"))
+                .definition(getRadUri("neutronAlarm"))
                 .build();
     }
 
@@ -149,7 +149,7 @@ public class RADHelper extends GeoPosHelper {
         return createBoolean()
                 .name("tamperStatus")
                 .label("Tamper Status")
-                .definition(getRadUri("tamper-status"))
+                .definition(DEF_TAMPER)
                 .description("True if the rpm is currently reporting a Tamper state")
                 .build();
     }
@@ -159,7 +159,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("neutronBackground")
                 .label("Neutron Background")
-                .definition(getRadUri("neutron-background"))
+                .definition(getRadUri("neutronBackground"))
                 .description("Neutron count to start occupancy")
                 .build();
     }
@@ -170,7 +170,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("gammaBackground")
                 .label("Gamma Background")
-                .definition(getRadUri("gamma-background"))
+                .definition(getRadUri("gammaBackground"))
                 .description("Gamma count to start occupancy")
                 .build();
     }
@@ -179,7 +179,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("latestGammaBackground")
                 .label("Latest Gamma Background")
-                .definition(getRadUri("latest-gamma-background"))
+                .definition(getRadUri("latestGammaBackground"))
                 .description("Latest gamma background used in threshold and sigma calculations")
                 .build();
     }
@@ -188,7 +188,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("gammaVariance")
                 .label("Gamma Variance")
-                .definition(getRadUri("gamma-variance"))
+                .definition(getRadUri("gammaVariance"))
                 .build();
     }
 
@@ -196,7 +196,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("neutronVariance")
                 .label("Neutron Variance")
-                .definition(getRadUri("neutron-variance"))
+                .definition(getRadUri("neutronVariance"))
                 .build();
     }
 
@@ -204,7 +204,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("gammaVarianceBackground")
                 .label("Gamma Variance/Background")
-                .definition(getRadUri("gamma-variance-background"))
+                .definition(getRadUri("gammaVarianceBackground"))
                 .build();
     }
 
@@ -212,7 +212,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("neutronVarianceBackground")
                 .label("Neutron Variance/Background")
-                .definition(getRadUri("neutron-variance-background"))
+                .definition(getRadUri("neutronVarianceBackground"))
                 .build();
     }
 
@@ -220,7 +220,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("objectMark")
                 .label("Object Mark")
-                .definition(getRadUri("object-mark"))
+                .definition(getRadUri("objectMark"))
                 .build();
     }
 
@@ -228,7 +228,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("nSigma")
                 .label("N Sigma")
-                .definition(getRadUri("n-sigma"))
+                .definition(getRadUri("nSigma"))
                 .description("Number of standard deviations above average background to test alarm threshold against")
                 .build();
     }
@@ -246,7 +246,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("threshold")
                 .label("Threshold")
-                .definition(getRadUri("threshold"))
+                .definition(DEF_THRESHOLD)
                 .description("Calculated threshold for an alarm")
                 .build();
     }
@@ -255,7 +255,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("zmax")
                 .label("ZMax")
-                .definition(getRadUri("zmax"))
+                .definition(getRadUri("zMax"))
                 .description("Maximum z-value")
                 .build();
     }
@@ -272,7 +272,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("occupancyHoldin")
                 .label("Occupancy Holdin")
-                .definition(getRadUri("occupancy-holdin"))
+                .definition(getRadUri("occupancyHoldin"))
                 .description("number of 200ms time intervals to hold in after occupancy signal indicates the system is vacant")
                 .build();
     }
@@ -290,7 +290,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("sequentialIntervals")
                 .label("Sequential Intervals")
-                .definition(getRadUri("sequential-intervals"))
+                .definition(getRadUri("sequentialIntervals"))
                 .build();
     }
 
@@ -298,7 +298,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("neutronMaximumIntervals")
                 .label("Neutron Maximum Intervals")
-                .definition(getRadUri("maximum-intervals"))
+                .definition(getRadUri("maximumIntervals"))
                 .build();
     }
 
@@ -314,7 +314,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("backgroundSigma")
                 .label("Background Sigma")
-                .definition(getRadUri("background-sigma"))
+                .definition(getRadUri("backgroundSigma"))
                 .description("sets a sigma value for a throw-through alarm")
 //                .description("is used to set alarm thresholds for detecting anomalies in radiation levels")
                 .build();
@@ -324,7 +324,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("highBackgroundFault")
                 .label("High Background Fault")
-                .definition(getRadUri("high-background-fault"))
+                .definition(getRadUri("highBackgroundFault"))
                 .description("threshold value measured in counts per second(cps) within a radiation detection system that will trigger a fault")
 //                .uomCode("cps")
                 .build();
@@ -333,7 +333,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("lowBackgroundFault")
                 .label("Low Background Fault")
-                .definition(getRadUri("low-background-fault"))
+                .definition(getRadUri("lowBackgroundFault"))
                 .description("threshold value measured in counts per second(cps) within a radiation detection system that will trigger a fault")
 //                .uomCode("cps")
                 .build();
@@ -342,25 +342,25 @@ public class RADHelper extends GeoPosHelper {
         return createText()
                 .name("detectorsOnLine")
                 .label("Detectors on line")
-                .definition(getRadUri("detectors-on-line"))
+                .definition(getRadUri("detectorsOnLine"))
                 .description("radiation detectors that are actively operating and connected to the monitoring system")
                 .build();
     }
 
     public Quantity createSlaveULD(){
         return createQuantity()
-                .name("slave-upper-level-discriminator")
+                .name("slaveLevelUpperDiscriminator")
                 .label("Slave Upper Level Discriminator")
-                .definition(getRadUri("slave-level-upper-discriminator"))
+                .definition(getRadUri("slaveLevelUpperDiscriminator"))
                 .description("threshold setting that defines an upper limit for the energy of detected radiation events")
                 .build();
     }
 
     public Quantity createSlaveLLD(){
         return createQuantity()
-                .name("slave-lower-level-discriminator")
+                .name("slaveLevelLowerDiscriminator")
                 .label("Slave Lower Level Discriminator")
-                .definition(getRadUri("slave-level-lower-discriminator"))
+                .definition(getRadUri("slaveLevelLowerDiscriminator"))
                 .description("threshold setting that defines an lower limit for the energy of detected radiation events")
                 .build();
     }
@@ -368,7 +368,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("relayOutput")
                 .label("Relay Output")
-                .definition(getRadUri("relay-output"))
+                .definition(getRadUri("relayOutput"))
                 .description("electrical output signal that can activate or control other devices based on detection of radiation")
                 .build();
     }
@@ -386,7 +386,7 @@ public class RADHelper extends GeoPosHelper {
         return createText()
                 .name("softwareVersion")
                 .label("Software Version")
-                .definition(getRadUri("software-version"))
+                .definition(getRadUri("softwareVersion"))
                 .addAllowedValues("A", "T")
                 .build();
     }
@@ -394,7 +394,7 @@ public class RADHelper extends GeoPosHelper {
         return createText()
                 .name("firmwareVersion")
                 .label("Firmware version")
-                .definition(getRadUri("firmware-version"))
+                .definition(getRadUri("firmwareVersion"))
                 .build();
     }
 
@@ -402,7 +402,7 @@ public class RADHelper extends GeoPosHelper {
         return createText()
                 .name("laneID")
                 .label("Lane ID")
-                .definition(RADHelper.getRadUri("lane-id"))
+                .definition(RADHelper.getRadUri("laneId"))
                 .description("identifies the lane for each rpm system")
                 .build();
     }
@@ -411,7 +411,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("speedMPH")
                 .label("Speed (MPH)")
-                .definition(getRadUri("speed-mph"))
+                .definition(getRadUri("speedMph"))
                 .uomCode("mph")
                 //max 99
                 .build();
@@ -421,7 +421,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("speedKPH")
                 .label("Speed (KPH)")
-                .definition(getRadUri("speed-kph"))
+                .definition(getRadUri("speedKph"))
                 .uomCode("kph")
                 //max 999
                 .build();
@@ -431,7 +431,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("speedMMS")
                 .label("Speed (MM/S)")
-                .definition(getRadUri("speed-mms"))
+                .definition(getRadUri("speedMms"))
                 .uomCode("mm/s")
                 .build();
     }
@@ -440,7 +440,7 @@ public class RADHelper extends GeoPosHelper {
         return createCount()
                 .name("occupancyCount")
                 .label("Pillar Occupancy Count")
-                .definition(getRadUri("pillar-occupancy-count"))
+                .definition(DEF_OCCUPANCY)
                 .description("incremented count every time the pillar clears the occupancy, resets daily and on power cycle")
                 .build();
     }
@@ -449,7 +449,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("batteryCharge")
                 .label("Battery Charge")
-                .definition(getRadInstrumentUri("battery-charge"))
+                .definition(getRadInstrumentUri("batteryCharge"))
                 .uomCode("%")
                 .build();
     }
@@ -458,11 +458,11 @@ public class RADHelper extends GeoPosHelper {
         return createArray()
                 .name("linCalibration")
                 .label("Lin Calibration")
-                .definition(getRadUri("lin-cal"))
+                .definition(getRadUri("linCal"))
                 .withFixedSize(3)
                 .withElement("linCalibrationValues", createQuantity()
                         .label("Lin Calibration Values")
-                        .definition(getRadUri("lin-cal-vals"))
+                        .definition(getRadUri("linCalVals"))
                         .description("Linear Calibration Values")
                         .dataType(DataType.DOUBLE)
                         .build())
@@ -473,11 +473,11 @@ public class RADHelper extends GeoPosHelper {
         return createArray()
                 .name("cmpCalibration")
                 .label("Cmp Calibration")
-                .definition(getRadUri("cmp-cal"))
+                .definition(getRadUri("cmpCal"))
                 .withFixedSize(3)
                 .withElement("CmpCalibrationValues", createQuantity()
                         .label("Cmp Calibration Values")
-                        .definition(getRadUri("cmp-cal-vals"))
+                        .definition(getRadUri("cmpCalVals"))
                         .description("Calibration Values")
                         .dataType(DataType.DOUBLE)
                         .build())
@@ -497,11 +497,11 @@ public class RADHelper extends GeoPosHelper {
         return createArray()
                 .name("linSpectrum")
                 .label("Lin Spectrum")
-                .definition(getRadUri("lin-spectrum"))
+                .definition(getRadUri("linSpectrum"))
                 .withVariableSize(fieldID)
                 .withElement("linSpectrumValues", createQuantity()
                         .label("Lin Spectrum Values")
-                        .definition(getRadUri("lin-spectrum-vals"))
+                        .definition(getRadUri("linSpectrumVals"))
                         .description("Spectrum Values")
                         .dataType(DataType.DOUBLE)
                         .build())
@@ -512,11 +512,11 @@ public class RADHelper extends GeoPosHelper {
         return createArray()
                 .name("cmpSpectrum")
                 .label("Cmp Spectrum")
-                .definition(getRadUri("cmp-spectrum"))
+                .definition(getRadUri("cmpSpectrum"))
                 .withVariableSize(fieldID)
                 .withElement("cmpSpectrumValues", createQuantity()
                         .label("Cmp Spectrum Values")
-                        .definition(getRadUri("cmp-spectrum-vals"))
+                        .definition(getRadUri("cmpSpectrumVals"))
                         .description("Spectrum Values")
                         .dataType(DataType.DOUBLE)
                         .build())
@@ -527,7 +527,7 @@ public class RADHelper extends GeoPosHelper {
         return createCategory()
                 .name("alarmState")
                 .label("Alarm State")
-                .definition(RADHelper.getRadUri("alarm"));
+                .definition(DEF_ALARM);
     }
 
     public Category createGammaAlarmState() {
@@ -546,7 +546,7 @@ public class RADHelper extends GeoPosHelper {
         return createCount()
                 .name("gammaGrossCount")
                 .label("Gamma Gross Count")
-                .definition(getRadUri("gamma-gross-count"))
+                .definition(DEF_GAMMA)
                 .build();
     }
 
@@ -554,7 +554,7 @@ public class RADHelper extends GeoPosHelper {
         return createCount()
                 .name("gammaCount" + countID)
                 .label("Gamma Count " + countID)
-                .definition(getRadUri("gamma-count"))
+                .definition(getRadUri("gammaCount"))
                 .build();
     }
 
@@ -562,7 +562,7 @@ public class RADHelper extends GeoPosHelper {
         return createCount()
                 .name("gammaCountPerInterval" + countID)
                 .label("Gamma Count (200ms) " + countID)
-                .definition(getRadUri("gamma-count-per-interval"))
+                .definition(getRadUri("gammaCountPerInterval"))
                 .value(0)
                 .build();
     }
@@ -571,7 +571,7 @@ public class RADHelper extends GeoPosHelper {
         return createCount()
                 .name("neutronGrossCount")
                 .label("Neutron Gross Count")
-                .definition(getRadUri("neutron-gross-count"))
+                .definition(DEF_NEUTRON)
                 .build();
     }
 
@@ -579,7 +579,7 @@ public class RADHelper extends GeoPosHelper {
         return createCount()
                 .name("neutronCount" + countID)
                 .label("Neutron Count " + countID)
-                .definition(getRadUri("neutron-count"))
+                .definition(getRadUri("neutronCount"))
                 .build();
     }
 
@@ -596,7 +596,7 @@ public class RADHelper extends GeoPosHelper {
         return createCategory()
                 .name("measurementClassCode")
                 .label("Measurement Class Code")
-                .definition(getRadUri("measurement-class-code"))
+                .definition(getRadUri("measurementClassCode"))
                 .addAllowedValues(MeasurementClassCodeSimpleType.FOREGROUND.value(), MeasurementClassCodeSimpleType.INTRINSIC_ACTIVITY.value(), MeasurementClassCodeSimpleType.BACKGROUND.value(), MeasurementClassCodeSimpleType.NOT_SPECIFIED.value(), MeasurementClassCodeSimpleType.CALIBRATION.value())
                 .build();
     }
@@ -605,7 +605,7 @@ public class RADHelper extends GeoPosHelper {
         return createCategory()
                 .name("alarmCategoryCode")
                 .label("Alarm Category Code")
-                .definition(getRadUri("alarm-category-code"))
+                .definition(getRadUri("alarmCategoryCode"))
                 .addAllowedValues(RadAlarmCategoryCodeSimpleType.ALPHA.value(),RadAlarmCategoryCodeSimpleType.NEUTRON.value(),RadAlarmCategoryCodeSimpleType.BETA.value(),RadAlarmCategoryCodeSimpleType.GAMMA.value(),RadAlarmCategoryCodeSimpleType.OTHER.value(),RadAlarmCategoryCodeSimpleType.ISOTOPE.value())
                 .build();
     }
@@ -615,7 +615,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("masterLowerLevelDiscriminator")
                 .label("Master Lower Level Discriminator")
-                .definition(getRadUri("master-lower-level-discriminator"))
+                .definition(getRadUri("masterLowerLevelDiscriminator"))
                 .build();
     }
 
@@ -623,7 +623,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("masterUpperLevelDiscriminator")
                 .label("Master UpperLevel Discriminator")
-                .definition(getRadUri("master-upper-level-discriminator"))
+                .definition(getRadUri("masterUpperLevelDiscriminator"))
                 .build();
     }
 
@@ -634,7 +634,7 @@ public class RADHelper extends GeoPosHelper {
         return createText()
                 .name("radInstrumentManufacturerName")
                 .label("Rad Instrument Manufacturer Name")
-                .definition(getRadInstrumentUri("manufacturer-name"))
+                .definition(getRadInstrumentUri("manufacturerName"))
                 .description("Manufacturer name of described RAD Instrument")
                 .build();
     }
@@ -652,7 +652,7 @@ public class RADHelper extends GeoPosHelper {
         return createText()
                 .name("radInstrumentModelName")
                 .label("Rad Instrument Model Name")
-                .definition(getRadInstrumentUri("model-name"))
+                .definition(getRadInstrumentUri("modelName"))
                 .description("Model name of described RAD Instrument")
                 .build();
     }
@@ -670,7 +670,7 @@ public class RADHelper extends GeoPosHelper {
         return createCategory()
                 .name("radInstrumentClassCode")
                 .label("Rad Instrument Class Code")
-                .definition(getRadInstrumentUri("class-code"))
+                .definition(getRadInstrumentUri("classCode"))
                 .description("Class Code for type of RAD Instrument")
                 .addAllowedValues("Backpack", "Dosimeter", "Electronic Personal Emergency Radiation Detector", "Mobile System", "Network Area Monitor", "Neutron Handheld", "Personal Radiation Detector", "Radionuclide Identifier", "Portal Monitor", "Spectroscopic Portal Monitor", "Spectroscopic Personal Radiation Detector", "Gamma Handheld", "Transportable System", "Other")
                 .build();
@@ -690,7 +690,7 @@ public class RADHelper extends GeoPosHelper {
         return createText()
                 .name("radInstrumentComponentName")
                 .label("Rad Instrument Component Name")
-                .definition(getRadInstrumentUri("component-name"))
+                .definition(getRadInstrumentUri("componenName"))
                 .build();
     }
 
@@ -698,14 +698,14 @@ public class RADHelper extends GeoPosHelper {
         return createText()
                 .name("rapiscanMessage")
                 .label("Rapiscan Message")
-                .definition(getRadInstrumentUri("rapiscan-message"))
+                .definition(getRadInstrumentUri("rapiscanMessage"))
                 .build();
     }
     public Text createRIComponentVersion() {
         return createText()
                 .name("radInstrumentComponentVersion")
                 .label("Rad Instrument Component Version")
-                .definition(getRadInstrumentUri("component-version"))
+                .definition(getRadInstrumentUri("componentVersion"))
                 .build();
     }
     // TODO: Create Record for Quality Control
@@ -725,7 +725,7 @@ public class RADHelper extends GeoPosHelper {
         return createRecord()
                 .name("characteristicGroupName")
                 .label("Characteristic Group Name")
-                .definition(getRadInstrumentUri("characteristic-group"))
+                .definition(getRadInstrumentUri("characteristicGroup"))
                 .build();
     }
 
@@ -735,22 +735,22 @@ public class RADHelper extends GeoPosHelper {
                 .addField("characteristicName",
                         createText()
                                 .label("Characteristic Name")
-                                .definition(getRadInstrumentUri("characteristic-name"))
+                                .definition(getRadInstrumentUri("characteristicName"))
                                 .build())
                 .addField("characteristicValue",
                         createText()
                                 .label("Characteristic Value")
-                                .definition(getRadInstrumentUri("characteristic-value"))
+                                .definition(getRadInstrumentUri("characteristicValue"))
                                 .build())
                 .addField("characteristicValueUnits",
                         createText()
                                 .label("Characteristic Value Units")
-                                .definition(getRadInstrumentUri("characteristic-value-units"))
+                                .definition(getRadInstrumentUri("characteristicValueUnits"))
                                 .build())
                 .addField("characteristicValueDataClassCode",
                         createCategory()
                                 .label("Characteristic Value Data Class Code")
-                                .definition(getRadInstrumentUri("characteristic-value-data-class-code"))
+                                .definition(getRadInstrumentUri("characteristicValueDataClassCode"))
                                 .addAllowedValues(ValueDataClassCodeSimpleType.ANY_URI.value(), ValueDataClassCodeSimpleType.BASE_64_BINARY.value(), ValueDataClassCodeSimpleType.BOOLEAN.value(), ValueDataClassCodeSimpleType.BYTE.value(), ValueDataClassCodeSimpleType.DATE.value(), ValueDataClassCodeSimpleType.DATE_TIME.value(), ValueDataClassCodeSimpleType.DECIMAL.value(), ValueDataClassCodeSimpleType.DOUBLE.value(), ValueDataClassCodeSimpleType.DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.DURATION.value(), ValueDataClassCodeSimpleType.FLOAT.value(), ValueDataClassCodeSimpleType.HEX_BINARY.value(), ValueDataClassCodeSimpleType.ID.value(), ValueDataClassCodeSimpleType.IDREF.value(), ValueDataClassCodeSimpleType.IDREFS.value(), ValueDataClassCodeSimpleType.INT.value(), ValueDataClassCodeSimpleType.INTEGER.value(), ValueDataClassCodeSimpleType.LONG.value(), ValueDataClassCodeSimpleType.NAME.value(), ValueDataClassCodeSimpleType.NC_NAME.value(), ValueDataClassCodeSimpleType.NEGATIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NON_BLANK_STRING.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_DOUBLE.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NON_POSITIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NORMALIZED_STRING.value(), ValueDataClassCodeSimpleType.PERCENT.value(), ValueDataClassCodeSimpleType.POSITIVE_DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.POSITIVE_DOUBLE.value(), ValueDataClassCodeSimpleType.POSITIVE_INTEGER.value(), ValueDataClassCodeSimpleType.POSITIVE_INTEGER_LIST.value(), ValueDataClassCodeSimpleType.SHORT.value(), ValueDataClassCodeSimpleType.STRING.value(), ValueDataClassCodeSimpleType.STRING_LIST.value(), ValueDataClassCodeSimpleType.TIME.value(), ValueDataClassCodeSimpleType.TOKEN.value(), ValueDataClassCodeSimpleType.UNSIGNED_BYTE.value(), ValueDataClassCodeSimpleType.UNSIGNED_INT.value(), ValueDataClassCodeSimpleType.UNSIGNED_LONG.value(), ValueDataClassCodeSimpleType.UNSIGNED_SHORT.value(), ValueDataClassCodeSimpleType.ZERO_TO_ONE_DOUBLE.value())
                                 .build())
                 .build();
@@ -763,22 +763,22 @@ public class RADHelper extends GeoPosHelper {
                 .addField("characteristicName",
                         createText()
                                 .label("Characteristic Name")
-                                .definition(getRadInstrumentUri("characteristic-name"))
+                                .definition(getRadInstrumentUri("characteristicName"))
                                 .build())
                 .addField("characteristicValue",
                         createQuantity()
                                 .label("Characteristic Value")
-                                .definition(getRadInstrumentUri("characteristic-value"))
+                                .definition(getRadInstrumentUri("characteristicValue"))
                                 .build())
                 .addField("characteristicValueUnits",
                         createText()
                                 .label("Characteristic Value Units")
-                                .definition(getRadInstrumentUri("characteristic-value-units"))
+                                .definition(getRadInstrumentUri("characteristicValueUnits"))
                                 .build())
                 .addField("characteristicValueDataClassCode",
                         createCategory()
                                 .label("Characteristic Value Data Class Code")
-                                .definition(getRadInstrumentUri("characteristic-value-data-class-code"))
+                                .definition(getRadInstrumentUri("characteristicValueDataClassCode"))
                                 .addAllowedValues(ValueDataClassCodeSimpleType.ANY_URI.value(), ValueDataClassCodeSimpleType.BASE_64_BINARY.value(), ValueDataClassCodeSimpleType.BOOLEAN.value(), ValueDataClassCodeSimpleType.BYTE.value(), ValueDataClassCodeSimpleType.DATE.value(), ValueDataClassCodeSimpleType.DATE_TIME.value(), ValueDataClassCodeSimpleType.DECIMAL.value(), ValueDataClassCodeSimpleType.DOUBLE.value(), ValueDataClassCodeSimpleType.DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.DURATION.value(), ValueDataClassCodeSimpleType.FLOAT.value(), ValueDataClassCodeSimpleType.HEX_BINARY.value(), ValueDataClassCodeSimpleType.ID.value(), ValueDataClassCodeSimpleType.IDREF.value(), ValueDataClassCodeSimpleType.IDREFS.value(), ValueDataClassCodeSimpleType.INT.value(), ValueDataClassCodeSimpleType.INTEGER.value(), ValueDataClassCodeSimpleType.LONG.value(), ValueDataClassCodeSimpleType.NAME.value(), ValueDataClassCodeSimpleType.NC_NAME.value(), ValueDataClassCodeSimpleType.NEGATIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NON_BLANK_STRING.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_DOUBLE.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NON_POSITIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NORMALIZED_STRING.value(), ValueDataClassCodeSimpleType.PERCENT.value(), ValueDataClassCodeSimpleType.POSITIVE_DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.POSITIVE_DOUBLE.value(), ValueDataClassCodeSimpleType.POSITIVE_INTEGER.value(), ValueDataClassCodeSimpleType.POSITIVE_INTEGER_LIST.value(), ValueDataClassCodeSimpleType.SHORT.value(), ValueDataClassCodeSimpleType.STRING.value(), ValueDataClassCodeSimpleType.STRING_LIST.value(), ValueDataClassCodeSimpleType.TIME.value(), ValueDataClassCodeSimpleType.TOKEN.value(), ValueDataClassCodeSimpleType.UNSIGNED_BYTE.value(), ValueDataClassCodeSimpleType.UNSIGNED_INT.value(), ValueDataClassCodeSimpleType.UNSIGNED_LONG.value(), ValueDataClassCodeSimpleType.UNSIGNED_SHORT.value(), ValueDataClassCodeSimpleType.ZERO_TO_ONE_DOUBLE.value())
                                 .build())
                 .build();
@@ -791,22 +791,22 @@ public class RADHelper extends GeoPosHelper {
                 .addField("characteristicName",
                         createText()
                                 .label("Characteristic Name")
-                                .definition(getRadInstrumentUri("characteristic-name"))
+                                .definition(getRadInstrumentUri("characteristicName"))
                                 .build())
                 .addField("characteristicValue",
                         createCount()
                                 .label("Characteristic Value")
-                                .definition(getRadInstrumentUri("characteristic-value"))
+                                .definition(getRadInstrumentUri("characteristicValue"))
                                 .build())
                 .addField("characteristicValueUnits",
                         createText()
                                 .label("Characteristic Value Units")
-                                .definition(getRadInstrumentUri("characteristic-value-units"))
+                                .definition(getRadInstrumentUri("characteristicValueUnits"))
                                 .build())
                 .addField("characteristicValueDataClassCode",
                         createCategory()
                                 .label("Characteristic Value Data Class Code")
-                                .definition(getRadInstrumentUri("characteristic-value-data-class-code"))
+                                .definition(getRadInstrumentUri("characteristicValueDataClassCode"))
                                 .addAllowedValues(ValueDataClassCodeSimpleType.ANY_URI.value(), ValueDataClassCodeSimpleType.BASE_64_BINARY.value(), ValueDataClassCodeSimpleType.BOOLEAN.value(), ValueDataClassCodeSimpleType.BYTE.value(), ValueDataClassCodeSimpleType.DATE.value(), ValueDataClassCodeSimpleType.DATE_TIME.value(), ValueDataClassCodeSimpleType.DECIMAL.value(), ValueDataClassCodeSimpleType.DOUBLE.value(), ValueDataClassCodeSimpleType.DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.DURATION.value(), ValueDataClassCodeSimpleType.FLOAT.value(), ValueDataClassCodeSimpleType.HEX_BINARY.value(), ValueDataClassCodeSimpleType.ID.value(), ValueDataClassCodeSimpleType.IDREF.value(), ValueDataClassCodeSimpleType.IDREFS.value(), ValueDataClassCodeSimpleType.INT.value(), ValueDataClassCodeSimpleType.INTEGER.value(), ValueDataClassCodeSimpleType.LONG.value(), ValueDataClassCodeSimpleType.NAME.value(), ValueDataClassCodeSimpleType.NC_NAME.value(), ValueDataClassCodeSimpleType.NEGATIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NON_BLANK_STRING.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_DOUBLE.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NON_POSITIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NORMALIZED_STRING.value(), ValueDataClassCodeSimpleType.PERCENT.value(), ValueDataClassCodeSimpleType.POSITIVE_DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.POSITIVE_DOUBLE.value(), ValueDataClassCodeSimpleType.POSITIVE_INTEGER.value(), ValueDataClassCodeSimpleType.POSITIVE_INTEGER_LIST.value(), ValueDataClassCodeSimpleType.SHORT.value(), ValueDataClassCodeSimpleType.STRING.value(), ValueDataClassCodeSimpleType.STRING_LIST.value(), ValueDataClassCodeSimpleType.TIME.value(), ValueDataClassCodeSimpleType.TOKEN.value(), ValueDataClassCodeSimpleType.UNSIGNED_BYTE.value(), ValueDataClassCodeSimpleType.UNSIGNED_INT.value(), ValueDataClassCodeSimpleType.UNSIGNED_LONG.value(), ValueDataClassCodeSimpleType.UNSIGNED_SHORT.value(), ValueDataClassCodeSimpleType.ZERO_TO_ONE_DOUBLE.value())
                                 .build())
                 .build();
@@ -819,22 +819,22 @@ public class RADHelper extends GeoPosHelper {
                 .addField("characteristicName",
                         createText()
                                 .label("Characteristic Name")
-                                .definition(getRadInstrumentUri("characteristic-name"))
+                                .definition(getRadInstrumentUri("characteristicName"))
                                 .build())
                 .addField("characteristicValue",
                         createBoolean()
                                 .label("Characteristic Value")
-                                .definition(getRadInstrumentUri("characteristic-value"))
+                                .definition(getRadInstrumentUri("characteristicValue"))
                                 .build())
                 .addField("characteristicValueUnits",
                         createText()
                                 .label("Characteristic Value Units")
-                                .definition(getRadInstrumentUri("characteristic-value-units"))
+                                .definition(getRadInstrumentUri("characteristicValueUnits"))
                                 .build())
                 .addField("characteristicValueDataClassCode",
                         createCategory()
                                 .label("Characteristic Value Data Class Code")
-                                .definition(getRadInstrumentUri("characteristic-value-data-class-code"))
+                                .definition(getRadInstrumentUri("characteristicValueDataClassCode"))
                                 .addAllowedValues(ValueDataClassCodeSimpleType.ANY_URI.value(), ValueDataClassCodeSimpleType.BASE_64_BINARY.value(), ValueDataClassCodeSimpleType.BOOLEAN.value(), ValueDataClassCodeSimpleType.BYTE.value(), ValueDataClassCodeSimpleType.DATE.value(), ValueDataClassCodeSimpleType.DATE_TIME.value(), ValueDataClassCodeSimpleType.DECIMAL.value(), ValueDataClassCodeSimpleType.DOUBLE.value(), ValueDataClassCodeSimpleType.DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.DURATION.value(), ValueDataClassCodeSimpleType.FLOAT.value(), ValueDataClassCodeSimpleType.HEX_BINARY.value(), ValueDataClassCodeSimpleType.ID.value(), ValueDataClassCodeSimpleType.IDREF.value(), ValueDataClassCodeSimpleType.IDREFS.value(), ValueDataClassCodeSimpleType.INT.value(), ValueDataClassCodeSimpleType.INTEGER.value(), ValueDataClassCodeSimpleType.LONG.value(), ValueDataClassCodeSimpleType.NAME.value(), ValueDataClassCodeSimpleType.NC_NAME.value(), ValueDataClassCodeSimpleType.NEGATIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NON_BLANK_STRING.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_DOUBLE.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NON_POSITIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NORMALIZED_STRING.value(), ValueDataClassCodeSimpleType.PERCENT.value(), ValueDataClassCodeSimpleType.POSITIVE_DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.POSITIVE_DOUBLE.value(), ValueDataClassCodeSimpleType.POSITIVE_INTEGER.value(), ValueDataClassCodeSimpleType.POSITIVE_INTEGER_LIST.value(), ValueDataClassCodeSimpleType.SHORT.value(), ValueDataClassCodeSimpleType.STRING.value(), ValueDataClassCodeSimpleType.STRING_LIST.value(), ValueDataClassCodeSimpleType.TIME.value(), ValueDataClassCodeSimpleType.TOKEN.value(), ValueDataClassCodeSimpleType.UNSIGNED_BYTE.value(), ValueDataClassCodeSimpleType.UNSIGNED_INT.value(), ValueDataClassCodeSimpleType.UNSIGNED_LONG.value(), ValueDataClassCodeSimpleType.UNSIGNED_SHORT.value(), ValueDataClassCodeSimpleType.ZERO_TO_ONE_DOUBLE.value())
                                 .build())
                 .build();
@@ -855,7 +855,7 @@ public class RADHelper extends GeoPosHelper {
         return createCategory()
                 .name("radDetectorCategoryCode")
                 .label("Rad Detector Category Code")
-                .definition(getRadDetectorURI("category-code"))
+                .definition(getRadDetectorURI("categoryCode"))
                 .addAllowedValues(RadDetectorCategoryCodeSimpleType.GAMMA.value(), RadDetectorCategoryCodeSimpleType.NEUTRON.value(), RadDetectorCategoryCodeSimpleType.ALPHA.value(), RadDetectorCategoryCodeSimpleType.BETA.value(), RadDetectorCategoryCodeSimpleType.X_RAY.value(), RadDetectorCategoryCodeSimpleType.OTHER.value())
                 .build();
     }
@@ -864,7 +864,7 @@ public class RADHelper extends GeoPosHelper {
         return createCategory()
                 .name("radDetectorKindCode")
                 .label("Rad Detector Kind Code")
-                .definition(getRadDetectorURI("kind-code"))
+                .definition(getRadDetectorURI("kindKode"))
                 .addAllowedValues(RadDetectorKindCodeSimpleType.HP_GE.value(), RadDetectorKindCodeSimpleType.HP_XE.value(), RadDetectorKindCodeSimpleType.NA_I.value(), RadDetectorKindCodeSimpleType.LA_BR_3.value(), RadDetectorKindCodeSimpleType.LA_CL_3.value(), RadDetectorKindCodeSimpleType.BGO.value(), RadDetectorKindCodeSimpleType.CZT.value(), RadDetectorKindCodeSimpleType.CD_TE.value(), RadDetectorKindCodeSimpleType.CS_I.value(), RadDetectorKindCodeSimpleType.GMT.value(), RadDetectorKindCodeSimpleType.GMTW.value(), RadDetectorKindCodeSimpleType.LI_FIBER.value(), RadDetectorKindCodeSimpleType.PVT.value(), RadDetectorKindCodeSimpleType.PS.value(), RadDetectorKindCodeSimpleType.HE_3.value(), RadDetectorKindCodeSimpleType.HE_4.value(), RadDetectorKindCodeSimpleType.LI_GLASS.value(), RadDetectorKindCodeSimpleType.LI_I.value(), RadDetectorKindCodeSimpleType.SR_I_2.value(), RadDetectorKindCodeSimpleType.CLYC.value(), RadDetectorKindCodeSimpleType.CD_WO_4.value(), RadDetectorKindCodeSimpleType.BF_3.value(), RadDetectorKindCodeSimpleType.HG_I_2.value(), RadDetectorKindCodeSimpleType.CE_BR_4.value(), RadDetectorKindCodeSimpleType.LI_CAF.value(), RadDetectorKindCodeSimpleType.LI_ZN_S.value(), RadDetectorKindCodeSimpleType.OTHER.value())
                 .build();
     }
@@ -881,7 +881,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("radDetectorLengthValue")
                 .label("Rad Detector Length Value")
-                .definition(getRadDetectorURI("length-value"))
+                .definition(getRadDetectorURI("lengthValue"))
                 .uom("cm")
                 .build();
     }
@@ -890,7 +890,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("radDetectorWidthValue")
                 .label("Rad Detector Width Value")
-                .definition(getRadDetectorURI("width-value"))
+                .definition(getRadDetectorURI("widthValue"))
                 .uom("cm")
                 .build();
     }
@@ -899,7 +899,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("radDetectorDepthValue")
                 .label("Rad Detector Depth Value")
-                .definition(getRadDetectorURI("depth-value"))
+                .definition(getRadDetectorURI("depthValue"))
                 .uom("cm")
                 .build();
     }
@@ -908,7 +908,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("radDetectorDiameterValue")
                 .label("Rad Detector Diameter Value")
-                .definition(getRadDetectorURI("diameter-value"))
+                .definition(getRadDetectorURI("diameterValue"))
                 .uom("cm")
                 .build();
     }
@@ -917,7 +917,7 @@ public class RADHelper extends GeoPosHelper {
         return createQuantity()
                 .name("radDetectorVolumeValue")
                 .label("Rad Detector Volume Value")
-                .definition(getRadDetectorURI("volume-value"))
+                .definition(getRadDetectorURI("volumeValue"))
                 .description("Detection Volume in cubic centimeters")
                 .uom("cc")
                 .build();
@@ -949,17 +949,17 @@ public class RADHelper extends GeoPosHelper {
                 .addField("radItemQuantityValue",
                         createQuantity()
                                 .label("Rad Item Quantity Value")
-                                .definition(getRadItemURI("quantity-value"))
+                                .definition(getRadItemURI("quantityValue"))
                                 .build())
                 .addField("radItemQuantityUncertaintyValue",
                         createQuantity()
                                 .label("Rad Item Quantity Uncertainty Value")
-                                .definition(getRadItemURI("quantity-uncertainty-value"))
+                                .definition(getRadItemURI("quantityUncertaintyValue"))
                                 .build())
                 .addField("radItemQuantityUnits",
                         createText()
                                 .label("Rad Item Quantity Units")
-                                .definition(getRadItemURI("quantity-units"))
+                                .definition(getRadItemURI("quantityUnits"))
                                 .build())
                 .build();
     }

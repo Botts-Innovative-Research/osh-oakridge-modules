@@ -2,7 +2,6 @@
 package com.botts.impl.service.oscar.reports.types;
 
 import com.botts.impl.service.oscar.OSCARServiceModule;
-import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
 import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
 import com.botts.impl.service.oscar.reports.helpers.Utils;
 import com.itextpdf.kernel.pdf.PdfDocument;
@@ -11,11 +10,7 @@ import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.impl.utils.rad.RADHelper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
-import java.io.IOException;
 import java.io.OutputStream;
 import java.time.Instant;
 import java.util.HashMap;
@@ -25,7 +20,6 @@ import java.util.function.Predicate;
 
 public class RDSReport extends Report {
 
-    private static final Logger log = LoggerFactory.getLogger(RDSReport.class);
     String reportTitle = "RDS Site Report";
 
     Document document;
@@ -57,9 +51,7 @@ public class RDSReport extends Report {
         addDriveStorageAvailability();
 
         document.close();
-        pdfDocument.close();
-
-        tableGenerator =null;
+        tableGenerator = null;
     }
 
     private void addHeader(){
@@ -84,7 +76,6 @@ public class RDSReport extends Report {
         long gammaAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module ,gammaPredicate, begin, end);
         long neutronAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, neutronPredicate, begin, end);
         long totalOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyTotalPredicate, begin, end);
-//        long nonAlarmingOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, occupancyNonAlarmingPredicate, begin, end);
 //        long emlSuppressedCount= Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, emlSuppPredicate);
         long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
         long alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
@@ -93,7 +84,6 @@ public class RDSReport extends Report {
         alarmOccCounts.put("Gamma Alarm", String.valueOf(gammaAlarmCount));
         alarmOccCounts.put("Neutron Alarm", String.valueOf(neutronAlarmCount));
         alarmOccCounts.put("Gamma-Neutron Alarm", String.valueOf(gammaNeutronAlarmCount));
-//        alarmOccCounts.put("Non-Alarming Occupancies", String.valueOf(nonAlarmingOccupancyCount));
         alarmOccCounts.put("Total Occupancies", String.valueOf(totalOccupancyCount));
         alarmOccCounts.put("Alarm Occupancy Rate", String.valueOf(alarmOccupancyAverage));
 

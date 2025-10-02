@@ -9,8 +9,6 @@ import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.impl.utils.rad.RADHelper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import java.io.OutputStream;
 import java.time.Instant;
 import java.util.HashMap;
@@ -20,7 +18,6 @@ import java.util.function.Predicate;
 
 public class LaneReport extends Report {
 
-    private static final Logger log = LoggerFactory.getLogger(LaneReport.class);
     String reportTitle = "Lane Report";
 
     Document document;
@@ -50,14 +47,13 @@ public class LaneReport extends Report {
         addFaultStatistics();
 
         document.close();
-        pdfDocument.close();
 
         tableGenerator = null;
     }
 
     private void addHeader(){
         document.add(new Paragraph(reportTitle).setFontSize(16).simulateBold());
-        document.add(new Paragraph("Lane Name: " + "TODO: lane name").setFontSize(12));
+        document.add(new Paragraph("Lane Name: " + laneUID).setFontSize(12));
         document.add(new Paragraph("\n"));
     }
 
@@ -98,6 +94,10 @@ public class LaneReport extends Report {
 //        alarmOccCounts.put("EML Alarm Rate", emlSuppressedAverage);
 
         var table = tableGenerator.addTable(alarmOccCounts);
+        if (table == null) {
+            document.add(new Paragraph("Failed to add Alarm Stats table to pdf"));
+            return;
+        }
         document.add(table);
 
         document.add(new Paragraph("\n"));
@@ -130,7 +130,14 @@ public class LaneReport extends Report {
         faultCounts.put("Gamma-Low", String.valueOf(gammaLowFaultCount));
         faultCounts.put("Neutron-High", String.valueOf(neutronHighFaultCount));
 
-        tableGenerator.addTable(faultCounts);
+        var table = tableGenerator.addTable(faultCounts);
+
+        if (table == null) {
+            document.add(new Paragraph("Failed to add Fault Stats table to pdf"));
+            return;
+        }
+
+        document.add(table);
 
         document.add(new Paragraph("\n"));
     }

@@ -8,14 +8,12 @@ import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Image;
 import com.itextpdf.layout.element.Paragraph;
-import org.checkerframework.checker.units.qual.C;
 import org.jfree.data.category.DefaultCategoryDataset;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.impl.utils.rad.RADHelper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.File;
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.time.Instant;
@@ -24,7 +22,6 @@ import java.util.Map;
 import java.util.function.Predicate;
 
 public class AdjudicationReport extends Report {
-    private static final Logger log = LoggerFactory.getLogger(AdjudicationReport.class);
 
     String reportTitle = "Adjudication Report";
     Document document;
@@ -37,6 +34,7 @@ public class AdjudicationReport extends Report {
     String laneUID;
     Instant begin;
     Instant end;
+
     public AdjudicationReport(OutputStream out, Instant startTime, Instant endTime, String laneUID, OSCARServiceModule module) {
         pdfDocument = new PdfDocument(new PdfWriter(out));
         document = new Document(pdfDocument);
@@ -46,7 +44,7 @@ public class AdjudicationReport extends Report {
         this.begin = startTime;
         this.end = endTime;
         this.tableGenerator = new TableGenerator();
-        this.chartGenerator = new ChartGenerator();
+        this.chartGenerator = new ChartGenerator(module);
     }
 
     @Override
@@ -57,7 +55,6 @@ public class AdjudicationReport extends Report {
         addSecondaryInspectionDetails();
 
         document.close();
-        pdfDocument.close();
         chartGenerator = null;
         tableGenerator = null;
     }
@@ -115,17 +112,31 @@ public class AdjudicationReport extends Report {
 
 
         try {
-            String chartPath = chartGenerator.createChart(title, xLabel, yLabel, dataset, "bar",  laneUID + "_dispostion_chart.png");
+            var chart = chartGenerator.createChart(
+                    title,
+                    xLabel,
+                    yLabel,
+                    dataset,
+                    "bar",
+                    laneUID + "_dispostion_chart.png"
+            );
 
-            if(chartPath == null){
+            if(chart == null){
                 document.add(new Paragraph("Disposition chart failed to create"));
                 return;
             }
-            Image image = new Image(ImageDataFactory.create(chartPath)).setAutoScale(true);
+
+            BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
+
+            byte[] imageBytes = byteArrayOutputStream.toByteArray();
+            Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
+
             document.add(image);
 
         } catch (IOException e) {
-            log.error(e.getMessage(), e);
+            module.getLogger().error("Error adding chart to report", e);
             return;
         }
         document.add(new Paragraph("\n"));

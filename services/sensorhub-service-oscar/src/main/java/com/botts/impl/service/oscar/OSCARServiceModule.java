@@ -61,7 +61,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         // TODO: Add or update report generation control interface
 
-        // TODO: Add or update site info datastream
+
 
         createOutputs();
         createControls();
@@ -74,12 +74,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
     }
 
-    public void createHandlers() {
-
-    }
-
     public void createOutputs(){
-
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
 
