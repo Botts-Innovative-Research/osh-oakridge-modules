@@ -15,10 +15,14 @@
 
 package com.botts.impl.service.oscar.spreadsheet;
 
+import com.botts.api.service.bucket.IBucketService;
 import org.sensorhub.api.ISensorHub;
+import org.sensorhub.api.datastore.DataStoreException;
 
 import java.io.*;
 import java.nio.file.Path;
+import java.util.Collection;
+import java.util.Collections;
 
 public class SpreadsheetHandler {
 
@@ -33,11 +37,10 @@ public class SpreadsheetHandler {
         parser.loadFile(Path.of(filepath));
     }
 
-    public OutputStream handleUpload(String filename) throws FileNotFoundException {
+    public OutputStream handleUpload(String filename) throws DataStoreException {
         System.out.println("Receiving file: " + filename);
-        // TODO: Better logic to specify where config should be
-        File file = new File(filename);
-        return new FileOutputStream(file);
+
+        return null;
     }
 
     private void handleCSV(String csvData) {

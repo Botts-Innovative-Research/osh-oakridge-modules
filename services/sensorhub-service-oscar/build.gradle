@@ -6,6 +6,7 @@ dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
 
     implementation project(':sensorhub-system-lane') // Lane for loading via spreadsheet
+    implementation project(':sensorhub-service-bucket') // service for file system
     implementation("jfree:jfreechart:1.0.13") // charts
     implementation("com.itextpdf:itext7-core:9.3.0") //pdfs
 }

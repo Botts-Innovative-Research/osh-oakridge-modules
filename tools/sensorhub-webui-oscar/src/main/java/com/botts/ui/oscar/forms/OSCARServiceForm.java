@@ -8,6 +8,7 @@ import com.vaadin.v7.ui.Field;
 import com.vaadin.v7.ui.PasswordField;
 import com.vaadin.v7.ui.TextField;
 import com.vaadin.v7.ui.Upload;
+import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.ui.FieldWrapper;
 import org.sensorhub.ui.GenericConfigForm;
 import org.sensorhub.ui.data.ComplexProperty;
@@ -59,8 +60,8 @@ public class OSCARServiceForm extends GenericConfigForm {
                             if (filename.endsWith(".csv") || mimeType.contains("csv")) {
                                 try {
                                     return oscarService.getSpreadsheetHandler().handleUpload(filename);
-                                } catch (FileNotFoundException e) {
-                                    throw new IllegalStateException(e);
+                                } catch (DataStoreException e) {
+                                    throw new RuntimeException(e);
                                 }
                             }
 
