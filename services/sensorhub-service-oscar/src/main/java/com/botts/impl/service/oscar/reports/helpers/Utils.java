@@ -15,6 +15,39 @@ import java.util.function.Predicate;
 
 public class Utils {
 
+    // ALARMS
+    public static Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+    public static Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
+    public static Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+    public static Predicate<IObsData> occupancyTotalPredicate = (obsData) -> true;
+    public static Predicate<IObsData> emlGammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(3) && !obsData.getResult().getBooleanValue(4);
+    public static Predicate<IObsData> emlNeutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(3) && obsData.getResult().getBooleanValue(4);
+    public static Predicate<IObsData> emlGammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(3) && obsData.getResult().getBooleanValue(4);
+    public static Predicate<IObsData> emlSuppressedPredicate = (obsData) -> obsData.getResult().getBooleanValue(3) && obsData.getResult().getBooleanValue(4);
+
+    // FAULTS
+    public static Predicate<IObsData> tamperPredicate = (obsData) -> obsData.getResult().getBooleanValue(1);
+    public static Predicate<IObsData> gammaHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma High");
+    public static Predicate<IObsData> gammaLowPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma Low");
+    public static Predicate<IObsData> neutronHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Neutron High");
+    public static Predicate<IObsData> commsPredicate = (obsData) -> obsData.getResult().getBooleanValue(1);
+    public static Predicate<IObsData> cameraPredicate = (obsData) -> obsData.getResult().getBooleanValue(1);
+    public static Predicate<IObsData> extendedOccPredicate = (obsData) -> obsData.getResult().getBooleanValue(1);
+
+    // adj
+    public static Predicate<IObsData> realAlarmOtherPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Real Alarm - Other");
+    public static Predicate<IObsData> falseAlarmOtherPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("False Alarm - Other");
+    public static Predicate<IObsData> phyInsPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Physical Inspection");
+    public static Predicate<IObsData> incMedPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Innocent Alarm - Medical Isotope Found");
+    public static Predicate<IObsData> incRadioPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Innocent Alarm - Declared Shipment of Radioactive Material");
+    public static Predicate<IObsData> noDisPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("No Disposition");
+    public static Predicate<IObsData> falseAlarmRIIDPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("False Alarm - RIID/ASP Indicates Background Only");
+    public static Predicate<IObsData> realAlarmContraPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Real Alarm - Contraband Found");
+    public static Predicate<IObsData> tamperFaultPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Tamper/Fault - Unauthorized Activity");
+    public static Predicate<IObsData> alarmTamperFaultPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Alarm/Tamper/Fault- Authorized Test/Maintenance/Training Activity");
+    public static Predicate<IObsData> alarmNORMPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Alarm - Naturally Occurring Radioactive Material (NORM) Found");
+
+
     public static long calcEMLAlarmRate(long emlSuppCount, long alarmCount){
         if (emlSuppCount + alarmCount == 0) return 0;
 
