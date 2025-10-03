@@ -2,11 +2,20 @@
 <vm250:analysis
 	xmlns="http://ernie.llnl.gov/vm250"
 	xmlns:vm250="http://ernie.llnl.gov/vm250"
+	xmlns:vehicle="http://ernie.llnl.gov/vehicle"
+	xmlns:extent="http://ernie.llnl.gov/extent"
+	xmlns:statistical="http://ernie.llnl.gov/statistical"
+	xmlns:transform="http://ernie.llnl.gov/transform"
   xmlns:ernie="http://ernie.llnl.gov"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation= 
-	"http://ernie.llnl.gov http://ernie.llnl.gov/schema/ernie.xsd
-	http://ernie.llnl.gov/vm250 http://ernie.llnl.gov/vm250/schema/ernie-vm250.xsd"
+
+  xsi:schemaLocation= 
+  "http://ernie.llnl.gov http://ernie.llnl.gov/schema/ernie.xsd
+   http://ernie.llnl.gov/vm250 http://ernie.llnl.gov/vm250/schema/ernie-vm250.xsd
+   http://ernie.llnl.gov/vehicle http://ernie.llnl.gov/schema/vehicle.xsd
+   http://ernie.llnl.gov/extent http://ernie.llnl.gov/schema/extent.xsd
+   http://ernie.llnl.gov/statistical http://ernie.llnl.gov/schema/statistical.xsd
+   http://ernie.llnl.gov/transform http://ernie.llnl.gov/schema/transform.xsd"
 >
 
   <verbose/>
@@ -17,7 +26,7 @@
   <imports>
     <vm250:vehicleClassifier extern="vm250VehicleClassifier.xml.gz" id="vehicleClassifier" />
     <vm250:standardFeatureExtractor extern="vm250StandardFeatureExtractor.xml" id="standard"/>
-    <ernie:transformFeatureExtractor extern="vm250Transform.xml" id="tfe"/>
+    <transform:transformFeatureExtractor extern="vm250Transform.xml" id="tfe"/>
   </imports>
 
   <!-- Defines allow elements with complex contents to be defined in advance and then
@@ -27,25 +36,32 @@
   
   <!-- Parameters contains any settings for the analysis -->
   <parameters>
-    <threshold>0.7</threshold>
-    <nSigmaThreshold>20</nSigmaThreshold>
-    <backgroundRatioThreshold>-1</backgroundRatioThreshold>
+    <vm250:threshold>0.7</vm250:threshold>
+    <!-- optional extra settings:
+    <vm250:nSigmaThreshold>15.0</vm250:nSigmaThreshold>
+    <vm250:backgroundRatioThreshold>2.5</vm250:backgroundRatioThreshold>
+    <vm250:minimumVehicleLengthMeters>2.5</vm250:minimumVehicleLengthMeters>
+    <vm250:reescalateProbability>0.01</vm250:reescalateProbability>
+    -->
   </parameters>
 
   <!-- We need a list of tasks to execute for the preprocessing of a record. -->
   <preprocessors>
     <vm250:qualityCheck/>
     <vm250:gammaPanelFix ttbr="1"/>
-    <vm250:motionProfiler
-      defaultVelocity="2.0"
-      minCredibleVelocity="0.2"
-      maxCredibleVelocity="25"
-      velocityFallbackThreshold="10"/>
+    <vm250:expectedMotionProfiler>
+      <model extern="seaport_expected.bin"/>
+    </vm250:expectedMotionProfiler>
     <vm250:vehicleClassifier ref_id="vehicleClassifier"/>
     <vm250:backgroundEstimator/>
   </preprocessors>
 
-  <!-- We also need a list of feature extractors -->
+  <!-- fallback extractor: should work even if scan has quality issues -->
+  <fallbackExtractors>
+    <vm250:gammaNSigmaFeatureExtractor/>
+  </fallbackExtractors>
+
+  <!-- Additional feature extractors for 'good' scans -->
   <featureExtractors>
     <vm250:motionInfoExtractor/>
 
@@ -55,17 +71,18 @@
 
     <vm250:standardFeatureExtractor ref_id="standard"/>
     <vm250:vehicleFeatureExtractor/>
-    <ernie:statisticalFeatureExtractor padding="5" minSamples="6">
-      <ernie:peakFeatureExtractor/>
-    </ernie:statisticalFeatureExtractor>
-    <ernie:gammaNSigmaFeatureExtractor/>
-    <ernie:extentFeatureExtractor/>
-    <ernie:transformFeatureExtractor ref_id="tfe"/>
+    <statistical:statisticalFeatureExtractor prefix="Statistics">
+      <statistical:padding>5</statistical:padding>
+      <statistical:minSamples>6</statistical:minSamples>
+      <statistical:peakFeatureExtractor/>
+    </statistical:statisticalFeatureExtractor>
+    <extent:extentFeatureExtractor/>
+    <transform:transformFeatureExtractor ref_id="tfe"/>
   </featureExtractors>
   
   <!-- Last we can load in a set of classifiers -->
   <classifiers>
-    <vm250:alarmClassifier model="uber_SSL_model_uncollimated.txt" metrics="CMU_metric.csv"/>
+    <vm250:alarmClassifier model="multi_site_collimated.txt" metrics="CMU_metric.csv"/>
   </classifiers>
   
 

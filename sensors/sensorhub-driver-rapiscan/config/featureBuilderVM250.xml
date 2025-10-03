@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <featureBuilder xmlns="http://ernie.llnl.gov/tools"
     xmlns:ernie="http://ernie.llnl.gov"
-    xmlns:ernie-vm250="http://ernie.llnl.gov/vm250"
+    xmlns:tools="http://ernie.llnl.gov/tools"
+    xmlns:vm250="http://ernie.llnl.gov/vm250"
     xmlns:util="http://utility.llnl.gov"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:schemaLocation="http://ernie.llnl.gov http://ernie.llnl.gov/schema/ernie.xsd
@@ -9,13 +10,21 @@
                         http://ernie.llnl.gov/tools http://ernie.llnl.gov/tools/schema/ernie-tools.xsd">
   <imports>
     <!-- Pull in the large resources -->
-    <ernie-vm250:analysis extern="vm250Analysis.xml" id="vm250Analysis"/>
-    <ernie-vm250:recordDatabase extern="vm250RecordDatabase.xml" id="vm250RecordDatabase"/>
-    <ernie-vm250:recordManipulator extern="vm250RecordManipulator.xml" id="vm250RecordManipulator"/>
+    <vm250:analysis extern="vm250Analysis.xml" id="vm250Analysis"/>
+    <vm250:recordDatabase extern="vm250RecordDatabase.xml" id="vm250RecordDatabase"/>
+    <vm250:recordManipulator extern="vm250RecordManipulator.xml" id="vm250RecordManipulator"/>
+    <vm250:vehicleClassifier extern="vm250VehicleClassifier.xml.gz" id="vehicleClassifier" />
   </imports>
   <defines>
     <util:integer id="records">10000</util:integer>
+    <util:integer id="halfrecords">5000</util:integer>
     <util:integer id="SOCrecords">100000</util:integer>
+    <!-- Challenge set is 3% the size of "records" -->
+    <util:integer id="challengerecords">300</util:integer>
+
+    <util:double id="widthFactor">1.3</util:double>
+
+    <vm250:vehicleSplitAssigner id="vm250VehicleSplitAssigner"/>
 
     <featureDatabase id="vm250FeatureDatabase">
       <connection>jdbc:h2:test-vm250;DATABASE_TO_UPPER=FALSE</connection>
@@ -24,19 +33,20 @@
     <manipulationGenerator id="source.training.NORM">
       <!-- <sourceList extern="vm250/training-norm-extracted.txt" /> -->
       <sourceList extern="vm250/training-norm.txt" />
-      <where>1</where>
+      <where>CARGO</where>
       <distributed>1</distributed>
       <label>NORM</label>
       <disableAnisotropy/>
       <conditions>
-        <minimumGrossSNR limit="7"/>
+        <minimumGrossSNR limit="4"/>
       </conditions>
-      <intensity>4000 20000</intensity>
+      <intensity>50 500</intensity>
     </manipulationGenerator>
 
     <manipulationGenerator id="source.training.Fissile">
+      <cargoDistributions> 2 4 2 1 1 </cargoDistributions>
       <sourceList extern="vm250/training-fissile.txt" />
-      <where>1</where>
+      <where>CARGO</where>
       <label>Fissile</label>
       <anywhereProbability>0.2</anywhereProbability>
       <conditions>
@@ -46,8 +56,9 @@
     </manipulationGenerator>
 
     <manipulationGenerator id="source.test.Fissile">
+      <cargoDistributions> 2 4 2 1 1 </cargoDistributions>
       <sourceList extern="vm250/testing-fissile.txt" />
-      <where>1</where>
+      <where>CARGO</where>
       <label>Fissile</label>
       <anywhereProbability>0.2</anywhereProbability>
       <conditions>
@@ -58,10 +69,12 @@
     </manipulationGenerator>
 
     <manipulationGenerator id="source.training.Medical">
+      <cargoDistributions> 2 4 2 1 1 </cargoDistributions>
       <sourceList extern="vm250/training-medical.txt" />
-      <where>2</where>
+      <where>DRIVER</where>
       <label>Medical</label>
       <passengerSideProbability>0.5</passengerSideProbability>
+      <anywhereProbability>0.05</anywhereProbability>
       <conditions>
         <minimumInjectedSNR limit="8"/>
       </conditions>
@@ -69,10 +82,12 @@
     </manipulationGenerator>
 
     <manipulationGenerator id="source.test.Medical">
+      <cargoDistributions> 2 4 2 1 1 </cargoDistributions>
       <sourceList extern="vm250/testing-medical.txt" />
-      <where>2</where>
+      <where>DRIVER</where>
       <label>Medical</label>
       <passengerSideProbability>0.5</passengerSideProbability>
+      <anywhereProbability>0.05</anywhereProbability>
       <conditions>
         <minimumInjectedSNR limit="8"/>
         <maximumInjectedSNR limit="80"/>
@@ -81,8 +96,9 @@
     </manipulationGenerator>
 
     <manipulationGenerator id="source.training.Industrial">
+      <cargoDistributions> 2 4 2 1 1 </cargoDistributions>
       <sourceList extern="vm250/training-industrial.txt" />
-      <where>1</where>
+      <where>CARGO</where>
       <label>Industrial</label>
       <anywhereProbability>0.2</anywhereProbability>
       <conditions>
@@ -92,8 +108,9 @@
     </manipulationGenerator>
 
     <manipulationGenerator id="source.test.Industrial">
+      <cargoDistributions> 2 4 2 1 1 </cargoDistributions>
       <sourceList extern="vm250/testing-industrial.txt" />
-      <where>1</where>
+      <where>CARGO</where>
       <label>Industrial</label>
       <anywhereProbability>0.2</anywhereProbability>
       <conditions>
@@ -104,9 +121,10 @@
     </manipulationGenerator>
 
     <manipulationGenerator id="source.training.Contamination">
+      <cargoDistributions> 2 4 2 1 1 </cargoDistributions>
       <sourceList extern="vm250/training-contamination.txt" />
-      <where>1</where>
-      <label>Contamination</label>
+      <where>CARGO</where>
+      <label>Industrial</label>
       <maxDistributedLength>1.2</maxDistributedLength>
       <anywhereProbability>0.2</anywhereProbability>
       <distributedProbability>0.1</distributedProbability>
@@ -116,9 +134,88 @@
       <intensity>200 10000</intensity>
     </manipulationGenerator>
 
+    <manipulationGenerator id="source.training.CNM">
+      <cargoDistributions> 2 4 2 1 1 </cargoDistributions>
+      <sourceList extern="vm250/training-CNM.txt" />
+      <where>CARGO</where>
+      <label>Industrial</label>
+      <anywhereProbability>0.2</anywhereProbability>
+      <conditions>
+        <minimumInjectedSNR limit="8"/>
+      </conditions>
+      <intensity>2000 300000</intensity>
+    </manipulationGenerator>
+
+    <manipulationGenerator id="source.training.CNM.distributed">
+      <cargoDistributions> 2 4 2 1 1 </cargoDistributions>
+      <sourceList extern="vm250/training-CNM.txt" />
+      <where>CARGO</where>
+      <distributed>1</distributed>
+      <label>Industrial</label>
+      <conditions>
+        <minimumInjectedSNR limit="50"/>
+      </conditions>
+      <intensity>1000 200000</intensity>
+    </manipulationGenerator>
+
+
+    <!-- The next 3 source types are the challenge sets. Maximum intensity is 10x the training set -->
+    <manipulationGenerator id="source.cargo.test.challenge.Medical">
+      <cargoDistributions> 2 4 2 1 1 </cargoDistributions>
+      <sourceList extern="vm250/training-medical.txt" />
+      <where>DRIVER</where>
+      <label>Medical</label>
+      <anywhereProbability>0.1</anywhereProbability> 
+      <passengerSideProbability>0.5</passengerSideProbability>
+      <conditions>
+        <minimumInjectedSNR limit="10"/>
+      </conditions>
+      <intensity>450 300000</intensity>
+    </manipulationGenerator>
+    
+    <manipulationGenerator id="source.cargo.test.challenge.Industrial">
+      <cargoDistributions> 2 4 2 1 1 </cargoDistributions>
+      <sourceList extern="vm250/training-industrial.txt" />
+      <where>CARGO</where>
+      <label>Industrial</label>
+      <maxDistributedLength>1.2</maxDistributedLength>
+      <anywhereProbability>0.2</anywhereProbability>
+      <distributedProbability>0.1</distributedProbability>
+      <conditions>
+        <minimumInjectedSNR limit="10"/>
+      </conditions>
+      <intensity>500 300000</intensity>
+    </manipulationGenerator>
+    
+    <manipulationGenerator id="source.cargo.test.challenge.Fissile">
+      <cargoDistributions> 2 4 2 1 1 </cargoDistributions>
+      <sourceList extern="vm250/training-fissile.txt" />
+      <where>CARGO</where>
+      <label>Fissile</label>
+      <maxDistributedLength>1.2</maxDistributedLength>
+      <anywhereProbability>0.2</anywhereProbability>
+      <distributedProbability>0.1</distributedProbability>
+      <conditions>
+        <minimumInjectedSNR limit="10"/>
+      </conditions>
+      <intensity>2000 800000</intensity>
+    </manipulationGenerator>
+
   </defines>
   <analysis ref_id="vm250Analysis"/>
+
+  <preprocessors>
+    <vm250:qualityCheck/>
+    <vm250:gammaPanelFix ttbr="1"/>
+    <vm250:randomMotionProfiler>
+      <vm250:model extern="seaport.bin"/>
+    </vm250:randomMotionProfiler>
+    <vm250:vehicleClassifier ref_id="vehicleClassifier"/>
+    <vm250:backgroundEstimator/>
+  </preprocessors>
+
   <featureDatabase ref_id="vm250FeatureDatabase"/>
+  <vehicleSplitAssigner ref_id="vm250VehicleSplitAssigner"/>
   <recordDatabase ref_id="vm250RecordDatabase"/>
   <recordManipulator ref_id="vm250RecordManipulator"/>
 
@@ -137,7 +234,7 @@
       <actionRelease/>
       <sourceNonEmitting/>
     </classification>
-    <laneWidthLimits>4 6</laneWidthLimits>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
   </fold>
   <fold>
     <name>training.norm</name>
@@ -148,44 +245,96 @@
       <actionRelease/>
       <sourceNORM/>
     </classification>
-    <laneWidthLimits>4 6</laneWidthLimits>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.training.NORM"/>
   </fold>
   <fold>
     <name>training.medical</name>
     <foldId>1 10</foldId>
     <recordIds extern="nonemittingTraining.txt"/>
-    <requestedRecords ref_id="records"/>
+    <requestedRecords ref_id="halfrecords"/>
     <classification>
       <actionInvestigate/>
       <sourceMedical/>
     </classification>
-    <laneWidthLimits>4 6</laneWidthLimits>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.training.Medical"/>
+  </fold>
+  <fold>
+    <name>training.medical.center</name>
+    <foldId>1 10</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="halfrecords"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceMedical/>
+    </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
+    <source1 copy_of="source.training.Medical">
+      <disableAnisotropy/>
+      <forceCenterY>true</forceCenterY>
+    </source1>
   </fold>
   <fold>
     <name>training.industrial</name>
     <foldId>1 10</foldId>
     <recordIds extern="nonemittingTraining.txt"/>
-    <requestedRecords ref_id="records"/>
+    <requestedRecords ref_id="halfrecords"/>
     <classification>
       <actionInvestigate/>
       <sourceIndustrial/>
     </classification>
-    <laneWidthLimits>4 6</laneWidthLimits>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.training.Industrial"/>
+  </fold>
+  <fold>
+    <name>training.industrial.center</name>
+    <foldId>1 10</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="halfrecords"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceIndustrial/>
+    </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
+    <source1 copy_of="source.training.Industrial">
+      <disableAnisotropy/>
+      <forceCenterY>true</forceCenterY>
+    </source1>
   </fold>
   <fold>
     <name>training.fissile</name>
     <foldId>1 10</foldId>
     <recordIds extern="nonemittingTraining.txt"/>
-    <requestedRecords ref_id="records"/>
+    <requestedRecords ref_id="halfrecords"/>
     <classification>
       <actionInvestigate/>
       <sourceFissile/>
     </classification>
-    <laneWidthLimits>4 6</laneWidthLimits>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.training.Fissile"/>
+  </fold>
+  <fold>
+    <name>training.fissile.center</name>
+    <foldId>1 10</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="halfrecords"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceFissile/>
+    </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
+    <source1 copy_of="source.training.Fissile">
+      <disableAnisotropy/>
+      <forceCenterY>true</forceCenterY>
+    </source1>
   </fold>
   <fold>
     <name>training.contamination</name>
@@ -194,9 +343,10 @@
     <requestedRecords ref_id="records"/>
     <classification>
       <actionInvestigate/>
-      <sourceContamination/>
+      <sourceIndustrial/>
     </classification>
-    <laneWidthLimits>4 6</laneWidthLimits>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.training.Contamination"/>
     <!--
     <source1>
@@ -212,6 +362,32 @@
     </source1>
     -->
   </fold>
+  <fold>
+    <name>training.CNM</name>
+    <foldId>12 12</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="halfrecords"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceIndustrial/>
+    </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
+    <source1 ref_id="source.training.CNM"/>
+  </fold>
+  <fold>
+    <name>training.CNM.distributed</name>
+    <foldId>12 12</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="halfrecords"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceIndustrial/>
+    </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
+    <source1 ref_id="source.training.CNM.distributed"/>
+  </fold>
   <!--
   <fold>
     <name>training.am241</name>
@@ -222,6 +398,8 @@
       <actionInvestigate/>
       <sourceIndustrial/>
     </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1>
       <sourceId>40000 40058</sourceId>
       <where>1</where>
@@ -246,6 +424,7 @@
       <actionRelease/>
       <sourceNORM/>
     </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
   </fold>
   -->
   <!--
@@ -256,8 +435,9 @@
     <requestedRecords ref_id="records"/>
     <classification>
       <actionInvestigate/>
-      <sourceContamination/>
+      <sourceIndustrial/>
     </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
   </fold>
   -->
   <fold>
@@ -269,7 +449,23 @@
       <actionInvestigate/>
       <sourceMedical/>
     </classification>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.test.Medical"/>
+  </fold>
+  <fold>
+    <name>test.medical.center</name>
+    <foldId>32 32</foldId>
+    <recordIds extern="nonemittingTesting.txt"/>
+    <requestedRecords ref_id="halfrecords"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceMedical/>
+    </classification>
+    <laneWidthFactor ref_id="widthFactor"/>
+    <source1 copy_of="source.test.Medical">
+      <disableAnisotropy/>
+      <forceCenterY>true</forceCenterY>
+    </source1>
   </fold>
   <fold>
     <name>test.industrial</name>
@@ -280,7 +476,23 @@
       <actionInvestigate/>
       <sourceIndustrial/>
     </classification>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.test.Industrial"/>
+  </fold>
+  <fold>
+    <name>test.industrial.center</name>
+    <foldId>33 33</foldId>
+    <recordIds extern="nonemittingTesting.txt"/>
+    <requestedRecords ref_id="halfrecords"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceIndustrial/>
+    </classification>
+    <laneWidthFactor ref_id="widthFactor"/>
+    <source1 copy_of="source.test.Industrial">
+      <disableAnisotropy/>
+      <forceCenterY>true</forceCenterY>
+    </source1>
   </fold>
   <fold>
     <name>test.fissile</name>
@@ -291,9 +503,89 @@
       <actionInvestigate/>
       <sourceFissile/>
     </classification>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.test.Fissile"/>
     <serializeResults/>
   </fold>
+  <fold>
+    <name>test.fissile.center</name>
+    <foldId>34 34</foldId>
+    <recordIds extern="nonemittingTesting.txt"/>
+    <requestedRecords ref_id="halfrecords"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceFissile/>
+    </classification>
+    <laneWidthFactor ref_id="widthFactor"/>
+    <source1 copy_of="source.test.Fissile">
+      <disableAnisotropy/>
+      <forceCenterY>true</forceCenterY>
+    </source1>
+  </fold>
+
+  <!-- Challenge Sets -->
+  <fold>
+    <name>test.cargo_medical_challenge</name>
+    <foldId>32 32</foldId>
+    <recordIds extern="nonemittingTesting.txt"/>
+    <requestedRecords ref_id="challengerecords"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceMedical/>
+    </classification>
+    <laneWidthFactor ref_id="widthFactor"/>
+    <source1 ref_id="source.cargo.test.challenge.Medical"/>
+  </fold>
+  <fold>
+    <name>test.cargo_industrial_challenge</name>
+    <foldId>33 33</foldId>
+    <recordIds extern="nonemittingTestingWithPayload.txt"/>
+    <requestedRecords ref_id="challengerecords"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceIndustrial/>
+    </classification>
+    <laneWidthFactor ref_id="widthFactor"/>
+    <source1 ref_id="source.cargo.test.challenge.Industrial"/>
+  </fold>
+  <fold>
+    <name>test.cargo_fissile_challenge</name>
+    <foldId>34 34</foldId>
+    <recordIds extern="nonemittingTestingWithPayload.txt"/>
+    <requestedRecords ref_id="challengerecords"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceFissile/>
+    </classification>
+    <laneWidthFactor ref_id="widthFactor"/>
+    <source1 ref_id="source.cargo.test.challenge.Fissile"/>
+  </fold>
+  <fold>
+    <name>test.CNM</name>
+    <foldId>35 35</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="challengerecords"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceIndustrial/>
+    </classification>
+    <laneWidthFactor ref_id="widthFactor"/>
+    <source1 ref_id="source.training.CNM"/>
+  </fold>
+  <fold>
+    <name>training.CNM.distributed</name>
+    <foldId>35 35</foldId>
+    <recordIds extern="nonemittingTraining.txt"/>
+    <requestedRecords ref_id="challengerecords"/>
+    <classification>
+      <actionInvestigate/>
+      <sourceIndustrial/>
+    </classification>
+    <laneWidthFactor ref_id="widthFactor"/>
+    <source1 ref_id="source.training.CNM.distributed"/>
+  </fold>
+
+  <!-- stream of commerce: fold 11 for training, fold 20 for testing -->
   <fold>
     <name>test.stream-of-commerce</name>
     <foldId>20 20</foldId>
@@ -308,7 +600,7 @@
     <recordIds extern="fold11.txt" shuffle="true"/>
     <requestedRecords ref_id="SOCrecords"/>
     <classification/>
-    <laneWidthLimits>4 6</laneWidthLimits>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
   </fold>
 
   <!-- multi-source training folds -->
@@ -322,6 +614,8 @@
       <sourceNORM/>
       <sourceNORM/>
     </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.training.NORM"/>
     <source2 ref_id="source.training.NORM"/>
     <minimumDistance>2</minimumDistance>
@@ -336,6 +630,8 @@
       <sourceNORM/>
       <sourceMedical/>
     </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.training.NORM"/>
     <source2 ref_id="source.training.Medical"/>
   </fold>
@@ -349,6 +645,8 @@
       <sourceNORM/>
       <sourceIndustrial/>
     </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.training.NORM"/>
     <source2 ref_id="source.training.Industrial"/>
   </fold>
@@ -362,6 +660,8 @@
       <sourceNORM/>
       <sourceFissile/>
     </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.training.NORM"/>
     <source2 ref_id="source.training.Fissile"/>
   </fold>
@@ -374,6 +674,8 @@
       <actionInvestigate/>
       <sourceMedical/>
     </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.training.Medical"/>
     <source2 ref_id="source.training.Medical"/>
     <minimumDistance>2</minimumDistance>
@@ -388,6 +690,8 @@
       <sourceMedical/>
       <sourceIndustrial/>
     </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.training.Medical"/>
     <source2 ref_id="source.training.Industrial"/>
     <minimumDistance>2</minimumDistance>
@@ -402,6 +706,8 @@
       <sourceMedical/>
       <sourceFissile/>
     </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.training.Medical"/>
     <source2 ref_id="source.training.Fissile"/>
     <minimumDistance>2</minimumDistance>
@@ -416,6 +722,8 @@
       <sourceIndustrial/>
       <sourceFissile/>
     </classification>
+    <laneWidthLimits>3.75 6.25</laneWidthLimits>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.training.Industrial"/>
     <source2 ref_id="source.training.Fissile"/>
     <minimumDistance>2</minimumDistance>
@@ -432,6 +740,7 @@
       <sourceNORM/>
       <sourceMedical/>
     </classification>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.test.Medical"/>
   </fold>
   <fold>
@@ -444,6 +753,7 @@
       <sourceNORM/>
       <sourceIndustrial/>
     </classification>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.test.Industrial"/>
   </fold>
   <fold>
@@ -456,6 +766,7 @@
       <sourceNORM/>
       <sourceFissile/>
     </classification>
+    <laneWidthFactor ref_id="widthFactor"/>
     <source1 ref_id="source.test.Fissile"/>
   </fold>
 
