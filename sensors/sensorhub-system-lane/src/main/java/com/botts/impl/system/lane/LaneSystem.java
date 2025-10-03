@@ -75,6 +75,7 @@ public class LaneSystem extends SensorSystem {
     Map<String, FFMPEGConfig> ffmpegConfigs = null;
     OccupancyWrapper occupancyWrapper;
 
+    AdjudicationOutput adjudicationOutput;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -131,6 +132,10 @@ public class LaneSystem extends SensorSystem {
                 }
             }
         }
+
+        adjudicationOutput = new AdjudicationOutput(this);
+        addOutput(adjudicationOutput, false);
+
 
         String statusMsg = "Note: ";
         if (existingRPMModule == null)
