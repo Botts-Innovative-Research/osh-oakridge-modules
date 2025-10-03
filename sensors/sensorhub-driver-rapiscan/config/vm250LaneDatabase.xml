@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ernie:laneDatabase
+<vm250:laneDatabase
   xmlns="http://ernie.llnl.gov"
   xmlns:vm250="http://ernie.llnl.gov/vm250"
   xmlns:ernie="http://ernie.llnl.gov"
@@ -8,10 +8,16 @@
 	"http://ernie.llnl.gov http://ernie.llnl.gov/schema/ernie.xsd
 	http://ernie.llnl.gov/vm250 http://ernie.llnl.gov/vm250/schema/ernie-vm250.xsd"
 >
-  <lane>
+
+  <vm250:defines>
+    <vm250:vpsProperties id="vps" distance="1" beams="4"/>
+  </vm250:defines>
+
+  <vm250:lane>
     <!-- <laneWidth>4.0417</laneWidth> -->
     <laneWidth>5.0</laneWidth>
     <laneHeight>5</laneHeight>
+    <vpsProperties ref_id="vps"/>
 
     <gammaPanels>
       <panelWidth>0.152</panelWidth>
@@ -21,14 +27,14 @@
       <energyEdges>22 145</energyEdges>
 
       <panel x="0.152" y="1" z="0.498"/>
-      <panel x="0.152" y="-1" z="0.498"/>
       <panel x="0.152" y="1" z="2.476"/>
+      <panel x="0.152" y="-1" z="0.498"/>
       <panel x="0.152" y="-1" z="2.476"/>
 
-      <group loc="top">2 3</group>
-      <group loc="bottom">0 1</group>
-      <group loc="left">1 3</group>
-      <group loc="right">0 2</group>
+      <group loc="top">1 3</group>
+      <group loc="bottom">0 2</group>
+      <group loc="left">2 3</group>
+      <group loc="right">0 1</group>
       <group loc="all">0 1 2 3</group>
 
       <samplePeriod units="ms">200</samplePeriod>
@@ -50,25 +56,26 @@
       <panelThickness>0.0381</panelThickness>
 
       <panel x="0.406" y="1" z="0.568"/>
-      <panel x="0.406" y="-1" z="0.568"/>
       <panel x="0.406" y="1" z="2.457"/>
+      <panel x="0.406" y="-1" z="0.568"/>
       <panel x="0.406" y="-1" z="2.457"/>
 
-      <group loc="top">2 3</group>
-      <group loc="bottom">0 1</group>
-      <group loc="left">1 3</group>
-      <group loc="right">0 2</group>
+      <group loc="top">1 3</group>
+      <group loc="bottom">0 2</group>
+      <group loc="left">2 3</group>
+      <group loc="right">0 1</group>
       <group loc="all">0 1 2 3</group>
 
       <samplePeriod units="s">1</samplePeriod>
     </neutronPanels>
 
-  </lane>
+  </vm250:lane>
 
-  <lane>
+  <vm250:lane>
     <!-- <laneWidth>4.0417</laneWidth> -->
     <laneWidth>5.0</laneWidth>
     <laneHeight>5</laneHeight>
+    <vpsProperties ref_id="vps"/>
 
     <gammaPanels>
       <panelWidth>0.152</panelWidth>
@@ -78,14 +85,14 @@
       <energyEdges>22 145</energyEdges>
 
       <panel x="0.152" y="1" z="0.498"/>
-      <panel x="0.152" y="-1" z="0.498"/>
       <panel x="0.152" y="1" z="2.476"/>
+      <panel x="0.152" y="-1" z="0.498"/>
       <panel x="0.152" y="-1" z="2.476"/>
 
-      <group loc="top">2 3</group>
-      <group loc="bottom">0 1</group>
-      <group loc="left">1 3</group>
-      <group loc="right">0 2</group>
+      <group loc="top">1 3</group>
+      <group loc="bottom">0 2</group>
+      <group loc="left">2 3</group>
+      <group loc="right">0 1</group>
       <group loc="all">0 1 2 3</group>
 
       <samplePeriod units="ms">200</samplePeriod>
@@ -104,18 +111,20 @@
       <panelThickness>0.0381</panelThickness>
 
       <panel x="0.406" y="1" z="0.568"/>
-      <panel x="0.406" y="-1" z="0.568"/>
       <panel x="0.406" y="1" z="2.457"/>
+      <panel x="0.406" y="-1" z="0.568"/>
       <panel x="0.406" y="-1" z="2.457"/>
 
-      <group loc="top">2 3</group>
-      <group loc="bottom">0 1</group>
-      <group loc="left">1 3</group>
-      <group loc="right">0 2</group> 
+      <group loc="top">1 3</group>
+      <group loc="bottom">0 2</group>
+      <group loc="left">2 3</group>
+      <group loc="right">0 1</group>
       <group loc="all">0 1 2 3</group> 
 
       <samplePeriod units="s">1</samplePeriod>
     </neutronPanels>
 
-  </lane>
-</ernie:laneDatabase>
+  </vm250:lane>
+
+  <vm250:overrides>vm250LaneConfigurations.csv</vm250:overrides>
+</vm250:laneDatabase>

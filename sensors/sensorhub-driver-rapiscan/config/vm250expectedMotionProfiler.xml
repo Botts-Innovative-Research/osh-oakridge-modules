@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<expectedMotionProfiler
+	xmlns="http://ernie.llnl.gov/vm250"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation= 
+       "http://ernie.llnl.gov/vm250 http://ernie.llnl.gov/vm250/schema/ernie-vm250.xsd"
+>
+    <expectedVelocity>2</expectedVelocity>
+    <model extern="seaport_expected.bin"/>
+</expectedMotionProfiler>

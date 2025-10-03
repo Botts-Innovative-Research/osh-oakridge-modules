@@ -1,7 +1,6 @@
 package com.botts.impl.sensor.rapiscan.eml;
 
-import gov.llnl.ernie.Analysis;
-import gov.llnl.ernie.api.Results;
+import gov.llnl.ernie.RecommendedAction;
 import net.opengis.swe.v20.Boolean;
 import net.opengis.swe.v20.Category;
 import net.opengis.swe.v20.Quantity;
@@ -266,7 +265,7 @@ public class EMLFieldFactory extends RADHelper {
                 .definition(RPM_RESULT_FIELD_DEFINITION)
                 .description(RPM_RESULT_FIELD_DESCRIPTION)
                 .label(RPM_RESULT_FIELD_LABEL)
-                .addAllowedValues("INVESTIGATE", "NONE", "RELEASE")
+                .addAllowedValues(RecommendedAction.class)
                 .build();
     }
 
@@ -296,10 +295,7 @@ public class EMLFieldFactory extends RADHelper {
                 .definition(RESULT_FIELD_DEFINITION)
                 .description(RESULT_FIELD_DESCRIPTION)
                 .label(RESULT_FIELD_LABEL)
-                .addAllowedValues(
-                        Analysis.RecommendedAction.NONE.getValue(),
-                        Analysis.RecommendedAction.INVESTIGATE.getValue(),
-                        Analysis.RecommendedAction.RELEASE.getValue())
+                .addAllowedValues(RecommendedAction.class)
                 .build();
     }
     public Quantity createReleaseProbabilityField(){
