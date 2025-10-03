@@ -39,7 +39,7 @@ public class EMLAnalysisOutput extends AbstractSensorOutput<RapiscanSensor> {
         SWEBuilders.DataRecordBuilder dataRecordBuilder = emlFieldFactory.createRecord()
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
-                .definition(RADHelper.getRadUri("eml-analyis"))
+                .definition(RADHelper.getRadUri("EMLAnalysis"))
                 .description(SENSOR_OUTPUT_DESCRIPTION);
 
         dataRecordBuilder.addField(RESULT_FIELD_NAME, emlFieldFactory.createResultsField());
