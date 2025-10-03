@@ -8,6 +8,7 @@ import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Image;
 import com.itextpdf.layout.element.Paragraph;
+import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.data.category.DefaultCategoryDataset;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.impl.utils.rad.RADHelper;
@@ -70,43 +71,57 @@ public class AdjudicationReport extends Report {
 
         String title = "Disposition";
         String yLabel = "% of Total Number of Records";
-        String xLabel = "Type";
-
-        long realAlarmOtherCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.realAlarmOtherPredicate, begin, end);
-        long falseAlarmOtherCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.falseAlarmOtherPredicate, begin, end);
-        long physicalInspecNegCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.phyInsPredicate, begin, end);
-        long innAlarmMedicalCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.incMedPredicate, begin, end);
-        long incRadioMatCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.incRadioPredicate, begin, end);
-        long noDisCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.noDisPredicate, begin, end);
-        long falseAlarmRiidCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.falseAlarmRIIDPredicate, begin, end);
-        long realAlarmContCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.realAlarmContraPredicate, begin, end);
-        long tamperFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.tamperFaultPredicate, begin, end);
-        long alarmTamperFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.alarmTamperFaultPredicate, begin, end);
-        long alarmNaturallyCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.alarmNORMPredicate, begin, end);
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
-        dataset.addValue(realAlarmOtherCount, "Disposition", "Real Alarm - Other");
-        dataset.addValue(falseAlarmOtherCount, "Disposition", "False Alarm - Other");
-        dataset.addValue(physicalInspecNegCount, "Disposition", "Physical Inspection Negative");
-        dataset.addValue(innAlarmMedicalCount, "Disposition", "Innocent Alarm - Medical Isotope Found");
-        dataset.addValue(incRadioMatCount, "Disposition", "Innocent Alarm - Declared Shipment of Radioactive Material");
-        dataset.addValue(noDisCount, "Disposition", "No Disposition");
-        dataset.addValue(falseAlarmRiidCount, "Disposition", "False Alarm - RIID/ASP Indicates Background Only");
-        dataset.addValue(realAlarmContCount, "Disposition", "Real Alarm - Contraband Found");
-        dataset.addValue(tamperFaultCount, "Disposition", "Tamper/Fault - Unauthorized Activity");
-        dataset.addValue(alarmTamperFaultCount, "Disposition", "Alarm/Tamper/Fault- Authorized Test/Maintenance/Training Activity");
-        dataset.addValue(alarmNaturallyCount, "Disposition", "Alarm - Naturally Occurring Radioactive Material (NORM) Found");
+        Map<Integer, String> dispositions = Map.ofEntries(
+                Map.entry(0, "Real Alarm - Other"),
+                Map.entry(1, "False Alarm - Other"),
+                Map.entry(2, "Physical Inspection Negative"),
+                Map.entry(3, "Innocent Alarm - Medical Isotope Found"),
+                Map.entry(4, "Innocent Alarm - Declared Shipment of Radioactive Material"),
+                Map.entry(5, "No Disposition"),
+                Map.entry(6, "False Alarm - RIID/ASP Indicates Background Only"),
+                Map.entry(7, "Real Alarm - Contraband Found"),
+                Map.entry(8, "Tamper/Fault - Unauthorized Activity"),
+                Map.entry(9, "Alarm/Tamper/Fault- Authorized Test/Maintenance/Training Activity"),
+                Map.entry(10, "Alarm - Naturally Occurring Radioactive Material (NORM) Found")
+        );
 
+        long totalRecords = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, obsData -> true, begin, end);
+
+        if (totalRecords == 0) {
+            document.add(new Paragraph("No data available for the selected time period"));
+            return;
+        }
+
+
+        for (Map.Entry<Integer, String> entry : dispositions.entrySet()) {
+             String name = entry.getValue();
+
+            Predicate<IObsData> predicate = (obsData) ->
+                    obsData.getResult().getStringValue(3).contains(name);
+
+            long count = Utils.countObservations(
+                    new String[]{RADHelper.DEF_ADJUDICATION},
+                    module,
+                    predicate,
+                    begin,
+                    end
+            );
+            double percentage = (count / (double) totalRecords) * 100.0;
+
+            dataset.addValue(percentage, name, name);
+        }
 
         try {
             var chart = chartGenerator.createChart(
                     title,
-                    xLabel,
+                    null,
                     yLabel,
                     dataset,
                     "bar",
-                    begin  + "_dispostion_chart.png"
+                    PlotOrientation.HORIZONTAL
             );
 
             if (chart == null) {
@@ -132,51 +147,91 @@ public class AdjudicationReport extends Report {
     private void addSecondaryInspectionIsotopeResults() {
         document.add(new Paragraph("Secondary Inspection Results").setFontSize(12));
 
-        Map<String, String> isotopeResults = new HashMap<>();
+        String title = "Secondary Inspection Results";
+        String yLabel = "Count";
+        String xLabel = "Isotope";
 
-        Predicate<IObsData> predicate = (obsData) -> true;
+        // List of isotope mappings: Key = Symbol, Value = Search Term
+        Map<String, String> isotopes = Map.ofEntries(
+                Map.entry("Np", "Neptunium"),
+                Map.entry("Pu", "Plutonium"),
+                Map.entry("U-233", "Uranium233"),
+                Map.entry("U-235", "Uranium235"),
+                Map.entry("Am", "Americium"),
+                Map.entry("U-238", "Uranium238"),
+                Map.entry("Ba", "Barium"),
+                Map.entry("Bi", "Bismuth"),
+                Map.entry("Cf", "Californium"),
+                Map.entry("Cs-134", "Cesium134"),
+                Map.entry("Cs-137", "Cesium137"),
+                Map.entry("Co-57", "Cobalt57"),
+                Map.entry("Co-60", "Cobalt60"),
+                Map.entry("Eu", "Europium"),
+                Map.entry("Ir", "Iridium"),
+                Map.entry("Mn", "Manganese"),
+                Map.entry("Se", "Selenium"),
+                Map.entry("Na", "Sodium"),
+                Map.entry("Sr", "Strontium"),
+                Map.entry("F", "Fluorine"),
+                Map.entry("Ga", "Gallium"),
+                Map.entry("I-123", "Iodine123"),
+                Map.entry("I-131", "Iodine131"),
+                Map.entry("In", "Indium"),
+                Map.entry("Pd", "Palladium"),
+                Map.entry("Tc", "Technetium"),
+                Map.entry("Xe", "Xenon"),
+                Map.entry("K", "Potassium"),
+                Map.entry("Ra", "Radium"),
+                Map.entry("Th", "Thorium")
+        );
 
-        long value = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, predicate, begin, end);
+        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
-        isotopeResults.put("Neptunium", "");
-        isotopeResults.put("Plutonium", "");
-        isotopeResults.put("Uranium233", "");
-        isotopeResults.put("Uranium235", "");
-        isotopeResults.put("Americium", "");
-        isotopeResults.put("Uranium238", "");
-        isotopeResults.put("Barium", "");
-        isotopeResults.put("Bismuth", "");
-        isotopeResults.put("Californium", "");
-        isotopeResults.put("Cesium134", "");
-        isotopeResults.put("Cesium137", "");
-        isotopeResults.put("Cobalt57", "");
-        isotopeResults.put("Cobalt60", "");
-        isotopeResults.put("Europium", "");
-        isotopeResults.put("Iridium", "");
-        isotopeResults.put("Manganese", "");
-        isotopeResults.put("Selenium", "");
-        isotopeResults.put("Sodium", "");
-        isotopeResults.put("Strontium", "");
-        isotopeResults.put("Fluorine", "");
-        isotopeResults.put("Gallium", "");
-        isotopeResults.put("Iodine123", "");
-        isotopeResults.put("Iodine131", "");
-        isotopeResults.put("Indium", "");
-        isotopeResults.put("Palladium", "");
-        isotopeResults.put("Technetium", "");
-        isotopeResults.put("Xenon", "");
-        isotopeResults.put("Potassium", "");
-        isotopeResults.put("Radium", "");
-        isotopeResults.put("Thorium", "");
+        for (Map.Entry<String, String> entry : isotopes.entrySet()) {
+            String symbol = entry.getKey();
+            String name = entry.getValue();
 
-        var table = tableGenerator.addTable(isotopeResults);
-        if (table == null) {
-            document.add(new Paragraph("Table results failed to create"));
-            return;
+            Predicate<IObsData> predicate = (obsData) ->
+                    obsData.getResult().getStringValue(4).contains(name);
+
+            long count = Utils.countObservations(
+                    new String[]{RADHelper.DEF_ADJUDICATION},
+                    module,
+                    predicate,
+                    begin,
+                    end
+            );
+
+            dataset.addValue(count, name, symbol);
         }
 
-        document.add(table);
-        document.add(new Paragraph("\n"));
+        try {
+            var chart = chartGenerator.createChart(
+                    title,
+                    xLabel,
+                    yLabel,
+                    dataset,
+                    "bar",
+                    PlotOrientation.HORIZONTAL
+            );
+
+            if (chart == null) {
+                document.add(new Paragraph("Disposition chart failed to create"));
+                return;
+            }
+
+            BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
+
+            byte[] imageBytes = byteArrayOutputStream.toByteArray();
+            Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
+
+            document.add(image);
+            document.add(new Paragraph("\n"));
+        } catch (IOException e) {
+            module.getLogger().error("Error adding chart to report", e);
+        }
     }
 
     private void addSecondaryInspectionDetails() {
@@ -199,11 +254,10 @@ public class AdjudicationReport extends Report {
         document.add(new Paragraph("\n"));
     }
 
-    private Map<String, String> addDetails(String laneUID) {
+    private Map<String, String> addSecondaryDetails(String laneUID) {
         Map<String, String> secInsDetailsMap = new HashMap<>();
 
         Predicate<IObsData> predicate = (obsData) -> true;
-
 
         secInsDetailsMap.put("Primary Date", "");
         secInsDetailsMap.put("Primary Time", "");
@@ -214,5 +268,35 @@ public class AdjudicationReport extends Report {
         secInsDetailsMap.put("Disposition #", "");
 
         return secInsDetailsMap;
+    }
+
+    private void addAdjudicationDetails() {
+        document.add(new Paragraph("\n"));
+
+        Map<String, String> adjDetailsMap = new LinkedHashMap<>();
+
+        for (var laneUID : laneUIDs.split(", ")) {
+
+        }
+        Utils.getAdjudicationDetails(module, laneUIDs, RADHelper.DEF_ADJUDICATION);
+        adjDetailsMap.put("Username", "");
+        adjDetailsMap.put("Feedback", "");
+        adjDetailsMap.put("Adjudication Code", "");
+        adjDetailsMap.put("Isotopes", "");
+        adjDetailsMap.put("File Paths", "");
+        adjDetailsMap.put("Occupancy ID", "");
+        adjDetailsMap.put("Alarming System ID", "");
+        adjDetailsMap.put("Vehicle ID", "");
+        adjDetailsMap.put("Secondary Inspection Status", "");
+
+        var table = tableGenerator.addTable(adjDetailsMap);
+        if (table == null) {
+            document.add(new Paragraph("Adjudication Details Table failed to create"));
+            return;
+        }
+
+        document.add(table);
+        document.add(new Paragraph("\n"));
+
     }
 }
