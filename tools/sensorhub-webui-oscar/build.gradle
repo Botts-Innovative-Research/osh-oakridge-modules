@@ -16,6 +16,8 @@ dependencies {
     embeddedImpl 'com.vaadin:vaadin-compatibility-client-compiled:8.14.3'
     embeddedImpl 'com.vaadin:vaadin-themes:8.14.3'
 
+    implementation project(':sensorhub-service-oscar')
+
     testImplementation('junit:junit:4.13.1')
     implementation('junit:junit:4.13.1')
 }

@@ -1,7 +1,5 @@
 package com.botts.impl.system.lane.config;
 
-import org.sensorhub.api.config.DisplayInfo;
-
 /**
  * Configuration for custom FFMpeg driver
  * @author Kalyn Stricklin, Kyle Fitzpatrick

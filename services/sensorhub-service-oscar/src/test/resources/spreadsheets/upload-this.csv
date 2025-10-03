@@ -1,0 +1,4 @@
+Name,UniqueID,AutoStart,Latitude,Longitude,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0,CameraType1,CameraHost1,CameraPath1,Codec1,Username1,Password1,CameraType2,CameraHost2,CameraPath2,Codec2,Username2,Password2
+Lane1,1,false,34.185123,-86.2312312,Rapiscan,127.0.0.1,1601,"","",true,true,3.8,axis,127.0.0.1,"",H264,root,password,"","","","","","","","","","","",""
+Lane2,2,false,34.185123,-86.2312312,Rapiscan,127.0.0.1,1601,"","",true,true,3.8,axis,127.0.0.1,"",h264,root,password,axis,127.0.0.1,"",h264,root,password,"","","","","",""
+Lane3,3,false,34.185123,-86.2312312,Rapiscan,127.0.0.1,1601,"","",true,true,3.8,axis,127.0.0.1,"",h264,root,password,axis,127.0.0.1,"",h264,root,password,axis,127.0.0.1,"",h264,root,password

@@ -1,24 +1,21 @@
 package com.botts.ui.oscar.forms;
 
 import com.botts.impl.service.oscar.OSCARServiceModule;
-import com.vaadin.server.FontAwesome;
+import com.vaadin.server.AbstractClientConnector;
+import com.vaadin.server.FileDownloader;
+import com.vaadin.server.StreamResource;
 import com.vaadin.ui.*;
 import com.vaadin.v7.data.Property;
 import com.vaadin.v7.ui.Field;
-import com.vaadin.v7.ui.PasswordField;
 import com.vaadin.v7.ui.TextField;
 import com.vaadin.v7.ui.Upload;
 import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.ui.DisplayUtils;
 import org.sensorhub.ui.FieldWrapper;
 import org.sensorhub.ui.GenericConfigForm;
-import org.sensorhub.ui.data.ComplexProperty;
 
-import java.io.ByteArrayOutputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 
 public class OSCARServiceForm extends GenericConfigForm {
 
@@ -47,6 +44,7 @@ public class OSCARServiceForm extends GenericConfigForm {
                     textField.setBuffered(false);
                     textField.setWidth(field.getWidth(), field.getWidthUnits());
                     textField.setPropertyDataSource(field.getPropertyDataSource());
+                    textField.setVisible(false);
                     layout.addComponent(textField);
                     layout.setComponentAlignment(textField, Alignment.MIDDLE_LEFT);
 
@@ -54,23 +52,47 @@ public class OSCARServiceForm extends GenericConfigForm {
                     Upload upload = new Upload();
                     layout.addComponent(upload);
                     layout.setComponentAlignment(upload, Alignment.MIDDLE_LEFT);
-                    upload.setReceiver(new Upload.Receiver() {
-                        @Override
-                        public OutputStream receiveUpload(String filename, String mimeType) {
-                            if (filename.endsWith(".csv") || mimeType.contains("csv")) {
-                                try {
-                                    return oscarService.getSpreadsheetHandler().handleUpload(filename);
-                                } catch (DataStoreException e) {
-                                    throw new RuntimeException(e);
-                                }
+                    upload.setReceiver((Upload.Receiver) (filename, mimeType) -> {
+                        if (filename.endsWith(".csv") || mimeType.contains("csv")) {
+                            try {
+                                return oscarService.getSpreadsheetHandler().handleUpload(filename);
+                            } catch (DataStoreException e) {
+                                DisplayUtils.showErrorPopup("Upload failed." , e);
                             }
-
-                            return new OutputStream() {
-                                @Override
-                                public void write(int b) {}
-                            };
                         }
+
+                        return new OutputStream() {
+                            @Override
+                            public void write(int b) {}
+                        };
                     });
+
+                    upload.addSucceededListener((e) -> {
+                        boolean fileLoaded = oscarService.getSpreadsheetHandler().handleFile(e.getFilename());
+                        if (!fileLoaded)
+                            DisplayUtils.showErrorPopup("Unable to load lanes from file.", new IllegalStateException());
+                        else
+                            DisplayUtils.showOperationSuccessful("Successfully loaded lanes from file!");
+                    });
+
+                    FileDownloader download = new FileDownloader(
+                            new StreamResource(() ->
+                            oscarService.getSpreadsheetHandler().getDownloadStream(),
+                            oscarService.getSpreadsheetHandler().CONFIG_KEY));
+                    Button button = new Button("Download");
+                    button.addClickListener((event) -> {
+                        if (oscarService.getSpreadsheetHandler().getDownloadStream() != null)
+                            button.setEnabled(false);
+                        else
+                            DisplayUtils.showErrorPopup("Unable to download config because there are no lanes loaded.", new IllegalArgumentException("File data is null"));
+                    });
+                    download.setErrorHandler(e -> {
+                        DisplayUtils.showErrorPopup("Error downloading config file.", e.getThrowable());
+                        button.setEnabled(true);
+                    });
+                    download.extend(button);
+                    layout.addComponent(button);
+
                     return layout;
                 }
             };
