@@ -22,6 +22,9 @@ public class RADHelper extends GeoPosHelper {
     public static final String DEF_TAMPER = getRadUri("TamperStatus");
     public static final String DEF_THRESHOLD = getRadUri("Threshold");
     public static final String DEF_ADJUDICATION = getRadUri("AdjudicationCode");
+    public static final String DEF_EML_RESULT = getRadUri("EMLResult");
+    public static final String DEF_VIDEO = getRadUri("");
+    public static final String DEF_COMM = getRadUri("");
 
     public static String getRadUri(String propName) {
         return RADConstants.RAD_URI + propName;
@@ -55,7 +58,7 @@ public class RADHelper extends GeoPosHelper {
         return createTime()
                 .asSamplingTimeIsoUTC()
                 .name("samplingTime")
-                .description("time stamp: when the message was received")
+                .description("when the message was received")
                 .build();
     }
 
