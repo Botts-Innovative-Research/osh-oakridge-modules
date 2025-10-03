@@ -6,6 +6,7 @@ import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
+import org.sensorhub.impl.utils.rad.RADHelper;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -24,11 +25,14 @@ public class Utils {
 
     // EML
     public static Predicate<IObsData> emlRpmAlarmPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) || obsData.getResult().getBooleanValue(6);
+    public static Predicate<IObsData> emlAlarmPredicate = (obsData) -> obsData.getResult().getBooleanValue(3) || obsData.getResult().getBooleanValue(4);
+
+
     public static Predicate<IObsData> emlRpmGammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
     public static Predicate<IObsData> emlRpmNeutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
     public static Predicate<IObsData> emlRpmGammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
 
-    public static Predicate<IObsData> emlAlarmPredicate = (obsData) -> obsData.getResult().getBooleanValue(3) || obsData.getResult().getBooleanValue(4);
+    // when eml is false but the rpm is true / total number of alarms
     public static Predicate<IObsData> emlGammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(3) && !obsData.getResult().getBooleanValue(4);
     public static Predicate<IObsData> emlNeutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(3) && obsData.getResult().getBooleanValue(4);
     public static Predicate<IObsData> emlGammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(3) && obsData.getResult().getBooleanValue(4);
@@ -76,6 +80,50 @@ public class Utils {
                         .build())
                 .withValuePredicate(valuePredicate)
                 .build()).count();
+    }
+
+    public static long countEMLSuppressed(String laneUID, String[] observedProperties, OSCARServiceModule module, Instant begin, Instant end){
+
+        var query = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withSystems(new SystemFilter.Builder()
+                        .withUniqueIDs(laneUID)
+                        .build())
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withObservedProperties(observedProperties)
+                        .withValidTimeDuring(begin, end)
+                        .build())
+                .build())
+                .iterator();
+
+        var emlSuppressedCount = 0;
+
+        while (query.hasNext()) {
+            var entry  = query.next();
+
+//            var result = entry.getResult();
+//
+//            var gamma = result.getBooleanValue(5);
+//            var neutron = result.getBooleanValue(6);
+//
+//            if(gamma && !neutron){
+//                gammaCount++;
+//            }
+        }
+        return emlSuppressedCount;
+
+        //        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+//                .withSystems(new SystemFilter.Builder()
+//                        .withUniqueIDs(laneUID)
+//                        .build())
+//                .withDataStreams(new DataStreamFilter.Builder()
+//                        .withObservedProperties(observedProperties)
+//                        .withValidTimeDuring(begin, end)
+//                        .build())
+//                .withValuePredicate(valuePredicate1)
+//                .withValuePredicate(valuePredicate2)
+//                .build()).count();
+
+
     }
 
     public static long countObservationsFromLane(String laneUID, String[] observedProperties, OSCARServiceModule module, Predicate<IObsData> valuePredicate, Instant begin, Instant end){
