@@ -83,7 +83,7 @@ public class EventReport extends Report {
         Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaPredicate, start, end);
         Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(observedProperties, module, Utils.neutronPredicate, start, end);
         Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaNeutronPredicate, start, end);
-        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(observedProperties, module, Utils.emlSuppressedPredicate, start, end);
+//        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(observedProperties, module, Utils.emlAlarmPredicate, start, end);
 
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
@@ -100,9 +100,9 @@ public class EventReport extends Report {
             dataset.addValue(entry.getValue(), "Neutron",  formatter.format(entry.getKey()));
         }
 
-        for(Map.Entry<Instant, Long> entry : emlSuppressedDaily.entrySet()){
-            dataset.addValue(entry.getValue(), "EML-Suppressed",  formatter.format(entry.getKey()));
-        }
+//        for(Map.Entry<Instant, Long> entry : emlSuppressedDaily.entrySet()){
+//            dataset.addValue(entry.getValue(), "EML-Suppressed",  formatter.format(entry.getKey()));
+//        }
 
         String title = "Alarms";
         String xAxis = "Dates";
@@ -222,7 +222,7 @@ public class EventReport extends Report {
         Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(observedProperties, module, Utils.neutronPredicate, start, end);
         Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaNeutronPredicate, start, end);
         Map<Instant, Long> totalOccupancyDaily = Utils.countObservationsByDay(observedProperties, module, Utils.occupancyTotalPredicate, start, end);
-        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(observedProperties, module, Utils.emlSuppressedPredicate, start, end);
+//        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(observedProperties, module, Utils.emlSuppressedPredicate, start, end);
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
@@ -238,9 +238,9 @@ public class EventReport extends Report {
             dataset.addValue(entry.getValue(), "Neutron",  formatter.format(entry.getKey()));
         }
 
-        for(Map.Entry<Instant, Long> entry : emlSuppressedDaily.entrySet()){
-            dataset.addValue(entry.getValue(), "EML-Suppressed",  formatter.format(entry.getKey()));
-        }
+//        for(Map.Entry<Instant, Long> entry : emlSuppressedDaily.entrySet()){
+//            dataset.addValue(entry.getValue(), "EML-Suppressed",  formatter.format(entry.getKey()));
+//        }
 
         // this will be a linegraph on top of the bar chart
         DefaultCategoryDataset occDataset = new DefaultCategoryDataset();

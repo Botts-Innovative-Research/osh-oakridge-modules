@@ -1,5 +1,6 @@
 package com.botts.impl.service.oscar.reports.helpers;
 
+import com.botts.impl.service.oscar.OSCARServiceConfig;
 import com.botts.impl.service.oscar.OSCARServiceModule;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
@@ -20,10 +21,17 @@ public class Utils {
     public static Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
     public static Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
     public static Predicate<IObsData> occupancyTotalPredicate = (obsData) -> true;
+
+    // EML
+    public static Predicate<IObsData> emlRpmAlarmPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) || obsData.getResult().getBooleanValue(6);
+    public static Predicate<IObsData> emlRpmGammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
+    public static Predicate<IObsData> emlRpmNeutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+    public static Predicate<IObsData> emlRpmGammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+
+    public static Predicate<IObsData> emlAlarmPredicate = (obsData) -> obsData.getResult().getBooleanValue(3) || obsData.getResult().getBooleanValue(4);
     public static Predicate<IObsData> emlGammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(3) && !obsData.getResult().getBooleanValue(4);
     public static Predicate<IObsData> emlNeutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(3) && obsData.getResult().getBooleanValue(4);
     public static Predicate<IObsData> emlGammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(3) && obsData.getResult().getBooleanValue(4);
-    public static Predicate<IObsData> emlSuppressedPredicate = (obsData) -> obsData.getResult().getBooleanValue(3) && obsData.getResult().getBooleanValue(4);
 
     // FAULTS
     public static Predicate<IObsData> tamperPredicate = (obsData) -> obsData.getResult().getBooleanValue(1);
@@ -80,8 +88,7 @@ public class Utils {
                                 .withValidTimeDuring(begin, end)
                                 .build())
                         .withValuePredicate(valuePredicate)
-                        .build())
-                .count();
+                        .build()).count();
     }
 
     public static Map<Instant, Long> countObservationsByDay(String[] observedProperties, OSCARServiceModule module, Predicate<IObsData> predicate,  Instant startDate, Instant endDate){
@@ -101,5 +108,16 @@ public class Utils {
             startDate = endOfCurrentDay;
         }
         return result;
+    }
+
+    public static void getAdjudicationDetails(OSCARServiceModule module, String laneUID, String observedProperties){
+        module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withSystems(new SystemFilter.Builder()
+                        .withUniqueIDs(laneUID)
+                        .build())
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withObservedProperties(observedProperties)
+                        .build())
+                .build());
     }
 }
