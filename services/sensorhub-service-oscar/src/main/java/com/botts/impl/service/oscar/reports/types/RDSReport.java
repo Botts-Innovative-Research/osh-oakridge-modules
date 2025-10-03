@@ -66,7 +66,10 @@ public class RDSReport extends Report {
         long gammaAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, Utils.gammaPredicate, begin, end);
         long neutronAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, Utils.neutronPredicate, begin, end);
         long totalOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, Utils.occupancyTotalPredicate, begin, end);
-//        long emlSuppressedCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, Utils.emlSuppPredicate);
+
+        long rpmEmlAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_EML_SCAN}, module, Utils.emlRpmAlarmPredicate, begin, end);
+        long emlAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_EML_ANALYSIS}, module, Utils.emlAlarmPredicate, begin, end);
+
         long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
         long alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
 

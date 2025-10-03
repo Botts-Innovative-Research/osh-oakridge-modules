@@ -181,30 +181,29 @@ public class AdjudicationReport extends Report {
 
     private void addSecondaryInspectionDetails() {
         document.add(new Paragraph("Secondary Inspection Details").setFontSize(12));
-
-        Map<String, Map<String, String>> countsLane = new LinkedHashMap<>();
-
-        for (var lane : laneUIDs.split(",")) {
-            var counts = calculateDetailsCounts(lane);
-            countsLane.put(lane, counts);
-        }
-
-        var table = tableGenerator.addLanesTable(countsLane);
-        if (table == null) {
-            document.add(new Paragraph("Failed to secondary inspection details"));
-            return;
-        }
-
-        document.add(table);
+//
+////        Map<String, Map<String, String>> countsLane = new LinkedHashMap<>();
+//
+////        for (var lane : laneUIDs.split(",")) {
+////            var counts = calculateDetailsCounts(lane);
+////            countsLane.put(lane, counts);
+////        }
+////
+////        var table = tableGenerator.addLanesTable(countsLane);
+////        if (table == null) {
+////            document.add(new Paragraph("Failed to secondary inspection details"));
+////            return;
+////        }
+//
+//        document.add(table);
         document.add(new Paragraph("\n"));
     }
 
-    private Map<String, String> calculateDetailsCounts(String laneUID) {
+    private Map<String, String> addDetails(String laneUID) {
         Map<String, String> secInsDetailsMap = new HashMap<>();
 
         Predicate<IObsData> predicate = (obsData) -> true;
 
-        long value = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_ADJUDICATION}, module, predicate, begin, end);
 
         secInsDetailsMap.put("Primary Date", "");
         secInsDetailsMap.put("Primary Time", "");
