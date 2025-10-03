@@ -9,7 +9,6 @@ import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Image;
 import com.itextpdf.layout.element.Paragraph;
 import org.jfree.data.category.DefaultCategoryDataset;
-import org.sensorhub.api.data.IObsData;
 import org.sensorhub.impl.utils.rad.RADHelper;
 
 import javax.imageio.ImageIO;
@@ -21,7 +20,6 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
-import java.util.function.Predicate;
 
 public class EventReport extends Report {
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
@@ -113,8 +111,8 @@ public class EventReport extends Report {
             var chart = chartGenerator.createStackedBarChart(
                     title,
                     xAxis,
-                    yAxis, dataset,
-                    outFileName
+                    yAxis,
+                    dataset
             );
 
             if(chart == null){
@@ -182,15 +180,13 @@ public class EventReport extends Report {
         String title = "SOH";
         String xAxis = "Date";
         String yAxis = "Count";
-        String outFileName = "soh_chart.png";
 
         try{
             var chart = chartGenerator.createStackedBarChart(
                     title,
                     xAxis,
                     yAxis,
-                    dataset,
-                    outFileName
+                    dataset
             );
 
             if(chart == null){
@@ -252,7 +248,6 @@ public class EventReport extends Report {
         String title = "Alarms and Occupancies";
         String xAxis = "Date";
         String yAxis = "Count";
-        String outFileName = "alarm_occupancy_chart.png";
 
         try{
             var chart = chartGenerator.createStackedBarLineOverlayChart(
@@ -260,8 +255,7 @@ public class EventReport extends Report {
                     xAxis,
                     yAxis,
                     dataset,
-                    occDataset,
-                    outFileName
+                    occDataset
             );
 
             if(chart == null){

@@ -26,19 +26,23 @@ public class ChartGenerator {
         this.bucketService = module.getBucketService();
     }
 
-    public JFreeChart createChart(String title, String xAxisLabel, String yAxisLabel, DefaultCategoryDataset dataset, String chartType, String outputFilePath) throws IOException {
+    public JFreeChart createChart(String title, String xAxisLabel, String yAxisLabel, DefaultCategoryDataset dataset, String chartType, PlotOrientation orientation) throws IOException {
         JFreeChart chart = null;
-
 
         switch(chartType.toLowerCase()) {
             case "bar":
                 chart = ChartFactory.createBarChart(
-                        title, xAxisLabel, yAxisLabel,
+                        title,
+                        xAxisLabel,
+                        yAxisLabel,
                         dataset,
-                        PlotOrientation.VERTICAL, true, true, false
+                        orientation,
+                        true,
+                        true,
+                        false
                 );
 
-                chart.getCategoryPlot().getDomainAxis().setCategoryLabelPositions(CategoryLabelPositions.UP_45);
+                chart.getCategoryPlot().getDomainAxis().setCategoryLabelPositions(CategoryLabelPositions.STANDARD);
 
                 chart.getCategoryPlot().getDomainAxis().setTickLabelFont(new Font("SansSerif", Font.PLAIN, 10));
                 chart.getCategoryPlot().getRangeAxis().setTickLabelFont(new Font("SansSerif", Font.PLAIN, 10));
@@ -53,13 +57,19 @@ public class ChartGenerator {
                 break;
             case "line":
                 chart = ChartFactory.createLineChart(
-                        title, xAxisLabel, yAxisLabel, dataset,
-                        PlotOrientation.VERTICAL, true, true, false
+                        title,
+                        xAxisLabel,
+                        yAxisLabel,
+                        dataset,
+                        orientation,
+                        true,
+                        true,
+                        false
                 );
 
                 break;
             default:
-                module.getLogger().error("Unknown chart type: " + chartType);
+                module.getLogger().error("Unknown chart type: {}", chartType);
         }
 
         if(chart == null)
@@ -69,12 +79,21 @@ public class ChartGenerator {
     }
 
 
-    public JFreeChart createStackedBarChart(String title, String xAxisLabel, String yAxisLabel, DefaultCategoryDataset dataset, String outputFilePath) throws IOException {
-        return ChartFactory.createStackedBarChart(title, xAxisLabel, yAxisLabel, dataset, PlotOrientation.VERTICAL, true, true, false);
+    public JFreeChart createStackedBarChart(String title, String xAxisLabel, String yAxisLabel, DefaultCategoryDataset dataset) throws IOException {
+        return ChartFactory.createStackedBarChart(
+                title,
+                xAxisLabel,
+                yAxisLabel,
+                dataset,
+                PlotOrientation.VERTICAL,
+                true,
+                true,
+                false
+        );
     }
 
 
-    public JFreeChart createStackedBarLineOverlayChart(String title, String xAxisLabel, String yAxisLabel, DefaultCategoryDataset stackedBarDataset, DefaultCategoryDataset lineDataset, String outputFilePath) throws IOException {
+    public JFreeChart createStackedBarLineOverlayChart(String title, String xAxisLabel, String yAxisLabel, DefaultCategoryDataset stackedBarDataset, DefaultCategoryDataset lineDataset) throws IOException {
         CategoryPlot plot = new CategoryPlot();
 
         CategoryAxis domainAxis = new CategoryAxis(xAxisLabel);
