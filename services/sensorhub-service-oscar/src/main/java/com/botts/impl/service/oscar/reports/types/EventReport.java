@@ -26,8 +26,6 @@ import java.util.function.Predicate;
 public class EventReport extends Report {
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
 
-    String reportTitle = "Event Report";
-
     Document document;
     PdfDocument pdfDocument;
 
@@ -39,6 +37,7 @@ public class EventReport extends Report {
     EventReportType eventType;
     Instant start;
     Instant end;
+    String[] observedProperties = new String[]{RADHelper.DEF_OCCUPANCY};
 
     public EventReport(OutputStream outputStream, Instant startTime, Instant endTime, EventReportType eventType, String laneUID, OSCARServiceModule module) {
         pdfDocument = new PdfDocument(new PdfWriter(outputStream));
@@ -72,26 +71,19 @@ public class EventReport extends Report {
     }
 
     private void addHeader(){
-        document.add(new Paragraph(reportTitle).setFontSize(16).simulateBold());
+        document.add(new Paragraph("Event Report").setFontSize(16).simulateBold());
         document.add(new Paragraph("Event Type:" + eventType).setFontSize(12));
-        document.add(new Paragraph("Lane ID:" + laneUID).setFontSize(12));
+        document.add(new Paragraph("Lane UIDs:" + laneUID).setFontSize(12));
         document.add(new Paragraph("\n"));
     }
 
     private void addAlarmStatisticsByDay(){
         document.add(new Paragraph("Alarm Statistics").setFontSize(12));
 
-        String[] observedProperties = new String[]{RADHelper.DEF_OCCUPANCY};
-
-        Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
-        Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
-        Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
-        Predicate<IObsData> emlSuppressedPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
-
-        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(observedProperties, module, gammaPredicate, start, end);
-        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(observedProperties, module, neutronPredicate, start, end);
-        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(observedProperties, module, gammaNeutronPredicate, start, end);
-        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(observedProperties, module, emlSuppressedPredicate, start, end);
+        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaPredicate, start, end);
+        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(observedProperties, module, Utils.neutronPredicate, start, end);
+        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaNeutronPredicate, start, end);
+        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(observedProperties, module, Utils.emlSuppressedPredicate, start, end);
 
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
@@ -149,23 +141,13 @@ public class EventReport extends Report {
 
     private void addFaultStatisticsByDay(){
 
-        String[] observedProperties = new String[]{RADHelper.DEF_OCCUPANCY};
-
-        Predicate<IObsData> gammaHighPredicate = (obsData) -> true;
-        Predicate<IObsData> gammaLowPredicate = (obsData) -> true;
-        Predicate<IObsData> neutronHighPredicate = (obsData) -> true;
-        Predicate<IObsData> extendedOccupancyPredicate = (obsData) -> true;
-        Predicate<IObsData> tamperPredicate = (obsData) -> true;
-        Predicate<IObsData> commPredicate = (obsData) -> true;
-        Predicate<IObsData> cameraPredicate = (obsData) -> true;
-
-        Map<Instant, Long> gammaHighDaily = Utils.countObservationsByDay(observedProperties, module, gammaHighPredicate, start, end);
-        Map<Instant, Long> gammaLowDaily = Utils.countObservationsByDay(observedProperties, module, gammaLowPredicate, start, end);
-        Map<Instant, Long> neutronHighDaily = Utils.countObservationsByDay(observedProperties, module, neutronHighPredicate, start, end);
-        Map<Instant, Long> extendedOccupancyDaily = Utils.countObservationsByDay(observedProperties, module, extendedOccupancyPredicate, start, end);
-        Map<Instant, Long> tamperDaily = Utils.countObservationsByDay(observedProperties, module, tamperPredicate, start, end);
-        Map<Instant, Long> commDaily = Utils.countObservationsByDay(observedProperties, module, commPredicate, start, end);
-        Map<Instant, Long> cameraDaily = Utils.countObservationsByDay(observedProperties, module, cameraPredicate, start, end);
+        Map<Instant, Long> gammaHighDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaHighPredicate, start, end);
+        Map<Instant, Long> gammaLowDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaLowPredicate, start, end);
+        Map<Instant, Long> neutronHighDaily = Utils.countObservationsByDay(observedProperties, module, Utils.neutronHighPredicate, start, end);
+        Map<Instant, Long> extendedOccupancyDaily = Utils.countObservationsByDay(observedProperties, module, Utils.extendedOccPredicate, start, end);
+        Map<Instant, Long> tamperDaily = Utils.countObservationsByDay(observedProperties, module, Utils.tamperPredicate, start, end);
+        Map<Instant, Long> commDaily = Utils.countObservationsByDay(observedProperties, module, Utils.commsPredicate, start, end);
+        Map<Instant, Long> cameraDaily = Utils.countObservationsByDay(observedProperties, module, Utils.cameraPredicate, start, end);
 
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
@@ -236,19 +218,11 @@ public class EventReport extends Report {
 
     private void addAlarmOccStatisticsByDay(){
 
-        String[] observedProperties = new String[]{RADHelper.DEF_OCCUPANCY};
-
-        Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
-        Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
-        Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
-        Predicate<IObsData> emlSuppressedPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
-        Predicate<IObsData> occupancyTotalPredicate = (obsData) -> true;
-
-        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(observedProperties, module, gammaPredicate, start, end);
-        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(observedProperties, module, neutronPredicate, start, end);
-        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(observedProperties, module, gammaNeutronPredicate, start, end);
-        Map<Instant, Long> totalOccupancyDaily = Utils.countObservationsByDay(observedProperties, module, occupancyTotalPredicate, start, end);
-        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(observedProperties, module, emlSuppressedPredicate, start, end);
+        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaPredicate, start, end);
+        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(observedProperties, module, Utils.neutronPredicate, start, end);
+        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(observedProperties, module, Utils.gammaNeutronPredicate, start, end);
+        Map<Instant, Long> totalOccupancyDaily = Utils.countObservationsByDay(observedProperties, module, Utils.occupancyTotalPredicate, start, end);
+        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(observedProperties, module, Utils.emlSuppressedPredicate, start, end);
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 

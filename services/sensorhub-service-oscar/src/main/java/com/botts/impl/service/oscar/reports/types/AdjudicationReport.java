@@ -24,7 +24,6 @@ import java.util.function.Predicate;
 
 public class AdjudicationReport extends Report {
 
-    String reportTitle = "Adjudication Report";
     Document document;
     PdfDocument pdfDocument;
 
@@ -61,7 +60,7 @@ public class AdjudicationReport extends Report {
     }
 
     private void addHeader() {
-        document.add(new Paragraph(reportTitle).setFontSize(16).simulateBold());
+        document.add(new Paragraph("Adjudication Report").setFontSize(16).simulateBold());
         document.add(new Paragraph("Lane UID: " + laneUIDs).setFontSize(12));
         document.add(new Paragraph("\n"));
     }
@@ -73,29 +72,17 @@ public class AdjudicationReport extends Report {
         String yLabel = "% of Total Number of Records";
         String xLabel = "Type";
 
-        Predicate<IObsData> realAlarmOtherPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Real Alarm - Other");
-        Predicate<IObsData> falseAlarmOtherPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("False Alarm - Other");
-        Predicate<IObsData> phyInsPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Physical Inspection");
-        Predicate<IObsData> incMedPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Innocent Alarm - Medical Isotope Found");
-        Predicate<IObsData> incRadioPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Innocent Alarm - Declared Shipment of Radioactive Material");
-        Predicate<IObsData> noDisPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("No Disposition");
-        Predicate<IObsData> falseAlarmRIIDPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("False Alarm - RIID/ASP Indicates Background Only");
-        Predicate<IObsData> realAlarmContraPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Real Alarm - Contraband Found");
-        Predicate<IObsData> tamperFaultPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Tamper/Fault - Unauthorized Activity");
-        Predicate<IObsData> alarmTamperFaultPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Alarm/Tamper/Fault- Authorized Test/Maintenance/Training Activity");
-        Predicate<IObsData> alarmNORMPredicate = (obsData) -> obsData.getResult().getStringValue(3).contains("Alarm - Naturally Occurring Radioactive Material (NORM) Found");
-
-        long realAlarmOtherCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, realAlarmOtherPredicate, begin, end);
-        long falseAlarmOtherCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, falseAlarmOtherPredicate, begin, end);
-        long physicalInspecNegCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, phyInsPredicate, begin, end);
-        long innAlarmMedicalCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, incMedPredicate, begin, end);
-        long incRadioMatCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, incRadioPredicate, begin, end);
-        long noDisCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, noDisPredicate, begin, end);
-        long falseAlarmRiidCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, falseAlarmRIIDPredicate, begin, end);
-        long realAlarmContCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, realAlarmContraPredicate, begin, end);
-        long tamperFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, tamperFaultPredicate, begin, end);
-        long alarmTamperFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, alarmTamperFaultPredicate, begin, end);
-        long alarmNaturallyCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, alarmNORMPredicate, begin, end);
+        long realAlarmOtherCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.realAlarmOtherPredicate, begin, end);
+        long falseAlarmOtherCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.falseAlarmOtherPredicate, begin, end);
+        long physicalInspecNegCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.phyInsPredicate, begin, end);
+        long innAlarmMedicalCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.incMedPredicate, begin, end);
+        long incRadioMatCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.incRadioPredicate, begin, end);
+        long noDisCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.noDisPredicate, begin, end);
+        long falseAlarmRiidCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.falseAlarmRIIDPredicate, begin, end);
+        long realAlarmContCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.realAlarmContraPredicate, begin, end);
+        long tamperFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.tamperFaultPredicate, begin, end);
+        long alarmTamperFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.alarmTamperFaultPredicate, begin, end);
+        long alarmNaturallyCount = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, Utils.alarmNORMPredicate, begin, end);
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
@@ -119,7 +106,7 @@ public class AdjudicationReport extends Report {
                     yLabel,
                     dataset,
                     "bar",
-                    laneUIDs + "_dispostion_chart.png"
+                    begin  + "_dispostion_chart.png"
             );
 
             if (chart == null) {
@@ -135,12 +122,10 @@ public class AdjudicationReport extends Report {
             Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
 
             document.add(image);
-
+            document.add(new Paragraph("\n"));
         } catch (IOException e) {
             module.getLogger().error("Error adding chart to report", e);
-            return;
         }
-        document.add(new Paragraph("\n"));
     }
 
 
@@ -184,6 +169,13 @@ public class AdjudicationReport extends Report {
         isotopeResults.put("Radium", "");
         isotopeResults.put("Thorium", "");
 
+        var table = tableGenerator.addTable(isotopeResults);
+        if (table == null) {
+            document.add(new Paragraph("Table results failed to create"));
+            return;
+        }
+
+        document.add(table);
         document.add(new Paragraph("\n"));
     }
 
@@ -199,7 +191,7 @@ public class AdjudicationReport extends Report {
 
         var table = tableGenerator.addLanesTable(countsLane);
         if (table == null) {
-            document.add(new Paragraph("Failed to secondary inspection details to pdf"));
+            document.add(new Paragraph("Failed to secondary inspection details"));
             return;
         }
 
