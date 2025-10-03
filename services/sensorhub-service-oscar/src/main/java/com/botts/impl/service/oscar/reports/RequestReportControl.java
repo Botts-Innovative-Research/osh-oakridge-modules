@@ -161,7 +161,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             report.generate();
         }
 
-        return filePath;
+        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
     }
 
     private String generateEventReport(EventReportType eventType, String laneUIDs, String formattedStart, Instant start, Instant end) throws DataStoreException {
@@ -169,11 +169,12 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
         OutputStream out = checkBucketForOutputStream(filePath);
 
-        if (out != null){
+        if (out != null) {
             report = new EventReport(out, start, end, eventType, laneUIDs, module);
             report.generate();
         }
-        return filePath;
+
+        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
     }
 
     private String generateAdjudicationReport(String laneUIDs, String formattedStart, Instant start, Instant end) throws DataStoreException {
@@ -185,7 +186,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             report = new AdjudicationReport(out, start, end, laneUIDs, module);
             report.generate();
         }
-        return filePath;
+        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
     }
 
     private String generateRDSReport(String formattedStart, Instant start, Instant end) throws DataStoreException {
@@ -198,7 +199,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             report = new RDSReport(out, start, end, module);
             report.generate();
         }
-        return filePath;
+        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
     }
 
     // checks if a report file already exists in object store and only creates a new output if it doesnt exist
