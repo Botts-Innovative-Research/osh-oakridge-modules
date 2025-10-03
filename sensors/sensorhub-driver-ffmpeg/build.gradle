@@ -8,8 +8,8 @@ dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     implementation project(':sensorhub-driver-videocam')
     implementation project(':sensorhub-process-ffmpeg')
-    testImplementation('junit:junit:4.13')
-    testImplementation('org.jcodec:jcodec-javase:0.1.9')
+    testImplementation('junit:junit:4.13.1')
+    testImplementation('org.jcodec:jcodec-javase:0.2.5')
 }
 
 // exclude tests requiring connection to the sensor
