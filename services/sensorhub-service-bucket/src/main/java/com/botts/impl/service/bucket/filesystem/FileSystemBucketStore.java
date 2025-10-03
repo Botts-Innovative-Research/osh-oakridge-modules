@@ -21,6 +21,7 @@ public class FileSystemBucketStore implements IBucketStore {
             Map.entry("video/mp4", ".mp4"),
             Map.entry("application/pdf", ".pdf"),
             Map.entry("text/plain", ".txt"),
+            Map.entry("text/csv", ".csv"),
             Map.entry("application/json", ".json")
     );
     private final Path rootDirectory;

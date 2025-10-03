@@ -20,6 +20,7 @@ import com.botts.impl.sensor.aspect.AspectConfig;
 import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProvider;
 import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProviderConfig;
+import com.botts.impl.sensor.rapiscan.EMLConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.system.lane.config.*;
@@ -410,7 +411,12 @@ public class LaneSystem extends SensorSystem {
             rapiscanConfig.moduleClass = RapiscanSensor.class.getCanonicalName();
 
             // add eml for rapiscan
-            rapiscanConfig.emlConfig = rapiscanRPMConfig.emlConfig;
+            if (rapiscanRPMConfig.emlConfig != null) {
+                var eml = rapiscanConfig.emlConfig = new EMLConfig();
+                eml.emlEnabled = rapiscanRPMConfig.emlConfig.emlEnabled;
+                eml.isCollimated = rapiscanRPMConfig.emlConfig.isCollimated;
+                eml.laneWidth = rapiscanRPMConfig.emlConfig.laneWidth;
+            }
 
             // Setup communication config
             var comm = rapiscanConfig.commSettings = new TCPCommProviderConfig();
