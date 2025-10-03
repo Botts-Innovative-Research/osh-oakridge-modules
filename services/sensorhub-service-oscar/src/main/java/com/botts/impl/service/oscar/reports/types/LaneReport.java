@@ -44,7 +44,6 @@ public class LaneReport extends Report {
         addFaultStatistics();
 
         document.close();
-
         tableGenerator = null;
     }
 
@@ -56,7 +55,6 @@ public class LaneReport extends Report {
 
 
     private void addAlarmStatistics(){
-
         document.add(new Paragraph("Alarm Statistics"));
 
         Map<String, Map<String, String>> countsLane = new LinkedHashMap<>();
