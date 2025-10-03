@@ -103,8 +103,8 @@ public class LaneReport extends Report {
         long neutronAlarmCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_OCCUPANCY}, module, Utils.neutronPredicate, begin, end);
         long totalOccupancyCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_OCCUPANCY}, module, Utils.occupancyTotalPredicate, begin, end);
 
-        long rpmEmlAlarmCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_EML_SCAN}, module, Utils.emlRpmAlarmPredicate, begin, end);
-        long emlAlarmCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_EML_ANALYSIS}, module, Utils.emlAlarmPredicate, begin, end);
+        long emlSuppressed = Utils.countEMLSuppressed(laneUID, new String[]{RADHelper.DEF_EML_SCAN,RADHelper.DEF_EML_ANALYSIS}, module, begin, end);
+//        long emlAlarmCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_EML_ANALYSIS}, module, Utils.emlAlarmPredicate, begin, end);
 
         long emlSuppressedCount = 0;
         long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
