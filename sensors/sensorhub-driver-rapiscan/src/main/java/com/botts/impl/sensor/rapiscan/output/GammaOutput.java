@@ -48,7 +48,7 @@ public class GammaOutput extends AbstractSensorOutput<RapiscanSensor> {
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
                 .updatable(true)
-                .definition(RADHelper.getRadUri("gamma-counts"))
+                .definition(RADHelper.getRadUri("Gamma"))
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(alarmState.getName(), alarmState)
                 .addField(grossCount.getName(), grossCount)

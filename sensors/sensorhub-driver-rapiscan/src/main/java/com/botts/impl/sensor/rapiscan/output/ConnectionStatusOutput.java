@@ -29,7 +29,7 @@ public class ConnectionStatusOutput extends AbstractSensorOutput<RapiscanSensor>
         var isConnected = radHelper.createBoolean()
                 .name("isConnected")
                 .label("Is Connected")
-                .definition(RADHelper.getRadUri("connection-status"))
+                .definition(RADHelper.getRadUri("ConnectionStatus"))
                 .description("Is sensor receiving messages")
                 .build();
 
@@ -37,7 +37,6 @@ public class ConnectionStatusOutput extends AbstractSensorOutput<RapiscanSensor>
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
                 .updatable(true)
-                .definition(RADHelper.getRadUri("gamma-count"))
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(isConnected.getName(), isConnected)
                 .build();
