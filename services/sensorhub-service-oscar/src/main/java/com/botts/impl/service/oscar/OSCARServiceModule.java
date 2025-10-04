@@ -124,6 +124,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     public OSCARSystem getOSCARSystem() {
         return system;
     }
+
     public IBucketService getBucketService() {
         return bucketService;
     }

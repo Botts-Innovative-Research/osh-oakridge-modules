@@ -82,32 +82,37 @@ public class Utils {
                 .build()).count();
     }
 
-    public static long countEMLSuppressed(String laneUID, String[] observedProperties, OSCARServiceModule module, Instant begin, Instant end){
+
+    //  suppressed : RPM Gamma Alert = true  but the EML Gamma Alert = false
+    // so count how many times the RPM had a true alarm but the EML descided it was false
+    //
+    public static long countEMLSuppressed(String laneUID, String[] obsProp, OSCARServiceModule module, Instant begin, Instant end){
 
         var query = module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
                 .withSystems(new SystemFilter.Builder()
                         .withUniqueIDs(laneUID)
                         .build())
                 .withDataStreams(new DataStreamFilter.Builder()
-                        .withObservedProperties(observedProperties)
+                        .withObservedProperties(obsProp)
                         .withValidTimeDuring(begin, end)
                         .build())
                 .build())
                 .iterator();
+
 
         var emlSuppressedCount = 0;
 
         while (query.hasNext()) {
             var entry  = query.next();
 
-//            var result = entry.getResult();
+            var result = entry.getResult();
 //
-//            var gamma = result.getBooleanValue(5);
-//            var neutron = result.getBooleanValue(6);
-//
-//            if(gamma && !neutron){
-//                gammaCount++;
-//            }
+            var emlGammaResult = result.getBooleanValue();
+            var emlNeutronResult = result.getBooleanValue();
+
+            var rpmGammaResult = result.getBooleanValue();
+            var rpmNeutronResult = result.getBooleanValue();
+
         }
         return emlSuppressedCount;
 
