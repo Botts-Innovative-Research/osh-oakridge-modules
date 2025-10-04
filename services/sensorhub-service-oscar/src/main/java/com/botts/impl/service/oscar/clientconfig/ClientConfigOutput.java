@@ -1,3 +1,4 @@
+
 /*******************************************************************************
 
  The contents of this file are subject to the Mozilla Public License, v. 2.0.
@@ -43,8 +44,56 @@ public class ClientConfigOutput extends AbstractSensorOutput<OSCARSystem> {
                 .label(LABEL)
                 .description(DESCRIPTION)
                 .addField("sampleTime", fac.createTime().asSamplingTimeIsoUTC())
-                // TODO: Add fields
-                .build();
+                .addField("user", fac.createText()
+                        .label("User")
+                        .definition(SWEHelper.getPropertyUri("User")))
+                .addField("numNodes", fac.createCount()
+                        .label("Number of Nodes")
+                        .id("numNodes")
+                        .build())
+                .addField("nodesArray", fac.createArray()
+                        .label("Nodes Array")
+                        .description("List of Nodes")
+                        .withVariableSize("numNodes")
+                        .definition(SWEHelper.getPropertyUri("Nodes"))
+                        .withElement("nodes", fac.createRecord()
+                                .addField("name", fac.createText()
+                                        .label("Name")
+                                        .definition(SWEHelper.getPropertyUri("Name"))
+                                )
+                                .addField("address", fac.createText()
+                                        .label("Address")
+                                        .definition(SWEHelper.getPropertyUri("Address"))
+                                )
+                                .addField("port", fac.createText()
+                                        .label("Port")
+                                        .definition(SWEHelper.getPropertyUri("Port"))
+                                )
+                                .addField("oshPathRoot", fac.createText()
+                                        .label("Osh Path")
+                                        .definition(SWEHelper.getPropertyUri("OshPath"))
+                                )
+                                .addField("csAPIEndpoint", fac.createText()
+                                        .label("CS API Endpoint")
+                                        .definition(SWEHelper.getPropertyUri("CSAPIEndpoint"))
+                                )
+                                .addField("isSecure", fac.createBoolean()
+                                        .label("Secure")
+                                        .definition(SWEHelper.getPropertyUri("IsSecure"))
+                                )
+                                .addField("isDefaultNode", fac.createBoolean()
+                                        .label("Default")
+                                        .definition(SWEHelper.getPropertyUri("IsDefaultNode"))
+                                )
+                                .addField("username", fac.createText()
+                                        .label("Username")
+                                        .definition(SWEHelper.getPropertyUri("Username"))
+                                )
+                                .addField("password", fac.createText()
+                                        .label("Password")
+                                        .definition(SWEHelper.getPropertyUri("Password"))
+                                )).build()
+                ).build();
 
         this.recordEncoding = new TextEncodingImpl();
     }

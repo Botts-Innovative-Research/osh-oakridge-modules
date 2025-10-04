@@ -37,7 +37,7 @@ public class DailyFileOutput extends AbstractSensorOutput<RapiscanSensor> {
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
                 .updatable(true)
-                .definition(RADHelper.getRadUri("gamma-count"))
+                .definition(RADHelper.getRadUri("DailyFile"))
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(rpmMsg.getName(), rpmMsg)
                 .build();

@@ -41,7 +41,7 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
                 .updatable(true)
-                .definition(RADHelper.getRadUri("gamma-count"))
+                .definition(RADHelper.getRadUri("DailyFile"))
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(aspectMessage.getName(), aspectMessage)
                 .build();
