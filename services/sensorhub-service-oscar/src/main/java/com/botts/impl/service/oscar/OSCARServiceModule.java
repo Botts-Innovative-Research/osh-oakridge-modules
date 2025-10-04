@@ -57,27 +57,12 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         if (config.spreadsheetConfigPath != null && !config.spreadsheetConfigPath.isEmpty())
             spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
 
-        // TODO: Add or update OSCAR system and client config system
         system = new OSCARSystem(config.nodeId);
-
-        // TODO: Add or update report generation control interface
-
-
 
         createOutputs();
         createControls();
 
         system.updateSensorDescription();
-        getParentHub().getSystemDriverRegistry().register(system);
-
-        if (config.databaseID != null && !config.databaseID.isBlank()) {
-            var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
-            if (module != null)
-                getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
-        }
-    }
-
-    public void createHandlers() {
 
     }
 
@@ -85,12 +70,12 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
 
-        var clientConfigOutput = new ClientConfigOutput(system);
+        clientConfigOutput = new ClientConfigOutput(system);
         system.addOutput(clientConfigOutput, false);
     }
 
     public void createControls(){
-        var reportControl = new RequestReportControl(system, this);
+        reportControl = new RequestReportControl(system, this);
         system.addControlInput(reportControl);
     }
 
@@ -103,15 +88,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
         if (getParentHub().getSystemDriverRegistry().getDatabase(system.getUniqueIdentifier()) == null)
             getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
-
-        // TODO: Publish latest site info observation
-        if (config.siteDiagramConfig != null
-                && config.siteDiagramConfig.siteDiagramPath != null
-                && !config.siteDiagramConfig.siteDiagramPath.isEmpty()
-                && config.siteDiagramConfig.siteLowerLeftBound != null
-                && config.siteDiagramConfig.siteUpperRightBound != null) {
-            siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
-        }
 
     }
 
