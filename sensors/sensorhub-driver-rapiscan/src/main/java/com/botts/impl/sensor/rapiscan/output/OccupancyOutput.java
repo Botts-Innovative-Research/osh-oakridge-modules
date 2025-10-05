@@ -29,40 +29,7 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
     }
 
     public void init(){
-        RADHelper radHelper = new RADHelper();
-        var samplingTime = radHelper.createPrecisionTimeStamp();
-        var occupancyCount = radHelper.createOccupancyCount();
-        var occupancyStart = radHelper.createOccupancyStartTime();
-        var occupancyEnd = radHelper.createOccupancyEndTime();
-        var neutronBackground = radHelper.createNeutronBackground();
-        var gammaAlarm = radHelper.createGammaAlarm();
-        var neutronAlarm = radHelper.createNeutronAlarm();
-        var maxGamma = radHelper.createMaxGamma();
-        var maxNeutron = radHelper.createMaxNeutron();
-        var isAdjudicated = radHelper.createIsAdjudicated();
-        var placeHolder = radHelper.createPlaceholder();
-        placeHolder.setName("videoFile");
-        placeHolder.setLabel("Video File");
 
-        dataStruct = radHelper.createRecord()
-                .name(getName())
-                .label(SENSOR_OUTPUT_LABEL)
-                .updatable(true)
-                .definition(RADHelper.getRadUri("occupancy"))
-                .description("System occupancy count since midnight each day")
-                .addField(samplingTime.getName(), samplingTime)
-                .addField(occupancyCount.getName(), occupancyCount)
-                .addField(occupancyStart.getName(), occupancyStart)
-                .addField(occupancyEnd.getName(), occupancyEnd)
-                .addField(neutronBackground.getName(), neutronBackground)
-                .addField(gammaAlarm.getName(), gammaAlarm)
-                .addField(neutronAlarm.getName(), neutronAlarm)
-                .addField(maxGamma.getName(), maxGamma)
-                .addField(maxNeutron.getName(), maxNeutron)
-                .addField(isAdjudicated.getName(), isAdjudicated)
-                .addField(placeHolder.getName(), placeHolder) // TODO Set the definition here
-                .build();
-        dataEncoding = new TextEncodingImpl(",", "\n");
     }
 
     public void onNewMessage(long startTime, long endTime, Boolean isGammaAlarm, Boolean isNeutronAlarm, String[] csvString, int gammaMax, int neutronMax){

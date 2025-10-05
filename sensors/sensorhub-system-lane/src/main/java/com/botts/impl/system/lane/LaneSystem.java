@@ -41,6 +41,7 @@ import org.sensorhub.api.system.SystemRemovedEvent;
 import org.sensorhub.impl.comm.TCPCommProviderConfig;
 import org.sensorhub.impl.module.AbstractModule;
 import org.sensorhub.impl.module.ModuleRegistry;
+import org.sensorhub.impl.module.ModuleSecurity;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
@@ -76,6 +77,11 @@ public class LaneSystem extends SensorSystem {
     OccupancyWrapper occupancyWrapper;
 
     AdjudicationOutput adjudicationOutput;
+    AdjudicationControl adjudicationControl;
+
+    protected ModuleSecurity getSecurityHandler() {
+        return this.securityHandler;
+    }
 
     @Override
     protected void doInit() throws SensorHubException {

@@ -977,8 +977,53 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-
-    // Energy Calibration
+    // Adjudication
+    public DataRecord createAdjudicationRecord() {
+        return createRecord()
+                .name("adjudication")
+                .label("Adjudication")
+                .description("Adjudication data associated to an lane occupancy")
+                .addField("feedback", createText()
+                        .label("Feedback")
+                        .definition(SWEHelper.getPropertyUri("Feedback"))
+                        .optional(true)
+                        .build())
+                .addField("adjudicationCode", createCount()
+                        .label("Adjudication Code")
+                        .definition(SWEHelper.getPropertyUri("AdjudicationCode"))
+                        .addAllowedInterval(0, 11)
+                        .optional(true)
+                        .build())
+                .addField("isotopes", createText()
+                        .label("Isotopes")
+                        .description("Comma separated isotopes")
+                        .definition(SWEHelper.getPropertyUri("Isotopes"))
+                        .optional(true)
+                        .build())
+                // TODO: Ask tyrone about this
+                .addField("secondaryInspectionStatus", createText()
+                        .label("Secondary Inspection Status")
+                        .definition(SWEHelper.getPropertyUri("SecondaryInspectionStatus"))
+                        .optional(true)
+                        .build())
+                .addField("filePaths", createText()
+                        .label("File Paths")
+                        .description("Comma separated relative file paths")
+                        .definition(SWEHelper.getPropertyUri("FilePaths"))
+                        .optional(true)
+                        .build())
+                .addField("occupancyId", createText()
+                        .label("Occupancy ID")
+                        .definition(SWEHelper.getPropertyUri("OccupancyID"))
+                        .optional(false)
+                        .build())
+                .addField("vehicleId", createText()
+                        .label("Vehicle ID")
+                        .definition(SWEHelper.getPropertyUri("VehicleID"))
+                        .optional(true)
+                        .build())
+                .build();
+    }
 
     // Node stats
     public DataRecord createSiteStatistics() {
