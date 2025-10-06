@@ -55,8 +55,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
             reportError("Could not find this OSH node's Bucket Service", new IllegalStateException(e));
         }
 
-        createHandlers();
-
+        spreadsheetHandler = new SpreadsheetHandler(getParentHub().getModuleRegistry(), bucketStore, getLogger());
         if (config.spreadsheetConfigPath != null && !config.spreadsheetConfigPath.isEmpty())
             spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
 
@@ -67,16 +66,12 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         createOutputs();
         createControls();
 
+        sitemapDiagramHandler = new SitemapDiagramHandler(getBucketService(), siteInfoOutput, this);
+
 
         system.updateSensorDescription();
     }
 
-    public void createHandlers() {
-        spreadsheetHandler = new SpreadsheetHandler(getParentHub().getModuleRegistry(), bucketStore, getLogger());
-
-        sitemapDiagramHandler = new SitemapDiagramHandler(getBucketService(), siteInfoOutput, this);
-
-    }
     public void createOutputs(){
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);

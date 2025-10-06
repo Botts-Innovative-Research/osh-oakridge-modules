@@ -17,6 +17,7 @@ import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.sensor.PositionConfig;
+import org.sensorhub.ui.DisplayUtils;
 import org.sensorhub.ui.GenericConfigForm;
 import org.sensorhub.ui.data.ComplexProperty;
 
@@ -39,18 +40,9 @@ public class SiteDiagramForm extends GenericConfigForm {
     public static final String DEF_LL_BOUND = getPropertyUri("LowerLeftBound");
     public static final String DEF_UR_BOUND = getPropertyUri("UpperRightBound");
 
-    IBucketService bucketService;
-    IBucketStore bucketStore;
 
     @Override
     public void build(String propId, ComplexProperty prop, boolean includeSubForms) {
-        bucketService = getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
-
-        if (bucketService == null) {
-            getOshLogger().error("Could not get bucket service");
-            return;
-        }
-        bucketStore = bucketService.getBucketStore();
         super.build(propId, prop, includeSubForms);
     }
 
@@ -114,29 +106,20 @@ public class SiteDiagramForm extends GenericConfigForm {
 
         Image siteMap = new Image();
 
-        try {
-            if(bucketService == null || bucketStore == null)
-                return null;
+        File imageFile = new File(imagePath);
 
-            var resolvedImagePath = bucketStore.getResourceURI(SITE_MAP_BUCKET, imagePath);
-
-            File imageFile = new File(resolvedImagePath);
-
-            if (!imageFile.exists()) {
-                layout.addComponent(new Label("Image not found: " + imageFile.getAbsolutePath()));
-            }
-            siteMap.setSource(new FileResource(imageFile));
-            siteMap.setHeight("600px");
-            siteMap.setWidth("800px");
-
-            siteMap.addClickListener((MouseEvents.ClickListener) event -> {
-                handleMapClick(event, pixelCoordinates, lowerLeftBound, upperRightBound, siteMap);
-            });
-
-            layout.addComponent(siteMap);
-        } catch (DataStoreException e) {
-            getOshLogger().error("Error building SiteMap layout for image: " + imagePath, e);
+        if (!imageFile.exists()) {
+            layout.addComponent(new Label("Image not found: " + imageFile.getAbsolutePath()));
         }
+        siteMap.setSource(new FileResource(imageFile));
+        siteMap.setHeight("600px");
+        siteMap.setWidth("800px");
+
+        siteMap.addClickListener((MouseEvents.ClickListener) event -> {
+            handleMapClick(event, pixelCoordinates, lowerLeftBound, upperRightBound, siteMap);
+        });
+
+        layout.addComponent(siteMap);
 
         return layout;
     }
@@ -194,7 +177,7 @@ public class SiteDiagramForm extends GenericConfigForm {
                         .build())
                 .withLatestResult()
                 .build());
-        
+
         var result = query.findFirst();
 
         if(result.isEmpty())

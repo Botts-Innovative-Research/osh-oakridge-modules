@@ -26,6 +26,7 @@ import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.vast.util.Asserts;
 
 import java.io.*;
 import java.util.Collection;
@@ -43,7 +44,7 @@ public class SitemapDiagramHandler {
     public SitemapDiagramHandler(IBucketService bucketService, SiteInfoOutput siteInfoOutput, OSCARServiceModule module) {
         this.bucketService = bucketService;
         this.siteInfoOutput = siteInfoOutput;
-        this.bucketStore = bucketService.getBucketStore();
+        this.bucketStore = Asserts.checkNotNull(bucketService.getBucketStore());
         this.module = module;
 
         if (!bucketStore.bucketExists(SITE_MAP_BUCKET))
@@ -55,11 +56,7 @@ public class SitemapDiagramHandler {
 
     }
 
-    public boolean handleFile(String filename) {
-        if (bucketStore == null){
-            module.getLogger().error("Bucket store is null");
-            return false;
-        }
+    public boolean handleFile(String filename, SiteDiagramConfig.LatLonLocation siteLowerLeftBound, SiteDiagramConfig.LatLonLocation siteUpperRightBound) {
 
         if(!bucketStore.objectExists(SITE_MAP_BUCKET, filename)){
             module.getLogger().error("File {} does not exist", filename);
@@ -67,8 +64,8 @@ public class SitemapDiagramHandler {
         }
 
         try {
-            var stream = bucketStore.getObject(SITE_MAP_BUCKET, filename);
-            // do stuff
+            siteInfoOutput.setData(bucketStore.getResourceURI(SITE_MAP_BUCKET, filename), siteLowerLeftBound, siteUpperRightBound);
+
         } catch (DataStoreException e) {
             module.getLogger().error("Unable to read bucket for sitemap config", e);
             return false;
@@ -77,13 +74,7 @@ public class SitemapDiagramHandler {
         return true;
     }
 
-    public OutputStream handleUpload(String filename, SiteDiagramConfig.LatLonLocation siteLowerLeftBound, SiteDiagramConfig.LatLonLocation siteUpperRightBound) throws DataStoreException {
-        if (bucketStore == null) {
-            module.getLogger().error("Bucket store is null");
-            return null;
-        }
-
-        siteInfoOutput.setData(bucketStore.getRelativeResourceURI(SITE_MAP_BUCKET, filename), siteLowerLeftBound, siteUpperRightBound);
+    public OutputStream handleUpload(String filename) throws DataStoreException {
 
         return bucketStore.putObject(SITE_MAP_BUCKET, filename, Collections.emptyMap());
     }
