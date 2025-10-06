@@ -45,6 +45,11 @@ public class SiteDiagramForm extends GenericConfigForm {
     @Override
     public void build(String propId, ComplexProperty prop, boolean includeSubForms) {
         bucketService = getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
+
+        if (bucketService == null) {
+            getOshLogger().error("Could not get bucket service");
+            return;
+        }
         bucketStore = bucketService.getBucketStore();
         super.build(propId, prop, includeSubForms);
     }
@@ -189,8 +194,7 @@ public class SiteDiagramForm extends GenericConfigForm {
                         .build())
                 .withLatestResult()
                 .build());
-
-
+        
         var result = query.findFirst();
 
         if(result.isEmpty())
@@ -202,7 +206,6 @@ public class SiteDiagramForm extends GenericConfigForm {
         var lowerLeftLat = obs.getResult().getDoubleValue(3);
         var upperRightLon = obs.getResult().getDoubleValue(4);
         var upperRightLat = obs.getResult().getDoubleValue(5);
-
 
         return new double[]{lowerLeftLon, lowerLeftLat, upperRightLon, upperRightLat};
     }

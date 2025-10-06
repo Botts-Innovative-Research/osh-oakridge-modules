@@ -58,4 +58,5 @@ public interface IBucketStore {
 
     String getResourceURI(String bucketName, String key) throws DataStoreException;
 
+    String getRelativeResourceURI(String bucketName, String key) throws DataStoreException;
 }

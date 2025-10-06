@@ -20,6 +20,7 @@ package com.botts.impl.service.oscar.siteinfo;
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.service.oscar.OSCARServiceModule;
+import org.eclipse.jetty.util.IO;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.datastore.DataStoreException;
@@ -44,31 +45,45 @@ public class SitemapDiagramHandler {
         this.siteInfoOutput = siteInfoOutput;
         this.bucketStore = bucketService.getBucketStore();
         this.module = module;
-    }
-
-    public void handleFile(String filename) throws DataStoreException, FileNotFoundException {
-        if (bucketStore == null)
-            return;
 
         if (!bucketStore.bucketExists(SITE_MAP_BUCKET))
-            bucketStore.createBucket(SITE_MAP_BUCKET);
+            try{
+                bucketStore.createBucket(SITE_MAP_BUCKET);
+            } catch (DataStoreException e) {
+                module.getLogger().error("Unable to create bucket for sitemap config", e);
+            }
 
+    }
 
-        bucketStore.putObject(SITE_MAP_BUCKET, filename, Collections.emptyMap());
+    public boolean handleFile(String filename) {
+        if (bucketStore == null){
+            module.getLogger().error("Bucket store is null");
+            return false;
+        }
+
+        if(!bucketStore.objectExists(SITE_MAP_BUCKET, filename)){
+            module.getLogger().error("File {} does not exist", filename);
+            return false;
+        }
+
+        try {
+            var stream = bucketStore.getObject(SITE_MAP_BUCKET, filename);
+            // do stuff
+        } catch (DataStoreException e) {
+            module.getLogger().error("Unable to read bucket for sitemap config", e);
+            return false;
+        }
+
+        return true;
     }
 
     public OutputStream handleUpload(String filename, SiteDiagramConfig.LatLonLocation siteLowerLeftBound, SiteDiagramConfig.LatLonLocation siteUpperRightBound) throws DataStoreException {
         if (bucketStore == null) {
-            module.getLogger().warn("Bucket store is null");
+            module.getLogger().error("Bucket store is null");
             return null;
         }
-        if (!bucketStore.bucketExists(SITE_MAP_BUCKET)){
-            module.getLogger().warn("Bucket does not exist, creating new bucket: " + SITE_MAP_BUCKET);
-            bucketStore.createBucket(SITE_MAP_BUCKET);
-        }
 
-
-        siteInfoOutput.setData(filename, siteLowerLeftBound, siteUpperRightBound);
+        siteInfoOutput.setData(bucketStore.getRelativeResourceURI(SITE_MAP_BUCKET, filename), siteLowerLeftBound, siteUpperRightBound);
 
         return bucketStore.putObject(SITE_MAP_BUCKET, filename, Collections.emptyMap());
     }
