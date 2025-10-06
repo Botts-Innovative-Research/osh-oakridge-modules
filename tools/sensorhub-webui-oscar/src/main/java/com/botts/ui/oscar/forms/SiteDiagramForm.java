@@ -20,6 +20,7 @@ import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.ui.DisplayUtils;
 import org.sensorhub.ui.GenericConfigForm;
 import org.sensorhub.ui.data.ComplexProperty;
+import org.vast.util.Asserts;
 
 import java.io.File;
 
@@ -31,7 +32,6 @@ import static org.vast.swe.SWEHelper.getPropertyUri;
  * @since
  */
 public class SiteDiagramForm extends GenericConfigForm {
-    private transient PositionConfig config;
 
     private TextField latField;
     private TextField lonField;
@@ -40,22 +40,32 @@ public class SiteDiagramForm extends GenericConfigForm {
     public static final String DEF_LL_BOUND = getPropertyUri("LowerLeftBound");
     public static final String DEF_UR_BOUND = getPropertyUri("UpperRightBound");
 
+    IBucketService bucketService;
+    IBucketStore bucketStore;
 
-    @Override
-    public void build(String propId, ComplexProperty prop, boolean includeSubForms) {
-        super.build(propId, prop, includeSubForms);
-    }
+//    @Override
+//    public void build(String propId, ComplexProperty prop, boolean includeSubForms) {
+//
+//        super.build(propId, prop, includeSubForms);
+//    }
 
     @Override
     protected Field<?> buildAndBindField(String label, String propId, Property<?> prop) {
         Field<?> field = super.buildAndBindField(label, propId, prop);
 
+        bucketService = Asserts.checkNotNull(getParentHub().getModuleRegistry().getModuleByType(IBucketService.class));
+
+        bucketStore = Asserts.checkNotNull(bucketService.getBucketStore());
 
         try {
             String imagePath = getSiteImagePath();
-            if (imagePath != null && !imagePath.isEmpty()) {
+            var splitPath = imagePath.split("/")[imagePath.split("/").length - 1];
+
+            var resolvedPath = bucketStore.getResourceURI(SITE_MAP_BUCKET, splitPath);
+
+            if (resolvedPath != null && !resolvedPath.isEmpty()) {
                 if (propId.equals("location.lon")) {
-                    addSiteMapComponent(imagePath);
+                    addSiteMapComponent(resolvedPath);
                     lonField = (TextField) field;
                 }
 
@@ -77,6 +87,7 @@ public class SiteDiagramForm extends GenericConfigForm {
             double[] bounds = getBoundingBoxCoordinates();
             double[] lowerLeftBound = {bounds[0], bounds[1]};
             double[] upperRightBound = {bounds[2], bounds[3]};
+
 
             VerticalLayout layout = createSiteMapLayout(imagePath, lowerLeftBound, upperRightBound);
 

@@ -64,7 +64,7 @@ public class SitemapDiagramHandler {
         }
 
         try {
-            siteInfoOutput.setData(bucketStore.getResourceURI(SITE_MAP_BUCKET, filename), siteLowerLeftBound, siteUpperRightBound);
+            siteInfoOutput.setData(bucketStore.getRelativeResourceURI(SITE_MAP_BUCKET, filename), siteLowerLeftBound, siteUpperRightBound);
 
         } catch (DataStoreException e) {
             module.getLogger().error("Unable to read bucket for sitemap config", e);
