@@ -3,6 +3,7 @@ package org.sensorhub.impl.sensor.ffmpeg;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
+import com.botts.api.service.bucket.IBucketService;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
@@ -93,6 +94,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         	} finally {
         		// Regardless of exceptions, go ahead and set it to null. If there were severe problems we can hope
         		// that garbage collection will take care of it eventually.
+                mpegTsProcessor.clearVideoDataBufferListeners();
         		mpegTsProcessor = null;
         	}
         }
@@ -182,16 +184,20 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
     }
 
     protected void createHLSOutput() {
-        hlsOutput = new HLSOutput<>(this, config.fileConfig.hlsDirectory);
-        addOutput(hlsOutput, false);
-        mpegTsProcessor.addVideoDataBufferListener(hlsOutput);
+        try {
+            hlsOutput = new HLSOutput<>(this, config.fileConfig.hlsDirectory);
+            addOutput(hlsOutput, false);
+            mpegTsProcessor.addVideoDataBufferListener(hlsOutput);
+        } catch (Exception e) {
+            logger.error("Could not initialize HLS stream.", e);
+        }
     }
 
     protected void createFileControl() {
         fileControl = new FileControl<>(this, config.fileConfig.videoClipDirectory);
         addControlInput(fileControl);
-        mpegTsProcessor.addVideoDataBufferListener(new FileOutput());
         try {
+            mpegTsProcessor.addVideoDataBufferListener(new FileOutput(getParentHub().getModuleRegistry().getModuleByType(IBucketService.class).getBucketStore()));
             fileControl.init();
         } catch (Exception e) {
             logger.error("Could not initialize file control.", e);
@@ -238,7 +244,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	        	mpegTsProcessor.queryEmbeddedStreams();
 	            // If there is a video content in the stream
 	            if (mpegTsProcessor.hasVideoStream()) {
-                    mpegTsProcessor.clearVideoDataBufferListeners();
+
 	            	// In case we were waiting until we got video data to make the video frame output, we go ahead and do
 	            	// that now.
 	            	if (videoOutput == null) {
