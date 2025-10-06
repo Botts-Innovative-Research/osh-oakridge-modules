@@ -9,6 +9,7 @@ import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.IdEncoder;
 import org.sensorhub.api.database.IObsSystemDatabase;
+import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.sensorhub.impl.utils.rad.RADHelper;
@@ -17,6 +18,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
+
+import static org.sensorhub.impl.utils.rad.model.Adjudication.SecondaryInspectionStatus.*;
 
 public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
 
@@ -49,7 +52,6 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
     public CompletableFuture<ICommandStatus> submitCommand(ICommandData command) {
         DataBlock cmdData = command.getParams();
         return CompletableFuture.supplyAsync(() -> {
-           ICommandStatus status;
            try {
                // TODO: Ask about secondary inspection
                Adjudication adj = new Adjudication.Builder()
@@ -57,27 +59,46 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
                        .adjudicationCode(cmdData.getIntValue(1))
                        .isotopes(cmdData.getStringValue(2))
                        // TODO: Maybe enum
-                       .secondaryInspectionStatus(cmdData.getStringValue(3))
+                       .secondaryInspectionStatus(Adjudication.SecondaryInspectionStatus.valueOf(cmdData.getStringValue(3)))
                        .filePaths(cmdData.getStringValue(4))
                        .occupancyId(cmdData.getStringValue(5))
                        .vehicleId(cmdData.getStringValue(6))
                        .build();
 
-               // TODO validate each
+               // Validate obs ID is present
                String occupancyId = adj.getOccupancyId();
                if (occupancyId == null || occupancyId.isBlank())
                    return CommandStatus.failed(command.getID(), "Occupancy ID field must not be blank.");
 
+               // Validate obs ID is valid
                BigId decodedObsId = obsIdEncoder.decodeID(occupancyId);
                if (decodedObsId == null)
                    return CommandStatus.failed(command.getID(), "The provided occupancy ID is invalid.");
 
+               // Validate obs ID is in database
                if (!obsStore.containsKey(decodedObsId))
                    return CommandStatus.failed(command.getID(), "The provided occupancy ID was not found in the database.");
 
+               // Validate obs' data stream matches occupancy datastream
                var obs = obsStore.get(decodedObsId);
-               obs.get
+               if (obs == null)
+                   return CommandStatus.failed(command.getID(), "The occupancy from the provided ID is null");
 
+               var dsQuery = obsStore.getDataStreams().select(new DataStreamFilter.Builder()
+                       .withInternalIDs(obs.getDataStreamID())
+                       .withObservedProperties(RADHelper.getRadUri("occupancy"))
+                       .build());
+               if (dsQuery.findAny().isEmpty())
+                   return CommandStatus.failed(command.getID(), "The provided occupancy ID is not part of an RPM");
+
+               // Set occupancy adjudicated boolean
+               if (adj.getSecondaryInspectionStatus() == NONE || adj.getSecondaryInspectionStatus() == COMPLETED)
+                   obs.getResult().setBooleanValue(9, true);
+               else if (adj.getSecondaryInspectionStatus() == REQUESTED)
+                   obs.getResult().setBooleanValue(9, false);
+               else
+                   return CommandStatus.failed(command.getID(), "Please specify a secondary inspection status");
+               // TODO:
 
                // Secondary inspection
 
@@ -87,12 +108,10 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
                // When REQUESTED, then occupancy adjudicated == false
                //
 
-
+               return CommandStatus.accepted(command.getID());
            } catch (Exception e) {
-
+                return CommandStatus.failed(command.getID(), "Failed to accept command: " + e.getMessage());
            }
-
-            return status;
         });
     }
 

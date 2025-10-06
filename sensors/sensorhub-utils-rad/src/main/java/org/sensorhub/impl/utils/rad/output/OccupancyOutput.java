@@ -38,6 +38,7 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         var neutronAlarm = radHelper.createNeutronAlarm();
         var maxGamma = radHelper.createMaxGamma();
         var maxNeutron = radHelper.createMaxNeutron();
+        // TODO: Change this to an enum so we can filter on client easier
         var isAdjudicated = radHelper.createIsAdjudicated();
         var videoPaths = radHelper.createVideoPaths();
 
