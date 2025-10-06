@@ -67,13 +67,12 @@ public class RDSReport extends Report {
         long neutronAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, Utils.neutronPredicate, begin, end);
         long totalOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_OCCUPANCY}, module, Utils.occupancyTotalPredicate, begin, end);
 
-        long rpmEmlAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_EML_SCAN}, module, Utils.emlRpmAlarmPredicate, begin, end);
-        long emlAlarmCount = Utils.countObservations(new String[]{RADHelper.DEF_EML_ANALYSIS}, module, Utils.emlAlarmPredicate, begin, end);
+        long emlSuppressedCount = Utils.countObservations(new String[]{RADHelper.DEF_EML_ANALYSIS}, module, Utils.emlSuppressedPredicate, begin, end);
 
         long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
         long alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
 
-        long emlSuppressedCount = 0;
+
         long emlSuppressedAverage = Utils.calcEMLAlarmRate(emlSuppressedCount, totalAlarmingCount);
 
         alarmOccCounts.put("Gamma Alarm", String.valueOf(gammaAlarmCount));
@@ -104,16 +103,16 @@ public class RDSReport extends Report {
         long gammaLowFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM}, module, Utils.gammaLowPredicate, begin, end);
         long neutronHighFaultCount = Utils.countObservations(new String[]{RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM}, module, Utils.neutronHighPredicate, begin, end);
         long extendedOccupancyCount = Utils.countObservations(new String[]{RADHelper.DEF_TAMPER}, module, Utils.extendedOccPredicate, begin, end);
-        long commsCount = Utils.countObservations(new String[]{RADHelper.DEF_COMM}, module, Utils.commsPredicate, begin, end);
-        long camCount = Utils.countObservations(new String[]{RADHelper.DEF_VIDEO}, module, Utils.cameraPredicate, begin, end);
+//        long commsCount = Utils.countObservations(new String[]{RADHelper.DEF_COMM}, module, Utils.commsPredicate, begin, end);
+//        long camCount = Utils.countObservations(new String[]{RADHelper.DEF_VIDEO}, module, Utils.cameraPredicate, begin, end);
 
         faultCounts.put("Tamper", String.valueOf(tamperCount));
         faultCounts.put("Gamma-High", String.valueOf(gammaHighFaultCount));
         faultCounts.put("Gamma-Low", String.valueOf(gammaLowFaultCount));
         faultCounts.put("Neutron-High", String.valueOf(neutronHighFaultCount));
         faultCounts.put("Extended Occupancy", String.valueOf(extendedOccupancyCount));
-        faultCounts.put("Comm", String.valueOf(commsCount));
-        faultCounts.put("Camera", String.valueOf(camCount));
+//        faultCounts.put("Comm", String.valueOf(commsCount));
+//        faultCounts.put("Camera", String.valueOf(camCount));
 
         var table = tableGenerator.addTable(faultCounts);
         if (table == null) {

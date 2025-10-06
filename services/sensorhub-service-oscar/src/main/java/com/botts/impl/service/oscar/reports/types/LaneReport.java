@@ -7,6 +7,7 @@ import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
+import jdk.jshell.execution.Util;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import java.io.OutputStream;
 import java.time.Instant;
@@ -103,10 +104,9 @@ public class LaneReport extends Report {
         long neutronAlarmCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_OCCUPANCY}, module, Utils.neutronPredicate, begin, end);
         long totalOccupancyCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_OCCUPANCY}, module, Utils.occupancyTotalPredicate, begin, end);
 
-        long emlSuppressed = Utils.countEMLSuppressed(laneUID, new String[]{RADHelper.DEF_EML_SCAN,RADHelper.DEF_EML_ANALYSIS}, module, begin, end);
-//        long emlAlarmCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_EML_ANALYSIS}, module, Utils.emlAlarmPredicate, begin, end);
+        long emlSuppressedCount = Utils.countObservationsFromLane(laneUID, new String[]{RADHelper.DEF_EML_ANALYSIS}, module, Utils.emlSuppressedPredicate, begin, end);
 
-        long emlSuppressedCount = 0;
+
         long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
         long alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
         long emlSuppressedAverage = Utils.calcEMLAlarmRate(emlSuppressedCount, totalAlarmingCount);

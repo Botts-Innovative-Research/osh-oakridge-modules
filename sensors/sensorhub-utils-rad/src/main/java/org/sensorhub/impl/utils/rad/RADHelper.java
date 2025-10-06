@@ -8,6 +8,7 @@ import jakarta.xml.bind.Unmarshaller;
 import net.opengis.swe.v20.*;
 import net.opengis.swe.v20.Boolean;
 import org.vast.swe.SWEBuilders;
+import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
 
 import java.io.StringReader;
@@ -22,8 +23,8 @@ public class RADHelper extends GeoPosHelper {
     public static final String DEF_TAMPER = getRadUri("TamperStatus");
     public static final String DEF_THRESHOLD = getRadUri("Threshold");
     public static final String DEF_ADJUDICATION = getRadUri("AdjudicationCode");
-    public static final String DEF_EML_ANALYSIS = getRadUri("EMLGammaAlert");
-    public static final String DEF_EML_SCAN = getRadUri("EMLRPMGammaAlert");
+    public static final String DEF_EML_ANALYSIS = SWEHelper.getPropertyUri("EMLGammaAlert");
+    public static final String DEF_EML_SCAN = SWEHelper.getPropertyUri("EMLRPMGammaAlert");
     public static final String DEF_VIDEO = getRadUri("");
     public static final String DEF_COMM = getRadUri("");
 

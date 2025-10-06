@@ -78,10 +78,12 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                         .description("End datetime (ISO 8601)"))
                 .addField("laneUID", fac.createText()
                         .label("Lane Unique Identifier")
+                        .optional(true)
                         .definition(SWEHelper.getPropertyUri("LaneUID"))
                         .description("Identifier of the lane(s) to request"))
                 .addField("eventType", fac.createCategory()
                         .label("Event Type")
+                        .optional(true)
                         .definition(SWEHelper.getPropertyUri("EventType"))
                         .description("Identifier of the event requested")
                         .addAllowedValues(EventReportType.class))
@@ -161,7 +163,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             report.generate();
         }
 
-        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
+        return bucketService.getBucketStore().getRelativeResourceURI(REPORT_BUCKET, filePath);
     }
 
     private String generateEventReport(EventReportType eventType, String laneUIDs, String formattedStart, Instant start, Instant end) throws DataStoreException {
@@ -174,7 +176,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             report.generate();
         }
 
-        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
+        return bucketService.getBucketStore().getRelativeResourceURI(REPORT_BUCKET, filePath);
     }
 
     private String generateAdjudicationReport(String laneUIDs, String formattedStart, Instant start, Instant end) throws DataStoreException {
@@ -186,7 +188,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             report = new AdjudicationReport(out, start, end, laneUIDs, module);
             report.generate();
         }
-        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
+        return bucketService.getBucketStore().getRelativeResourceURI(REPORT_BUCKET, filePath);
     }
 
     private String generateRDSReport(String formattedStart, Instant start, Instant end) throws DataStoreException {
@@ -199,7 +201,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             report = new RDSReport(out, start, end, module);
             report.generate();
         }
-        return bucketService.getBucketStore().getResourceURI(REPORT_BUCKET, filePath);
+        return bucketService.getBucketStore().getRelativeResourceURI(REPORT_BUCKET, filePath);
     }
 
     // checks if a report file already exists in object store and only creates a new output if it doesnt exist
