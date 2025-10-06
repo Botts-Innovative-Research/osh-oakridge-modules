@@ -16,6 +16,7 @@
 package com.botts.impl.service.oscar.spreadsheet;
 
 import com.botts.api.service.bucket.IBucketStore;
+import com.botts.impl.service.oscar.IFileHandler;
 import com.botts.impl.system.lane.LaneSystem;
 import com.botts.impl.system.lane.config.LaneConfig;
 import org.sensorhub.api.common.SensorHubException;
@@ -29,7 +30,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
 
-public class SpreadsheetHandler {
+public class SpreadsheetHandler implements IFileHandler {
 
     ModuleRegistry reg;
     SpreadsheetParser parser;
@@ -53,10 +54,12 @@ public class SpreadsheetHandler {
         this.parser = new SpreadsheetParser();
     }
 
+    @Override
     public OutputStream handleUpload(String filename) throws DataStoreException {
         return store.putObject(SPREADSHEET_BUCKET, filename, Collections.emptyMap());
     }
 
+    @Override
     public boolean handleFile(String filename) {
         // Check file got saved successfully
         if (!store.objectExists(SPREADSHEET_BUCKET, filename))
@@ -70,6 +73,11 @@ public class SpreadsheetHandler {
             return false;
         }
         return true;
+    }
+
+    @Override
+    public boolean isValidFileType(String fileName, String mimeType) {
+        return fileName.endsWith(".csv") || mimeType.contains("csv");
     }
 
     public InputStream getDownloadStream() {

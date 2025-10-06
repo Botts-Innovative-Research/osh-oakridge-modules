@@ -20,6 +20,7 @@ import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.service.oscar.clientconfig.ClientConfigOutput;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
+import com.botts.impl.service.oscar.siteinfo.SitemapDiagramHandler;
 import com.botts.impl.service.oscar.spreadsheet.SpreadsheetHandler;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
@@ -31,12 +32,14 @@ import java.util.concurrent.ExecutionException;
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     SiteInfoOutput siteInfoOutput;
     RequestReportControl reportControl;
-
     ClientConfigOutput clientConfigOutput;
+    SitemapDiagramHandler sitemapDiagramHandler;
+    IBucketService bucketService;
+
     SpreadsheetHandler spreadsheetHandler;
     OSCARSystem system;
-    IBucketService bucketService;
     IBucketStore bucketStore;
+
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -56,15 +59,14 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         if (config.spreadsheetConfigPath != null && !config.spreadsheetConfigPath.isEmpty())
             spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
 
-        // TODO: Add or update OSCAR system and client config system
         system = new OSCARSystem(config.nodeId);
-
-        // TODO: Add or update report generation control interface
-
-        // TODO: Add or update site info datastream
+        bucketService = getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
 
         createOutputs();
         createControls();
+
+        sitemapDiagramHandler = new SitemapDiagramHandler(getBucketService(), siteInfoOutput, this);
+
         system.updateSensorDescription();
     }
 
@@ -91,15 +93,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         if (getParentHub().getSystemDriverRegistry().getDatabase(system.getUniqueIdentifier()) == null)
             getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
 
-        // TODO: Publish latest site info observation
-        if (config.siteDiagramConfig != null
-                && config.siteDiagramConfig.siteDiagramPath != null
-                && !config.siteDiagramConfig.siteDiagramPath.isEmpty()
-                && config.siteDiagramConfig.siteLowerLeftBound != null
-                && config.siteDiagramConfig.siteUpperRightBound != null) {
-            siteInfoOutput.setData(config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig.siteLowerLeftBound, config.siteDiagramConfig.siteUpperRightBound);
-        }
-
     }
 
     @Override
@@ -111,12 +104,12 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         return spreadsheetHandler;
     }
 
-    public IBucketService getBucketService() {
-        return bucketService;
+    public SitemapDiagramHandler getSitemapDiagramHandler() {
+        return sitemapDiagramHandler;
     }
 
-    public IBucketStore getBucketStore() {
-        return bucketStore;
+    public IBucketService getBucketService() {
+        return bucketService;
     }
 
 }

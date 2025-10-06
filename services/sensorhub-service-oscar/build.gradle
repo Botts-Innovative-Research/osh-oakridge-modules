@@ -1,9 +1,11 @@
 description = 'OSCAR Service Module'
 ext.details = 'Provides necessary configuration and performs specific operations for OSCAR'
-version = '1.0.0'
+version = '1.0.1'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation project(':sensorhub-utils-rad')
+    implementation project(':sensorhub-service-bucket')
 
     implementation project(':sensorhub-system-lane') // Lane for loading via spreadsheet
     implementation project(':sensorhub-service-bucket') // service for file system

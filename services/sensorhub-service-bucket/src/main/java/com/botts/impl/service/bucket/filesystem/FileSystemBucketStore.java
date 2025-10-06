@@ -205,4 +205,13 @@ public class FileSystemBucketStore implements IBucketStore {
         return rootDirectory.resolve(bucketName).resolve(key).toString();
     }
 
+    @Override
+    public String getRelativeResourceURI(String bucketName, String key) throws DataStoreException {
+        if (!bucketExists(bucketName))
+            throw new DataStoreException(BUCKET_NOT_FOUND);
+        if (!objectExists(bucketName, key))
+            throw new DataStoreException(OBJECT_NOT_FOUND + bucketName);
+        return bucketName + "/" + key;
+    }
+
 }
