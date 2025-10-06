@@ -43,11 +43,6 @@ public class SiteDiagramForm extends GenericConfigForm {
     IBucketService bucketService;
     IBucketStore bucketStore;
 
-//    @Override
-//    public void build(String propId, ComplexProperty prop, boolean includeSubForms) {
-//
-//        super.build(propId, prop, includeSubForms);
-//    }
 
     @Override
     protected Field<?> buildAndBindField(String label, String propId, Property<?> prop) {
@@ -120,17 +115,19 @@ public class SiteDiagramForm extends GenericConfigForm {
         File imageFile = new File(imagePath);
 
         if (!imageFile.exists()) {
-            layout.addComponent(new Label("Image not found: " + imageFile.getAbsolutePath()));
+            getOshLogger().error("Error building SiteMap Diagram image", imageFile);
+            layout.addComponent(new Label("No SiteMap Image Found"));
+        } else {
+            siteMap.setSource(new FileResource(imageFile));
+            siteMap.setHeight("600px");
+            siteMap.setWidth("800px");
+
+            siteMap.addClickListener((MouseEvents.ClickListener) event -> {
+                handleMapClick(event, pixelCoordinates, lowerLeftBound, upperRightBound, siteMap);
+            });
+
+            layout.addComponent(siteMap);
         }
-        siteMap.setSource(new FileResource(imageFile));
-        siteMap.setHeight("600px");
-        siteMap.setWidth("800px");
-
-        siteMap.addClickListener((MouseEvents.ClickListener) event -> {
-            handleMapClick(event, pixelCoordinates, lowerLeftBound, upperRightBound, siteMap);
-        });
-
-        layout.addComponent(siteMap);
 
         return layout;
     }
@@ -205,10 +202,6 @@ public class SiteDiagramForm extends GenericConfigForm {
     }
 
 
-
-    // x = longitude
-    // y = latitude
-    // [x,y] = [lon, lat]
     private double calculateLongitude (int pixelX, double[] lowerLeftBound, double[] upperRightBound, double imageWidth) {
         if (imageWidth == 0) return 0;
 
