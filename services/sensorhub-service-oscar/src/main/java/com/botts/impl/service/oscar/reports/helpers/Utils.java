@@ -11,6 +11,7 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Predicate;
 
@@ -89,7 +90,7 @@ public class Utils {
     }
 
     public static Map<Instant, Long> countObservationsByDay(String[] observedProperties, OSCARServiceModule module, Predicate<IObsData> predicate,  Instant startDate, Instant endDate){
-        Map<Instant, Long> result = new HashMap<>();
+        Map<Instant, Long> result = new LinkedHashMap<>();
 
         while (startDate.isBefore(endDate)) {
             Instant currentDay = startDate;

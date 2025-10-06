@@ -191,8 +191,7 @@ public class AdjudicationReport extends Report {
             String symbol = entry.getKey();
             String name = entry.getValue();
 
-            Predicate<IObsData> predicate = (obsData) ->
-                    obsData.getResult().getStringValue(4).contains(name);
+            Predicate<IObsData> predicate = (obsData) -> obsData.getResult().getStringValue(4).contains(name);
 
             long count = Utils.countObservations(
                     new String[]{RADHelper.DEF_ADJUDICATION},
@@ -236,14 +235,14 @@ public class AdjudicationReport extends Report {
 
     private void addSecondaryInspectionDetails() {
         document.add(new Paragraph("Secondary Inspection Details").setFontSize(12));
-//
+
 ////        Map<String, Map<String, String>> countsLane = new LinkedHashMap<>();
-//
+
 ////        for (var lane : laneUIDs.split(",")) {
 ////            var counts = calculateDetailsCounts(lane);
 ////            countsLane.put(lane, counts);
 ////        }
-////
+//
 ////        var table = tableGenerator.addLanesTable(countsLane);
 ////        if (table == null) {
 ////            document.add(new Paragraph("Failed to secondary inspection details"));
@@ -255,7 +254,7 @@ public class AdjudicationReport extends Report {
     }
 
     private Map<String, String> addSecondaryDetails(String laneUID) {
-        Map<String, String> secInsDetailsMap = new HashMap<>();
+        Map<String, String> secInsDetailsMap = new LinkedHashMap<>();
 
         Predicate<IObsData> predicate = (obsData) -> true;
 
