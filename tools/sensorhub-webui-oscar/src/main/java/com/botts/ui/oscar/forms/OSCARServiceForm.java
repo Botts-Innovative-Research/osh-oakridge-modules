@@ -43,106 +43,105 @@ public class OSCARServiceForm extends GenericConfigForm {
         Field<?> field = super.buildAndBindField(label, propId, prop);
 
         if (propId.endsWith(PROP_SPREADSHEET) || propId.endsWith(PROP_SITEMAP)) {
-            if (propId.equals(PROP_SPREADSHEET) || propId.endsWith(PROP_SITEMAP)) {
-                return new FieldWrapper<String>((Field<String>) field) {
-                    @Override
-                    protected Component initContent() {
-                        final HorizontalLayout layout = new HorizontalLayout();
-                        layout.setSpacing(true);
+            return new FieldWrapper<String>((Field<String>) field) {
+                @Override
+                protected Component initContent() {
+                    final HorizontalLayout layout = new HorizontalLayout();
+                    layout.setSpacing(true);
 
-                        ((TextField) field).setBuffered(false);
+                    ((TextField) field).setBuffered(false);
 
-                        // Create and show file path field by default
-                        TextField textField = new TextField();
-                        textField.setNullRepresentation("");
-                        textField.setBuffered(false);
-                        textField.setWidth(field.getWidth(), field.getWidthUnits());
-                        textField.setPropertyDataSource(field.getPropertyDataSource());
-                        textField.setReadOnly(true);
-                        textField.setVisible(false);
-                        layout.addComponent(textField);
-                        layout.setComponentAlignment(textField, Alignment.MIDDLE_LEFT);
+                    // Create and show file path field by default
+                    TextField textField = new TextField();
+                    textField.setNullRepresentation("");
+                    textField.setBuffered(false);
+                    textField.setWidth(field.getWidth(), field.getWidthUnits());
+                    textField.setPropertyDataSource(field.getPropertyDataSource());
+                    textField.setReadOnly(true);
+                    textField.setVisible(false);
+                    layout.addComponent(textField);
+                    layout.setComponentAlignment(textField, Alignment.MIDDLE_LEFT);
 
-                        // Create upload button
-                        Upload upload = new Upload();
-                        layout.addComponent(upload);
-                        layout.setComponentAlignment(upload, Alignment.MIDDLE_LEFT);
-                        upload.setReceiver(new Upload.Receiver() {
-                            @Override
-                            public OutputStream receiveUpload(String filename, String mimeType) {
+                    // Create upload button
+                    Upload upload = new Upload();
+                    layout.addComponent(upload);
+                    layout.setComponentAlignment(upload, Alignment.MIDDLE_LEFT);
+                    upload.setReceiver(new Upload.Receiver() {
+                        @Override
+                        public OutputStream receiveUpload(String filename, String mimeType) {
 
-                                if (propId.endsWith(PROP_SPREADSHEET)) {
-                                    if (filename.endsWith(".csv") || mimeType.contains("csv")) {
-
-                                        try {
-                                            return oscarService.getSpreadsheetHandler().handleUpload(filename);
-                                        } catch (DataStoreException e) {
-                                            DisplayUtils.showErrorPopup("Upload failed.", e);
-                                        }
-                                    }
-                                }
-
-                                if (propId.endsWith(PROP_SITEMAP)) {
-                                    if (filename.endsWith(".png") || filename.endsWith("jpg")) {
-                                        try {
-                                            return oscarService.getSitemapDiagramHandler().handleUpload(filename);
-                                        } catch (DataStoreException e) {
-                                            DisplayUtils.showErrorPopup("Upload failed.", e);
-                                        }
-                                    }
-                                }
-
-                                return new OutputStream() {
-                                    @Override
-                                    public void write(int b) {
-                                    }
-                                };
-                            }
-                        });
-
-                        upload.addSucceededListener((e) -> {
                             if (propId.endsWith(PROP_SPREADSHEET)) {
-                                boolean fileLoaded = oscarService.getSpreadsheetHandler().handleFile(e.getFilename());
-                                if (!fileLoaded)
-                                    DisplayUtils.showErrorPopup("Unable to load lanes from file.", new IllegalStateException());
-                                else
-                                    DisplayUtils.showOperationSuccessful("Successfully loaded lanes from file!");
+                                if (filename.endsWith(".csv") || mimeType.contains("csv")) {
+
+                                    try {
+                                        return oscarService.getSpreadsheetHandler().handleUpload(filename);
+                                    } catch (DataStoreException e) {
+                                        DisplayUtils.showErrorPopup("Upload failed.", e);
+                                    }
+                                }
                             }
 
                             if (propId.endsWith(PROP_SITEMAP)) {
-                                boolean fileLoaded = oscarService.getSitemapDiagramHandler().handleFile(e.getFilename(),  siteLowerLeftBound, siteUpperRightBound);
-                                if (!fileLoaded)
-                                    DisplayUtils.showErrorPopup("Unable to load sitemap from file.", new IllegalStateException());
-                                else
-                                    DisplayUtils.showOperationSuccessful("Successfully loaded sitemap from file!");
+                                if (filename.endsWith(".png") || filename.endsWith("jpg")) {
+                                    try {
+                                        return oscarService.getSitemapDiagramHandler().handleUpload(filename);
+                                    } catch (DataStoreException e) {
+                                        DisplayUtils.showErrorPopup("Upload failed.", e);
+                                    }
+                                }
                             }
 
-                        });
+                            return new OutputStream() {
+                                @Override
+                                public void write(int b) {
+                                }
+                            };
+                        }
+                    });
 
+                    upload.addSucceededListener((e) -> {
                         if (propId.endsWith(PROP_SPREADSHEET)) {
-                            FileDownloader download = new FileDownloader(
-                                    new StreamResource(() ->
-                                            oscarService.getSpreadsheetHandler().getDownloadStream(),
-                                            oscarService.getSpreadsheetHandler().CONFIG_KEY));
-                            Button button = new Button("Download");
-                            button.addClickListener((event) -> {
-                                if (oscarService.getSpreadsheetHandler().getDownloadStream() != null)
-                                    button.setEnabled(false);
-                                else
-                                    DisplayUtils.showErrorPopup("Unable to download config because there are no lanes loaded.", new IllegalArgumentException("File data is null"));
-                            });
-                            download.setErrorHandler(e -> {
-                                DisplayUtils.showErrorPopup("Error downloading config file.", e.getThrowable());
-                                button.setEnabled(true);
-                            });
-                            download.extend(button);
-                            layout.addComponent(button);
+                            boolean fileLoaded = oscarService.getSpreadsheetHandler().handleFile(e.getFilename());
+                            if (!fileLoaded)
+                                DisplayUtils.showErrorPopup("Unable to load lanes from file.", new IllegalStateException());
+                            else
+                                DisplayUtils.showOperationSuccessful("Successfully loaded lanes from file!");
                         }
 
-                        return layout;
+                        if (propId.endsWith(PROP_SITEMAP)) {
+                            boolean fileLoaded = oscarService.getSitemapDiagramHandler().handleFile(e.getFilename(),  siteLowerLeftBound, siteUpperRightBound);
+                            if (!fileLoaded)
+                                DisplayUtils.showErrorPopup("Unable to load sitemap from file.", new IllegalStateException());
+                            else
+                                DisplayUtils.showOperationSuccessful("Successfully loaded sitemap from file!");
+                        }
+
+                    });
+
+                    if (propId.endsWith(PROP_SPREADSHEET)) {
+                        FileDownloader download = new FileDownloader(
+                                new StreamResource(() ->
+                                        oscarService.getSpreadsheetHandler().getDownloadStream(),
+                                        oscarService.getSpreadsheetHandler().CONFIG_KEY));
+                        Button button = new Button("Download");
+                        button.addClickListener((event) -> {
+                            if (oscarService.getSpreadsheetHandler().getDownloadStream() != null)
+                                button.setEnabled(false);
+                            else
+                                DisplayUtils.showErrorPopup("Unable to download config because there are no lanes loaded.", new IllegalArgumentException("File data is null"));
+                        });
+                        download.setErrorHandler(e -> {
+                            DisplayUtils.showErrorPopup("Error downloading config file.", e.getThrowable());
+                            button.setEnabled(true);
+                        });
+                        download.extend(button);
+                        layout.addComponent(button);
                     }
-                };
-            }
+
+                    return layout;
+                }
+            };
+            
         }
         return field;
     }
