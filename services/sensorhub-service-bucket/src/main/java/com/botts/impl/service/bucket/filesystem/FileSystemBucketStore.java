@@ -125,8 +125,11 @@ public class FileSystemBucketStore implements IBucketStore {
         if (!Files.exists(path))
             throw new DataStoreException(BUCKET_NOT_FOUND, new IllegalArgumentException());
         try {
-            if (!Files.exists(path.resolve(key).toFile().toPath()))
+            var filePath = path.resolve(key).toFile().toPath();
+            if (!Files.exists(filePath)) {
+                Files.createDirectories(filePath.getParent());
                 Files.createFile(path.resolve(key));
+            }
             return new FileOutputStream(path.resolve(key).toFile());
         } catch (IOException e) {
             throw new DataStoreException(FAILED_PUT_OBJECT + bucketName, e);

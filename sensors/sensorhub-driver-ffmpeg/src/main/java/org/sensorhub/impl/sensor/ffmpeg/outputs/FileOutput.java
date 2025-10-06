@@ -1,44 +1,75 @@
 package org.sensorhub.impl.sensor.ffmpeg.outputs;
 
+import com.botts.api.service.bucket.IBucketStore;
 import org.bytedeco.ffmpeg.avcodec.AVCodec;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avformat.AVFormatContext;
 import org.bytedeco.ffmpeg.avformat.AVIOContext;
 import org.bytedeco.ffmpeg.avformat.AVStream;
+import org.bytedeco.ffmpeg.avformat.Write_packet_Pointer_BytePointer_int;
 import org.bytedeco.ffmpeg.avutil.AVDictionary;
 import org.bytedeco.ffmpeg.avutil.AVRational;
 import org.bytedeco.ffmpeg.global.avcodec;
 import org.bytedeco.ffmpeg.global.avformat;
 import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacpp.BytePointer;
+import org.bytedeco.javacpp.Pointer;
 import org.bytedeco.javacpp.PointerPointer;
+import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.impl.sensor.ffmpeg.outputs.util.ByteArraySeekableBuffer;
 import org.sensorhub.mpegts.DataBufferListener;
 import org.sensorhub.mpegts.DataBufferRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
+import java.util.Collections;
 
 import static org.bytedeco.ffmpeg.global.avcodec.*;
 import static org.bytedeco.ffmpeg.global.avformat.*;
 import static org.bytedeco.ffmpeg.global.avformat.av_write_frame;
-import static org.bytedeco.ffmpeg.global.avutil.AV_ERROR_MAX_STRING_SIZE;
-import static org.bytedeco.ffmpeg.global.avutil.av_strerror;
+import static org.bytedeco.ffmpeg.global.avutil.*;
+
+import org.bytedeco.ffmpeg.avcodec.*;
+import org.bytedeco.ffmpeg.avformat.*;
+import org.bytedeco.ffmpeg.avutil.*;
+import org.bytedeco.ffmpeg.swresample.*;
+import org.bytedeco.ffmpeg.swscale.*;
+
 
 public class FileOutput implements DataBufferListener {
 
     private static final Logger logger = LoggerFactory.getLogger(FileOutput.class);
     private volatile boolean doFileWrite = false;
+    private static final String BUCKET_NAME = "video";
+    private final IBucketStore bucketStore;
     private String outputFile = "";
     private AVFormatContext outputContext;
     private final Object contextLock = new Object();
     private ArrayDeque<AVPacket> framesSinceKey = new ArrayDeque<>();
     AVStream outputVideoStream;
+    OutputStream outputStream;
     int ptsInc;
     double timeBase;
     int filePts;
     boolean hasHadKey = false;
+    private WriteCallback writeCallback;
+    private SeekCallback seekCallback;
+    BytePointer buffer;
+    ByteArraySeekableBuffer seekableBuffer;
+
+    public FileOutput(IBucketStore bucketStore) throws DataStoreException {
+        this.bucketStore = bucketStore;
+        boolean videosBucketExists = bucketStore.bucketExists(BUCKET_NAME);
+        if (!videosBucketExists) {
+            bucketStore.createBucket(BUCKET_NAME);
+        }
+    }
 
     @Override
     public void onDataBuffer(DataBufferRecord record) {
@@ -54,43 +85,46 @@ public class FileOutput implements DataBufferListener {
                 avPacket.flags(avPacket.flags() | avcodec.AV_PKT_FLAG_KEY);
             }
 
-            if (doFileWrite) {
-                if (outputContext != null) {
-                    packetTiming(avPacket);
-                    av_write_frame(outputContext, avPacket);
-                } else {
-                    logger.error("Cannot write to file; output context is null");
+            synchronized (contextLock) {
+                if (doFileWrite) {
+                    if (outputContext != null) {
+                        packetTiming(avPacket);
+                        av_write_frame(outputContext, avPacket);
+                        av_packet_free(avPacket);
+                    } else {
+                        logger.error("Cannot write to file; output context is null");
+                    }
+                } else if (hasHadKey) {
+                    if (isKeyFrame) {
+                        framesSinceKey.clear();
+                    }
+                    framesSinceKey.add(avPacket);
                 }
-            } else if (hasHadKey) {
-                if (isKeyFrame) {
-                    framesSinceKey.clear();
-                }
-                framesSinceKey.add(avPacket);
             }
         }
     }
 
     public void openFile(String outputFile, AVFormatContext inputFormat, int videoStreamId) throws IOException {
+        avutil.av_log_set_level(avutil.AV_LOG_VERBOSE);
         try {
             if (doFileWrite) {
                 throw new IOException("Already writing to file " + this.outputFile);
             }
 
-            /*
-            if (!framesSinceKey.isEmpty()) {
-                filePts = framesSinceKey.peek().pts();
-            } else {
-                filePts = 0;
+            this.outputFile = outputFile;
+            outputStream = bucketStore.putObject(BUCKET_NAME, outputFile, Collections.emptyMap());
+            if (outputStream == null) {
+                throw new DataStoreException("Could not put new video file "+ this.outputFile +" in bucket store.");
             }
-
-             */
+            seekableBuffer = new ByteArraySeekableBuffer(8 * 1024 * 1024); // 8 MB initial size
+            writeCallback = new WriteCallback(seekableBuffer).retainReference();
+            seekCallback = new SeekCallback(seekableBuffer).retainReference();
 
             filePts = 0;
             int ret;
 
-            outputContext = avformat.avformat_alloc_context();
-            this.outputFile = outputFile;
-            avformat.avformat_alloc_output_context2(outputContext, null, null, outputFile);
+            outputContext = new AVFormatContext(null);
+            avformat_alloc_output_context2(outputContext, null, null, outputFile);
 
             //AVCodec videoCodec = new AVCodec(inputFormat.video_codec());
             //videoCodec.type(AVMEDIA_TYPE_VIDEO);
@@ -99,10 +133,10 @@ public class FileOutput implements DataBufferListener {
             AVStream inputStream = inputFormat.streams(videoStreamId);
 
             avcodec.avcodec_parameters_copy(outputVideoStream.codecpar(), inputStream.codecpar());
+
             // We're transcoding, need to override some of the copied values
             outputVideoStream.codecpar().codec_id(AV_CODEC_ID_H264);
             outputVideoStream.codecpar().codec_tag(0);
-
 
             if (inputStream.time_base().num() == 0 || inputStream.time_base().den() == 0) {
                 outputVideoStream.time_base(new AVRational());
@@ -127,14 +161,10 @@ public class FileOutput implements DataBufferListener {
             ptsInc = outputVideoStream.time_base().den() / (outputVideoStream.avg_frame_rate().num());
             //timeBase = (double) inputStream.time_base().num() / inputStream.time_base().den();
 
-            // TODO Make sure this is correct
-            if ((outputContext.oformat().flags() & AVFMT_NOFILE) == 0) {
-                AVIOContext avioContext = new AVIOContext(null);
-                if (avio_open(avioContext, outputFile, AVIO_FLAG_WRITE) < 0) {
-                    throw new IOException("Could not open file.");
-                }
-                outputContext.pb(avioContext);
-            }
+            this.buffer = new BytePointer(avutil.av_malloc(4096)).capacity(4096);
+            var avio = avio_alloc_context(buffer, 4096, 1, null, null, writeCallback, seekCallback);
+            outputContext.pb(avio);
+            outputContext.url(new BytePointer(av_malloc(outputFile.getBytes().length + 1)).putString(outputFile));
 
             outputContext.start_time(0);
             outputContext.position(0);
@@ -153,7 +183,7 @@ public class FileOutput implements DataBufferListener {
                 AVPacket packet = framesSinceKey.pop();
                 packetTiming(packet);
                 av_write_frame(outputContext, packet);
-                av_packet_unref(packet);
+                av_packet_free(packet);
             }
 
             doFileWrite = true;
@@ -165,7 +195,7 @@ public class FileOutput implements DataBufferListener {
     private void logFFmpeg(int retCode) {
         BytePointer buf = new BytePointer(AV_ERROR_MAX_STRING_SIZE);
         av_strerror(retCode, buf, buf.capacity());
-        logger.warn("FFmpeg returned error code {}: {}", retCode, buf.getString());
+        logger.error("FFmpeg returned error code {}: {}", retCode, buf.getString());
     }
 
     private void packetTiming(AVPacket avPacket) {
@@ -192,8 +222,20 @@ public class FileOutput implements DataBufferListener {
             try {
                 synchronized (contextLock) {
                     avformat.av_write_trailer(outputContext);
+                    avio_flush(outputContext.pb());
+
+
+                    outputStream.write(seekableBuffer.getData());
+                    outputStream.flush();
+                    outputStream.close();
+
                     avio_close(outputContext.pb());
-                    avformat.avformat_free_context(outputContext);
+                    outputContext.pb(null);
+
+                    writeCallback.free();
+                    seekCallback.free();
+
+                    avformat_free_context(outputContext);
                     outputContext = null;
                 }
             } catch (Exception e) {
@@ -201,4 +243,43 @@ public class FileOutput implements DataBufferListener {
             }
         }
     }
+
+    // Used to write ffmpeg output to buffer instead of a file
+    private static class WriteCallback extends Write_packet_Pointer_BytePointer_int {
+        private ByteArraySeekableBuffer buffer;
+
+        public WriteCallback(ByteArraySeekableBuffer buffer) {
+            this.buffer = buffer;
+        }
+
+        @Override
+        public int call(Pointer opaque, BytePointer buf, int buf_size) {
+            byte[] b = new byte[buf_size];
+            buf.get(b, 0, buf_size);
+            return buffer.write(b, 0, buf_size);
+        }
+
+        public void free() {
+            buffer = null;
+        }
+    }
+
+    private static class SeekCallback extends org.bytedeco.ffmpeg.avformat.Seek_Pointer_long_int {
+        private ByteArraySeekableBuffer buffer;
+
+        public SeekCallback(ByteArraySeekableBuffer buffer) {
+            this.buffer = buffer;
+        }
+
+        public void free() {
+            buffer = null;
+        }
+
+        @Override
+        public long call(Pointer opaque, long offset, int whence) {
+            return buffer.seek(offset, whence);
+        }
+    }
 }
+
+
