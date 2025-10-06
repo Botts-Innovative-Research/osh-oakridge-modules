@@ -1,5 +1,6 @@
 package org.sensorhub.impl.sensor.ffmpeg.outputs;
 
+import com.botts.api.service.bucket.IBucketService;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -13,6 +14,7 @@ import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.PointerPointer;
 import org.sensorhub.api.command.CommandException;
 import org.sensorhub.api.data.DataEvent;
+import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
@@ -40,9 +42,9 @@ public class HLSOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSe
 
     String directory;
 
-    private final FileOutput fileOutput = new FileOutput();
+    private final FileOutput fileOutput = new FileOutput(getParentProducer().getParentHub().getModuleRegistry().getModuleByType(IBucketService.class).getBucketStore());
 
-    public HLSOutput(FFMPEGSensorBase<FFMPEGConfigType> parentSensor, String directory) {
+    public HLSOutput(FFMPEGSensorBase<FFMPEGConfigType> parentSensor, String directory) throws DataStoreException {
         super(SENSOR_OUTPUT_NAME, parentSensor);
         this.directory = directory;
 
