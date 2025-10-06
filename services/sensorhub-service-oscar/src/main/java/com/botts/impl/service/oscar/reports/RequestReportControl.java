@@ -52,6 +52,8 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
     IBucketService bucketService;
     Report report = null;
 
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
+
     public RequestReportControl(OSCARSystem parent, OSCARServiceModule module) {
         super(NAME, parent);
 
@@ -121,7 +123,6 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
             String resourceURI = "";
 
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
             String formattedStart = formatter.format(start);
 
             try{

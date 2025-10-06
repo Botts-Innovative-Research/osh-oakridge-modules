@@ -1,6 +1,7 @@
 package com.botts.impl.service.oscar.reports.types;
 
 import com.botts.impl.service.oscar.OSCARServiceModule;
+import com.botts.impl.service.oscar.reports.IReportHandler;
 import com.botts.impl.service.oscar.reports.helpers.*;
 import com.itextpdf.io.image.ImageDataFactory;
 import com.itextpdf.kernel.pdf.PdfDocument;
@@ -18,6 +19,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -35,6 +38,8 @@ public class AdjudicationReport extends Report {
     String laneUIDs;
     Instant begin;
     Instant end;
+
+//    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
 
     public AdjudicationReport(OutputStream out, Instant startTime, Instant endTime, String laneUIDs, OSCARServiceModule module) {
         pdfDocument = new PdfDocument(new PdfWriter(out));
@@ -298,4 +303,17 @@ public class AdjudicationReport extends Report {
         document.add(new Paragraph("\n"));
 
     }
+
+//    @Override
+//    public String generateReport(Instant start, Instant end) {
+//        String filePath = module.getOSCARSystem().getName() + "_" + ReportCmdType.ADJUDICATION + "_"  + formatter.format(start) + ".pdf";
+//
+//        OutputStream out = checkBucketForOutputStream(filePath);
+//        if (out != null){
+//            report = new LaneReport(out, start, end, laneUIDs, module);
+//            report.generate();
+//        }
+//
+//
+//    }
 }
