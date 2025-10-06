@@ -23,6 +23,7 @@ import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.comm.RobustIPConnection;
 import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,7 +52,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     // Outputs
     private GammaOutput gammaOutput;
     private NeutronOutput neutronOutput;
-    private OccupancyOutput occupancyOutput;
+    private OccupancyOutput<RapiscanSensor> occupancyOutput;
     private LocationOutput locationOutput;
     private TamperOutput tamperOutput;
     private SpeedOutput speedOutput;
@@ -162,9 +163,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         addOutput(neutronOutput, false);
         neutronOutput.init();
 
-        occupancyOutput = new OccupancyOutput(this);
+        occupancyOutput = new OccupancyOutput<>(this);
         addOutput(occupancyOutput, false);
-        occupancyOutput.init();
 
         locationOutput = new LocationOutput(this);
         locationOutput.init();
@@ -268,7 +268,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         return neutronOutput;
     }
 
-    public OccupancyOutput getOccupancyOutput() {
+    public OccupancyOutput<RapiscanSensor> getOccupancyOutput() {
         return occupancyOutput;
     }
 

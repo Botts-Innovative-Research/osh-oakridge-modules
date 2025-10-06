@@ -2,6 +2,7 @@ package com.botts.impl.sensor.rapiscan;
 
 
 import com.opencsv.CSVReader;
+import org.sensorhub.impl.utils.rad.model.Occupancy;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -224,7 +225,19 @@ public class MessageHandler {
                 gammaMax = calcMax(occupancyGammaBatch);
                 neutronMax = calcMax(occupancyNeutronBatch);
 
-                parentSensor.getOccupancyOutput().onNewMessage(occupancyStartTime, occupancyEndTime, isGammaAlarm, isNeutronAlarm, csvLine, gammaMax, neutronMax);
+                Occupancy occupancy = new Occupancy.Builder()
+                        .occupancyCount(Integer.parseInt(csvLine[1]))
+                        .startTime(occupancyStartTime/1000)
+                        .endTime(occupancyEndTime/1000)
+                        .neutronBackground(Double.parseDouble(csvLine[2])/1000)
+                        .gammaAlarm(isGammaAlarm)
+                        .neutronAlarm(isNeutronAlarm)
+                        .maxGammaCount(gammaMax)
+                        .maxNeutronCount(neutronMax)
+                        .adjudicated(false)
+                        .build();
+
+                parentSensor.getOccupancyOutput().setData(occupancy);
                 currentOccupancy = false;
                 isGammaAlarm = false;
                 isNeutronAlarm = false;

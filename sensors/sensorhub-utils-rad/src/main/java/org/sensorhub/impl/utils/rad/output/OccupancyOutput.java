@@ -39,9 +39,7 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         var maxGamma = radHelper.createMaxGamma();
         var maxNeutron = radHelper.createMaxNeutron();
         var isAdjudicated = radHelper.createIsAdjudicated();
-        var placeHolder = radHelper.createPlaceholder();
-        placeHolder.setName("videoFile");
-        placeHolder.setLabel("Video File");
+        var videoPaths = radHelper.createVideoPaths();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
@@ -59,7 +57,7 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
                 .addField(maxGamma.getName(), maxGamma)
                 .addField(maxNeutron.getName(), maxNeutron)
                 .addField(isAdjudicated.getName(), isAdjudicated)
-                .addField(placeHolder.getName(), placeHolder) // TODO Set the definition here
+                .addField(videoPaths.getName(), videoPaths)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");

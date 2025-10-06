@@ -315,6 +315,15 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public Text createVideoPaths() {
+        return createText()
+                .name("videoPaths")
+                .label("Video Paths")
+                .description("Comma separated video file paths")
+                .definition(getRadUri("VideoPaths"))
+                .build();
+    }
+
     public Quantity createBackgroundSigma(){
         return createQuantity()
                 .name("backgroundSigma")

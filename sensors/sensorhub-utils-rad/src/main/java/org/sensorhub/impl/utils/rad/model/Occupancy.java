@@ -11,7 +11,7 @@ public class Occupancy {
     private int maxGammaCount;
     private int maxNeutronCount;
     private boolean isAdjudicated = false;
-    private String videoPaths;
+    private String videoPaths = "";
 
     public int getOccupancyCount() {
         return occupancyCount;
