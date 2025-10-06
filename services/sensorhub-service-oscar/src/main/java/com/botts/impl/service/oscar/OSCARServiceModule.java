@@ -59,12 +59,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         if (config.spreadsheetConfigPath != null && !config.spreadsheetConfigPath.isEmpty())
             spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
 
-        // TODO: Add or update OSCAR system and client config system
         system = new OSCARSystem(config.nodeId);
-
-        // TODO: Add or update report generation control interface
-
-
 
         createOutputs();
         createControls();
@@ -75,7 +70,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public void createOutputs(){
-
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
 
@@ -103,10 +97,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     @Override
     protected void doStop() throws SensorHubException {
         super.doStop();
-    }
-
-    public SpreadsheetHandler getSpreadsheetHandler() {
-        return spreadsheetHandler;
     }
 
     public SitemapDiagramHandler getSitemapDiagramHandler() {
