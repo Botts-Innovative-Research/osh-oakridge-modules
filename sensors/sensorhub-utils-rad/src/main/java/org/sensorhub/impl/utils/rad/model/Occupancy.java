@@ -3,25 +3,25 @@ package org.sensorhub.impl.utils.rad.model;
 public class Occupancy {
 
     private int occupancyCount;
-    private long startTime;
-    private long endTime;
+    private double startTime;
+    private double endTime;
     private double neutronBackground;
     private boolean hasGammaAlarm;
     private boolean hasNeutronAlarm;
     private int maxGammaCount;
     private int maxNeutronCount;
-    private boolean isAdjudicated;
+    private boolean isAdjudicated = false;
     private String videoPaths;
 
     public int getOccupancyCount() {
         return occupancyCount;
     }
 
-    public long getStartTime() {
+    public double getStartTime() {
         return startTime;
     }
 
-    public long getEndTime() {
+    public double getEndTime() {
         return endTime;
     }
 
@@ -66,12 +66,12 @@ public class Occupancy {
             return this;
         }
 
-        public Builder startTime(long startTime) {
+        public Builder startTime(double startTime) {
             instance.startTime = startTime;
             return this;
         }
 
-        public Builder endTime(long endTime) {
+        public Builder endTime(double endTime) {
             instance.endTime = endTime;
             return this;
         }

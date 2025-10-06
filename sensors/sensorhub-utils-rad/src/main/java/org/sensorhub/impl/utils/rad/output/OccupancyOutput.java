@@ -59,24 +59,23 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
                 .addField(maxGamma.getName(), maxGamma)
                 .addField(maxNeutron.getName(), maxNeutron)
                 .addField(isAdjudicated.getName(), isAdjudicated)
-//                .addField(needsSecondaryInspection.getName(), needsSecondaryInspection)
                 .addField(placeHolder.getName(), placeHolder) // TODO Set the definition here
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
 
-    public void onNewMessage(Occupancy occupancy) {
+    public void setData(Occupancy occupancy) {
         if (latestRecord == null)
             dataBlock = dataStruct.createDataBlock();
         else
             dataBlock = latestRecord.renew();
 
         int index = 0;
-        dataBlock.setLongValue(index++, System.currentTimeMillis()/1000);
+        dataBlock.setDoubleValue(index++, System.currentTimeMillis()/1000);
         dataBlock.setIntValue(index++, occupancy.getOccupancyCount());
-        dataBlock.setLongValue(index++, occupancy.getStartTime());
-        dataBlock.setLongValue(index++, occupancy.getEndTime());
+        dataBlock.setDoubleValue(index++, occupancy.getStartTime());
+        dataBlock.setDoubleValue(index++, occupancy.getEndTime());
         dataBlock.setDoubleValue(index++, occupancy.getNeutronBackground());
         dataBlock.setBooleanValue(index++, occupancy.hasGammaAlarm());
         dataBlock.setBooleanValue(index++, occupancy.hasNeutronAlarm());
