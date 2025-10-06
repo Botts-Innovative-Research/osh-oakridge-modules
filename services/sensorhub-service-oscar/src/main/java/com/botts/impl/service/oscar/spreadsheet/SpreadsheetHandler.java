@@ -77,10 +77,7 @@ public class SpreadsheetHandler implements IFileHandler {
 
     @Override
     public boolean isValidFileType(String fileName, String mimeType) {
-        if(fileName.endsWith(".csv") || mimeType.contains("csv")) {
-            return true;
-        }
-        return false;
+        return fileName.endsWith(".csv") || mimeType.contains("csv");
     }
 
     public InputStream getDownloadStream() {

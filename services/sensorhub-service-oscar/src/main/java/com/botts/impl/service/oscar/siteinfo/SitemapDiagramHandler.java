@@ -62,6 +62,7 @@ public class SitemapDiagramHandler implements IFileHandler {
 
         if (siteDiagramConfig == null) {
             module.getLogger().warn("No site diagram config found in OSCAR Module Service config");
+            return false;
         }
 
         if(!bucketStore.objectExists(SITE_MAP_BUCKET, filename)){
@@ -71,7 +72,6 @@ public class SitemapDiagramHandler implements IFileHandler {
 
         try {
             siteInfoOutput.setData(bucketStore.getRelativeResourceURI(SITE_MAP_BUCKET, filename), siteDiagramConfig.siteLowerLeftBound, siteDiagramConfig.siteUpperRightBound);
-
         } catch (DataStoreException e) {
             module.getLogger().error("Unable to read bucket for sitemap config", e);
             return false;
@@ -82,10 +82,7 @@ public class SitemapDiagramHandler implements IFileHandler {
 
     @Override
     public boolean isValidFileType(String fileName, String mimeType) {
-        if(fileName.endsWith(".png") || fileName.endsWith(".jpg")) {
-            return true;
-        }
-        return false;
+        return fileName.endsWith(".png") || fileName.endsWith(".jpg");
     }
 
     @Override
