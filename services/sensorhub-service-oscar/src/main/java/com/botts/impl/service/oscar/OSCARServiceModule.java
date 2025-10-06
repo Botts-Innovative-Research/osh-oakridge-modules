@@ -62,12 +62,10 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         system = new OSCARSystem(config.nodeId);
         bucketService = getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
 
-
         createOutputs();
         createControls();
 
         sitemapDiagramHandler = new SitemapDiagramHandler(getBucketService(), siteInfoOutput, this);
-
 
         system.updateSensorDescription();
     }

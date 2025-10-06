@@ -1,5 +1,6 @@
 package com.botts.ui.oscar.forms;
 
+import com.botts.impl.service.oscar.IFileHandler;
 import com.botts.impl.service.oscar.OSCARServiceModule;
 import com.vaadin.server.AbstractClientConnector;
 import com.vaadin.server.FileDownloader;
@@ -26,16 +27,8 @@ public class OSCARServiceForm extends GenericConfigForm {
     private final OSCARServiceModule oscarService;
 
 
-    private SiteDiagramConfig.LatLonLocation siteLowerLeftBound;
-    private SiteDiagramConfig.LatLonLocation siteUpperRightBound;
-
     public OSCARServiceForm() {
         oscarService = getParentHub().getModuleRegistry().getModuleByType(OSCARServiceModule.class);
-
-        if (oscarService.getConfiguration().siteDiagramConfig.siteLowerLeftBound != null)
-            siteLowerLeftBound = oscarService.getConfiguration().siteDiagramConfig.siteLowerLeftBound;
-        if (oscarService.getConfiguration().siteDiagramConfig.siteUpperRightBound != null)
-            siteUpperRightBound = oscarService.getConfiguration().siteDiagramConfig.siteUpperRightBound;
     }
 
     @Override
@@ -43,6 +36,17 @@ public class OSCARServiceForm extends GenericConfigForm {
         Field<?> field = super.buildAndBindField(label, propId, prop);
 
         if (propId.endsWith(PROP_SPREADSHEET) || propId.endsWith(PROP_SITEMAP)) {
+
+            IFileHandler fileHandler;
+
+            if (propId.endsWith(PROP_SPREADSHEET)) {
+                fileHandler = oscarService.getSpreadsheetHandler();
+            } else if (propId.endsWith(PROP_SITEMAP)) {
+                fileHandler = oscarService.getSitemapDiagramHandler();
+            } else {
+                fileHandler = null;
+            }
+
             return new FieldWrapper<String>((Field<String>) field) {
                 @Override
                 protected Component initContent() {
@@ -70,24 +74,12 @@ public class OSCARServiceForm extends GenericConfigForm {
                         @Override
                         public OutputStream receiveUpload(String filename, String mimeType) {
 
-                            if (propId.endsWith(PROP_SPREADSHEET)) {
-                                if (filename.endsWith(".csv") || mimeType.contains("csv")) {
+                            if (fileHandler.isValidFileType(filename, mimeType)) {
 
-                                    try {
-                                        return oscarService.getSpreadsheetHandler().handleUpload(filename);
-                                    } catch (DataStoreException e) {
-                                        DisplayUtils.showErrorPopup("Upload failed.", e);
-                                    }
-                                }
-                            }
-
-                            if (propId.endsWith(PROP_SITEMAP)) {
-                                if (filename.endsWith(".png") || filename.endsWith("jpg")) {
-                                    try {
-                                        return oscarService.getSitemapDiagramHandler().handleUpload(filename);
-                                    } catch (DataStoreException e) {
-                                        DisplayUtils.showErrorPopup("Upload failed.", e);
-                                    }
+                                try {
+                                    return fileHandler.handleUpload(filename);
+                                } catch (DataStoreException e) {
+                                    DisplayUtils.showErrorPopup("Upload failed.", e);
                                 }
                             }
 
@@ -100,22 +92,13 @@ public class OSCARServiceForm extends GenericConfigForm {
                     });
 
                     upload.addSucceededListener((e) -> {
-                        if (propId.endsWith(PROP_SPREADSHEET)) {
-                            boolean fileLoaded = oscarService.getSpreadsheetHandler().handleFile(e.getFilename());
-                            if (!fileLoaded)
-                                DisplayUtils.showErrorPopup("Unable to load lanes from file.", new IllegalStateException());
-                            else
-                                DisplayUtils.showOperationSuccessful("Successfully loaded lanes from file!");
-                        }
+                        boolean fileLoaded = fileHandler.handleFile(e.getFilename());
 
-                        if (propId.endsWith(PROP_SITEMAP)) {
-                            boolean fileLoaded = oscarService.getSitemapDiagramHandler().handleFile(e.getFilename(),  siteLowerLeftBound, siteUpperRightBound);
-                            if (!fileLoaded)
-                                DisplayUtils.showErrorPopup("Unable to load sitemap from file.", new IllegalStateException());
-                            else
-                                DisplayUtils.showOperationSuccessful("Successfully loaded sitemap from file!");
+                        if (!fileLoaded) {
+                            DisplayUtils.showErrorPopup("Unable to load file from " + e.getFilename(), new IllegalStateException());
+                        } else {
+                            DisplayUtils.showOperationSuccessful("Successfully loaded file " + e.getFilename() + "!");
                         }
-
                     });
 
                     if (propId.endsWith(PROP_SPREADSHEET)) {
