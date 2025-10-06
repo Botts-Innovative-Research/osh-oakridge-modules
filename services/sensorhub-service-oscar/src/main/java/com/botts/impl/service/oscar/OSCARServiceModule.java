@@ -122,4 +122,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         return bucketService;
     }
 
+    public SpreadsheetHandler getSpreadsheetHandler() {
+        return spreadsheetHandler;
+    }
 }
