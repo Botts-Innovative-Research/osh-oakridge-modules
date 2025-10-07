@@ -1,7 +1,6 @@
 package com.botts.impl.service.oscar.reports.types;
 
 import com.botts.impl.service.oscar.OSCARServiceModule;
-import com.botts.impl.service.oscar.reports.IReportHandler;
 import com.botts.impl.service.oscar.reports.helpers.*;
 import com.itextpdf.io.image.ImageDataFactory;
 import com.itextpdf.kernel.pdf.PdfDocument;
@@ -19,9 +18,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -38,8 +34,6 @@ public class AdjudicationReport extends Report {
     String laneUIDs;
     Instant begin;
     Instant end;
-
-//    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
 
     public AdjudicationReport(OutputStream out, Instant startTime, Instant endTime, String laneUIDs, OSCARServiceModule module) {
         pdfDocument = new PdfDocument(new PdfWriter(out));
@@ -58,7 +52,8 @@ public class AdjudicationReport extends Report {
         addHeader();
         addDisposition();
         addSecondaryInspectionIsotopeResults();
-        addSecondaryInspectionDetails();
+//        addSecondaryInspectionDetails();
+//        addAdjudicationDetails();
 
         document.close();
         chartGenerator = null;
@@ -147,7 +142,6 @@ public class AdjudicationReport extends Report {
             module.getLogger().error("Error adding chart to report", e);
         }
     }
-
 
     private void addSecondaryInspectionIsotopeResults() {
         document.add(new Paragraph("Secondary Inspection Results").setFontSize(12));
@@ -241,59 +235,56 @@ public class AdjudicationReport extends Report {
     private void addSecondaryInspectionDetails() {
         document.add(new Paragraph("Secondary Inspection Details").setFontSize(12));
 
-////        Map<String, Map<String, String>> countsLane = new LinkedHashMap<>();
+        Map<String, Map<String, String>> secInspecDetails = new LinkedHashMap<>();
 
-////        for (var lane : laneUIDs.split(",")) {
-////            var counts = calculateDetailsCounts(lane);
-////            countsLane.put(lane, counts);
-////        }
-//
-////        var table = tableGenerator.addLanesTable(countsLane);
-////        if (table == null) {
-////            document.add(new Paragraph("Failed to secondary inspection details"));
-////            return;
-////        }
-//
-//        document.add(table);
+        for (var lane : laneUIDs.split(",")) {
+            var counts = addSecondaryDetails(lane);
+            secInspecDetails.put(lane, counts);
+        }
+
+        var table = tableGenerator.addLanesTable(secInspecDetails);
+        if (table == null) {
+            document.add(new Paragraph("Failed to secondary inspection details"));
+            return;
+        }
+        document.add(table);
         document.add(new Paragraph("\n"));
     }
 
     private Map<String, String> addSecondaryDetails(String laneUID) {
         Map<String, String> secInsDetailsMap = new LinkedHashMap<>();
 
-        Predicate<IObsData> predicate = (obsData) -> true;
+        var query = Utils.getQuery(module, laneUID, RADHelper.DEF_ADJUDICATION, begin, end);
 
-        secInsDetailsMap.put("Primary Date", "");
-        secInsDetailsMap.put("Primary Time", "");
-        secInsDetailsMap.put("Event Record ID", "");
-        secInsDetailsMap.put("Primary N.Sigma", "");
-        secInsDetailsMap.put("SI Result", "");
-        secInsDetailsMap.put("Cargo", "");
-        secInsDetailsMap.put("Disposition #", "");
+        while (query.hasNext()) {
+            var entry = query.next();
+            var result = entry.getResult();
+
+            secInsDetailsMap.put("Primary Date", result.getStringValue(0));
+            secInsDetailsMap.put("Primary Time", result.getStringValue(1));
+            secInsDetailsMap.put("Event Record ID", result.getStringValue(2));
+            secInsDetailsMap.put("Primary N.Sigma", result.getStringValue(3));
+            secInsDetailsMap.put("SI Result", result.getStringValue(4));
+            secInsDetailsMap.put("Cargo", result.getStringValue(5));
+            secInsDetailsMap.put("Disposition #", result.getStringValue(6));
+        }
 
         return secInsDetailsMap;
     }
 
+
     private void addAdjudicationDetails() {
         document.add(new Paragraph("\n"));
 
-        Map<String, String> adjDetailsMap = new LinkedHashMap<>();
+        Map<String, Map<String,String>> adjByLanesMap = new LinkedHashMap<>();
 
         for (var laneUID : laneUIDs.split(", ")) {
-
+            var adjDetailsMap = collectAdjudicationDetails(laneUID);
+            adjByLanesMap.put(laneUID, adjDetailsMap);
         }
-        Utils.getAdjudicationDetails(module, laneUIDs, RADHelper.DEF_ADJUDICATION);
-        adjDetailsMap.put("Username", "");
-        adjDetailsMap.put("Feedback", "");
-        adjDetailsMap.put("Adjudication Code", "");
-        adjDetailsMap.put("Isotopes", "");
-        adjDetailsMap.put("File Paths", "");
-        adjDetailsMap.put("Occupancy ID", "");
-        adjDetailsMap.put("Alarming System ID", "");
-        adjDetailsMap.put("Vehicle ID", "");
-        adjDetailsMap.put("Secondary Inspection Status", "");
 
-        var table = tableGenerator.addTable(adjDetailsMap);
+
+        var table = tableGenerator.addLanesTable(adjByLanesMap);
         if (table == null) {
             document.add(new Paragraph("Adjudication Details Table failed to create"));
             return;
@@ -301,19 +292,27 @@ public class AdjudicationReport extends Report {
 
         document.add(table);
         document.add(new Paragraph("\n"));
-
     }
 
-//    @Override
-//    public String generateReport(Instant start, Instant end) {
-//        String filePath = module.getOSCARSystem().getName() + "_" + ReportCmdType.ADJUDICATION + "_"  + formatter.format(start) + ".pdf";
-//
-//        OutputStream out = checkBucketForOutputStream(filePath);
-//        if (out != null){
-//            report = new LaneReport(out, start, end, laneUIDs, module);
-//            report.generate();
-//        }
-//
-//
-//    }
+    private Map<String, String> collectAdjudicationDetails(String laneUID) {
+        Map<String, String> adjDetailsMap = new LinkedHashMap<>();
+
+        var query = Utils.getQuery(module, laneUID, RADHelper.DEF_ADJUDICATION, begin, end);
+
+        while (query.hasNext()) {
+            var entry = query.next();
+            var result = entry.getResult();
+
+            adjDetailsMap.put("Username", result.getStringValue(0));
+            adjDetailsMap.put("Feedback", result.getStringValue(1));
+            adjDetailsMap.put("Adjudication Code", result.getStringValue(2));
+            adjDetailsMap.put("Isotopes", result.getStringValue(3));
+            adjDetailsMap.put("File Paths", result.getStringValue(4));
+            adjDetailsMap.put("Occupancy ID", result.getStringValue(5));
+            adjDetailsMap.put("Alarming System ID", result.getStringValue(6));
+            adjDetailsMap.put("Vehicle ID", result.getStringValue(7));
+            adjDetailsMap.put("Secondary Inspection Status", result.getStringValue(8));
+        }
+        return adjDetailsMap;
+    }
 }
