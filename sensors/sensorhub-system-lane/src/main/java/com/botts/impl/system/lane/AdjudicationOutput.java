@@ -21,13 +21,12 @@ import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import org.sensorhub.api.data.DataEvent;
+import org.sensorhub.api.security.IUserInfo;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Adjudication;
 import org.vast.data.TextEncodingImpl;
 import org.vast.swe.SWEHelper;
-
-import java.util.Arrays;
 
 public class AdjudicationOutput extends AbstractSensorOutput<LaneSystem> {
 
@@ -83,16 +82,16 @@ public class AdjudicationOutput extends AbstractSensorOutput<LaneSystem> {
 
         dataBlock.setDoubleValue(0, timeMillis/1000d);
         // TODO: Check this gets accurate username
-        String username = getParentProducer().getSecurityHandler().getCurrentUser().getName();
-        dataBlock.setStringValue(1, username);
+        String username = String.valueOf(getParentProducer().getSecurityHandler().getCurrentUser().getId()); // this is broken
 
+        dataBlock.setStringValue(1, "username");
         dataBlock.setStringValue(2, adjudication.getFeedback());
         dataBlock.setIntValue(3, adjudication.getAdjudicationCode());
         dataBlock.setStringValue(4, adjudication.getIsotopes());
-        dataBlock.setStringValue(5, adjudication.getSecondaryInspectionStatus());
-        dataBlock.setStringValue(5, adjudication.getFilePaths());
-        dataBlock.setStringValue(6, adjudication.getOccupancyId());
-        dataBlock.setStringValue(7, adjudication.getVehicleId());
+        dataBlock.setStringValue(5, adjudication.getSecondaryInspectionStatus().toString());
+        dataBlock.setStringValue(6, adjudication.getFilePaths());
+        dataBlock.setStringValue(7, adjudication.getOccupancyId());
+        dataBlock.setStringValue(8, adjudication.getVehicleId());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

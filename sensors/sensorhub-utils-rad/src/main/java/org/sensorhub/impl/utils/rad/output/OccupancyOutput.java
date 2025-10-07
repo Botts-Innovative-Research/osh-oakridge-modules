@@ -4,6 +4,7 @@ import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
+import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.api.data.IDataProducer;
 import org.sensorhub.api.sensor.ISensorModule;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
@@ -82,6 +83,10 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         dataBlock.setIntValue(index++, occupancy.getMaxNeutronCount());
         dataBlock.setBooleanValue(index++, occupancy.isAdjudicated());
         dataBlock.setStringValue(index, "");
+
+        latestRecord = dataBlock;
+        eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));
+
     }
 
     @Override

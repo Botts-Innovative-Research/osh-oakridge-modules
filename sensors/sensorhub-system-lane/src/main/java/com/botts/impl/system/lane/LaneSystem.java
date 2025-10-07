@@ -142,6 +142,9 @@ public class LaneSystem extends SensorSystem {
         adjudicationOutput = new AdjudicationOutput(this);
         addOutput(adjudicationOutput, false);
 
+        adjudicationControl = new AdjudicationControl(this);
+        addControlInput(adjudicationControl);
+
 
         String statusMsg = "Note: ";
         if (existingRPMModule == null)

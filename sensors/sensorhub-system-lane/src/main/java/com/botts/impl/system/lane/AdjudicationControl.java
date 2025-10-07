@@ -2,13 +2,11 @@ package com.botts.impl.system.lane;
 
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
-import org.sensorhub.api.command.CommandException;
 import org.sensorhub.api.command.CommandStatus;
 import org.sensorhub.api.command.ICommandData;
 import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.IdEncoder;
-import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
@@ -107,6 +105,7 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
 
                // When REQUESTED, then occupancy adjudicated == false
                //
+               parent.adjudicationOutput.setData(adj);
 
                return CommandStatus.accepted(command.getID());
            } catch (Exception e) {
