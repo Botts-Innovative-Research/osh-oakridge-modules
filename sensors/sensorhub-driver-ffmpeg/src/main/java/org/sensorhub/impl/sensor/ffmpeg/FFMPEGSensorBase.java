@@ -194,11 +194,11 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
     }
 
     protected void createFileControl() {
-        fileControl = new FileControl<>(this, config.fileConfig.videoClipDirectory);
-        addControlInput(fileControl);
         try {
             mpegTsProcessor.addVideoDataBufferListener(new FileOutput(getParentHub().getModuleRegistry().getModuleByType(IBucketService.class).getBucketStore()));
+            fileControl = new FileControl<>(this, config.fileConfig.videoClipDirectory);
             fileControl.init();
+            addControlInput(fileControl);
         } catch (Exception e) {
             logger.error("Could not initialize file control.", e);
         }
