@@ -1,6 +1,6 @@
 description = 'OSCAR Service Module'
 ext.details = 'Provides necessary configuration and performs specific operations for OSCAR'
-version = '1.0.1'
+version = '1.0.2'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
