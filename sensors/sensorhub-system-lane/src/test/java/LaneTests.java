@@ -104,7 +104,7 @@ public class LaneTests {
             int port = 1600 + i;
             var config = createLaneConfig(true, RPM_HOST, port);
 
-            ((RapiscanRPMConfig) config.laneOptionsConfig.rpmConfig).emlConfig = new EMLConfig();
+            ((RapiscanRPMConfig) config.laneOptionsConfig.rpmConfig).emlConfig = new RapiscanRPMConfig.EMLConfig();
             ((RapiscanRPMConfig) config.laneOptionsConfig.rpmConfig).emlConfig.emlEnabled = true;
             testLoadAndStart(config);
         }

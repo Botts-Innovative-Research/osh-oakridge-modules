@@ -21,6 +21,7 @@ public class FileSystemBucketStore implements IBucketStore {
             Map.entry("video/mp4", ".mp4"),
             Map.entry("application/pdf", ".pdf"),
             Map.entry("text/plain", ".txt"),
+            Map.entry("text/csv", ".csv"),
             Map.entry("application/json", ".json")
     );
     private final Path rootDirectory;
@@ -205,6 +206,15 @@ public class FileSystemBucketStore implements IBucketStore {
         if (!objectExists(bucketName, key))
             throw new DataStoreException(OBJECT_NOT_FOUND + bucketName);
         return rootDirectory.resolve(bucketName).resolve(key).toString();
+    }
+
+    @Override
+    public String getRelativeResourceURI(String bucketName, String key) throws DataStoreException {
+        if (!bucketExists(bucketName))
+            throw new DataStoreException(BUCKET_NOT_FOUND);
+        if (!objectExists(bucketName, key))
+            throw new DataStoreException(OBJECT_NOT_FOUND + bucketName);
+        return bucketName + "/" + key;
     }
 
 }

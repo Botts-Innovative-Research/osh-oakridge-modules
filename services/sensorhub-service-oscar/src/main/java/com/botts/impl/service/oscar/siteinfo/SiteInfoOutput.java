@@ -42,7 +42,6 @@ public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
 
         fac = new GeoPosHelper();
 
-
         this.recordStructure = fac.createRecord()
                 .name(NAME)
                 .label(LABEL)

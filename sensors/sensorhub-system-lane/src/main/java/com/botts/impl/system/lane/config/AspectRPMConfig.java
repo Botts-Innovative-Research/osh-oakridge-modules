@@ -15,7 +15,6 @@
 package com.botts.impl.system.lane.config;
 
 
-import com.botts.impl.sensor.aspect.comm.ModbusTCPConfig;
 import org.sensorhub.api.config.DisplayInfo;
 
 
@@ -30,7 +29,7 @@ public class AspectRPMConfig extends RPMConfig{
     // aspect specific
     @DisplayInfo(label = "Find device within address range")
     @DisplayInfo.Required
-    public ModbusTCPConfig.AddressRange addressRange = new ModbusTCPConfig.AddressRange();
+    public AddressRange addressRange = new AddressRange();
 
     public static class AddressRange {
         @DisplayInfo(label = "From")
@@ -41,4 +40,5 @@ public class AspectRPMConfig extends RPMConfig{
         @DisplayInfo.Required
         public int to = 32;
     }
+
 }
