@@ -63,11 +63,15 @@ public class FileOutput implements DataBufferListener {
     BytePointer buffer;
     ByteArraySeekableBuffer seekableBuffer;
 
-    public FileOutput(IBucketStore bucketStore) throws DataStoreException {
-        this.bucketStore = bucketStore;
-        boolean videosBucketExists = bucketStore.bucketExists(BUCKET_NAME);
-        if (!videosBucketExists) {
-            bucketStore.createBucket(BUCKET_NAME);
+    public FileOutput(IBucketStore bucketStore) throws SensorHubException {
+        try {
+            this.bucketStore = bucketStore;
+            boolean videosBucketExists = bucketStore.bucketExists(BUCKET_NAME);
+            if (!videosBucketExists) {
+                bucketStore.createBucket(BUCKET_NAME);
+            }
+        } catch (Exception e) {
+            throw new SensorHubException("Bucket Service module not found.");
         }
     }
 
