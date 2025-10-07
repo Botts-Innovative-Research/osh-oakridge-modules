@@ -67,11 +67,8 @@ public class LaneSystem extends SensorSystem {
     private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
     private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
-    private static final String VIDEO_CLIPS_DIRECTORY = "./web/video/clips/";
-    private String videoClipsPath = "";
-    private static final String VIDEO_STREAMING_DIRECTORY = "./web/video/streaming/";
-    private String videoStreamingPath = "";
-    private static final String BASE_VIDEO_DIRECTORY = "./web/video/";
+    private static final String VIDEO_CLIPS_DIRECTORY = "clips/";
+    private static final String VIDEO_STREAMING_DIRECTORY = "streaming/";
 
     AbstractSensorModule<?> existingRPMModule = null;
     Flow.Subscription subscription = null;
@@ -476,9 +473,9 @@ public class LaneSystem extends SensorSystem {
         config.moduleClass = FFMPEGSensor.class.getCanonicalName();
         config.connectionConfig.connectTimeout = 5000;
         config.connectionConfig.reconnectAttempts = 10;
-        config.connection.useHLS = true;
-        config.fileConfig.hlsDirectory = videoStreamingPath;
-        config.fileConfig.videoClipDirectory = videoClipsPath;
+        config.connection.useHLS = false;
+        config.fileConfig.hlsDirectory = VIDEO_STREAMING_DIRECTORY;
+        config.fileConfig.videoClipDirectory = VIDEO_CLIPS_DIRECTORY;
         return config;
     }
 

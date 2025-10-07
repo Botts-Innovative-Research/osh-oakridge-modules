@@ -35,7 +35,4 @@ public class LaneConfig extends SensorSystemConfig {
     @DisplayInfo(label = "Lane Group ID", desc = "ID used for grouping lanes together in their own database. " +
             "The default (-1) means that lanes will have no group and use the default UID of urn:osh:system:lane:*")
     public int groupID = -1;
-
-    @DisplayInfo(label = "Paths for Web", desc = "Select this to append the node's address to the beginning of file path outputs")
-    public boolean doWebPaths = true;
 }
