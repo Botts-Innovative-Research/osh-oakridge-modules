@@ -13,7 +13,11 @@
  ******************************* END LICENSE BLOCK ***************************/
 package org.sensorhub.impl.sensor.ffmpeg;
 
+import com.botts.impl.service.bucket.BucketService;
+import com.botts.impl.service.bucket.BucketServiceConfig;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
+import org.bytedeco.ffmpeg.global.avcodec;
+import org.bytedeco.ffmpeg.global.avutil;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -38,9 +42,10 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.color.ColorSpace;
 import java.awt.image.*;
-import java.util.ArrayDeque;
-import java.util.HashMap;
-import java.util.Queue;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -63,6 +68,22 @@ public abstract class ConnectionTest {
         hub = new SensorHub();
         hub.start();
         reg = hub.getModuleRegistry();
+
+        /*
+        var bucketServiceConfig = new BucketServiceConfig();
+        bucketServiceConfig.autoStart = true;
+        bucketServiceConfig.id = "testBucketService";
+        bucketServiceConfig.name = "testBucketService";
+        bucketServiceConfig.initialBuckets = Collections.singletonList("video");
+        var rootDir = Paths.get(".").toAbsolutePath();
+        try {
+            Files.createDirectory(rootDir);
+        } catch (FileAlreadyExistsException ignored) {}
+        bucketServiceConfig.fileStoreRootDir = rootDir.toString();
+
+        var bucketService = reg.loadModule(bucketServiceConfig);
+
+         */
 
         FFMPEGConfig config = new FFMPEGConfig();
 
@@ -228,7 +249,11 @@ public abstract class ConnectionTest {
             options.put("width", dimensions[0]);
             options.put("height", dimensions[1]);
             options.put("pix_fmt", processorColor);
-            decoder = new Decoder(mpegTsProcessor.getCodecId(), options);
+            try {
+                decoder = new Decoder(mpegTsProcessor.getCodecId(), options);
+            } catch (Exception e) {
+                decoder = new Decoder(avcodec.AV_CODEC_ID_H264, options);
+            }
 
             scaler = new SwScaler(processorColor, AV_PIX_FMT_RGB24,
                     dimensions[0], dimensions[1],
@@ -241,7 +266,7 @@ public abstract class ConnectionTest {
             scaler.start();
             decoder.start();
 
-            mpegTsProcessor.setVideoDataBufferListener(dataBufferRecord -> {
+            driver.mpegTsProcessor.addVideoDataBufferListener(dataBufferRecord -> {
                 inputPacketQueue.add(packetF.convertInput(dataBufferRecord.getDataBuffer()));
             });
 
