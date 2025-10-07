@@ -28,6 +28,18 @@ public class RADHelper extends GeoPosHelper {
     public static final String DEF_VIDEO = getRadUri("");
     public static final String DEF_COMM = getRadUri("");
 
+    public static final String DEF_GAMMA = getRadUri("GammaGrossCount");
+    public static final String DEF_NEUTRON = getRadUri("NeutronGrossCount");
+    public static final String DEF_OCCUPANCY = getRadUri("PillarOccupancyCount");
+    public static final String DEF_ALARM = getRadUri("Alarm");
+    public static final String DEF_TAMPER = getRadUri("TamperStatus");
+    public static final String DEF_THRESHOLD = getRadUri("Threshold");
+    public static final String DEF_ADJUDICATION = getRadUri("AdjudicationCode");
+    public static final String DEF_EML_ANALYSIS = getPropertyUri("EMLGammaAlert");
+    public static final String DEF_EML_SCAN = getPropertyUri("EMLRPMGammaAlert");
+    public static final String DEF_VIDEO = getRadUri("");
+    public static final String DEF_COMM = getRadUri("");
+
     public static String getRadUri(String propName) {
         return RADConstants.RAD_URI + propName;
     }
@@ -979,5 +991,57 @@ public class RADHelper extends GeoPosHelper {
 
 
     // Energy Calibration
+
+    // Node stats
+    public DataRecord createSiteStatistics() {
+        return createRecord()
+                .name("siteStatistics")
+                .label("Site Statistics")
+                .description("Statistics for this node's RPMs/lanes")
+                .addField("samplingTime", createTime()
+                        .asSamplingTimeIsoUTC())
+                .addField("total", createRecord()
+                        .label("Total")
+                        .definition(getRadUri("TotalCount"))
+                        .addAllFields(createCountStatistics()))
+                .addField("monthly", createRecord()
+                        .label("Monthly")
+                        .definition(getRadUri("MonthlyCount"))
+                        .addAllFields(createCountStatistics()))
+                .addField("weekly", createRecord()
+                        .label("Weekly")
+                        .definition(getRadUri("WeeklyCount"))
+                        .addAllFields(createCountStatistics()))
+                .addField("daily", createRecord()
+                        .label("Daily")
+                        .definition(getRadUri("DailyCount"))
+                        .addAllFields(createCountStatistics()))
+                .build();
+    }
+
+    public DataRecord createCountStatistics() {
+        return createRecord()
+                .addField("numOccupancies", createQuantity()
+                        .dataType(DataType.LONG)
+                        .label("Total Number of Occupancies")
+                        .definition(getRadUri("NumOccupancies")))
+                .addField("numGammaAlarms", createQuantity()
+                        .dataType(DataType.LONG)
+                        .label("Total Number of Gamma Alarms")
+                        .definition(getRadUri("NumGammaAlarms")))
+                .addField("numNeutronAlarms", createQuantity()
+                        .dataType(DataType.LONG)
+                        .label("Total Number of Neutron Alarms")
+                        .definition(getRadUri("NumNeutronAlarms")))
+                .addField("numFaults", createQuantity()
+                        .dataType(DataType.LONG)
+                        .label("Total Number of Faults")
+                        .definition(getRadUri("NumFaults")))
+                .addField("numTampers", createQuantity()
+                        .dataType(DataType.LONG)
+                        .label("Total Number of Tampers")
+                        .definition(getRadUri("NumTampers")))
+                .build();
+    }
 
 }
