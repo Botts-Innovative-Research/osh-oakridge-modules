@@ -12,6 +12,7 @@ import org.jfree.chart.plot.DatasetRenderingOrder;
 import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.renderer.category.*;
 import org.jfree.data.category.DefaultCategoryDataset;
+import org.jfree.ui.RectangleEdge;
 
 import java.awt.*;
 import java.io.*;
@@ -25,6 +26,7 @@ public class ChartGenerator {
         this.module = module;
         this.bucketService = module.getBucketService();
     }
+
 
     public JFreeChart createChart(String title, String xAxisLabel, String yAxisLabel, DefaultCategoryDataset dataset, String chartType, PlotOrientation orientation) throws IOException {
         JFreeChart chart = null;
@@ -47,12 +49,9 @@ public class ChartGenerator {
                 chart.getCategoryPlot().getDomainAxis().setTickLabelFont(new Font("SansSerif", Font.PLAIN, 10));
                 chart.getCategoryPlot().getRangeAxis().setTickLabelFont(new Font("SansSerif", Font.PLAIN, 10));
                 chart.getTitle().setFont(new Font("SansSerif", Font.BOLD, 16));
+
                 chart.getLegend().setItemFont(new Font("SansSerif", Font.PLAIN, 12));
-
-                BarRenderer renderer = (BarRenderer) chart.getCategoryPlot().getRenderer();
-
-                Color color = new Color(98, 216, 236);
-                renderer.setSeriesPaint(0, color);
+                chart.getLegend().setPosition(RectangleEdge.RIGHT);
 
                 break;
             case "line":

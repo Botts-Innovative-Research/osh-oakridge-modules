@@ -7,16 +7,23 @@ import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Image;
+import org.jfree.chart.axis.AxisLocation;
+import org.jfree.chart.axis.NumberAxis;
+import org.jfree.chart.axis.NumberTickUnit;
+import org.jfree.chart.plot.CategoryPlot;
 import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.chart.renderer.category.BarRenderer;
 import org.jfree.data.category.DefaultCategoryDataset;
 import org.junit.Before;
 import org.junit.Test;
 import org.sensorhub.api.common.SensorHubException;
 
 import javax.imageio.ImageIO;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.text.DecimalFormat;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -107,7 +114,7 @@ public class ReportHelperTests {
 
     @Test
     public void TestBarChart(){
-        String dest = "chart_test.pdf";
+        String dest = "chart_test1.pdf";
 
         try{
             PdfWriter pdfWriter = new PdfWriter(dest);
@@ -116,33 +123,49 @@ public class ReportHelperTests {
 
             DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
-            dataset.addValue(.01 * 100.0, "Real Alarm - Other","Real Alarm - Other");
-            dataset.addValue(.05 * 100.0, "False Alarm - Other", "False Alarm - Other");
-            dataset.addValue(.02 * 100.0, "Physical Inspection Negative", "Physical Inspection Negative");
-            dataset.addValue(0.04 * 100.0, "Innocent Alarm - Medical Isotope Found", "Innocent Alarm - Medical Isotope Found");
-            dataset.addValue(.07 * 100.0, "Innocent Alarm - Declared Shipment of Radioactive Material", "Innocent Alarm - Declared Shipment of Radioactive Material");
-            dataset.addValue(0, "No Disposition", "No Disposition");
-            dataset.addValue(.15 * 100.0, "False Alarm - RIID/ASP Indicates Background Only", "False Alarm - RIID/ASP Indicates Background Only");
-            dataset.addValue(.05 * 100.0, "Real Alarm - Contraband Found", "Real Alarm - Contraband Found");
-            dataset.addValue(.02 * 100.0, "Tamper/Fault - Unauthorized Activity", "Tamper/Fault - Unauthorized Activity");
-            dataset.addValue(.0 * 100.0, "Alarm/Tamper/Fault- Authorized Test/Maintenance/Training Activity", "Alarm/Tamper/Fault- Authorized Test/Maintenance/Training Activity");
-            dataset.addValue(.25 * 100.0, "Alarm - Naturally Occurring Radioactive Material (NORM) Found", "Alarm - Naturally Occurring Radioactive Material (NORM) Found");
-
+            dataset.addValue((9.0 / 50) * 100, "Other", "No Disposition");
+            dataset.addValue((5.0 / 50) * 100, "Real Alarm", "Code 1: Contraband Found");
+            dataset.addValue((3.0 / 50) * 100, "Real Alarm", "Code 2: Other");
+            dataset.addValue((8.0 / 50) * 100, "Innocent Alarm", "Code 3: Medical Isotope Found");
+            dataset.addValue((5.0 / 50) * 100, "Innocent Alarm", "Code 4: NORM Found");
+            dataset.addValue(0, "Innocent Alarm", "Code 5: Declared Shipment of Radioactive Material");
+            dataset.addValue((6.0 / 50) * 100, "False Alarm", "Code 6: Physical Inspection Negative");
+            dataset.addValue((5.0 / 50) * 100, "False Alarm", "Code 7: RIID/ASP Indicates Background Only");
+            dataset.addValue((2.0 / 50) * 100, "False Alarm", "Code 8: Other");
+            dataset.addValue((4.0 / 50) * 100, "Test/Maintenance",  "Code 9: Authorized Test, Maintenance, or Training Activity");
+            dataset.addValue((3.0 / 50) * 100, "Tamper/Fault",  "Code 10: Unauthorized Activity");
 
             String title = "Test Chart";
             String yLabel = "% of Total Number of Records";
 
             ChartGenerator chartGenerator = new ChartGenerator(new OSCARServiceModule());
+
             var chart = chartGenerator.createChart(
                     title,
                     null,
-                    yLabel, dataset,
+                    yLabel,
+                    dataset,
                     "bar",
                     PlotOrientation.HORIZONTAL
             );
 
             assertNotNull(chart);
 
+            CategoryPlot plot = chart.getCategoryPlot();
+            plot.setRangeAxisLocation(AxisLocation.BOTTOM_OR_LEFT);
+
+            BarRenderer renderer = (BarRenderer) plot.getRenderer();
+            renderer.setSeriesPaint(dataset.getRowIndex("Other"), Color.GRAY);
+            renderer.setSeriesPaint(dataset.getRowIndex("Real Alarm"), Color.RED);
+            renderer.setSeriesPaint(dataset.getRowIndex("Innocent Alarm"), Color.BLUE);
+            renderer.setSeriesPaint(dataset.getRowIndex("False Alarm"), Color.GREEN);
+            renderer.setSeriesPaint(dataset.getRowIndex("Test/Maintenance"), Color.GRAY);
+            renderer.setSeriesPaint(dataset.getRowIndex("Tamper/Fault"), new Color(128, 0, 128, 255));
+            renderer.setItemMargin(0.05);
+
+            NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
+            rangeAxis.setNumberFormatOverride(new DecimalFormat("0'%'"));
+            rangeAxis.setTickUnit(new NumberTickUnit(10));
 
             BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
             ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
@@ -225,6 +248,7 @@ public class ReportHelperTests {
             throw new RuntimeException(e);
         }
     }
+
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
 
     @Test

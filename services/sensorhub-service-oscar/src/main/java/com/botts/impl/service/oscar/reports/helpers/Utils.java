@@ -47,7 +47,7 @@ public class Utils {
         return alarmCount / occupancyCount;
     }
 
-    public static long countObservations(String[] observedProperties, OSCARServiceModule module, Predicate<IObsData> valuePredicate, Instant begin, Instant end){
+    public static long countObservations(OSCARServiceModule module, Predicate<IObsData> valuePredicate, Instant begin, Instant end, String... observedProperties){
         return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
                 .withDataStreams(new DataStreamFilter.Builder()
                         .withObservedProperties(observedProperties)
@@ -61,7 +61,7 @@ public class Utils {
     //  suppressed : RPM Gamma Alert = true  but the EML Gamma Alert = false (release)
     // so count how many times the RPM had a true alarm but the EML decided it was false
 
-    public static long countObservationsFromLane(String laneUID, String[] observedProperties, OSCARServiceModule module, Predicate<IObsData> valuePredicate, Instant begin, Instant end){
+    public static long countObservationsFromLane(String laneUID, OSCARServiceModule module, Predicate<IObsData> valuePredicate, Instant begin, Instant end, String... observedProperties){
         return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
                         .withSystems(new SystemFilter.Builder()
                                 .withUniqueIDs(laneUID)
@@ -74,7 +74,7 @@ public class Utils {
                         .build()).count();
     }
 
-    public static Map<Instant, Long> countObservationsByDay(String[] observedProperties, OSCARServiceModule module, Predicate<IObsData> predicate,  Instant startDate, Instant endDate){
+    public static Map<Instant, Long> countObservationsByDay(OSCARServiceModule module, Predicate<IObsData> predicate, Instant startDate, Instant endDate, String... observedProperties){
         Map<Instant, Long> result = new LinkedHashMap<>();
 
         while (startDate.isBefore(endDate)) {
@@ -85,7 +85,7 @@ public class Utils {
                 endOfCurrentDay = endDate;
             }
 
-            long count = Utils.countObservations(observedProperties, module,  predicate, currentDay, endOfCurrentDay);
+            long count = Utils.countObservations(module,  predicate, currentDay, endOfCurrentDay, observedProperties);
             result.put(currentDay, count);
 
             startDate = endOfCurrentDay;
@@ -93,7 +93,7 @@ public class Utils {
         return result;
     }
 
-    public static Iterator<IObsData> getQuery(OSCARServiceModule module, String laneUID, String observedProperties, Instant startDate, Instant endDate){
+    public static Iterator<IObsData> getQuery(OSCARServiceModule module, String laneUID, Instant startDate, Instant endDate, String... observedProperties){
         return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
                 .withSystems(new SystemFilter.Builder()
                         .withUniqueIDs(laneUID)

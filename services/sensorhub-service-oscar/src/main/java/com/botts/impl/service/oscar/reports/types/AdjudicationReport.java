@@ -8,15 +8,23 @@ import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Image;
 import com.itextpdf.layout.element.Paragraph;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.axis.AxisLocation;
+import org.jfree.chart.axis.NumberAxis;
+import org.jfree.chart.axis.NumberTickUnit;
+import org.jfree.chart.plot.CategoryPlot;
 import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.chart.renderer.category.BarRenderer;
 import org.jfree.data.category.DefaultCategoryDataset;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import javax.imageio.ImageIO;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.text.DecimalFormat;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -51,7 +59,7 @@ public class AdjudicationReport extends Report {
     public void generate() {
         addHeader();
         addDisposition();
-        addSecondaryInspectionIsotopeResults();
+        addIsotopeResults();
 //        addSecondaryInspectionDetails();
 //        addAdjudicationDetails();
 
@@ -74,21 +82,21 @@ public class AdjudicationReport extends Report {
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
-        Map<Integer, String> dispositions = Map.ofEntries(
-                Map.entry(0, "Real Alarm - Other"),
-                Map.entry(1, "False Alarm - Other"),
-                Map.entry(2, "Physical Inspection Negative"),
-                Map.entry(3, "Innocent Alarm - Medical Isotope Found"),
-                Map.entry(4, "Innocent Alarm - Declared Shipment of Radioactive Material"),
-                Map.entry(5, "No Disposition"),
-                Map.entry(6, "False Alarm - RIID/ASP Indicates Background Only"),
-                Map.entry(7, "Real Alarm - Contraband Found"),
-                Map.entry(8, "Tamper/Fault - Unauthorized Activity"),
-                Map.entry(9, "Alarm/Tamper/Fault- Authorized Test/Maintenance/Training Activity"),
-                Map.entry(10, "Alarm - Naturally Occurring Radioactive Material (NORM) Found")
-        );
+        Map<String, String> dispositions = Map.ofEntries(
+                Map.entry("Other", "No Disposition"),
+                Map.entry("Real Alarm", "Code 1: Contraband Found"),
+                Map.entry("Real Alarm", "Code 2: Other"),
+                Map.entry("Innocent Alarm", "Code 3: Medical Isotope Found"),
+                Map.entry("Innocent Alarm", "Code 4: NORM Found"),
+                Map.entry("Innocent Alarm", "Code 5: Declared Shipment of Radioactive Material"),
+                Map.entry("False Alarm", "Code 6: Physical Inspection Negative"),
+                Map.entry("False Alarm", "Code 7: RIID/ASP Indicates Background Only"),
+                Map.entry("False Alarm", "Code 8: Other"),
+                Map.entry("Test/Maintenance",  "Code 9: Authorized Test, Maintenance, or Training Activity"),
+                Map.entry("Tamper/Fault",  "Code 10: Unauthorized Activity"),
+                Map.entry("Other",   "Code 11: Other"));
 
-        long totalRecords = Utils.countObservations(new String[]{RADHelper.DEF_ADJUDICATION}, module, obsData -> true, begin, end);
+        long totalRecords = Utils.countObservations(module, obsData -> true, begin, end, RADHelper.DEF_ADJUDICATION);
 
         if (totalRecords == 0) {
             document.add(new Paragraph("No data available for the selected time period"));
@@ -96,22 +104,23 @@ public class AdjudicationReport extends Report {
         }
 
 
-        for (Map.Entry<Integer, String> entry : dispositions.entrySet()) {
+        for (Map.Entry<String, String> entry : dispositions.entrySet()) {
+            String group = entry.getKey();
              String name = entry.getValue();
 
             Predicate<IObsData> predicate = (obsData) ->
                     obsData.getResult().getStringValue(3).contains(name);
 
             long count = Utils.countObservations(
-                    new String[]{RADHelper.DEF_ADJUDICATION},
                     module,
                     predicate,
                     begin,
-                    end
+                    end,
+                    RADHelper.DEF_ADJUDICATION
             );
-            double percentage = (count / (double) totalRecords) * 100.0;
+            double percentage = (count / totalRecords) * 100.0;
 
-            dataset.addValue(percentage, name, name);
+            dataset.addValue(percentage, group, name);
         }
 
         try {
@@ -129,12 +138,23 @@ public class AdjudicationReport extends Report {
                 return;
             }
 
-            BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
-            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-            ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
+            CategoryPlot plot = chart.getCategoryPlot();
+            plot.setRangeAxisLocation(AxisLocation.BOTTOM_OR_LEFT);
 
-            byte[] imageBytes = byteArrayOutputStream.toByteArray();
-            Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
+            BarRenderer renderer = (BarRenderer) plot.getRenderer();
+            renderer.setSeriesPaint(dataset.getRowIndex("Other"), Color.GRAY);
+            renderer.setSeriesPaint(dataset.getRowIndex("Real Alarm"), Color.RED);
+            renderer.setSeriesPaint(dataset.getRowIndex("Innocent Alarm"), Color.BLUE);
+            renderer.setSeriesPaint(dataset.getRowIndex("False Alarm"), Color.GREEN);
+            renderer.setSeriesPaint(dataset.getRowIndex("Test/Maintenance"), Color.GRAY);
+            renderer.setSeriesPaint(dataset.getRowIndex("Tamper/Fault"), new Color(128, 0, 128, 255));
+            renderer.setItemMargin(0.05);
+
+            NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
+            rangeAxis.setNumberFormatOverride(new DecimalFormat("0'%'"));
+            rangeAxis.setTickUnit(new NumberTickUnit(10));
+
+            Image image = addChartAsImage(chart);
 
             document.add(image);
             document.add(new Paragraph("\n"));
@@ -143,7 +163,19 @@ public class AdjudicationReport extends Report {
         }
     }
 
-    private void addSecondaryInspectionIsotopeResults() {
+    private Image addChartAsImage(JFreeChart chart) throws IOException {
+        BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
+
+        byte[] imageBytes = byteArrayOutputStream.toByteArray();
+        Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
+
+       return image;
+    }
+
+
+    private void addIsotopeResults() {
         document.add(new Paragraph("Secondary Inspection Results").setFontSize(12));
 
         String title = "Secondary Inspection Results";
@@ -193,11 +225,11 @@ public class AdjudicationReport extends Report {
             Predicate<IObsData> predicate = (obsData) -> obsData.getResult().getStringValue(4).contains(name);
 
             long count = Utils.countObservations(
-                    new String[]{RADHelper.DEF_ADJUDICATION},
                     module,
                     predicate,
                     begin,
-                    end
+                    end,
+                    RADHelper.DEF_ADJUDICATION
             );
 
             dataset.addValue(count, name, symbol);
@@ -214,16 +246,14 @@ public class AdjudicationReport extends Report {
             );
 
             if (chart == null) {
-                document.add(new Paragraph("Disposition chart failed to create"));
+                document.add(new Paragraph("Secondary Inspection chart failed to create"));
                 return;
             }
 
-            BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
-            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-            ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
+            CategoryPlot plot = chart.getCategoryPlot();
+            plot.setRangeAxisLocation(AxisLocation.BOTTOM_OR_LEFT);
 
-            byte[] imageBytes = byteArrayOutputStream.toByteArray();
-            Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
+            Image image = addChartAsImage(chart);
 
             document.add(image);
             document.add(new Paragraph("\n"));
@@ -254,7 +284,7 @@ public class AdjudicationReport extends Report {
     private Map<String, String> addSecondaryDetails(String laneUID) {
         Map<String, String> secInsDetailsMap = new LinkedHashMap<>();
 
-        var query = Utils.getQuery(module, laneUID, RADHelper.DEF_ADJUDICATION, begin, end);
+        var query = Utils.getQuery(module, laneUID, begin, end, RADHelper.DEF_ADJUDICATION);
 
         while (query.hasNext()) {
             var entry = query.next();
@@ -297,7 +327,7 @@ public class AdjudicationReport extends Report {
     private Map<String, String> collectAdjudicationDetails(String laneUID) {
         Map<String, String> adjDetailsMap = new LinkedHashMap<>();
 
-        var query = Utils.getQuery(module, laneUID, RADHelper.DEF_ADJUDICATION, begin, end);
+        var query = Utils.getQuery(module, laneUID, begin, end, RADHelper.DEF_ADJUDICATION);
 
         while (query.hasNext()) {
             var entry = query.next();
