@@ -13,6 +13,7 @@ import org.bytedeco.ffmpeg.avutil.AVRational;
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.PointerPointer;
 import org.sensorhub.api.command.CommandException;
+import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
@@ -42,11 +43,13 @@ public class HLSOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSe
 
     String directory;
 
-    private final FileOutput fileOutput = new FileOutput(getParentProducer().getParentHub().getModuleRegistry().getModuleByType(IBucketService.class).getBucketStore());
+    private final FileOutput fileOutput;
 
-    public HLSOutput(FFMPEGSensorBase<FFMPEGConfigType> parentSensor, String directory) throws DataStoreException {
+    public HLSOutput(FFMPEGSensorBase<FFMPEGConfigType> parentSensor, String directory) throws SensorHubException {
         super(SENSOR_OUTPUT_NAME, parentSensor);
         this.directory = directory;
+
+        fileOutput = new FileOutput(getParentProducer().getParentHub().getModuleRegistry().getModuleByType(IBucketService.class).getBucketStore());
 
         SWEHelper helper = new SWEHelper();
         dataStruct = helper.createText()
