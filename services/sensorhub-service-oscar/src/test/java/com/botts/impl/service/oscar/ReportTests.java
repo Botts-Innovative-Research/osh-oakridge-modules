@@ -14,11 +14,17 @@ import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.data.IObsData;
+import org.sensorhub.api.database.DatabaseConfig;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.service.IHttpServer;
 import org.sensorhub.impl.SensorHub;
+import org.sensorhub.impl.database.system.SystemDriverDatabase;
+import org.sensorhub.impl.database.system.SystemDriverDatabaseConfig;
+import org.sensorhub.impl.datastore.h2.MVDatabaseConfig;
+import org.sensorhub.impl.datastore.h2.MVObsSystemDatabase;
+import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
 import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.service.HttpServer;
 import org.sensorhub.impl.service.HttpServerConfig;
@@ -40,6 +46,8 @@ import static org.junit.Assert.*;
 public class ReportTests {
     static SensorHub hub;
     static ModuleRegistry reg;
+
+    SystemDriverDatabase systemDriverDatabase;
 
     OSCARServiceModule oscarServiceModule;
     RequestReportControl reportControl;
@@ -67,6 +75,9 @@ public class ReportTests {
 
         loadHTTPServer();
         loadConSysApiService();
+
+        var systemDatabaseConfig = createSystemDataBaseConfig();
+        loadSystemDatabase(systemDatabaseConfig);
 
         var bucketServiceConfig = createBucketServiceConfig();
         var serviceConfig = createOscarServiceConfig();
@@ -106,6 +117,32 @@ public class ReportTests {
         assertTrue(isStarted);
     }
 
+    private SystemDriverDatabaseConfig createSystemDataBaseConfig() throws SensorHubException {
+//        MVObsSystemDatabaseConfig mvObsSystemDatabaseConfig = (MVObsSystemDatabaseConfig) reg.createModuleConfig(new Descriptor());
+//        mvObsSystemDatabaseConfig.storagePath = "my-test.db";
+
+        SystemDriverDatabaseConfig databaseConfig = new SystemDriverDatabaseConfig();
+
+        databaseConfig.name = "System Driver Database";
+        databaseConfig.autoStart = true;
+        databaseConfig.databaseNum = 6;
+        databaseConfig.moduleClass = SystemDriverDatabase.class.getCanonicalName();
+        var config = new MVObsSystemDatabaseConfig();
+        config.storagePath = "test.db";
+        config.databaseNum = 7;
+        databaseConfig.dbConfig = config;
+
+        return databaseConfig;
+    }
+
+    private void loadSystemDatabase(SystemDriverDatabaseConfig databaseConfig) throws SensorHubException {
+        systemDriverDatabase = (SystemDriverDatabase) reg.loadModule(databaseConfig);
+
+        reg.startModule(systemDriverDatabase.getLocalID());
+        var isStarted = systemDriverDatabase.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
+        assertTrue("system database should be started", isStarted);
+    }
+
     private void loadAndStartOscarService(OSCARServiceConfig config) throws SensorHubException {
         oscarServiceModule = (OSCARServiceModule) reg.loadModule(config);
         reportControl = (RequestReportControl) oscarServiceModule.getOSCARSystem().getCommandInputs().get(RequestReportControl.NAME);
@@ -113,7 +150,7 @@ public class ReportTests {
 
         reg.startModule(oscarServiceModule.getLocalID());
         var isStarted = oscarServiceModule.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-        assertTrue(isStarted);
+        assertTrue("oscar service module should be started", isStarted);
     }
 
     private BucketServiceConfig createBucketServiceConfig() throws SensorHubException {
@@ -126,7 +163,7 @@ public class ReportTests {
         buckets.add("sitemap");
 
         bucketServiceConfig.initialBuckets = buckets;
-        return  bucketServiceConfig;
+        return bucketServiceConfig;
     }
 
     private OSCARServiceConfig createOscarServiceConfig() throws SensorHubException {
@@ -135,7 +172,10 @@ public class ReportTests {
         serviceConfig.siteDiagramConfig = new SiteDiagramConfig();
         serviceConfig.nodeId = "test-node-id";
 
-        return  serviceConfig;
+
+        serviceConfig.databaseID = systemDriverDatabase.getLocalID();
+
+        return serviceConfig;
     }
 
     @Test
