@@ -16,10 +16,8 @@
 package com.botts.impl.service.oscar.reports;
 
 import com.botts.api.service.bucket.IBucketService;
-import com.botts.impl.service.oscar.Constants;
 import com.botts.impl.service.oscar.OSCARServiceModule;
 import com.botts.impl.service.oscar.OSCARSystem;
-import com.botts.impl.service.oscar.reports.handlers.*;
 import com.botts.impl.service.oscar.reports.helpers.EventReportType;
 import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
 import com.botts.impl.service.oscar.reports.types.*;
@@ -27,12 +25,10 @@ import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.command.*;
-import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.command.AbstractControlInterface;
 import org.vast.swe.SWEHelper;
 
-import java.io.IOException;
 import java.io.OutputStream;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -54,7 +50,6 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
     OSCARServiceModule module;
     IBucketService bucketService;
-    Report report = null;
 
     DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
 
@@ -125,38 +120,16 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             String laneUIDs = paramData.getStringValue(3);
             EventReportType eventType = EventReportType.valueOf(paramData.getStringValue(4));
 
-            String resourceURI = "";
+            String resourceURI = null;
 
-            String formattedStart = formatter.format(start);
-            IReportHandler reportHandler;
-            String filePath = null;
-
-            try{
-                if (type.equals(ReportCmdType.LANE)) {
-                    filePath = (module.getOSCARSystem().getNodeId() + "_" + ReportCmdType.LANE + "_" + formattedStart + ".pdf").toLowerCase();
-                    reportHandler = new LaneReportHandler(laneUIDs, module);
-                }
-                else if (type.equals(ReportCmdType.EVENT)) {
-                    filePath = (module.getOSCARSystem().getNodeId() + "_" + ReportCmdType.EVENT + "_" + eventType  + "_" + formattedStart + ".pdf").toLowerCase();
-                    reportHandler = new EventReportHandler(module, laneUIDs, eventType);
-                }
-                else if (type.equals(ReportCmdType.ADJUDICATION)) {
-                    filePath = (module.getOSCARSystem().getNodeId() + "_" + ReportCmdType.ADJUDICATION + "_" + formattedStart + ".pdf").toLowerCase();
-                    reportHandler = new AdjudicationReportHandler(module, laneUIDs);
-                }
-                else if (type.equals(ReportCmdType.RDS_SITE)) {
-                    filePath = (module.getOSCARSystem().getNodeId() + "_" + ReportCmdType.RDS_SITE + "_" + formattedStart + ".pdf").toLowerCase();
-                    reportHandler = new RdsSiteReportHandler(module);
-                } else
-                    reportHandler = null;
-
-                if (filePath != null && report != null)
-                    resourceURI = handleReportGeneration(filePath, reportHandler, start, end);
+            try {
+                String filePath = buildPath(type, start, end, laneUIDs, eventType);
+                IReportHandler reportHandler = getReportHandler(type, start, end, laneUIDs, eventType);
+                resourceURI = handleReportGeneration(reportHandler, filePath);
 
             } catch (DataStoreException e) {
-                module.getLogger().error("Failed to generate reports for " + type, e);
+                module.getLogger().error("Failed to build report " + type, e);
             }
-
 
             DataBlock resultData = resultStructure.createDataBlock();
             resultData.setStringValue(resourceURI);
@@ -175,19 +148,42 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
         return resultStructure;
     }
 
-    private String handleReportGeneration(String filePath, IReportHandler reportHandler, Instant start, Instant end) throws DataStoreException {
+    private IReportHandler getReportHandler(ReportCmdType type, Instant start, Instant end, String laneUIDs, EventReportType eventType) throws DataStoreException {
+        if(type == ReportCmdType.LANE) {
+            return out -> new LaneReport(out, start, end, laneUIDs, module);
+        } else if (type == ReportCmdType.EVENT) {
+            return out -> new EventReport(out, start, end, eventType, laneUIDs, module);
+        } else if (type == ReportCmdType.ADJUDICATION) {
+            return out -> new AdjudicationReport(out, start, end, laneUIDs, module);
+        } else if (type == ReportCmdType.RDS_SITE) {
+            return out -> new RDSReport(out, start, end, module);
+        }
+        return null;
+    }
+
+    private String handleReportGeneration(IReportHandler reportHandler, String filePath) throws DataStoreException {
         OutputStream out = checkBucketForOutputStream(filePath);
 
         if (out != null) {
-            try {
-                reportHandler.generateReport(out, start, end);
-            } catch (Exception e) {
-                module.getLogger().error("Failed to generate reports for " + filePath, e);
-            }
+            Report report = reportHandler.createReport(out);
+            report.generate();
         }
-        return bucketService.getBucketStore().getRelativeResourceURI(REPORT_BUCKET, filePath);
+        return bucketService.getBucketStore().getRelativeResourceURI(REPORT_BUCKET, filePath); // the command result is "reports/filePath.png"
     }
 
+    // create file path here rather than repeating code at the top todo: possible add endtime to filepath
+    private String buildPath(ReportCmdType type, Instant start, Instant end, String laneUIDs, EventReportType eventType) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(module.getOSCARSystem().getNodeId()).append("_").append(type);
+
+        if (type.equals(ReportCmdType.LANE) || type.equals(ReportCmdType.ADJUDICATION))
+            sb.append("_").append(laneUIDs);
+        else if (type.equals(ReportCmdType.EVENT))
+            sb.append("_").append(eventType);
+
+        sb.append("_").append(formatter.format(start)).append("_").append(".pdf");
+        return sb.toString().toLowerCase();
+    }
 
     // checks if a report file already exists in object store and only creates a new output if it doesnt exist
     private OutputStream checkBucketForOutputStream(String filePath) throws DataStoreException {
@@ -196,5 +192,4 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
         }
         return null;
     }
-
 }

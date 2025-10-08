@@ -88,9 +88,12 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         getParentHub().getSystemDriverRegistry().register(system);
 
-        var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
-        if (getParentHub().getSystemDriverRegistry().getDatabase(system.getUniqueIdentifier()) == null)
-            getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
+        if (config.databaseID != null && !config.databaseID.isEmpty()) {
+            var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
+            if (getParentHub().getSystemDriverRegistry().getDatabase(system.getUniqueIdentifier()) == null)
+                getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
+
+        }
 
     }
 

@@ -8,6 +8,7 @@ import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Image;
 import com.itextpdf.layout.element.Paragraph;
+import org.checkerframework.checker.units.qual.A;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.AxisLocation;
 import org.jfree.chart.axis.NumberAxis;
@@ -17,6 +18,7 @@ import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.renderer.category.BarRenderer;
 import org.jfree.data.category.DefaultCategoryDataset;
 import org.sensorhub.api.data.IObsData;
+import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -26,37 +28,33 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.text.DecimalFormat;
 import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.List;
 import java.util.function.Predicate;
 
 public class AdjudicationReport extends Report {
 
     Document document;
     PdfDocument pdfDocument;
-
-    OSCARServiceModule module;
+    
     TableGenerator tableGenerator;
     ChartGenerator chartGenerator;
 
     String laneUIDs;
-    Instant begin;
-    Instant end;
-
+    
     public AdjudicationReport(OutputStream out, Instant startTime, Instant endTime, String laneUIDs, OSCARServiceModule module) {
+        super(out, startTime, endTime, module);
+
         pdfDocument = new PdfDocument(new PdfWriter(out));
         document = new Document(pdfDocument);
 
-        this.module = module;
         this.laneUIDs = laneUIDs;
-        this.begin = startTime;
-        this.end = endTime;
         this.tableGenerator = new TableGenerator();
         this.chartGenerator = new ChartGenerator(module);
     }
 
     @Override
-    public void generate() {
+    public void generate(){
         addHeader();
         addDisposition();
         addIsotopeResults();
@@ -66,6 +64,11 @@ public class AdjudicationReport extends Report {
         document.close();
         chartGenerator = null;
         tableGenerator = null;
+    }
+
+    @Override
+    public String getReportType() {
+        return ReportCmdType.ADJUDICATION.name();
     }
 
     private void addHeader() {
@@ -82,45 +85,41 @@ public class AdjudicationReport extends Report {
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
-        Map<String, String> dispositions = Map.ofEntries(
-                Map.entry("Other", "No Disposition"),
-                Map.entry("Real Alarm", "Code 1: Contraband Found"),
-                Map.entry("Real Alarm", "Code 2: Other"),
-                Map.entry("Innocent Alarm", "Code 3: Medical Isotope Found"),
-                Map.entry("Innocent Alarm", "Code 4: NORM Found"),
-                Map.entry("Innocent Alarm", "Code 5: Declared Shipment of Radioactive Material"),
-                Map.entry("False Alarm", "Code 6: Physical Inspection Negative"),
-                Map.entry("False Alarm", "Code 7: RIID/ASP Indicates Background Only"),
-                Map.entry("False Alarm", "Code 8: Other"),
-                Map.entry("Test/Maintenance",  "Code 9: Authorized Test, Maintenance, or Training Activity"),
-                Map.entry("Tamper/Fault",  "Code 10: Unauthorized Activity"),
-                Map.entry("Other",   "Code 11: Other"));
+        Map<String, List<String>> dispositions = new LinkedHashMap<>();
 
-        long totalRecords = Utils.countObservations(module, obsData -> true, begin, end, RADHelper.DEF_ADJUDICATION);
+        dispositions.put("Other", Arrays.asList("No Disposition", "Code 11: Other"));
+        dispositions.put("Real Alarm", Arrays.asList("Code 1: Contraband Found", "Code 2: Other"));
+        dispositions.put("Innocent Alarm", Arrays.asList("Code 3: Medical Isotope Found", "Code 4: NORM Found", "Code 5: Declared Shipment of Radioactive Material"));
+        dispositions.put("False Alarm", Arrays.asList("Code 6: Physical Inspection Negative", "Code 7: RIID/ASP Indicates Background Only", "Code 8: Other"));
+        dispositions.put("Test/Maintenance",  Arrays.asList("Code 9: Authorized Test, Maintenance, or Training Activity"));
+        dispositions.put("Tamper/Fault", Arrays.asList("Code 10: Unauthorized Activity"));
+
+        long totalRecords = Utils.countObservations(module, obsData -> true, start, end, RADHelper.DEF_ADJUDICATION);
 
         if (totalRecords == 0) {
             document.add(new Paragraph("No data available for the selected time period"));
             return;
         }
 
-
-        for (Map.Entry<String, String> entry : dispositions.entrySet()) {
+        for (Map.Entry<String, List<String>> entry : dispositions.entrySet()) {
             String group = entry.getKey();
-             String name = entry.getValue();
+            List<String> codes = entry.getValue();
 
-            Predicate<IObsData> predicate = (obsData) ->
-                    obsData.getResult().getStringValue(3).contains(name);
+            for (String code : codes) {
+                Predicate<IObsData> predicate = (obsData) ->
+                        obsData.getResult().getStringValue(3).contains(code);
 
-            long count = Utils.countObservations(
-                    module,
-                    predicate,
-                    begin,
-                    end,
-                    RADHelper.DEF_ADJUDICATION
-            );
-            double percentage = (count / totalRecords) * 100.0;
+                long count = Utils.countObservations(
+                        module,
+                        predicate,
+                        start,
+                        end,
+                        RADHelper.DEF_ADJUDICATION
+                );
+                double percentage = (count / (double) totalRecords) * 100.0;
 
-            dataset.addValue(percentage, group, name);
+                dataset.addValue(percentage, group, code);
+            }
         }
 
         try {
@@ -227,7 +226,7 @@ public class AdjudicationReport extends Report {
             long count = Utils.countObservations(
                     module,
                     predicate,
-                    begin,
+                    start,
                     end,
                     RADHelper.DEF_ADJUDICATION
             );
@@ -284,7 +283,7 @@ public class AdjudicationReport extends Report {
     private Map<String, String> addSecondaryDetails(String laneUID) {
         Map<String, String> secInsDetailsMap = new LinkedHashMap<>();
 
-        var query = Utils.getQuery(module, laneUID, begin, end, RADHelper.DEF_ADJUDICATION);
+        var query = Utils.getQuery(module, laneUID, start, end, RADHelper.DEF_ADJUDICATION);
 
         while (query.hasNext()) {
             var entry = query.next();
@@ -327,7 +326,7 @@ public class AdjudicationReport extends Report {
     private Map<String, String> collectAdjudicationDetails(String laneUID) {
         Map<String, String> adjDetailsMap = new LinkedHashMap<>();
 
-        var query = Utils.getQuery(module, laneUID, begin, end, RADHelper.DEF_ADJUDICATION);
+        var query = Utils.getQuery(module, laneUID, start, end, RADHelper.DEF_ADJUDICATION);
 
         while (query.hasNext()) {
             var entry = query.next();

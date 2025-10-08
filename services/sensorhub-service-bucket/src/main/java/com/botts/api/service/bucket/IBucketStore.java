@@ -40,6 +40,8 @@ public interface IBucketStore {
 
     boolean objectExists(String bucketName, String objectName);
 
+    boolean objectExistsRelative(String relativePath);
+
     String createObject(String bucketName, InputStream data, Map<String, String> metadata) throws DataStoreException;
 
     void putObject(String bucketName, String key, InputStream data, Map<String, String> metadata) throws DataStoreException;

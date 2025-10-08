@@ -14,7 +14,6 @@ import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.data.IObsData;
-import org.sensorhub.api.database.DatabaseConfig;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.module.ModuleEvent;
@@ -22,8 +21,6 @@ import org.sensorhub.api.service.IHttpServer;
 import org.sensorhub.impl.SensorHub;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
 import org.sensorhub.impl.database.system.SystemDriverDatabaseConfig;
-import org.sensorhub.impl.datastore.h2.MVDatabaseConfig;
-import org.sensorhub.impl.datastore.h2.MVObsSystemDatabase;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
 import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.service.HttpServer;
@@ -76,8 +73,8 @@ public class ReportTests {
         loadHTTPServer();
         loadConSysApiService();
 
-        var systemDatabaseConfig = createSystemDataBaseConfig();
-        loadSystemDatabase(systemDatabaseConfig);
+//        var systemDatabaseConfig = createSystemDataBaseConfig();
+//        loadSystemDatabase(systemDatabaseConfig);
 
         var bucketServiceConfig = createBucketServiceConfig();
         var serviceConfig = createOscarServiceConfig();
@@ -172,8 +169,7 @@ public class ReportTests {
         serviceConfig.siteDiagramConfig = new SiteDiagramConfig();
         serviceConfig.nodeId = "test-node-id";
 
-
-        serviceConfig.databaseID = systemDriverDatabase.getLocalID();
+//        serviceConfig.databaseID = systemDriverDatabase.getLocalID();
 
         return serviceConfig;
     }
@@ -198,13 +194,15 @@ public class ReportTests {
         assertFalse(results.isEmpty());
 
         String resPath = results.get(0).getResult().getStringValue();
+
         assertNotNull(resPath);
 
-        var stream = oscarServiceModule.getBucketService()
-                .getBucketStore()
-                .getObject(Constants.REPORT_BUCKET, resPath);
+        assertFalse(resPath.isEmpty());
 
-        assertNotNull(stream);
+        System.out.println(resPath);
+
+        assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExistsRelative(resPath));
+
     }
 
     @Test
@@ -229,8 +227,10 @@ public class ReportTests {
         String resPath = results.get(0).getResult().getStringValue();
         assertNotNull(resPath);
 
-        var stream = oscarServiceModule.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
-        assertNotNull(stream);
+        assertFalse(resPath.isEmpty());
+
+        assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExistsRelative(resPath));
+
     }
 
     @Test
@@ -255,8 +255,10 @@ public class ReportTests {
         String resPath = results.get(0).getResult().getStringValue();
         assertNotNull(resPath);
 
-        var stream = oscarServiceModule.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
-//        assertNotNull(stream);
+        assertFalse(resPath.isEmpty());
+
+        assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExistsRelative(resPath));
+
     }
 
     @Test
@@ -281,9 +283,9 @@ public class ReportTests {
         String resPath = results.get(0).getResult().getStringValue();
         assertNotNull(resPath);
 
-        var stream = oscarServiceModule.getBucketService().getBucketStore().getObject(Constants.REPORT_BUCKET, resPath);
-        assertNotNull(stream);
+        assertFalse(resPath.isEmpty());
 
+        assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExistsRelative(resPath));
     }
 
     @Test
@@ -325,12 +327,11 @@ public class ReportTests {
 
 
     // Connected Systems request tests
-
     private HttpRequest createSiteReportControlRequest() throws URISyntaxException {
         System.out.println(apiRootUrl);
         HttpRequest req = HttpRequest.newBuilder()
                 .POST(HttpRequest.BodyPublishers.ofString(
-                        createCommandParams(ReportCmdType.RDS_SITE, "2025-08-30T17:37:14.753Z", "2025-10-01T17:17:14.753Z", "hey", EventReportType.ALARMS)))
+                        createCommandParams(ReportCmdType.RDS_SITE, "2025-08-30T17:37:14.753Z", "2026-10-10T17:17:14.753Z", "hey", EventReportType.ALARMS)))
                 .uri(new URI(apiRootUrl + "/controlstreams/" + reportControlApiID + "/commands"))
                 .header("Content-Type", "application/json")
                 .build();
@@ -341,7 +342,7 @@ public class ReportTests {
         System.out.println(apiRootUrl);
         HttpRequest req = HttpRequest.newBuilder()
                 .POST(HttpRequest.BodyPublishers.ofString(
-                        createCommandParams(ReportCmdType.LANE, "2025-08-30T17:37:14.753Z", "2025-10-01T17:17:14.753Z", "hey", EventReportType.ALARMS)))
+                        createCommandParams(ReportCmdType.LANE, "2025-08-30T17:37:14.753Z", "2026-10-01T17:17:14.753Z", "hey", EventReportType.ALARMS)))
                 .uri(new URI(apiRootUrl + "/controlstreams/" + reportControlApiID + "/commands"))
                 .header("Content-Type", "application/json")
                 .build();
@@ -352,7 +353,7 @@ public class ReportTests {
         System.out.println(apiRootUrl);
         HttpRequest req = HttpRequest.newBuilder()
                 .POST(HttpRequest.BodyPublishers.ofString(
-                        createCommandParams(ReportCmdType.EVENT, "2025-08-30T17:37:14.753Z", "2025-10-01T17:17:14.753Z", "hey", EventReportType.ALARMS)))
+                        createCommandParams(ReportCmdType.EVENT, "2025-08-30T17:37:14.753Z", "2026-10-01T17:17:14.753Z", "hey", EventReportType.ALARMS)))
                 .uri(new URI(apiRootUrl + "/controlstreams/" + reportControlApiID + "/commands"))
                 .header("Content-Type", "application/json")
                 .build();
@@ -363,7 +364,7 @@ public class ReportTests {
         System.out.println(apiRootUrl);
         HttpRequest req = HttpRequest.newBuilder()
                 .POST(HttpRequest.BodyPublishers.ofString(
-                        createCommandParams(ReportCmdType.ADJUDICATION, "2025-08-30T17:37:14.753Z", "2025-10-01T17:17:14.753Z", "hey", EventReportType.ALARMS)))
+                        createCommandParams(ReportCmdType.ADJUDICATION, "2025-08-30T17:37:14.753Z", "2026-10-01T17:17:14.753Z", "hey", EventReportType.ALARMS)))
                 .uri(new URI(apiRootUrl + "/controlstreams/" + reportControlApiID + "/commands"))
                 .header("Content-Type", "application/json")
                 .build();
@@ -412,5 +413,8 @@ public class ReportTests {
     public void cleanup() {
         if (hub != null)
             hub.stop();
+        httpClient = null;
+        httpServer = null;
+
     }
 }

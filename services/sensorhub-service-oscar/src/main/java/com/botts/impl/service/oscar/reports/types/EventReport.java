@@ -27,25 +27,20 @@ public class EventReport extends Report {
     Document document;
     PdfDocument pdfDocument;
 
-    OSCARServiceModule module;
     TableGenerator tableGenerator;
     ChartGenerator chartGenerator;
 
     String laneUID;
     EventReportType eventType;
-    Instant start;
-    Instant end;
-
 
     public EventReport(OutputStream outputStream, Instant startTime, Instant endTime, EventReportType eventType, String laneUID, OSCARServiceModule module) {
+        super(outputStream, startTime, endTime, module);
+
         pdfDocument = new PdfDocument(new PdfWriter(outputStream));
         document = new Document(pdfDocument);
 
         this.eventType = eventType;
         this.laneUID = laneUID;
-        this.module = module;
-        this.start = startTime;
-        this.end = endTime;
         this.tableGenerator = new TableGenerator();
         this.chartGenerator = new ChartGenerator(module);
     }
@@ -68,6 +63,10 @@ public class EventReport extends Report {
         tableGenerator = null;
     }
 
+    @Override
+    public String getReportType() {
+        return ReportCmdType.EVENT.name();
+    }
     private void addHeader(){
         document.add(new Paragraph("Event Report").setFontSize(16).simulateBold());
         document.add(new Paragraph("Event Type:" + eventType).setFontSize(12));
