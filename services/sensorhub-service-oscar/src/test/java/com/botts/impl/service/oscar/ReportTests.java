@@ -189,18 +189,14 @@ public class ReportTests {
         var res = reportControl.submitCommand(new CommandData(1, commandData)).get();
 
         assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
-        assertNotNull(res.getResult());
-        List<IObsData> results = res.getResult().getObservations().stream().toList();
-        assertFalse(results.isEmpty());
 
-        String resPath = results.get(0).getResult().getStringValue();
+        var results = res.getResult().getInlineRecords().stream().toList();
+        assertNotNull(results);
 
+        String resPath = results.get(0).getStringValue();
         assertNotNull(resPath);
 
         assertFalse(resPath.isEmpty());
-
-        System.out.println(resPath);
-
         assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExists(resPath));
 
     }
@@ -218,19 +214,16 @@ public class ReportTests {
         commandData.setStringValue(4, EventReportType.ALARMS.name());
 
         var res = reportControl.submitCommand(new CommandData(1, commandData)).get();
-
         assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
-        assertNotNull(res.getResult());
-        List<IObsData> results = res.getResult().getObservations().stream().toList();
-        assertFalse(results.isEmpty());
 
-        String resPath = results.get(0).getResult().getStringValue();
+        var results = res.getResult().getInlineRecords().stream().toList();
+        assertNotNull(results);
+
+        String resPath = results.get(0).getStringValue();
         assertNotNull(resPath);
 
         assertFalse(resPath.isEmpty());
-
         assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExists(resPath));
-
     }
 
     @Test
@@ -246,19 +239,16 @@ public class ReportTests {
         commandData.setStringValue(4, EventReportType.ALARMS.name());
 
         var res = reportControl.submitCommand(new CommandData(1, commandData)).get();
-
         assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
-        assertNotNull(res.getResult());
-        List<IObsData> results = res.getResult().getObservations().stream().toList();
-        assertFalse(results.isEmpty());
 
-        String resPath = results.get(0).getResult().getStringValue();
+        var results = res.getResult().getInlineRecords().stream().toList();
+        assertNotNull(results);
+
+        String resPath = results.get(0).getStringValue();
         assertNotNull(resPath);
 
         assertFalse(resPath.isEmpty());
-
         assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExists(resPath));
-
     }
 
     @Test
@@ -274,17 +264,15 @@ public class ReportTests {
         commandData.setStringValue(4, EventReportType.ALARMS_OCCUPANCIES.name());
 
         var res = reportControl.submitCommand(new CommandData(1, commandData)).get();
-
         assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
-        assertNotNull(res.getResult());
-        List<IObsData> results = res.getResult().getObservations().stream().toList();
-        assertFalse(results.isEmpty());
 
-        String resPath = results.get(0).getResult().getStringValue();
+        var results = res.getResult().getInlineRecords().stream().toList();
+        assertNotNull(results);
+
+        String resPath = results.get(0).getStringValue();
         assertNotNull(resPath);
 
         assertFalse(resPath.isEmpty());
-
         assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExists(resPath));
     }
 
