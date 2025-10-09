@@ -65,7 +65,7 @@ public class ReportTests {
 
 
     @Before
-    public void setup() throws SensorHubException {
+    public void setup() throws SensorHubException, InterruptedException {
         hub = new SensorHub();
         hub.start();
         reg = hub.getModuleRegistry();
@@ -83,9 +83,11 @@ public class ReportTests {
         loadAndStartOscarService(serviceConfig);
 
         httpClient = HttpClient.newHttpClient();
+        // Sleep to wait for event bus
+        Thread.sleep(200);
         var commandStreamKey = hub.getDatabaseRegistry().getFederatedDatabase().getCommandStreamStore().getLatestVersionKey(system.getUniqueIdentifier(), RequestReportControl.NAME);
-        if (commandStreamKey != null)
-            reportControlApiID = hub.getIdEncoders().getCommandStreamIdEncoder().encodeID(commandStreamKey.getInternalID());
+        assertNotNull(commandStreamKey);
+        reportControlApiID = hub.getIdEncoders().getCommandStreamIdEncoder().encodeID(commandStreamKey.getInternalID());
         System.out.println(reportControlApiID);
     }
 
