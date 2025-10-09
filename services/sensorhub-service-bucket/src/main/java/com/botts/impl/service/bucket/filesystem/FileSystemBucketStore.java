@@ -93,7 +93,7 @@ public class FileSystemBucketStore implements IBucketStore {
     }
 
     @Override
-    public boolean objectExistsRelative(String relativePath) {
+    public boolean objectExists(String relativePath) {
         return Files.exists(getBucketPath(relativePath));
     }
 

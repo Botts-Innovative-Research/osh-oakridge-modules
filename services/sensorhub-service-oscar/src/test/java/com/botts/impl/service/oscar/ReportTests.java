@@ -201,7 +201,7 @@ public class ReportTests {
 
         System.out.println(resPath);
 
-        assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExistsRelative(resPath));
+        assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExists(resPath));
 
     }
 
@@ -229,7 +229,7 @@ public class ReportTests {
 
         assertFalse(resPath.isEmpty());
 
-        assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExistsRelative(resPath));
+        assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExists(resPath));
 
     }
 
@@ -257,7 +257,7 @@ public class ReportTests {
 
         assertFalse(resPath.isEmpty());
 
-        assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExistsRelative(resPath));
+        assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExists(resPath));
 
     }
 
@@ -285,7 +285,7 @@ public class ReportTests {
 
         assertFalse(resPath.isEmpty());
 
-        assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExistsRelative(resPath));
+        assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExists(resPath));
     }
 
     @Test
