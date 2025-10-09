@@ -14,67 +14,67 @@ public class EMLFieldFactory extends RADHelper {
     public static final String VERSION_ID_FIELD_NAME = "versionId";
     public static final String VERSION_ID_FIELD_LABEL = "Version ID";
     public static final String VERSION_ID_FIELD_DESCRIPTION = "Provides the version ID for the EML VM250 RPM";
-    public static final String VERSION_ID_FIELD_DEFINITION = SWEHelper.getPropertyUri("EmlVersionID");
+    public static final String VERSION_ID_FIELD_DEFINITION = SWEHelper.getPropertyUri("EMLVersionID");
 
     public static final String MODEL_ID_FIELD_NAME = "modelId";
     public static final String MODEL_ID_FIELD_LABEL = "Model ID";
     public static final String MODEL_ID_FIELD_DESCRIPTION = "Provides the model ID for the EML VM250 RPM";
-    public static final String MODEL_ID_FIELD_DEFINITION = SWEHelper.getPropertyUri("EmlModelID");
+    public static final String MODEL_ID_FIELD_DEFINITION = SWEHelper.getPropertyUri("EMLModelID");
 
     public static final String THRESHOLDS_FIELD_NAME = "thresholds";
     public static final String THRESHOLDS_FIELD_LABEL = "Thresholds";
     public static final String THRESHOLDS_FIELD_DESCRIPTION = "Provides the thresholds for the EML VM250 RPM";
-    public static final String THRESHOLDS_FIELD_DEFINITION = SWEHelper.getPropertyUri("EmlThresholds");
+    public static final String THRESHOLDS_FIELD_DEFINITION = SWEHelper.getPropertyUri("EMLThresholds");
 
 
     public static final String LANE_ID_FIELD_NAME = "laneId";
     public static final String LANE_ID_FIELD_LABEL = "Lane ID";
     public static final String LANE_ID_FIELD_DESCRIPTION = "Provides the lane ID for the EML VM250 RPM";
-    public static final String LANE_ID_FIELD_DEFINITION = SWEHelper.getPropertyUri("EmlLaneID");
+    public static final String LANE_ID_FIELD_DEFINITION = SWEHelper.getPropertyUri("EMLLaneID");
 
     public static final String PORT_ID_FIELD_NAME = "portID";
     public static final String PORT_ID_FIELD_LABEL = "Port ID";
     public static final String PORT_ID_FIELD_DESCRIPTION = "Provides the port ID for the EML VM250 RPM";
-    public static final String PORT_ID_FIELD_DEFINITION = SWEHelper.getPropertyUri("EmlPortID");
+    public static final String PORT_ID_FIELD_DEFINITION = SWEHelper.getPropertyUri("EMLPortID");
 
     public static final String TIME_DATE_FIELD_NAME = "dateTime";
     public static final String TIME_DATE_FIELD_LABEL = "Date Time";
     public static final String TIME_DATE_FIELD_DESCRIPTION = "Provides the date- time for the EML VM250 RPM";
-    public static final String TIME_DATE_FIELD_DEFINITION = SWEHelper.getPropertyUri("EmlDateTime");
+    public static final String TIME_DATE_FIELD_DEFINITION = SWEHelper.getPropertyUri("EMLDateTime");
 
 
     public static final String SEGMENT_ID_FIELD_NAME = "segmentId";
     public static final String SEGMENT_ID_FIELD_LABEL = "Segment ID";
     public static final String SEGMENT_ID_FIELD_DESCRIPTION = "Provides the segment ID for the EML VM250 RPM";
-    public static final String SEGMENT_ID_FIELD_DEFINITION = SWEHelper.getPropertyUri("EmlSegmentID");
+    public static final String SEGMENT_ID_FIELD_DEFINITION = SWEHelper.getPropertyUri("EMLSegmentID");
 
 
     public static final String RPM_RESULT_FIELD_NAME = "rpmResult";
     public static final String RPM_RESULT_FIELD_LABEL = "RPM Result";
     public static final String RPM_RESULT_FIELD_DESCRIPTION = "Provides the rpm result for the EML VM250 RPM";
-    public static final String RPM_RESULT_FIELD_DEFINITION = SWEHelper.getPropertyUri("EmlRpmResult");
+    public static final String RPM_RESULT_FIELD_DEFINITION = SWEHelper.getPropertyUri("EMLRpmResult");
 
 
     public static final String RPM_GAMMA_ALERT_FIELD_NAME = "rpmGamma";
     public static final String RPM_GAMMA_ALERT_FIELD_LABEL = "RPM Gamma Alert";
     public static final String RPM_GAMMA_ALERT_FIELD_DESCRIPTION = "Provides the rpm gamma alert for the EML VM250 RPM";
-    public static final String RPM_GAMMA_ALERT_FIELD_DEFINITION = SWEHelper.getPropertyUri("EmlRpmGammaAlert");
+    public static final String RPM_GAMMA_ALERT_FIELD_DEFINITION = SWEHelper.getPropertyUri("EMLRpmGammaAlert");
 
     public static final String RPM_NEUTRON_ALERT_FIELD_NAME = "rpmNeutronAlert";
     public static final String RPM_NEUTRON_ALERT_FIELD_LABEL = "RPM Neutron Alert";
     public static final String RPM_NEUTRON_ALERT_FIELD_DESCRIPTION = "Provides the rpm neutron alert for the EML VM250 RPM";
-    public static final String RPM_NEUTRON_ALERT_FIELD_DEFINITION = SWEHelper.getPropertyUri("EmlRpmNeutronAlert");
+    public static final String RPM_NEUTRON_ALERT_FIELD_DEFINITION = SWEHelper.getPropertyUri("EMLRpmNeutronAlert");
 
     public static final String RPM_SCAN_ERROR_FIELD_NAME = "rpmScanError";
     public static final String RPM_SCAN_ERROR_FIELD_LABEL = "RPM Scan Error";
     public static final String RPM_SCAN_ERROR_FIELD_DESCRIPTION = "Provides the rpm scan error for the EML VM250 RPM";
-    public static final String RPM_SCAN_ERROR_FIELD_DEFINITION = SWEHelper.getPropertyUri("EmlRpmScanError");
+    public static final String RPM_SCAN_ERROR_FIELD_DEFINITION = SWEHelper.getPropertyUri("EMLRpmScanError");
 
 
     public static final String SOURCE_TYPE_FIELD_NAME = "sourceType";
     public static final String SOURCE_TYPE_FIELD_LABEL = "Source Type";
     public static final String SOURCE_TYPE_FIELD_DESCRIPTION = "Provides the source type for the EML VM250 RPM";
-    public static final String SOURCE_FIELD_DEFINITION = SWEHelper.getPropertyUri("EmlSourceType");
+    public static final String SOURCE_FIELD_DEFINITION = SWEHelper.getPropertyUri("EMLSourceType");
 
     public static final String CLASSIFIER_FIELD_NAME = "classifierUsed";
     public static final String CLASSIFIER_FIELD_LABEL = "Classifier Used";

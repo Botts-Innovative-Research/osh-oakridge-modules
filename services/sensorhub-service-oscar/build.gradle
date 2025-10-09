@@ -4,7 +4,6 @@ version = '1.0.2'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
-    implementation 'org.sensorhub:sensorhub-datastore-h2:' + oshCoreVersion
 
     implementation project(':sensorhub-utils-rad')
     implementation project(':sensorhub-service-bucket')
@@ -14,6 +13,7 @@ dependencies {
     implementation("jfree:jfreechart:1.0.13") // charts
     implementation("com.itextpdf:itext7-core:9.3.0") //pdfs
 
+    testImplementation 'org.sensorhub:sensorhub-datastore-h2:' + oshCoreVersion
     testImplementation 'org.sensorhub:sensorhub-service-consys:' + oshCoreVersion
 }
   
