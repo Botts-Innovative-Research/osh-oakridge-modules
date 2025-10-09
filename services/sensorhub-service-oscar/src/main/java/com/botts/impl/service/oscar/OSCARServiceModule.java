@@ -40,12 +40,12 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     OSCARSystem system;
     IBucketStore bucketStore;
 
-
     @Override
     protected void doInit() throws SensorHubException {
         super.doInit();
 
-        // Block here for bucket service
+        system = new OSCARSystem(config.nodeId);
+
         try {
             this.bucketService = getParentHub().getModuleRegistry()
                     .waitForModuleType(IBucketService.class, ModuleEvent.ModuleState.STARTED)
@@ -60,7 +60,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
             spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
 
         system = new OSCARSystem(config.nodeId);
-        bucketService = getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
 
         createOutputs();
         createControls();
@@ -79,7 +78,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public void createControls(){
-        reportControl = new RequestReportControl(system);
+        reportControl = new RequestReportControl(system, this);
         system.addControlInput(reportControl);
     }
 
@@ -89,9 +88,12 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         getParentHub().getSystemDriverRegistry().register(system);
 
-        var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
-        if (getParentHub().getSystemDriverRegistry().getDatabase(system.getUniqueIdentifier()) == null)
-            getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
+        if (config.databaseID != null && !config.databaseID.isEmpty()) {
+            var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
+            if (getParentHub().getSystemDriverRegistry().getDatabase(system.getUniqueIdentifier()) == null)
+                getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
+
+        }
 
     }
 
@@ -100,16 +102,20 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         super.doStop();
     }
 
-    public SpreadsheetHandler getSpreadsheetHandler() {
-        return spreadsheetHandler;
-    }
-
     public SitemapDiagramHandler getSitemapDiagramHandler() {
         return sitemapDiagramHandler;
+    }
+
+
+    public OSCARSystem getOSCARSystem() {
+        return system;
     }
 
     public IBucketService getBucketService() {
         return bucketService;
     }
 
+    public SpreadsheetHandler getSpreadsheetHandler() {
+        return spreadsheetHandler;
+    }
 }

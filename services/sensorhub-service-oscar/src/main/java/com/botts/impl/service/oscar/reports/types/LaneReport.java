@@ -1,84 +1,145 @@
 package com.botts.impl.service.oscar.reports.types;
 
-import com.botts.impl.service.oscar.reports.helpers.ReportType;
+import com.botts.impl.service.oscar.OSCARServiceModule;
+import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
+import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
+import com.botts.impl.service.oscar.reports.helpers.Utils;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
-
-import java.io.File;
-import java.io.IOException;
+import org.sensorhub.impl.utils.rad.RADHelper;
+import java.io.OutputStream;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 
 public class LaneReport extends Report {
 
-    String reportTitle = "Lane Report";
     Document document;
-    PdfWriter pdfWriter;
     PdfDocument pdfDocument;
-    String pdfFileName;
 
-    public LaneReport(Instant startTime, Instant endTime, String laneId) {
-        try {
-            pdfFileName = ReportType.LANE.name() + "_" + laneId + "_" + startTime + "_"+ endTime + ".pdf";
-            File file = new File("files/reports/" + pdfFileName);
-            file.getParentFile().mkdirs();
+    String laneUIDs;
+    TableGenerator tableGenerator;
 
-            pdfWriter  = new PdfWriter(file);
+    public LaneReport(OutputStream out, Instant startTime, Instant endTime, String laneUIDs, OSCARServiceModule module) {
+        super(out, startTime, endTime, module);
+        pdfDocument = new PdfDocument(new PdfWriter(out));
+        document = new Document(pdfDocument);
 
-            pdfDocument = new PdfDocument(pdfWriter);
-            document = new Document(pdfDocument);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        this.laneUIDs = laneUIDs;
+        this.tableGenerator = new TableGenerator();
     }
 
     @Override
-    public String generate() {
-
+    public void generate() {
         addHeader();
-
-        // check for data before calling these
         addAlarmStatistics();
         addFaultStatistics();
-        addStatisics();
-        addOccupancyStatistics();
 
         document.close();
-        pdfDocument.close();
+        tableGenerator = null;
+    }
 
-        return pdfFileName;
-
+    @Override
+    public String getReportType() {
+        return ReportCmdType.LANE.name();
     }
 
     private void addHeader(){
-        document.add(new Paragraph(reportTitle).setFontSize(16).simulateBold());
         document.add(new Paragraph("Lane Report").setFontSize(16).simulateBold());
-        document.add(new Paragraph("Lane Name: " + "TODO: lane name").setFontSize(12));
+        document.add(new Paragraph("Lane UIDs: " + laneUIDs).setFontSize(12));
         document.add(new Paragraph("\n"));
     }
 
-    private void addOccupancyStatistics(){
-        document.add(new Paragraph("Occupancy Statistics").setFontSize(12));
-//        addTableToPdf(alarmOccupancyHeaders, null);
-
-    }
 
     private void addAlarmStatistics(){
-        document.add(new Paragraph("Alarm Statistics").setFontSize(12));
-        //        addTableToPdf(alarmOccupancyHeaders, null);
+        document.add(new Paragraph("Alarm Statistics"));
 
+        Map<String, Map<String, String>> countsLane = new LinkedHashMap<>();
+
+        for (var laneUID : laneUIDs.split(",")){
+            var counts = calculateAlarmCounts(laneUID);
+
+            countsLane.put(laneUID, counts);
+        }
+
+        var table = tableGenerator.addLanesTable(countsLane);
+        if (table == null) {
+            document.add(new Paragraph("Failed to add Alarm Stats table to pdf"));
+            return;
+        }
+
+        document.add(table);
+        document.add(new Paragraph("\n"));
     }
 
     private void addFaultStatistics(){
-        document.add(new Paragraph("Fault Statistics").setFontSize(12));
-        //        addTableToPdf(alarmOccupancyHeaders, null);
+        document.add(new Paragraph("Fault Statistics"));
 
+        Map<String, Map<String, String>> countsLane = new LinkedHashMap<>();
+
+        for (var laneUID : laneUIDs.split(",")){
+            var counts = calculateFaultCounts(laneUID);
+            countsLane.put(laneUID, counts);
+        }
+
+        var table = tableGenerator.addLanesTable(countsLane);
+        if (table == null) {
+            document.add(new Paragraph("Failed to add Fault Stats table to pdf"));
+            return;
+        }
+
+        document.add(table);
+        document.add(new Paragraph("\n"));
     }
 
-    private void addStatisics(){
-        document.add(new Paragraph("Statisics").setFontSize(12));
-        //        addTableToPdf(alarmOccupancyHeaders, null);
+    private Map<String, String> calculateAlarmCounts(String laneUID) {
+        Map<String, String> alarmOccCounts = new LinkedHashMap<>();
 
+        long gammaNeutronAlarmCount = Utils.countObservationsFromLane(laneUID, module, Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        long gammaAlarmCount = Utils.countObservationsFromLane(laneUID, module, Utils.gammaPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        long neutronAlarmCount = Utils.countObservationsFromLane(laneUID, module, Utils.neutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        long totalOccupancyCount = Utils.countObservationsFromLane(laneUID, module, Utils.occupancyTotalPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+
+        long emlSuppressedCount = Utils.countObservationsFromLane(laneUID, module, Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
+
+
+        long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
+        long alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
+        long emlSuppressedAverage = Utils.calcEMLAlarmRate(emlSuppressedCount, totalAlarmingCount);
+
+        alarmOccCounts.put("Gamma Alarm", String.valueOf(gammaAlarmCount));
+        alarmOccCounts.put("Neutron Alarm", String.valueOf(neutronAlarmCount));
+        alarmOccCounts.put("Gamma-Neutron Alarm", String.valueOf(gammaNeutronAlarmCount));
+        alarmOccCounts.put("EML Suppressed", String.valueOf(emlSuppressedCount));
+        alarmOccCounts.put("Total Occupancies", String.valueOf(totalOccupancyCount));
+        alarmOccCounts.put("Alarm Occupancy Rate", String.valueOf(alarmOccupancyAverage));
+        alarmOccCounts.put("EML Alarm Rate", String.valueOf(emlSuppressedAverage));
+
+        return alarmOccCounts;
     }
+
+    private Map<String, String> calculateFaultCounts(String laneUID){
+        HashMap<String, String> faultCounts = new LinkedHashMap<>();
+
+        long tamperCount = Utils.countObservationsFromLane(laneUID, module, Utils.tamperPredicate, start, end, RADHelper.DEF_TAMPER);
+        long gammaHighFaultCount = Utils.countObservationsFromLane(laneUID, module, Utils.gammaHighPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        long gammaLowFaultCount = Utils.countObservationsFromLane(laneUID, module, Utils.gammaLowPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        long neutronHighFaultCount = Utils.countObservationsFromLane(laneUID, module, Utils.neutronHighPredicate, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
+//        long extendedOccupancyCount = Utils.countObservationsFromLane(laneUID, module, Utils.extendedOccPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+
+        faultCounts.put("Tamper", String.valueOf(tamperCount));
+        faultCounts.put("Gamma-High", String.valueOf(gammaHighFaultCount));
+        faultCounts.put("Gamma-Low", String.valueOf(gammaLowFaultCount));
+        faultCounts.put("Neutron-High", String.valueOf(neutronHighFaultCount));
+//        faultCounts.put("Extended Occupancy", String.valueOf(extendedOccupancyCount));
+//        faultCounts.put("Comm", commsCount);
+//        faultCounts.put("Camera", camCount);
+
+        return faultCounts;
+    }
+
 }

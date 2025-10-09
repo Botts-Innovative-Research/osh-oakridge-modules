@@ -39,7 +39,7 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
     private IBucketStore bucketStore;
 
     @Override
-    protected void doInit() throws SensorHubException {
+    public void doInit() throws SensorHubException {
         super.doInit();
 
         Asserts.checkNotNull(config.fileStoreRootDir);

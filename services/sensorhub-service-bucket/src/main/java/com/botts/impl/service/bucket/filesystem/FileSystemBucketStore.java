@@ -93,6 +93,11 @@ public class FileSystemBucketStore implements IBucketStore {
     }
 
     @Override
+    public boolean objectExists(String relativePath) {
+        return Files.exists(getBucketPath(relativePath));
+    }
+
+    @Override
     public String createObject(String bucketName, InputStream data, Map<String, String> metadata) throws DataStoreException {
         String uuid = UUID.randomUUID().toString();
 
@@ -213,5 +218,6 @@ public class FileSystemBucketStore implements IBucketStore {
             throw new DataStoreException(OBJECT_NOT_FOUND + bucketName);
         return bucketName + "/" + key;
     }
+
 
 }

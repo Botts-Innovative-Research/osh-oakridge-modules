@@ -43,7 +43,7 @@ public class EMLContextualOutput extends AbstractSensorOutput<RapiscanSensor> {
         SWEBuilders.DataRecordBuilder dataRecordBuilder = emlFieldFactory.createRecord()
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
-                .definition(RADHelper.getRadUri("eml-analyis"))
+                .definition(RADHelper.getRadUri("EMLContext"))
                 .description(SENSOR_OUTPUT_DESCRIPTION);
 
         int fieldIndex = 0;
