@@ -1,11 +1,15 @@
 package com.botts.impl.service.oscar.stats;
 
 public class Statistics {
-
+    // Occupancies
     private long numOccupancies = 0;
     private long numGammaAlarms = 0;
     private long numNeutronAlarms = 0;
+    private long numGammaNeutronAlarms = 0;
+    // Faults
     private long numFaults = 0;
+    private long numGammaFaults = 0;
+    private long numNeutronFaults = 0;
     private long numTampers = 0;
 
     public long getNumOccupancies() {
@@ -26,6 +30,18 @@ public class Statistics {
 
     public long getNumTampers() {
         return numTampers;
+    }
+
+    public long getNumGammaNeutronAlarms() {
+        return numGammaNeutronAlarms;
+    }
+
+    public long getNumGammaFaults() {
+        return numGammaFaults;
+    }
+
+    public long getNumNeutronFaults() {
+        return numNeutronFaults;
     }
 
     public static class Builder {
@@ -51,8 +67,23 @@ public class Statistics {
             return this;
         }
 
+        public Builder numGammaNeutronAlarms(long numGammaNeutronAlarms) {
+            instance.numGammaNeutronAlarms = numGammaNeutronAlarms;
+            return this;
+        }
+
         public Builder numFaults(long numFaults) {
             instance.numFaults = numFaults;
+            return this;
+        }
+
+        public Builder numGammaFaults(long numGammaFaults) {
+            instance.numGammaFaults = numGammaFaults;
+            return this;
+        }
+
+        public Builder numNeutronFaults(long numNeutronFaults) {
+            instance.numNeutronFaults = numNeutronFaults;
             return this;
         }
 

@@ -7,7 +7,9 @@ import org.sensorhub.api.command.*;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.swe.SWEHelper;
+import org.vast.util.TimeExtent;
 
+import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 
 public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implements IStreamingControlInterfaceWithResult {
@@ -21,12 +23,12 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
 
     private StatisticsOutput statsOutput;
 
-    protected StatisticsControl(OSCARSystem parentSensor, StatisticsOutput statsOutput) {
+    public StatisticsControl(OSCARSystem parentSensor) {
         super(NAME, parentSensor);
-        this.statsOutput = statsOutput;
+        statsOutput = (StatisticsOutput) parentSensor.getOutputs().get(StatisticsOutput.NAME);
 
         RADHelper fac = new RADHelper();
-        resultDescription = fac.createSiteStatistics();
+        resultDescription = fac.createCountStatistics();
         commandDescription = fac.createRecord()
                 .name(NAME)
                 .label(LABEL)
@@ -50,11 +52,31 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
         return CompletableFuture.supplyAsync(() -> {
             var start = params.getTimeStamp(0);
             var end = params.getTimeStamp(1);
+            var execStartTime = System.currentTimeMillis();
 
             if (start != null && end != null) {
-
+                // TODO: Return result of createCountStatistics
+                DataBlock resultData = resultDescription.createDataBlock();
+                statsOutput.populateDataBlock(resultData, 0, start, end);
+                var result = CommandResult.withData(resultData);
+                return new CommandStatus.Builder()
+                        .withResult(result)
+                        .withCommand(command.getID())
+                        .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
+                        .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(execStartTime), Instant.now()))
+                        .build();
+            } else {
+                // TODO: Call update for latest site statistics output, and return output observation id
+                statsOutput.publishLatestStatistics();
+                var latestObsId = statsOutput.getLatestObservationId();
+                var result = CommandResult.withObservation(latestObsId);
+                return new CommandStatus.Builder()
+                        .withResult(result)
+                        .withCommand(command.getID())
+                        .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
+                        .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(execStartTime), Instant.now()))
+                        .build();
             }
-
         });
     }
 
