@@ -28,18 +28,6 @@ public class RADHelper extends GeoPosHelper {
     public static final String DEF_VIDEO = getRadUri("");
     public static final String DEF_COMM = getRadUri("");
 
-    public static final String DEF_GAMMA = getRadUri("GammaGrossCount");
-    public static final String DEF_NEUTRON = getRadUri("NeutronGrossCount");
-    public static final String DEF_OCCUPANCY = getRadUri("PillarOccupancyCount");
-    public static final String DEF_ALARM = getRadUri("Alarm");
-    public static final String DEF_TAMPER = getRadUri("TamperStatus");
-    public static final String DEF_THRESHOLD = getRadUri("Threshold");
-    public static final String DEF_ADJUDICATION = getRadUri("AdjudicationCode");
-    public static final String DEF_EML_ANALYSIS = getPropertyUri("EMLGammaAlert");
-    public static final String DEF_EML_SCAN = getPropertyUri("EMLRPMGammaAlert");
-    public static final String DEF_VIDEO = getRadUri("");
-    public static final String DEF_COMM = getRadUri("");
-
     public static String getRadUri(String propName) {
         return RADConstants.RAD_URI + propName;
     }

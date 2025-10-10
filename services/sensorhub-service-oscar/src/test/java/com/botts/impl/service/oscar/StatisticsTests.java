@@ -12,7 +12,10 @@ import org.junit.Test;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.command.ICommandStatus;
+import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.datastore.TemporalFilter;
+import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.service.IHttpServer;
 import org.sensorhub.impl.SensorHub;
@@ -24,9 +27,7 @@ import org.vast.data.DataBlockMixed;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
@@ -75,14 +76,12 @@ public class StatisticsTests {
     @Test
     public void testOutput() {
         statsOutput.publishLatestStatistics();
-        // TODO: Verify accuracy
         var latestRecord = statsOutput.getLatestRecord();
         assertNotNull(latestRecord);
     }
 
     @Test
     public void testControlWithTimes() throws ExecutionException, InterruptedException {
-        // TODO: send command and verify result
         var cmdDesc = statsControl.getCommandDescription().copy();
         var cmdData = cmdDesc.createDataBlock();
         Instant before = Instant.now().minus(10, ChronoUnit.DAYS);
@@ -91,7 +90,7 @@ public class StatisticsTests {
         cmdData.setTimeStamp(1, now);
         int id = 1;
         var res = statsControl.submitCommand(new CommandData(id++, cmdData)).get();
-        System.out.println(res.getMessage());
+        assertNull(res.getMessage());
         assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
         var resDataBlocks = res.getResult().getInlineRecords().stream().toList();
         assertFalse(resDataBlocks.isEmpty());
@@ -112,23 +111,81 @@ public class StatisticsTests {
 
     @Test
     public void testControlWithNoTimes() throws ExecutionException, InterruptedException {
-        // TODO: send command with null time and verify result
         var cmdDesc = statsControl.getCommandDescription().copy();
         var cmdData = cmdDesc.createDataBlock();
         cmdData.setTimeStamp(0, null);
         cmdData.setTimeStamp(1, null);
         int id = 1;
         var res = statsControl.submitCommand(new CommandData(id++, cmdData)).get();
-        System.out.println(res.getMessage());
+        assertNull(res.getMessage());
         assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
         var resObsIds = res.getResult().getObservationIDs().stream().toList();
         assertFalse(resObsIds.isEmpty());
         var resObsId = resObsIds.get(0);
-        System.out.println(resObsId);
+        System.out.println(hub.getIdEncoders().getObsIdEncoder().encodeID(resObsId));
         assertNotNull(resObsId);
         var obs = hub.getDatabaseRegistry().getFederatedDatabase().getObservationStore().get(resObsId);
         assertNotNull(obs);
         System.out.println(obs);
+    }
+
+    @Test
+    public void testVerifyOutputLatestObsFromCommand() throws ExecutionException, InterruptedException {
+        // Step 1: Publish 100 stats records
+        Random random = new Random();
+        var max = random.nextInt(500);
+        for (int i = 0; i < max; i++)
+            statsOutput.publishLatestStatistics();
+
+        var db = hub.getDatabaseRegistry().getFederatedDatabase().getObservationStore();
+        var latestBefore = db.selectKeys(
+                new ObsFilter.Builder()
+                        .withLatestResult()
+                        .withSystems().withUniqueIDs(statsOutput.getParentProducer().getUniqueIdentifier())
+                        .done()
+                        .withDataStreams().withOutputNames(statsOutput.getName())
+                        .done()
+                        .withLimit(1)
+                        .build()
+        ).toList();
+
+        BigId beforeId = latestBefore.isEmpty() ? null : latestBefore.get(0);
+
+        var cmdDesc = statsControl.getCommandDescription().copy();
+        var cmdData = cmdDesc.createDataBlock();
+        cmdData.setTimeStamp(0, null);
+        cmdData.setTimeStamp(1, null);
+
+        var res = statsControl.submitCommand(new CommandData(1, cmdData)).get();
+        var resObsIds = res.getResult().getObservationIDs().stream().toList();
+        assertFalse("Command should return at least one observation ID", resObsIds.isEmpty());
+        var resObsId = resObsIds.get(0);
+
+        var latestAfter = db.selectKeys(
+                new ObsFilter.Builder()
+                        .withLatestResult()
+                        .withSystems().withUniqueIDs(statsOutput.getParentProducer().getUniqueIdentifier())
+                        .done()
+                        .withDataStreams().withOutputNames(statsOutput.getName())
+                        .done()
+                        .withLimit(1)
+                        .build()
+        ).toList();
+
+        assertFalse("Database should have at least one observation", latestAfter.isEmpty());
+        var afterId = latestAfter.get(0);
+
+        // The latest ID after the command should match the command’s observation ID
+        assertEquals(afterId, resObsId);
+
+        if (beforeId != null)
+            assertNotEquals(beforeId.toString(), afterId, "Command should create a new observation, not reuse previous one");
+    }
+
+    @Test
+    public void testRaceCondition() throws ExecutionException, InterruptedException {
+        for (int i = 0; i < 500; i++)
+            testVerifyOutputLatestObsFromCommand();
     }
 
     private OSCARServiceConfig createOscarServiceConfig() throws SensorHubException {
@@ -175,7 +232,7 @@ public class StatisticsTests {
         httpConfig.autoStart = true;
         httpConfig.moduleClass = HttpServer.class.getCanonicalName();
         httpConfig.id = UUID.randomUUID().toString();
-        httpServer = (IHttpServer) reg.loadModule(httpConfig);
+        httpServer = (IHttpServer<?>) reg.loadModule(httpConfig);
     }
 
     @After

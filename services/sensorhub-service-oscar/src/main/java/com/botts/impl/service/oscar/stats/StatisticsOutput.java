@@ -24,10 +24,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 import java.util.function.Predicate;
 
 public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
@@ -109,11 +106,14 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
     protected BigId waitForLatestObservationId() {
         try {
+//            final Instant now = Instant.now();
+//            final Instant end = Instant.MAX;
             final List<BigId> result = new ArrayList<>();
 
             Async.waitForCondition(() -> {
                 var keysQuery = database.getObservationStore().selectKeys(new ObsFilter.Builder()
-                        .withResultTime(new TemporalFilter.Builder().withLatestTime().build())
+                        // TODO: Check that this returns obs that was just published or else use time range
+                        .withLatestResult()
                         .withSystems().withUniqueIDs(parentSensor.getUniqueIdentifier())
                         .done()
                         .withDataStreams().withOutputNames(NAME)
@@ -185,7 +185,6 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
                 .build();
     }
 
-    // TODO Change this to use Kalyn's stuff
     private long countObservations(IObsSystemDatabase database, Predicate<IObsData> valuePredicate, Instant begin, Instant end, String... observedProperty){
         var dsFilterBuilder = new DataStreamFilter.Builder()
                 .withObservedProperties(observedProperty);

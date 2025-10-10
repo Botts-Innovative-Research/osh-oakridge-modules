@@ -116,16 +116,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         statsOutput.stop();
     }
 
-    public SpreadsheetHandler getSpreadsheetHandler() {
-        return spreadsheetHandler;
-    }
-
     public SitemapDiagramHandler getSitemapDiagramHandler() {
         return sitemapDiagramHandler;
-    }
-
-    public IBucketService getBucketService() {
-        return bucketService;
     }
 
     public OSCARSystem getOSCARSystem() {
