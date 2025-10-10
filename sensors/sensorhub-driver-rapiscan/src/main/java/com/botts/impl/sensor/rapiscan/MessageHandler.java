@@ -234,7 +234,6 @@ public class MessageHandler {
                         .neutronAlarm(isNeutronAlarm)
                         .maxGammaCount(gammaMax)
                         .maxNeutronCount(neutronMax)
-                        .adjudicated(false)
                         .build();
 
                 parentSensor.getOccupancyOutput().setData(occupancy);

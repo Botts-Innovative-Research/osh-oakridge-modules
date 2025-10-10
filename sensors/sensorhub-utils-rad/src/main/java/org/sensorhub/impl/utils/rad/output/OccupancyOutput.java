@@ -39,15 +39,15 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         var neutronAlarm = radHelper.createNeutronAlarm();
         var maxGamma = radHelper.createMaxGamma();
         var maxNeutron = radHelper.createMaxNeutron();
-        // TODO: Change this to an enum so we can filter on client easier
-        var isAdjudicated = radHelper.createIsAdjudicated();
+        var adjudicatedIdCount = radHelper.createAdjudicatedIdCount();
+        var adjudicatedIds = radHelper.createAdjudicatedIds();
         var videoPaths = radHelper.createVideoPaths();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
                 .label(LABEL)
                 .updatable(true)
-                .definition(RADHelper.getRadUri("occupancy"))
+                .definition(RADHelper.getRadUri("Occupancy"))
                 .description("System occupancy count since midnight each day")
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(occupancyCount.getName(), occupancyCount)
@@ -58,7 +58,8 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
                 .addField(neutronAlarm.getName(), neutronAlarm)
                 .addField(maxGamma.getName(), maxGamma)
                 .addField(maxNeutron.getName(), maxNeutron)
-                .addField(isAdjudicated.getName(), isAdjudicated)
+                .addField(adjudicatedIdCount.getName(), adjudicatedIdCount)
+                .addField(adjudicatedIds.getName(), adjudicatedIds)
                 .addField(videoPaths.getName(), videoPaths)
                 .build();
 
@@ -81,8 +82,13 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         dataBlock.setBooleanValue(index++, occupancy.hasNeutronAlarm());
         dataBlock.setIntValue(index++, occupancy.getMaxGammaCount());
         dataBlock.setIntValue(index++, occupancy.getMaxNeutronCount());
-        dataBlock.setBooleanValue(index++, occupancy.isAdjudicated());
-        dataBlock.setStringValue(index, "");
+
+        //TODO: finish this / make better
+        // adjudication Ids
+        dataBlock.setIntValue(index++, occupancy.getAdjudicatedIds().length());
+
+        dataBlock.setStringValue(index++, ""); //adjudicated Ids
+        dataBlock.setStringValue(index, ""); // filepaths
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));

@@ -315,6 +315,24 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public DataArray createAdjudicatedIds(){
+        return createArray()
+                .name("adjudicatedIds")
+                .label("Adjudicated IDs")
+                .description("Comma separated adjudicated IDs")
+                .definition(getRadUri("AdjudicatedIds"))
+                .withVariableSize("adjudicationIdCount")
+                .build();
+    }
+
+    public Text createAdjudicatedIdCount() {
+        return createText()
+                .name("adjudicationIdCount")
+                .label("Adjudication ID Count")
+                .definition(getRadUri("AdjudicationIdCount"))
+                .build();
+    }
+
     public Text createVideoPaths() {
         return createText()
                 .name("videoPaths")

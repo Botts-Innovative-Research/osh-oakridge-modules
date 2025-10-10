@@ -9,6 +9,7 @@ import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.IdEncoder;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.IObsStore;
+import org.sensorhub.impl.common.IdEncoderBase32;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Adjudication;
@@ -25,12 +26,8 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
     public static final String LABEL = "Adjudication Control";
     public static final String DESCRIPTION = "Control interface for adjudicating occupancy events";
 
-    private static final Logger logger = LoggerFactory.getLogger(AdjudicationControl.class);
-
     DataComponent commandStructure;
-
     RADHelper fac;
-
     IdEncoder obsIdEncoder;
     IObsStore obsStore;
 
@@ -82,9 +79,15 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
                if (obs == null)
                    return CommandStatus.failed(command.getID(), "The occupancy from the provided ID is null");
 
+               // save files to bucket store
+               String filePaths = adj.getFilePaths();
+               if (filePaths != null && !filePaths.isEmpty()) {
+                   // handle file paths to bucket store
+               }
+
                var dsQuery = obsStore.getDataStreams().select(new DataStreamFilter.Builder()
                        .withInternalIDs(obs.getDataStreamID())
-                       .withObservedProperties(RADHelper.getRadUri("occupancy"))
+                       .withObservedProperties(RADHelper.getRadUri("Occupancy"))
                        .build());
                if (dsQuery.findAny().isEmpty())
                    return CommandStatus.failed(command.getID(), "The provided occupancy ID is not part of an RPM");
@@ -106,6 +109,33 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
                // When REQUESTED, then occupancy adjudicated == false
                //
                parent.adjudicationOutput.setData(adj);
+
+
+               // update the occupancy output
+               var prevObs = getParentProducer().getParentHub().getDatabaseRegistry()
+                       .getFederatedDatabase()
+                       .getObservationStore()
+                       .get(decodedObsId);
+
+               var commandId = getParentProducer().getParentHub().getIdEncoders().getCommandIdEncoder().encodeID(command.getID());
+
+               var prevAdjIds = prevObs.getResult().getStringValue(10);
+
+               if (prevAdjIds != null && !prevAdjIds.isEmpty()) {
+                   prevAdjIds = prevAdjIds + ", " + commandId;
+               } else {
+                   prevAdjIds = commandId;
+               }
+
+               prevObs.getResult().setStringValue(9, prevAdjIds);
+
+               String systemUID = getParentProducer().getParentSystemUID() != null ?
+                       getParentProducer().getParentSystemUID() :
+                       getParentProducer().getUniqueIdentifier();
+               var obsDb = getParentProducer().getParentHub().getSystemDriverRegistry().getDatabase(systemUID);
+
+               obsDb.getObservationStore().put(decodedObsId, prevObs);
+
 
                return CommandStatus.accepted(command.getID());
            } catch (Exception e) {

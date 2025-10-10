@@ -82,7 +82,7 @@ public class AdjudicationOutput extends AbstractSensorOutput<LaneSystem> {
 
         dataBlock.setDoubleValue(0, timeMillis/1000d);
         // TODO: Check this gets accurate username
-        String username = String.valueOf(getParentProducer().getSecurityHandler().getCurrentUser().getId()); // this is broken
+//        String username = String.valueOf(getParentProducer().getSecurityHandler().getCurrentUser().getId()); // this is broken
 
         dataBlock.setStringValue(1, "username");
         dataBlock.setStringValue(2, adjudication.getFeedback());
