@@ -10,6 +10,8 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.sensorhub.api.ISensorHub;
+import org.sensorhub.api.command.CommandData;
+import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.service.IHttpServer;
@@ -17,14 +19,18 @@ import org.sensorhub.impl.SensorHub;
 import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.service.HttpServer;
 import org.sensorhub.impl.service.HttpServerConfig;
+import org.sensorhub.utils.Async;
 import org.vast.data.DataBlockMixed;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 public class StatisticsTests {
 
@@ -39,7 +45,7 @@ public class StatisticsTests {
     StatisticsControl statsControl;
 
     @Before
-    public void setup() throws SensorHubException {
+    public void setup() throws SensorHubException, TimeoutException {
         hub = new SensorHub();
         hub.start();
         reg = hub.getModuleRegistry();
@@ -56,6 +62,8 @@ public class StatisticsTests {
 
         statsOutput = (StatisticsOutput) system.getOutputs().get(StatisticsOutput.NAME);
         statsControl = (StatisticsControl) system.getCommandInputs().get(StatisticsControl.NAME);
+
+        Async.waitForCondition(() -> hub.getSystemDriverRegistry().isRegistered(system.getUniqueIdentifier()), 10000);
     }
 
     @Test
@@ -73,13 +81,54 @@ public class StatisticsTests {
     }
 
     @Test
-    public void testControlWithTimes() {
+    public void testControlWithTimes() throws ExecutionException, InterruptedException {
         // TODO: send command and verify result
+        var cmdDesc = statsControl.getCommandDescription().copy();
+        var cmdData = cmdDesc.createDataBlock();
+        Instant before = Instant.now().minus(10, ChronoUnit.DAYS);
+        Instant now = Instant.now();
+        cmdData.setTimeStamp(0, before);
+        cmdData.setTimeStamp(1, now);
+        int id = 1;
+        var res = statsControl.submitCommand(new CommandData(id++, cmdData)).get();
+        System.out.println(res.getMessage());
+        assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
+        var resDataBlocks = res.getResult().getInlineRecords().stream().toList();
+        assertFalse(resDataBlocks.isEmpty());
+        var resData = resDataBlocks.get(0);
+        assertNotNull(resData);
+
+        // Null end field
+        cmdData.setTimeStamp(1, null);
+        res = statsControl.submitCommand(new CommandData(id++, cmdData)).get();
+        assertEquals(ICommandStatus.CommandStatusCode.REJECTED, res.getStatusCode());
+
+        // Null start field
+        cmdData.setTimeStamp(0, null);
+        cmdData.setTimeStamp(1, now);
+        res = statsControl.submitCommand(new CommandData(id, cmdData)).get();
+        assertEquals(ICommandStatus.CommandStatusCode.REJECTED, res.getStatusCode());
     }
 
     @Test
-    public void testControlWithNoTimes() {
+    public void testControlWithNoTimes() throws ExecutionException, InterruptedException {
         // TODO: send command with null time and verify result
+        var cmdDesc = statsControl.getCommandDescription().copy();
+        var cmdData = cmdDesc.createDataBlock();
+        cmdData.setTimeStamp(0, null);
+        cmdData.setTimeStamp(1, null);
+        int id = 1;
+        var res = statsControl.submitCommand(new CommandData(id++, cmdData)).get();
+        System.out.println(res.getMessage());
+        assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
+        var resObsIds = res.getResult().getObservationIDs().stream().toList();
+        assertFalse(resObsIds.isEmpty());
+        var resObsId = resObsIds.get(0);
+        System.out.println(resObsId);
+        assertNotNull(resObsId);
+        var obs = hub.getDatabaseRegistry().getFederatedDatabase().getObservationStore().get(resObsId);
+        assertNotNull(obs);
+        System.out.println(obs);
     }
 
     private OSCARServiceConfig createOscarServiceConfig() throws SensorHubException {

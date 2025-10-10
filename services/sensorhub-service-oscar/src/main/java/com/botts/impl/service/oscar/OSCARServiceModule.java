@@ -101,24 +101,32 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         getParentHub().getSystemDriverRegistry().register(system);
 
-        if (config.databaseID != null && !config.databaseID.isEmpty()) {
+        if (config.databaseID != null && !config.databaseID.isBlank()) {
             var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
             if (getParentHub().getSystemDriverRegistry().getDatabase(system.getUniqueIdentifier()) == null)
                 getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
-
         }
 
+        statsOutput.start();
     }
 
     @Override
     protected void doStop() throws SensorHubException {
         super.doStop();
+        statsOutput.stop();
+    }
+
+    public SpreadsheetHandler getSpreadsheetHandler() {
+        return spreadsheetHandler;
     }
 
     public SitemapDiagramHandler getSitemapDiagramHandler() {
         return sitemapDiagramHandler;
     }
 
+    public IBucketService getBucketService() {
+        return bucketService;
+    }
 
     public OSCARSystem getOSCARSystem() {
         return system;

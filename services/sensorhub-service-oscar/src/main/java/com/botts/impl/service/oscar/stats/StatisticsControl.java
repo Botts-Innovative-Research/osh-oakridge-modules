@@ -54,29 +54,29 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
             var end = params.getTimeStamp(1);
             var execStartTime = System.currentTimeMillis();
 
-            if (start != null && end != null) {
+            if ((start == null && end != null) || (start != null && end == null))
+                return CommandStatus.rejected(command.getID(), "Both start and end must be null or non-null");
+
+            ICommandResult result;
+            if (start != null) {
                 // TODO: Return result of createCountStatistics
                 DataBlock resultData = resultDescription.createDataBlock();
                 statsOutput.populateDataBlock(resultData, 0, start, end);
-                var result = CommandResult.withData(resultData);
-                return new CommandStatus.Builder()
-                        .withResult(result)
-                        .withCommand(command.getID())
-                        .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
-                        .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(execStartTime), Instant.now()))
-                        .build();
+                result = CommandResult.withData(resultData);
             } else {
                 // TODO: Call update for latest site statistics output, and return output observation id
                 statsOutput.publishLatestStatistics();
-                var latestObsId = statsOutput.getLatestObservationId();
-                var result = CommandResult.withObservation(latestObsId);
-                return new CommandStatus.Builder()
-                        .withResult(result)
-                        .withCommand(command.getID())
-                        .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
-                        .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(execStartTime), Instant.now()))
-                        .build();
+                var latestObsId = statsOutput.waitForLatestObservationId();
+                if (latestObsId == null)
+                    return CommandStatus.failed(command.getID(), "Could not generate latest statistics observation.");
+                result = CommandResult.withObservation(latestObsId);
             }
+            return new CommandStatus.Builder()
+                    .withResult(result)
+                    .withCommand(command.getID())
+                    .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
+                    .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(execStartTime), Instant.now()))
+                    .build();
         });
     }
 

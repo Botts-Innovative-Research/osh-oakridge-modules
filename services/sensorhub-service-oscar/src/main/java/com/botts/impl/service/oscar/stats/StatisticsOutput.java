@@ -7,31 +7,36 @@ import net.opengis.swe.v20.DataEncoding;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.api.data.IObsData;
+import org.sensorhub.api.data.ObsEvent;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.TemporalFilter;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
+import org.sensorhub.api.event.EventUtils;
+import org.sensorhub.api.event.IEventBus;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
+import org.sensorhub.utils.Async;
 import org.vast.data.TextEncodingImpl;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
 
 public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
     public static final String NAME = "siteStatistics";
-    public static final String LABEL = "Site Statistics";
-    public static final String DESCRIPTION = "Statistics for this node's RPMs/lanes";
 
-    private DataComponent recordDescription;
-    private DataEncoding recommendedEncoding;
-    private final int SAMPLING_PERIOD = 60;
+    private final DataComponent recordDescription;
+    private final DataEncoding recommendedEncoding;
+    private static final int SAMPLING_PERIOD = 60;
 
     private final ScheduledExecutorService service;
     private final IObsSystemDatabase database;
@@ -40,7 +45,8 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     Use cases:
 
     - Go to national view page, see current total, monthly, weekly, daily
-    - Request for specific time range
+    - Request for specific time range (control)
+    - Request for fresh data (control)
      */
 
     public StatisticsOutput(OSCARSystem parentSensor, IObsSystemDatabase database) {
@@ -68,11 +74,11 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         int i = 0;
         dataBlock.setLongValue(i++, currentTime/1000);
 
-        // TODO: Get total counts from DB
+        // Get total counts from DB
         i = populateDataBlock(dataBlock, i, null, null);
 
-        // TODO: Get monthly counts from DB
-        // TODO: Modify start and end time for current month-to-date
+        // Get monthly counts from DB
+        // Modify start and end time for current month-to-date
         int currentDayOfMonth = Calendar.getInstance().get(Calendar.DAY_OF_MONTH);
         var monthStart = Instant.now().minus(currentDayOfMonth-1, TimeUnit.DAYS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
         var lastDayOfMonth = Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_MONTH);
@@ -80,7 +86,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
         i = populateDataBlock(dataBlock, i, monthStart, monthEnd);
 
-        // TODO: Get weekly counts from DB
+        // Get weekly counts from DB
         int currentDayOfWeek = Calendar.getInstance().get(Calendar.DAY_OF_WEEK);
         var weekStart = Instant.now().minus(currentDayOfWeek-1, TimeUnit.DAYS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
         var lastDayOfWeek = Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_WEEK);
@@ -88,7 +94,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
         i = populateDataBlock(dataBlock, i, weekStart, weekEnd);
 
-        // TODO: Get daily counts from DB
+        // Get today's counts from DB
         int currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
         var dayStart = Instant.now().minus(currentHour-1, TimeUnit.HOURS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
         var lastHour = Calendar.getInstance().getActualMaximum(Calendar.HOUR_OF_DAY);
@@ -101,20 +107,32 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));
     }
 
-    protected BigId getLatestObservationId() {
-        var keysQuery = database.getObservationStore().selectKeys(new ObsFilter.Builder()
-                .withResultTime(new TemporalFilter.Builder().withLatestTime().build())
-                .withSystems().withUniqueIDs(parentSensor.getUniqueIdentifier())
-                    .done()
-                .withDataStreams().withOutputNames(NAME)
-                    .done()
-                .withLimit(1)
-                .build());
-        var keys = keysQuery.toList();
+    protected BigId waitForLatestObservationId() {
+        try {
+            final List<BigId> result = new ArrayList<>();
 
-        if (keys.size() != 1)
+            Async.waitForCondition(() -> {
+                var keysQuery = database.getObservationStore().selectKeys(new ObsFilter.Builder()
+                        .withResultTime(new TemporalFilter.Builder().withLatestTime().build())
+                        .withSystems().withUniqueIDs(parentSensor.getUniqueIdentifier())
+                        .done()
+                        .withDataStreams().withOutputNames(NAME)
+                        .done()
+                        .withLimit(1)
+                        .build());
+                var keys = keysQuery.toList();
+                if (keys.size() == 1) {
+                    result.clear();
+                    result.add(keys.get(0));
+                    return true;
+                }
+                return false;
+            }, 5000);
+            return result.isEmpty() ? null : result.get(0);
+        } catch (TimeoutException e) {
+            getLogger().error("Could not find latest observation ID");
             return null;
-        return keys.get(0);
+        }
     }
 
     protected int populateDataBlock(DataBlock dataBlock, int i, Instant start, Instant end) {
