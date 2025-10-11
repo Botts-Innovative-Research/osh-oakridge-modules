@@ -86,8 +86,6 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
 
         var adjIdArray = ((DataArrayImpl) dataStruct.getComponent("adjudicatedIdsArray").getComponent("adjudicatedIds"));
         adjIdArray.updateSize();
-
-
 //        dataBlock.setStringValue(index++, "");
 
         dataBlock.setStringValue(index++, ""); // filepaths todo: turn this into a dataarray too

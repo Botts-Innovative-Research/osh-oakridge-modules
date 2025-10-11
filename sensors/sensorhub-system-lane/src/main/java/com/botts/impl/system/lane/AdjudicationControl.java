@@ -13,6 +13,8 @@ import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Adjudication;
+import org.vast.data.DataArrayImpl;
+
 import java.util.concurrent.CompletableFuture;
 
 public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
@@ -94,7 +96,6 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
                DataComponent recordStructure = obsStore.getDataStreams().get(new DataStreamKey(dataStreamId)).getRecordStructure();
 
                // Secondary inspection
-
                parent.adjudicationOutput.setData(adj);
 
 
@@ -102,6 +103,7 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
 
                var result = obs.getResult();
                var adjIdCount = result.getIntValue(9);
+
 
                adjIdCount = adjIdCount + 1;
 
@@ -111,6 +113,9 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
 
 
                // need to refresh the size of the data array
+               var adjIdArray = ((DataArrayImpl) recordStructure.getComponent("adjudicatedIdsArray").getComponent("adjudicatedIds"));
+               adjIdArray.updateSize();
+
 
                result.setStringValue(9 + adjIdCount, commandId);
 
