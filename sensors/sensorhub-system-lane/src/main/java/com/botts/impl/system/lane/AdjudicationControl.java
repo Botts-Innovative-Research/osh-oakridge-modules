@@ -9,16 +9,10 @@ import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.IdEncoder;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.IObsStore;
-import org.sensorhub.impl.common.IdEncoderBase32;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Adjudication;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.concurrent.CompletableFuture;
-
-import static org.sensorhub.impl.utils.rad.model.Adjudication.SecondaryInspectionStatus.*;
 
 public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
 
@@ -48,12 +42,10 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
         DataBlock cmdData = command.getParams();
         return CompletableFuture.supplyAsync(() -> {
            try {
-               // TODO: Ask about secondary inspection
                Adjudication adj = new Adjudication.Builder()
                        .feedback(cmdData.getStringValue(0))
                        .adjudicationCode(cmdData.getIntValue(1))
                        .isotopes(cmdData.getStringValue(2))
-                       // TODO: Maybe enum
                        .secondaryInspectionStatus(Adjudication.SecondaryInspectionStatus.valueOf(cmdData.getStringValue(3)))
                        .filePaths(cmdData.getStringValue(4))
                        .occupancyId(cmdData.getStringValue(5))
@@ -92,50 +84,36 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
                if (dsQuery.findAny().isEmpty())
                    return CommandStatus.failed(command.getID(), "The provided occupancy ID is not part of an RPM");
 
-               // Set occupancy adjudicated boolean
-               if (adj.getSecondaryInspectionStatus() == NONE || adj.getSecondaryInspectionStatus() == COMPLETED)
-                   obs.getResult().setBooleanValue(9, true);
-               else if (adj.getSecondaryInspectionStatus() == REQUESTED)
-                   obs.getResult().setBooleanValue(9, false);
-               else
+
+               if (adj.getSecondaryInspectionStatus() == null)
                    return CommandStatus.failed(command.getID(), "Please specify a secondary inspection status");
-               // TODO:
 
-               // Secondary inspection
 
-               // Maybe use adjudication statuses to represent secondary inspection
-               // REQUESTED, COMPLETED, NONE
-
-               // When REQUESTED, then occupancy adjudicated == false
-               //
                parent.adjudicationOutput.setData(adj);
 
 
-               // update the occupancy output
-               var prevObs = getParentProducer().getParentHub().getDatabaseRegistry()
-                       .getFederatedDatabase()
-                       .getObservationStore()
-                       .get(decodedObsId);
-
                var commandId = getParentProducer().getParentHub().getIdEncoders().getCommandIdEncoder().encodeID(command.getID());
 
-               var prevAdjIds = prevObs.getResult().getStringValue(10);
+               var result = obs.getResult();
+               var adjIdCount = result.getIntValue(9);
 
-               if (prevAdjIds != null && !prevAdjIds.isEmpty()) {
-                   prevAdjIds = prevAdjIds + ", " + commandId;
-               } else {
-                   prevAdjIds = commandId;
-               }
+               adjIdCount = adjIdCount + 1;
 
-               prevObs.getResult().setStringValue(9, prevAdjIds);
+
+               // increment the count by one
+               result.setIntValue(9, adjIdCount);
+
+
+               // need to refresh the size of the data array
+
+               result.setStringValue(9 + adjIdCount, commandId);
 
                String systemUID = getParentProducer().getParentSystemUID() != null ?
                        getParentProducer().getParentSystemUID() :
                        getParentProducer().getUniqueIdentifier();
                var obsDb = getParentProducer().getParentHub().getSystemDriverRegistry().getDatabase(systemUID);
 
-               obsDb.getObservationStore().put(decodedObsId, prevObs);
-
+               obsDb.getObservationStore().put(decodedObsId, obs);
 
                return CommandStatus.accepted(command.getID());
            } catch (Exception e) {

@@ -13,6 +13,7 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.vast.data.DataArrayImpl;
 import org.vast.data.TextEncodingImpl;
 
 public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRateSensorOutput<SensorType> {
@@ -39,8 +40,7 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         var neutronAlarm = radHelper.createNeutronAlarm();
         var maxGamma = radHelper.createMaxGamma();
         var maxNeutron = radHelper.createMaxNeutron();
-        var adjudicatedIdCount = radHelper.createAdjudicatedIdCount();
-        var adjudicatedIds = radHelper.createAdjudicatedIds();
+        var adjudicatedIds = radHelper.createAdjudicationIdArray();
         var videoPaths = radHelper.createVideoPaths();
 
         dataStruct = radHelper.createRecord()
@@ -58,7 +58,6 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
                 .addField(neutronAlarm.getName(), neutronAlarm)
                 .addField(maxGamma.getName(), maxGamma)
                 .addField(maxNeutron.getName(), maxNeutron)
-                .addField(adjudicatedIdCount.getName(), adjudicatedIdCount)
                 .addField(adjudicatedIds.getName(), adjudicatedIds)
                 .addField(videoPaths.getName(), videoPaths)
                 .build();
@@ -83,12 +82,15 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         dataBlock.setIntValue(index++, occupancy.getMaxGammaCount());
         dataBlock.setIntValue(index++, occupancy.getMaxNeutronCount());
 
-        //TODO: finish this / make better
-        // adjudication Ids
-        dataBlock.setIntValue(index++, occupancy.getAdjudicatedIds().length());
+        dataBlock.setIntValue(index++, 0); // adj id count
 
-        dataBlock.setStringValue(index++, ""); //adjudicated Ids
-        dataBlock.setStringValue(index, ""); // filepaths
+        var adjIdArray = ((DataArrayImpl) dataStruct.getComponent("adjudicatedIdsArray").getComponent("adjudicatedIds"));
+        adjIdArray.updateSize();
+
+
+//        dataBlock.setStringValue(index++, "");
+
+        dataBlock.setStringValue(index++, ""); // filepaths todo: turn this into a dataarray too
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));

@@ -10,7 +10,7 @@ public class Occupancy {
     private boolean hasNeutronAlarm;
     private int maxGammaCount;
     private int maxNeutronCount;
-    private String adjudicatedIds = "";
+    private String adjudicatedId = "";
     private String videoPaths = "";
 
     public int getOccupancyCount() {
@@ -45,8 +45,8 @@ public class Occupancy {
         return maxNeutronCount;
     }
 
-    public String getAdjudicatedIds() {
-        return adjudicatedIds;
+    public String getAdjudicatedId() {
+        return adjudicatedId;
     }
 
     public String getVideoPaths() {
@@ -101,8 +101,8 @@ public class Occupancy {
             return this;
         }
 
-        public Builder adjudicatedIds(String adjudicatedIds) {
-            instance.adjudicatedIds = adjudicatedIds;
+        public Builder adjudicatedId(String adjudicatedId) {
+            instance.adjudicatedId = adjudicatedId;
             return this;
         }
 

@@ -5,7 +5,6 @@ public class Adjudication {
     private String feedback;
     private int adjudicationCode;
     private String isotopes;
-    // TODO: Enum??
     private SecondaryInspectionStatus secondaryInspectionStatus;
     private String filePaths;
     private String occupancyId;

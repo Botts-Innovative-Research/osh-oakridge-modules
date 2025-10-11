@@ -315,23 +315,49 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-    public DataArray createAdjudicatedIds(){
+
+    public DataComponent createAdjudicationIdArray(){
+        var adjCount = createAdjudicatedIdCount();
+        var adjIdArray = createAdjudicatedIdsArray();
+        return createRecord()
+                .name("adjudicatedIdsArray")
+                .description("List of adjudicated ids for this record")
+                .addField(adjCount.getName(), adjCount)
+                .addField(adjIdArray.getName(), adjIdArray)
+                .build();
+    }
+
+    public Count createAdjudicatedIdCount() {
+        return createCount()
+                .name("adjudicatedIdsCount")
+                .id("adjudicatedIdsCount")
+                .label("Adjudicated IDs Count")
+                .definition(getRadUri("AdjudicatedIdsCount"))
+                .build();
+    }
+
+    public DataArray createAdjudicatedIdsArray(){
+        var adjId = createAdjudicationId();
         return createArray()
                 .name("adjudicatedIds")
                 .label("Adjudicated IDs")
                 .description("Comma separated adjudicated IDs")
-                .definition(getRadUri("AdjudicatedIds"))
-                .withVariableSize("adjudicationIdCount")
+                .definition(getRadUri("AdjudicatedIdsArray"))
+                .withVariableSize("adjudicatedIdsCount")
+                .withElement(adjId.getName(), adjId)
                 .build();
     }
 
-    public Text createAdjudicatedIdCount() {
+
+    private Text createAdjudicationId() {
         return createText()
-                .name("adjudicationIdCount")
-                .label("Adjudication ID Count")
-                .definition(getRadUri("AdjudicationIdCount"))
+                .label("Adjudication ID")
+                .name("adjudicationId")
+                .description("ID of the Adjudication record")
+                .definition(getRadUri("AdjudicationId"))
                 .build();
     }
+
 
     public Text createVideoPaths() {
         return createText()
