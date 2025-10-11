@@ -211,6 +211,12 @@ public class LaneSystem extends SensorSystem {
     }
 
     @Override
+    protected void afterStart() throws SensorHubException {
+        super.afterStart();
+        adjudicationControl.setObsStore(getParentHub().getSystemDriverRegistry().getDatabase(getUniqueIdentifier()).getObservationStore());
+    }
+
+    @Override
     public void cleanup() throws SensorHubException {
         super.cleanup();
 

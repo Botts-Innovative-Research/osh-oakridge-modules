@@ -87,8 +87,10 @@ public class AdjudicationOutput extends AbstractSensorOutput<LaneSystem> {
         dataBlock.setStringValue(1, "username");
         dataBlock.setStringValue(2, adjudication.getFeedback());
         dataBlock.setIntValue(3, adjudication.getAdjudicationCode());
+        // TODO: Change to use array
         dataBlock.setStringValue(4, adjudication.getIsotopes());
         dataBlock.setStringValue(5, adjudication.getSecondaryInspectionStatus().toString());
+        // TODO: Change to use array
         dataBlock.setStringValue(6, adjudication.getFilePaths());
         dataBlock.setStringValue(7, adjudication.getOccupancyId());
         dataBlock.setStringValue(8, adjudication.getVehicleId());

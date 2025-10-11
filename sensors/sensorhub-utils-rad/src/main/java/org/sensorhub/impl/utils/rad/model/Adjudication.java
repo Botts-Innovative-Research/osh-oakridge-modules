@@ -1,5 +1,8 @@
 package org.sensorhub.impl.utils.rad.model;
 
+import net.opengis.swe.v20.DataBlock;
+import org.sensorhub.impl.utils.rad.RADHelper;
+
 public class Adjudication {
 
     private String feedback;
@@ -89,6 +92,33 @@ public class Adjudication {
 
     public String getVehicleId() {
         return vehicleId;
+    }
+
+    public static DataBlock fromAdjudication(Adjudication adjudication) {
+        RADHelper fac = new RADHelper();
+        DataBlock dataBlock = fac.createAdjudicationRecord().createDataBlock();
+        dataBlock.setStringValue(0, adjudication.getFeedback());
+        dataBlock.setIntValue(1, adjudication.getAdjudicationCode());
+        // TODO: Use array
+        dataBlock.setStringValue(2, adjudication.getIsotopes());
+        dataBlock.setStringValue(3, adjudication.getSecondaryInspectionStatus().toString());
+        // TODO: Use array
+        dataBlock.setStringValue(4, adjudication.getFilePaths());
+        dataBlock.setStringValue(5, adjudication.getOccupancyId());
+        dataBlock.setStringValue(6, adjudication.getVehicleId());
+        return dataBlock;
+    }
+
+    public static Adjudication toAdjudication(DataBlock dataBlock) {
+        return new Adjudication.Builder()
+                .feedback(dataBlock.getStringValue(0))
+                .adjudicationCode(dataBlock.getIntValue(1))
+                .isotopes(dataBlock.getStringValue(2))
+                .secondaryInspectionStatus(Adjudication.SecondaryInspectionStatus.valueOf(dataBlock.getStringValue(3)))
+                .filePaths(dataBlock.getStringValue(4))
+                .occupancyId(dataBlock.getStringValue(5))
+                .vehicleId(dataBlock.getStringValue(6))
+                .build();
     }
 
 }

@@ -18,7 +18,7 @@ import org.vast.data.TextEncodingImpl;
 
 public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRateSensorOutput<SensorType> {
 
-    private static final String NAME = "occupancy";
+    public static final String NAME = "occupancy";
     private static final String LABEL = "Occupancy";
 
     private static final Logger logger = LoggerFactory.getLogger(OccupancyOutput.class);

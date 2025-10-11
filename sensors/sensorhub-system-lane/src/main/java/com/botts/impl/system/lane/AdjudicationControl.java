@@ -33,11 +33,14 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
 
         var hub = getParentProducer().getParentHub();
         obsIdEncoder = hub.getIdEncoders().getObsIdEncoder();
-        obsStore = hub.getSystemDriverRegistry().getDatabase(getParentProducer().getUniqueIdentifier()).getObservationStore();
 
         fac = new RADHelper();
 
         this.commandStructure = fac.createAdjudicationRecord();
+    }
+
+    public void setObsStore(IObsStore obsStore) {
+        this.obsStore = obsStore;
     }
 
     @Override
@@ -45,15 +48,7 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
         DataBlock cmdData = command.getParams();
         return CompletableFuture.supplyAsync(() -> {
            try {
-               Adjudication adj = new Adjudication.Builder()
-                       .feedback(cmdData.getStringValue(0))
-                       .adjudicationCode(cmdData.getIntValue(1))
-                       .isotopes(cmdData.getStringValue(2))
-                       .secondaryInspectionStatus(Adjudication.SecondaryInspectionStatus.valueOf(cmdData.getStringValue(3)))
-                       .filePaths(cmdData.getStringValue(4))
-                       .occupancyId(cmdData.getStringValue(5))
-                       .vehicleId(cmdData.getStringValue(6))
-                       .build();
+               var adj = Adjudication.toAdjudication(cmdData);
 
                // Validate obs ID is present
                String occupancyId = adj.getOccupancyId();
@@ -74,7 +69,7 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
                if (obs == null)
                    return CommandStatus.failed(command.getID(), "The occupancy from the provided ID is null");
 
-               // save files to bucket store
+               // save files to bucket store // TODO: they should already be saved at this point, but we can verify they exist
                String filePaths = adj.getFilePaths();
                if (filePaths != null && !filePaths.isEmpty()) {
                    // handle file paths to bucket store
@@ -84,7 +79,8 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
                        .withInternalIDs(obs.getDataStreamID())
                        .withObservedProperties(RADHelper.getRadUri("Occupancy"))
                        .build());
-               if (dsQuery.findAny().isEmpty())
+               var ds = dsQuery.findAny().get();
+               if (ds == null)
                    return CommandStatus.failed(command.getID(), "The provided occupancy ID is not part of an RPM");
 
 
@@ -97,7 +93,6 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
 
                // Secondary inspection
                parent.adjudicationOutput.setData(adj);
-
 
                var commandId = getParentProducer().getParentHub().getIdEncoders().getCommandIdEncoder().encodeID(command.getID());
 
