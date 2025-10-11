@@ -8,6 +8,7 @@ import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.IdEncoder;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
+import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.sensorhub.impl.utils.rad.RADHelper;
@@ -88,6 +89,11 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
                if (adj.getSecondaryInspectionStatus() == null)
                    return CommandStatus.failed(command.getID(), "Please specify a secondary inspection status");
 
+               // HERE U GO KALEN
+               BigId dataStreamId = obs.getDataStreamID();
+               DataComponent recordStructure = obsStore.getDataStreams().get(new DataStreamKey(dataStreamId)).getRecordStructure();
+
+               // Secondary inspection
 
                parent.adjudicationOutput.setData(adj);
 
