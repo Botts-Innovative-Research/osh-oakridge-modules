@@ -81,6 +81,14 @@ public class StatisticsTests {
     }
 
     @Test
+    public void testOutputCanRestart() {
+        for (int i = 0; i < 10; i++) {
+            statsOutput.start();
+            statsOutput.stop();
+        }
+    }
+
+    @Test
     public void testControlWithTimes() throws ExecutionException, InterruptedException {
         var cmdDesc = statsControl.getCommandDescription().copy();
         var cmdData = cmdDesc.createDataBlock();

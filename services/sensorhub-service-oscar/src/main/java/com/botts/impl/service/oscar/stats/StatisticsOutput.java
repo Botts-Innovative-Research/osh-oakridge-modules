@@ -35,7 +35,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     private final DataEncoding recommendedEncoding;
     private static final int SAMPLING_PERIOD = 60;
 
-    private final ScheduledExecutorService service;
+    private ScheduledExecutorService service;
     private final IObsSystemDatabase database;
 
     /*
@@ -49,18 +49,20 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     public StatisticsOutput(OSCARSystem parentSensor, IObsSystemDatabase database) {
         super(NAME, parentSensor);
         this.database = database;
-        service = Executors.newSingleThreadScheduledExecutor();
         RADHelper fac = new RADHelper();
         recordDescription = fac.createSiteStatistics();
         recommendedEncoding = new TextEncodingImpl();
     }
 
-    public void start() {
+    public synchronized void start() {
+        if (service == null || service.isShutdown())
+            service = Executors.newSingleThreadScheduledExecutor();
         service.scheduleAtFixedRate(this::publishLatestStatistics, 0L, SAMPLING_PERIOD, TimeUnit.MINUTES);
     }
 
-    public void stop() {
+    public synchronized void stop() {
         service.shutdown();
+        service = null;
     }
 
     public synchronized void publishLatestStatistics() {
@@ -106,13 +108,10 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
     protected BigId waitForLatestObservationId() {
         try {
-//            final Instant now = Instant.now();
-//            final Instant end = Instant.MAX;
             final List<BigId> result = new ArrayList<>();
 
             Async.waitForCondition(() -> {
                 var keysQuery = database.getObservationStore().selectKeys(new ObsFilter.Builder()
-                        // TODO: Check that this returns obs that was just published or else use time range
                         .withLatestResult()
                         .withSystems().withUniqueIDs(parentSensor.getUniqueIdentifier())
                         .done()
