@@ -980,4 +980,72 @@ public class RADHelper extends GeoPosHelper {
 
     // Energy Calibration
 
+    // Node stats
+    public DataRecord createSiteStatistics() {
+        return createRecord()
+                .name("siteStatistics")
+                .label("Site Statistics")
+                .description("Statistics for this node's RPMs/lanes")
+                .addField("samplingTime", createTime()
+                        .asSamplingTimeIsoUTC())
+                .addField("allTime", createRecord()
+                        .label("All Time Total")
+                        .definition(getRadUri("AllTimeCount"))
+                        .addAllFields(createCountStatistics()))
+                .addField("monthly", createRecord()
+                        .label("Monthly Total")
+                        .definition(getRadUri("MonthlyCount"))
+                        .addAllFields(createCountStatistics()))
+                .addField("weekly", createRecord()
+                        .label("Weekly Total")
+                        .definition(getRadUri("WeeklyCount"))
+                        .addAllFields(createCountStatistics()))
+                .addField("daily", createRecord()
+                        .label("Daily Total")
+                        .definition(getRadUri("DailyCount"))
+                        .addAllFields(createCountStatistics()))
+                .build();
+    }
+
+    public DataRecord createCountStatistics() {
+        return createRecord()
+                .name("counts")
+                .label("Counts")
+                // Occupancies
+                .addField("numOccupancies", createQuantity()
+                        .dataType(DataType.LONG)
+                        .label("Total Number of Occupancies")
+                        .definition(getRadUri("NumOccupancies")))
+                .addField("numGammaAlarms", createQuantity()
+                        .dataType(DataType.LONG)
+                        .label("Total Number of Gamma Alarms")
+                        .definition(getRadUri("NumGammaAlarms")))
+                .addField("numNeutronAlarms", createQuantity()
+                        .dataType(DataType.LONG)
+                        .label("Total Number of Neutron Alarms")
+                        .definition(getRadUri("NumNeutronAlarms")))
+                .addField("numGammaNeutronAlarms", createQuantity()
+                        .dataType(DataType.LONG)
+                        .label("Total Number of Gamma-Neutron Alarms")
+                        .definition(getRadUri("NumGammaNeutronAlarms")))
+                // Faults
+                .addField("numFaults", createQuantity()
+                        .dataType(DataType.LONG)
+                        .label("Total Number of Faults")
+                        .definition(getRadUri("NumFaults")))
+                .addField("numGammaFaults", createQuantity()
+                        .dataType(DataType.LONG)
+                        .label("Total Number of Gamma Faults")
+                        .definition(getRadUri("NumGammaFaults")))
+                .addField("numNeutronFaults", createQuantity()
+                        .dataType(DataType.LONG)
+                        .label("Total Number of Neutron Faults")
+                        .definition(getRadUri("NumNeutronFaults")))
+                .addField("numTampers", createQuantity()
+                        .dataType(DataType.LONG)
+                        .label("Total Number of Tampers")
+                        .definition(getRadUri("NumTampers")))
+                .build();
+    }
+
 }

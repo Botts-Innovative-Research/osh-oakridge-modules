@@ -22,17 +22,24 @@ import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
 import com.botts.impl.service.oscar.siteinfo.SitemapDiagramHandler;
 import com.botts.impl.service.oscar.spreadsheet.SpreadsheetHandler;
+import com.botts.impl.service.oscar.stats.StatisticsControl;
+import com.botts.impl.service.oscar.stats.StatisticsOutput;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.module.AbstractModule;
 
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     SiteInfoOutput siteInfoOutput;
     RequestReportControl reportControl;
     ClientConfigOutput clientConfigOutput;
+    StatisticsOutput statsOutput;
+    StatisticsControl statsControl;
+
     SitemapDiagramHandler sitemapDiagramHandler;
     IBucketService bucketService;
 
@@ -44,14 +51,14 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     protected void doInit() throws SensorHubException {
         super.doInit();
 
-        system = new OSCARSystem(config.nodeId);
-
+        // Block here for bucket service
         try {
+            getLogger().info("Checking that a bucket service is loaded...");
             this.bucketService = getParentHub().getModuleRegistry()
                     .waitForModuleType(IBucketService.class, ModuleEvent.ModuleState.STARTED)
-                    .get();
+                    .get(10, TimeUnit.SECONDS);
             this.bucketStore = bucketService.getBucketStore();
-        } catch (InterruptedException | ExecutionException e) {
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
             reportError("Could not find this OSH node's Bucket Service", new IllegalStateException(e));
         }
 
@@ -75,11 +82,17 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         clientConfigOutput = new ClientConfigOutput(system);
         system.addOutput(clientConfigOutput, false);
+
+        statsOutput = new StatisticsOutput(system, getParentHub().getDatabaseRegistry().getFederatedDatabase());
+        system.addOutput(statsOutput, false);
     }
 
     public void createControls(){
         reportControl = new RequestReportControl(system, this);
         system.addControlInput(reportControl);
+
+        statsControl = new StatisticsControl(system);
+        system.addControlInput(statsControl);
     }
 
     @Override
@@ -88,24 +101,24 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         getParentHub().getSystemDriverRegistry().register(system);
 
-        if (config.databaseID != null && !config.databaseID.isEmpty()) {
+        if (config.databaseID != null && !config.databaseID.isBlank()) {
             var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
             if (getParentHub().getSystemDriverRegistry().getDatabase(system.getUniqueIdentifier()) == null)
                 getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
-
         }
 
+        statsOutput.start();
     }
 
     @Override
     protected void doStop() throws SensorHubException {
         super.doStop();
+        statsOutput.stop();
     }
 
     public SitemapDiagramHandler getSitemapDiagramHandler() {
         return sitemapDiagramHandler;
     }
-
 
     public OSCARSystem getOSCARSystem() {
         return system;

@@ -6,7 +6,7 @@ import java.io.OutputStream;
 
 public interface IFileHandler {
 
-    boolean isValidFileType (String fileName, String mimeType);
+    boolean isValidFileType(String fileName, String mimeType);
 
     boolean handleFile(String filename);
 
