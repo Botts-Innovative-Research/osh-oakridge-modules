@@ -2,9 +2,7 @@ package com.botts.impl.system.lane;
 
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
-import org.sensorhub.api.command.CommandStatus;
-import org.sensorhub.api.command.ICommandData;
-import org.sensorhub.api.command.ICommandStatus;
+import org.sensorhub.api.command.*;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.IdEncoder;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
@@ -14,16 +12,24 @@ import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Adjudication;
 import org.vast.data.DataArrayImpl;
+import org.vast.swe.SWEHelper;
+import org.vast.util.TimeExtent;
 
+import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 
-public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
+public class AdjudicationControl extends AbstractSensorControl<LaneSystem> implements IStreamingControlInterfaceWithResult {
 
     public static final String NAME = "adjudicationControl";
     public static final String LABEL = "Adjudication Control";
     public static final String DESCRIPTION = "Control interface for adjudicating occupancy events";
 
+    public static final String RES_NAME = "adjudicationResult";
+    public static final String RES_LABEL = "Adjudication Result";
+    public static final String RES_DESCRIPTION = "Adjudications of occupancy events";
+
     DataComponent commandStructure;
+    DataComponent resultStructure;
     RADHelper fac;
     IdEncoder obsIdEncoder;
     IObsStore obsStore;
@@ -37,6 +43,18 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
         fac = new RADHelper();
 
         this.commandStructure = fac.createAdjudicationRecord();
+
+        this.resultStructure = fac.createRecord()
+                .name(RES_NAME)
+                .label(RES_LABEL)
+                .description(RES_DESCRIPTION)
+                .definition(RADHelper.getRadUri("Adjudication"))
+                .addField("username", fac.createText()
+                        .label("Username")
+                        .definition(SWEHelper.getPropertyUri("Username"))
+                        .build())
+                .addAllFields(fac.createAdjudicationRecord())
+                .build();
     }
 
     public void setObsStore(IObsStore obsStore) {
@@ -46,6 +64,7 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
     @Override
     public CompletableFuture<ICommandStatus> submitCommand(ICommandData command) {
         DataBlock cmdData = command.getParams();
+        Instant start = Instant.now();
         return CompletableFuture.supplyAsync(() -> {
            try {
                var adj = Adjudication.toAdjudication(cmdData);
@@ -69,8 +88,6 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
                if (obs == null)
                    return CommandStatus.failed(command.getID(), "The occupancy from the provided ID is null");
 
-               // save files to bucket store // TODO: they should already be saved at this point, but we can verify they exist
-
                var dsQuery = obsStore.getDataStreams().select(new DataStreamFilter.Builder()
                        .withInternalIDs(obs.getDataStreamID())
                        .withObservedProperties(RADHelper.getRadUri("Occupancy"))
@@ -86,19 +103,15 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
                BigId dataStreamId = obs.getDataStreamID();
                DataComponent recordStructure = obsStore.getDataStreams().get(new DataStreamKey(dataStreamId)).getRecordStructure();
 
-               parent.adjudicationOutput.setData(adj);
-
                var commandId = getParentProducer().getParentHub().getIdEncoders().getCommandIdEncoder().encodeID(command.getID());
 
                var result = obs.getResult();
                var adjIdCount = result.getIntValue(9);
 
-
                adjIdCount = adjIdCount + 1;
 
                // increment the count by one
                result.setIntValue(9, adjIdCount);
-
 
                // need to refresh the size of the data array
                var adjIdArray = ((DataArrayImpl) recordStructure.getComponent("adjudicatedIdsArray").getComponent("adjudicatedIds"));
@@ -113,9 +126,16 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
 
                obsDb.getObservationStore().put(decodedObsId, obs);
 
-               return CommandStatus.accepted(command.getID());
+               DataBlock resultData = createResultData(adj, command.getSenderID());
+
+               return new CommandStatus.Builder()
+                       .withCommand(command.getID())
+                       .withStatusCode(ICommandStatus.CommandStatusCode.COMPLETED)
+                       .withResult(CommandResult.withData(resultData))
+                       .withExecutionTime(TimeExtent.endNow(start))
+                       .build();
            } catch (Exception e) {
-                return CommandStatus.failed(command.getID(), "Failed to accept command: " + e.getMessage());
+               return CommandStatus.failed(command.getID(), "Failed to accept command: " + e.getMessage());
            }
         });
     }
@@ -125,4 +145,47 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
         return commandStructure;
     }
 
+    @Override
+    public DataComponent getResultDescription() {
+        return resultStructure;
+    }
+
+    private DataBlock createResultData(Adjudication adjudication, String username) {
+        DataBlock dataBlock = resultStructure.createDataBlock();
+        resultStructure.setData(dataBlock);
+
+        int index = 0;
+
+        dataBlock.setStringValue(index++, username == null ? "Unknown" : username);
+        dataBlock.setStringValue(index++, adjudication.getFeedback());
+        dataBlock.setStringValue(index++, adjudication.getAdjudicationCode().toString());
+
+        int isotopeCount =  adjudication.getIsotopes().size();
+        dataBlock.setIntValue(index++, isotopeCount);
+
+        var isotopesArray =((DataArrayImpl) resultStructure.getComponent("isotopes"));
+        isotopesArray.updateSize();
+        dataBlock.updateAtomCount();
+
+        for (int i = 0; i < isotopeCount; i++)
+            dataBlock.setStringValue(index++, adjudication.getIsotopes().get(i));
+
+        dataBlock.setStringValue(index++, adjudication.getSecondaryInspectionStatus().toString());
+
+        int filePathCount = adjudication.getFilePaths().size();
+        dataBlock.setIntValue(index++, filePathCount);
+
+        var filePathsArray =((DataArrayImpl) resultStructure.getComponent("filePaths"));
+        filePathsArray.updateSize();
+        dataBlock.updateAtomCount();
+
+        for (int i = 0; i < filePathCount; i++)
+            dataBlock.setStringValue(index++, adjudication.getFilePaths().get(i));
+
+
+        dataBlock.setStringValue(index++, adjudication.getOccupancyId());
+        dataBlock.setStringValue(index, adjudication.getVehicleId());
+
+        return dataBlock;
+    }
 }

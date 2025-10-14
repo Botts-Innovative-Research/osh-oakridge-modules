@@ -77,7 +77,6 @@ public class LaneSystem extends SensorSystem {
     Map<String, FFMPEGConfig> ffmpegConfigs = null;
     OccupancyWrapper occupancyWrapper;
 
-    AdjudicationOutput adjudicationOutput;
     AdjudicationControl adjudicationControl;
 
     protected ModuleSecurity getSecurityHandler() {
@@ -140,9 +139,6 @@ public class LaneSystem extends SensorSystem {
                 }
             }
         }
-
-        adjudicationOutput = new AdjudicationOutput(this);
-        addOutput(adjudicationOutput, false);
 
         adjudicationControl = new AdjudicationControl(this);
         addControlInput(adjudicationControl);
@@ -218,7 +214,7 @@ public class LaneSystem extends SensorSystem {
 
         var obsStore = getParentHub().getSystemDriverRegistry().getDatabase(getUniqueIdentifier()).getObservationStore();
         if (obsStore == null) {
-            getLogger().error("Cannot get obs store.");
+            getLogger().error("Cannot get obs store for lane {}", getUniqueIdentifier());
             return;
         }
         adjudicationControl.setObsStore(obsStore);
