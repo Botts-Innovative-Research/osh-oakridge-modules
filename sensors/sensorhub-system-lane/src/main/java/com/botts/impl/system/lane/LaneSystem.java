@@ -298,6 +298,10 @@ public class LaneSystem extends SensorSystem {
                     occupancyWrapper.start();
                 }
 
+                if (event.getNewState() == ModuleEvent.ModuleState.STOPPING) {
+                    occupancyWrapper.stop();
+                }
+
                 // New module loaded
                 if (event.getNewState() == ModuleEvent.ModuleState.LOADED) {
 

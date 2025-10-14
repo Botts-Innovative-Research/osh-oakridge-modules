@@ -1,10 +1,11 @@
 package org.sensorhub.impl.sensor.ffmpeg.outputs;
 
-import com.botts.api.service.bucket.IBucketStore;
-import org.bytedeco.ffmpeg.avcodec.AVCodec;
+//import com.botts.impl.service.oscar.Constants; TODO Circular dependency, maybe move the constant to some other package?
+import net.opengis.swe.v20.DataComponent;
+import net.opengis.swe.v20.DataEncoding;
+import net.opengis.swe.v20.TextEncoding;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avformat.AVFormatContext;
-import org.bytedeco.ffmpeg.avformat.AVIOContext;
 import org.bytedeco.ffmpeg.avformat.AVStream;
 import org.bytedeco.ffmpeg.avformat.Write_packet_Pointer_BytePointer_int;
 import org.bytedeco.ffmpeg.avutil.AVDictionary;
@@ -14,44 +15,43 @@ import org.bytedeco.ffmpeg.global.avformat;
 import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.Pointer;
-import org.bytedeco.javacpp.PointerPointer;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.api.data.DataEvent;
+import org.sensorhub.impl.sensor.AbstractSensorOutput;
+import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
+import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.util.ByteArraySeekableBuffer;
 import org.sensorhub.mpegts.DataBufferListener;
 import org.sensorhub.mpegts.DataBufferRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.vast.swe.SWEHelper;
 
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
-import java.util.Collections;
 
 import static org.bytedeco.ffmpeg.global.avcodec.*;
 import static org.bytedeco.ffmpeg.global.avformat.*;
 import static org.bytedeco.ffmpeg.global.avformat.av_write_frame;
 import static org.bytedeco.ffmpeg.global.avutil.*;
 
-import org.bytedeco.ffmpeg.avcodec.*;
-import org.bytedeco.ffmpeg.avformat.*;
-import org.bytedeco.ffmpeg.avutil.*;
-import org.bytedeco.ffmpeg.swresample.*;
-import org.bytedeco.ffmpeg.swscale.*;
 
+public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSensorOutput<FFMPEGSensorBase<FFMPEGConfigType>> implements DataBufferListener {
 
-public class FileOutput implements DataBufferListener {
+    public static final String OUTPUT_NAME = "FileNameOutput";
+    public static final String OUTPUT_LABEL = "FFmpeg file output name";
+    final DataComponent outputStruct;
+    final TextEncoding outputEncoding;
 
     private static final Logger logger = LoggerFactory.getLogger(FileOutput.class);
     private volatile boolean doFileWrite = false;
-    private static final String BUCKET_NAME = "video";
-    private final IBucketStore bucketStore;
-    private String outputFile = "";
+    //private static final String BUCKET_NAME = Constants.VIDEO_BUCKET;
+    private static final String BUCKET_NAME = "videos";
+    //private String outputFile = "";
     private AVFormatContext outputContext;
     private final Object contextLock = new Object();
-    private ArrayDeque<AVPacket> framesSinceKey = new ArrayDeque<>();
+    private final ArrayDeque<AVPacket> framesSinceKey = new ArrayDeque<>();
     AVStream outputVideoStream;
     OutputStream outputStream;
     int ptsInc;
@@ -62,17 +62,18 @@ public class FileOutput implements DataBufferListener {
     private SeekCallback seekCallback;
     BytePointer buffer;
     ByteArraySeekableBuffer seekableBuffer;
+    String fileName;
 
-    public FileOutput(IBucketStore bucketStore) throws SensorHubException {
-        try {
-            this.bucketStore = bucketStore;
-            boolean videosBucketExists = bucketStore.bucketExists(BUCKET_NAME);
-            if (!videosBucketExists) {
-                bucketStore.createBucket(BUCKET_NAME);
-            }
-        } catch (Exception e) {
-            throw new SensorHubException("Bucket Service module not found.");
-        }
+    public FileOutput(FFMPEGSensorBase<FFMPEGConfigType> parentSensor) throws SensorHubException {
+        super(OUTPUT_NAME, parentSensor);
+        var helper = new SWEHelper();
+
+        outputStruct = helper.createText()
+                .name(OUTPUT_NAME)
+                .label(OUTPUT_LABEL)
+                .build();
+
+        outputEncoding = helper.newTextEncoding();
     }
 
     @Override
@@ -108,18 +109,16 @@ public class FileOutput implements DataBufferListener {
         }
     }
 
-    public void openFile(String outputFile, AVFormatContext inputFormat, int videoStreamId) throws IOException {
+    public void openFile(OutputStream outputStream, String fileName) throws IOException {
         avutil.av_log_set_level(avutil.AV_LOG_VERBOSE);
         try {
             if (doFileWrite) {
-                throw new IOException("Already writing to file " + this.outputFile);
+                throw new IOException("Already writing to file " + this.fileName);
             }
 
-            this.outputFile = outputFile;
-            outputStream = bucketStore.putObject(BUCKET_NAME, outputFile, Collections.emptyMap());
-            if (outputStream == null) {
-                throw new DataStoreException("Could not put new video file "+ this.outputFile +" in bucket store.");
-            }
+            this.outputStream = outputStream;
+            this.fileName = fileName;
+
             seekableBuffer = new ByteArraySeekableBuffer(8 * 1024 * 1024); // 8 MB initial size
             writeCallback = new WriteCallback(seekableBuffer).retainReference();
             seekCallback = new SeekCallback(seekableBuffer).retainReference();
@@ -127,14 +126,13 @@ public class FileOutput implements DataBufferListener {
             filePts = 0;
             int ret;
 
-            outputContext = new AVFormatContext(null);
-            avformat_alloc_output_context2(outputContext, null, null, outputFile);
+            //AVFormatContext inputContext = this.parentSensor.getProcessor().getAvFormatContext();
+            AVStream inputStream = this.parentSensor.getProcessor().getAvStream();
 
-            //AVCodec videoCodec = new AVCodec(inputFormat.video_codec());
-            //videoCodec.type(AVMEDIA_TYPE_VIDEO);
+            outputContext = new AVFormatContext(null);
+            avformat_alloc_output_context2(outputContext, null, "mp4", null); // Assuming always mp4 output
 
             outputVideoStream = avformat.avformat_new_stream(outputContext, null);
-            AVStream inputStream = inputFormat.streams(videoStreamId);
 
             avcodec.avcodec_parameters_copy(outputVideoStream.codecpar(), inputStream.codecpar());
 
@@ -168,15 +166,13 @@ public class FileOutput implements DataBufferListener {
             this.buffer = new BytePointer(avutil.av_malloc(4096)).capacity(4096);
             var avio = avio_alloc_context(buffer, 4096, 1, null, null, writeCallback, seekCallback);
             outputContext.pb(avio);
-            outputContext.url(new BytePointer(av_malloc(outputFile.getBytes().length + 1)).putString(outputFile));
+            outputContext.url(new BytePointer(av_malloc(1)).putString(""));
 
             outputContext.start_time(0);
             outputContext.position(0);
             //outputContext.pb().position(0);
 
             AVDictionary options = null;
-            if (outputFile.endsWith(".m3u8"))
-                options = hlsOptions();
 
             if ((ret = avformat.avformat_write_header(outputContext, options)) < 0) {
                 logFFmpeg(ret);
@@ -192,7 +188,7 @@ public class FileOutput implements DataBufferListener {
 
             doFileWrite = true;
         } catch (Exception e) {
-            throw new IOException("Could not open output file " + outputFile, e);
+            throw new IOException("Could not open output file " + fileName, e);
         }
     }
 
@@ -219,7 +215,7 @@ public class FileOutput implements DataBufferListener {
         return options;
     }
 
-    public void closeFile() throws IOException {
+    public void closeFile(boolean doFilenameOutput) throws IOException {
         if (doFileWrite) {
             doFileWrite = false;
             hasHadKey = false;
@@ -242,10 +238,30 @@ public class FileOutput implements DataBufferListener {
                     avformat_free_context(outputContext);
                     outputContext = null;
                 }
+                if (doFilenameOutput) {
+                    this.outputStruct.renewDataBlock();
+                    this.outputStruct.getData().setStringValue(this.fileName);
+                    this.eventHandler.publish(new DataEvent(System.currentTimeMillis(), this, outputStruct.getData().clone()));
+                }
             } catch (Exception e) {
-                throw new IOException("Could not close output file " + outputFile + ".", e);
+                throw new IOException("Could not close output file " + this.fileName + ".", e);
             }
         }
+    }
+
+    @Override
+    public DataComponent getRecordDescription() {
+        return outputStruct.copy();
+    }
+
+    @Override
+    public DataEncoding getRecommendedEncoding() {
+        return outputEncoding;
+    }
+
+    @Override
+    public double getAverageSamplingPeriod() {
+        return Double.NaN;
     }
 
     // Used to write ffmpeg output to buffer instead of a file

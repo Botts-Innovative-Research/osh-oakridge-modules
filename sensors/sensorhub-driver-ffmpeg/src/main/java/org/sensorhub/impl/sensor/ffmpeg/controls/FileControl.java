@@ -6,19 +6,17 @@ import net.opengis.swe.v20.DataChoice;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.command.*;
-import org.sensorhub.api.event.IEventListener;
+import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
-import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensor;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
-import org.sensorhub.impl.service.HttpServer;
+import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
 import org.vast.swe.SWEHelper;
+//import com.botts.impl.service.oscar.Constants;
+import com.botts.api.service.bucket.IBucketService;
+import com.botts.api.service.bucket.IBucketStore;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.concurrent.CompletableFuture;
+import java.util.Collections;
 
 public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractSensorControl<FFMPEGSensorBase<FFmpegConfigType>> {
     public static final String SENSOR_CONTROL_NAME = "ffmpegFileControl";
@@ -26,14 +24,26 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
     public static final String CMD_OPEN_FILE = "startFile";
     public static final String CMD_CLOSE_FILE = "endFile";
     public static final String FILE_IO = "fileIO";
+    //public static final String VIDEO_BUCKET = Constants.VIDEO_BUCKET;
+    public static final String VIDEO_BUCKET = "videos";
+
+    private final IBucketStore bucketStore;
     DataRecord commandData;
     String fileName = "";
-    String directory = "";
+    private final FileOutput fileOutput;
 
-
-    public FileControl(FFMPEGSensorBase<FFmpegConfigType> sensor, String directory) {
+    public FileControl(FFMPEGSensorBase<FFmpegConfigType> sensor, FileOutput fileOutput) throws DataStoreException {
         super(SENSOR_CONTROL_NAME, sensor);
-        this.directory = directory;
+
+        this.fileOutput = fileOutput;
+
+        var bucketService = sensor.getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
+        bucketStore = bucketService.getBucketStore();
+
+        boolean videosBucketExists = bucketStore.bucketExists(VIDEO_BUCKET);
+        if (!videosBucketExists) {
+            bucketStore.createBucket(VIDEO_BUCKET);
+        }
     }
 
     public void init() {
@@ -75,52 +85,30 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
             if (!fileName.isEmpty())
                 return false;
 
-            fileName = directory
-                    + parentSensor.getUniqueIdentifier().replace(':', '-')
+            fileName = parentSensor.getUniqueIdentifier().replace(':', '-')
                     + "/" + selected.getData().getStringValue();
 
             if (!fileName.contains(".")) {
                 fileName += ".mp4";
             }
-            /*
-            if (fileName.contains("/")) {
-                try {
-                    Files.createDirectories(Paths.get(fileName.substring(0, fileName.lastIndexOf("/") + 1)));
-                } catch (IOException e) {
-                    throw new CommandException(e.getMessage());
-                }
-            }
-
-             */
-
-            String path = fileName;
-            if (fileName.contains("/")) {
-                if (fileName.contains("http:")) { // assuming we're writing to this osh node
-                    var url = parent.getParentHub().getModuleRegistry().getModuleByType(HttpServer.class).getServletsBaseUrl();
-                    path = fileName.replace(url, "./");
-                }
-                try {
-                    Files.createDirectories(Paths.get(path.substring(0, path.lastIndexOf("/") + 1)));
-                } catch (IOException e) {
-                    throw new CommandException(e.getMessage());
-                }
-            }
 
             try {
-                this.parentSensor.getProcessor().openFile(path);
+                //this.parentSensor.getProcessor().openFile(fileName);
+                var outputStream = this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap());
+                this.fileOutput.openFile(outputStream, bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName));
                 this.parentSensor.reportStatus("Writing to file: " + fileName);
             } catch (Exception e) {
                 commandStatus = false;
             }
         } else if (selected.getName().equals(CMD_CLOSE_FILE)) {
             if (fileName.isEmpty()) { return true; }
-            Boolean item = (Boolean) selected;
+            boolean saveFile = ((Boolean) selected).getValue();
             try {
-                this.parentSensor.getProcessor().closeFile();
+                this.fileOutput.closeFile(saveFile);
 
                 // Delete file if we do not want to save
-                if (!item.getValue()) {
-                    Files.deleteIfExists(Paths.get(fileName));
+                if (!saveFile) {
+                    bucketStore.deleteObject(VIDEO_BUCKET, fileName);
                     this.parentSensor.reportStatus("Discarded file: " + fileName);
                 } else {
                     this.parentSensor.reportStatus("Saved file: " + fileName);

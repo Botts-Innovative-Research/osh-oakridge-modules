@@ -40,16 +40,17 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
         var maxGamma = radHelper.createMaxGamma();
         var maxNeutron = radHelper.createMaxNeutron();
         var isAdjudicated = radHelper.createIsAdjudicated();
-        var placeHolder = radHelper.createPlaceholder();
-        placeHolder.setName("videoFile");
-        placeHolder.setLabel("Video File");
+        var fileCount = radHelper.createCount().name("fileCount").id("fileCount").value(0);
+        var placeHolder = radHelper.createArray()
+                .name("videoFile")
+                .label("Video File")
+                .withVariableSize("fileCount")
+                .withElement("arrayElement", radHelper.createText());
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
-                .updatable(true)
                 .definition(RADHelper.getRadUri("occupancy"))
-                .description("System occupancy count since midnight each day")
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(occupancyCount.getName(), occupancyCount)
                 .addField(occupancyStart.getName(), occupancyStart)
@@ -60,7 +61,8 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
                 .addField(maxGamma.getName(), maxGamma)
                 .addField(maxNeutron.getName(), maxNeutron)
                 .addField(isAdjudicated.getName(), isAdjudicated)
-                .addField(placeHolder.getName(), placeHolder) // TODO Set the definition here
+                .addField("fileCount", fileCount)
+                .addField("videoFile", placeHolder)
                 .build();
         dataEncoding = new TextEncodingImpl(",", "\n");
     }

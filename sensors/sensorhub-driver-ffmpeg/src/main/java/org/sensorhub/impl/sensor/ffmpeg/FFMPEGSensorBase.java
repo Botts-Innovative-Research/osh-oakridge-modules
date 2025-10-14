@@ -4,6 +4,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
 import com.botts.api.service.bucket.IBucketService;
+import net.opengis.swe.v20.DataChoice;
+import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
@@ -120,7 +122,11 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
     protected void doStop() throws SensorHubException {
         super.doStop();
         try {
-            mpegTsProcessor.closeFile();
+            var command = (DataChoice)fileControl.getCommandDescription();
+            command.renewDataBlock();
+            command.setSelectedItem(FileControl.CMD_CLOSE_FILE);
+            command.getComponent(FileControl.CMD_CLOSE_FILE).getData().setBooleanValue(false);
+            this.fileControl.submitCommand((new CommandData.Builder()).withParams(command.getData()).build()).join(); // TODO Close file
         } catch (Exception ignored) {}
         stopStream();
         shutdownExecutor();
@@ -183,6 +189,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         }
     }
 
+    /*
     protected void createHLSOutput() {
         try {
             hlsOutput = new HLSOutput<>(this, config.fileConfig.hlsDirectory);
@@ -193,12 +200,17 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         }
     }
 
+     */
+
     protected void createFileControl() {
         try {
-            mpegTsProcessor.addVideoDataBufferListener(new FileOutput(getParentHub().getModuleRegistry().getModuleByType(IBucketService.class).getBucketStore()));
-            fileControl = new FileControl<>(this, config.fileConfig.videoClipDirectory);
+            var fileOutput = new FileOutput<>(this);
+            fileControl = new FileControl<>(this, fileOutput);
+            mpegTsProcessor.addVideoDataBufferListener(fileOutput);
+
             fileControl.init();
             addControlInput(fileControl);
+            addOutput(fileOutput, false);
         } catch (Exception e) {
             logger.error("Could not initialize file control.", e);
         }
@@ -253,9 +265,6 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	            		//createVideoOutput(videoDimensions, codecFormat);
                         createVideoOutput(videoDimensions, "h264");
 	            	}
-                    if (config.connection.useHLS) {
-                        createHLSOutput();
-                    }
                     createFileControl();
 	                // Set video stream packet listener to video output
 	                mpegTsProcessor.addVideoDataBufferListener(videoOutput);

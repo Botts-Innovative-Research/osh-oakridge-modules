@@ -18,6 +18,7 @@ import org.bytedeco.ffmpeg.avcodec.AVCodecContext;
 import org.bytedeco.ffmpeg.avcodec.AVCodecParameters;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avformat.AVFormatContext;
+import org.bytedeco.ffmpeg.avformat.AVStream;
 import org.bytedeco.ffmpeg.avutil.AVDictionary;
 import org.bytedeco.ffmpeg.avutil.AVRational;
 import org.bytedeco.ffmpeg.global.avcodec;
@@ -227,20 +228,6 @@ public class MpegTsProcessor extends Thread {
         this.useTCP = useTCP;
     }
 
-    public void openFile(String outputFile) throws IOException {
-        List<FileOutput> fileOutputList = getVideoDataBufferListenersByType(FileOutput.class);
-        for (var fileOutput : fileOutputList) {
-            fileOutput.openFile(outputFile, this.avFormatContext, this.videoStreamId);
-        }
-    }
-
-    public void closeFile() throws IOException {
-        List<FileOutput> fileOutputList = getVideoDataBufferListenersByType(FileOutput.class);
-        for (var fileOutput : fileOutputList) {
-            fileOutput.closeFile();
-        }
-    }
-
     /**
      * Attempts to open the stream given the {@link MpegTsProcessor#streamSource}
      * Opening the stream entails establishing appropriate connection and ability to
@@ -288,6 +275,14 @@ public class MpegTsProcessor extends Thread {
         }
 
         return streamOpened;
+    }
+
+    public AVFormatContext getAvFormatContext() {
+        return this.avFormatContext;
+    }
+
+    public AVStream getAvStream() {
+        return this.avFormatContext.streams(videoStreamId);
     }
 
     /**

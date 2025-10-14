@@ -49,7 +49,7 @@ public class HLSOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSe
         super(SENSOR_OUTPUT_NAME, parentSensor);
         this.directory = directory;
 
-        fileOutput = new FileOutput(getParentProducer().getParentHub().getModuleRegistry().getModuleByType(IBucketService.class).getBucketStore());
+        fileOutput = new FileOutput(parentSensor);
 
         SWEHelper helper = new SWEHelper();
         dataStruct = helper.createText()
@@ -76,7 +76,7 @@ public class HLSOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSe
             Files.createDirectories(Paths.get(path.substring(0, path.lastIndexOf("/") + 1)));
         }
 
-        fileOutput.openFile(path, inputFormat, videoStreamId);
+        //fileOutput.openFile(path, inputFormat, videoStreamId);
 
         if (latestRecord == null) {
             latestRecord = dataStruct.createDataBlock();
@@ -88,7 +88,7 @@ public class HLSOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSe
     }
 
     public void stopStream() throws IOException {
-        fileOutput.closeFile();
+        //fileOutput.closeFile();
     }
 
     @Override
