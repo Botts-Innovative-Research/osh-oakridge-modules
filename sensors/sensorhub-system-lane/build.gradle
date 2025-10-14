@@ -1,10 +1,11 @@
 description = 'Lane System'
 ext.details = "Sensor system for RPM lanes"
-version = '1.0.0'
+version = '1.0.1'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     implementation 'org.sensorhub:sensorhub-datastore-h2:' + oshCoreVersion
+    implementation 'org.sensorhub:sensorhub-service-consys:' + oshCoreVersion
     implementation project(':sensorhub-utils-rad')
     implementation project(':sensorhub-driver-aspect')
     implementation project(':sensorhub-driver-rapiscan')

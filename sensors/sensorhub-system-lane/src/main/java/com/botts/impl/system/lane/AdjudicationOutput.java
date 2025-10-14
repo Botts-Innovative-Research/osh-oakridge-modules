@@ -21,29 +21,15 @@ import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import org.sensorhub.api.data.DataEvent;
-import org.sensorhub.api.security.IUserInfo;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
+import org.sensorhub.impl.service.consys.*;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Adjudication;
+import org.vast.data.DataArrayImpl;
 import org.vast.data.TextEncodingImpl;
 import org.vast.swe.SWEHelper;
 
 public class AdjudicationOutput extends AbstractSensorOutput<LaneSystem> {
-
-
-    // TODO: Should this be resolved via an ontology repo?
-//    {code: 0, label: "", group: ""},
-//    {code: 1, label: "Code 1: Contraband Found", group: "Real Alarm"},
-//    {code: 2, label: "Code 2: Other", group: "Real Alarm"},
-//    {code: 3, label: "Code 3: Medical Isotope Found", group: "Innocent Alarm"},
-//    {code: 4, label: "Code 4: NORM Found", group: "Innocent Alarm"},
-//    {code: 5, label: "Code 5: Declared Shipment of Radioactive Material", group: "Innocent Alarm"},
-//    {code: 6, label: "Code 6: Physical Inspection Negative", group: "False Alarm"},
-//    {code: 7, label: "Code 7: RIID/ASP Indicates Background Only", group: "False Alarm"},
-//    {code: 8, label: "Code 8: Other", group: "False Alarm"},
-//    {code: 9, label: "Code 9: Authorized Test, Maintenance, or Training Activity", group: "Test/Maintenance"},
-//    {code: 10, label: "Code 10: Unauthorized Activity", group: "Tamper/Fault"},
-//    {code: 11, label: "Code 11: Other", group: "Other"}
 
     public static final String NAME = "adjudicationOutput";
     public static final String LABEL = "Adjudication Output";
@@ -79,21 +65,52 @@ public class AdjudicationOutput extends AbstractSensorOutput<LaneSystem> {
         long timeMillis = System.currentTimeMillis();
 
         DataBlock dataBlock = latestRecord == null ? recordStructure.createDataBlock() : latestRecord.renew();
+        recordStructure.setData(dataBlock);
+//        dataBlock = Adjudication.fromAdjudication(adjudication);
 
-        dataBlock.setDoubleValue(0, timeMillis/1000d);
-        // TODO: Check this gets accurate username
-//        String username = String.valueOf(getParentProducer().getSecurityHandler().getCurrentUser().getId()); // this is broken
+        int index = 0;
+        dataBlock.setDoubleValue(index++, timeMillis/1000d);
 
-        dataBlock.setStringValue(1, "username");
-        dataBlock.setStringValue(2, adjudication.getFeedback());
-        dataBlock.setIntValue(3, adjudication.getAdjudicationCode());
-        // TODO: Change to use array
-        dataBlock.setStringValue(4, adjudication.getIsotopes());
-        dataBlock.setStringValue(5, adjudication.getSecondaryInspectionStatus().toString());
-        // TODO: Change to use array
-        dataBlock.setStringValue(6, adjudication.getFilePaths());
-        dataBlock.setStringValue(7, adjudication.getOccupancyId());
-        dataBlock.setStringValue(8, adjudication.getVehicleId());
+        var id = getParentProducer().getSecurityHandler().getCurrentUser().getId();
+
+        getParentProducer().getParentHub().getSecurityManager().getUserRegistry().get(id);
+
+
+        String username = null;
+//        var csApi = getParentProducer().getParentHub().getModuleRegistry().getModuleByType(ConSysApiService.class);
+//        var csApiServlet = csApi.getServlet();
+//        var apiSecurity = csApiServlet.getSecurityHandler();
+//        var user = apiSecurity.getCurrentUser().getId();
+
+        dataBlock.setStringValue(index++, username == null ? "" : username);
+        dataBlock.setStringValue(index++, adjudication.getFeedback());
+        dataBlock.setStringValue(index++, adjudication.getAdjudicationCode().toString());
+
+        int isotopeCount =  adjudication.getIsotopes().size();
+        dataBlock.setIntValue(index++, isotopeCount);
+
+        var isotopesArray =((DataArrayImpl) recordStructure.getComponent("isotopes"));
+        isotopesArray.updateSize();
+        dataBlock.updateAtomCount();
+
+        for (int i = 0; i < isotopeCount; i++)
+            dataBlock.setStringValue(index++, adjudication.getIsotopes().get(i));
+
+        dataBlock.setStringValue(index++, adjudication.getSecondaryInspectionStatus().toString());
+
+        int filePathCount = adjudication.getFilePaths().size();
+        dataBlock.setIntValue(index++, filePathCount);
+
+        var filePathsArray =((DataArrayImpl) recordStructure.getComponent("filePaths"));
+        filePathsArray.updateSize();
+        dataBlock.updateAtomCount();
+
+        for (int i = 0; i < filePathCount; i++)
+            dataBlock.setStringValue(index++, adjudication.getFilePaths().get(i));
+
+
+        dataBlock.setStringValue(index++, adjudication.getOccupancyId());
+        dataBlock.setStringValue(index, adjudication.getVehicleId());
 
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();

@@ -15,15 +15,20 @@
 import com.botts.impl.sensor.rapiscan.EMLConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.system.lane.AdjudicationControl;
+import com.botts.impl.system.lane.AdjudicationOutput;
 import com.botts.impl.system.lane.Descriptor;
 import com.botts.impl.system.lane.LaneSystem;
 import com.botts.impl.system.lane.config.*;
+import net.opengis.swe.v20.DataComponent;
 import org.junit.*;
 import org.junit.runners.MethodSorters;
 import org.sensorhub.api.command.CommandData;
+import org.sensorhub.api.command.CommandStatus;
 import org.sensorhub.api.command.ICommandStatus;
+import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.BigIdLong;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.SensorHub;
@@ -34,6 +39,7 @@ import org.sensorhub.impl.datastore.h2.MVObsSystemDatabase;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseDescriptor;
 import org.sensorhub.impl.module.ModuleRegistry;
+import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Adjudication;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
@@ -52,6 +58,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 /**
  * @author Alex Almanza
@@ -66,7 +73,8 @@ public class LaneTests {
     private String LANE_UID = "1";
     private String LANE_NAME = "Test Lane";
 
-    private static final String RPM_HOST = System.getenv("RPM_HOST");//"192.168.1.211";
+    private static final String RPM_HOST = "104.191.102.5";
+//    private static final String RPM_HOST = System.getenv("RPM_HOST"); //"192.168.1.211";
     private static final int RAPISCAN_PORT = 1601;
     private static final int ASPECT_PORT = 502;
 
@@ -200,13 +208,28 @@ public class LaneTests {
         var obsId = obsStore.selectKeys(filter).toList().get(0);
         var encodedObsId = obsIdEncoder.encodeID(obsId);
 
+//        AtomicReference<AdjudicationOutput> adjOutput = new AtomicReference<>();
+//        lane.getOutputs().values().forEach((output) -> {
+//            if (output.getName().contains(AdjudicationOutput.NAME)) {
+//                adjOutput.set((AdjudicationOutput) lane.getOutputs().get(AdjudicationOutput.NAME));
+//            }
+//        });
+
+
+        List<String> isotopes = new ArrayList<>();
+        isotopes.add("Xenon");
+        isotopes.add("Nitrogen");
+
+        List<String> filePaths = new ArrayList<>();
+        filePaths.add("test.txt");
+
         var control = (AdjudicationControl) lane.getCommandInputs().get(AdjudicationControl.NAME);
         var adjData = Adjudication.fromAdjudication(new Adjudication.Builder()
                 .feedback("hey where did u get that")
-                .adjudicationCode(3)
-                .isotopes("U-235,U-238")
+                .adjudicationCode(Adjudication.AdjudicationCode.AUTHORIZED_TEST)
+                .isotopes(isotopes)
                 .secondaryInspectionStatus(Adjudication.SecondaryInspectionStatus.NONE)
-                .filePaths("")
+                .filePaths(filePaths)
                 .occupancyId(encodedObsId)
                 .vehicleId("ABC123")
                 .build());
@@ -222,6 +245,8 @@ public class LaneTests {
         // Adjudication ID got added to occupancy observation
         assertEquals(cmdIdEncoder.encodeID(cmd.getID()), obsStore.get(obsId).getResult().getStringValue(10));
         // TODO: add more assertions
+
+
     }
 
 

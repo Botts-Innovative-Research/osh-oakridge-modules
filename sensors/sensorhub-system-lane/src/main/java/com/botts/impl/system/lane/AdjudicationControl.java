@@ -70,10 +70,6 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
                    return CommandStatus.failed(command.getID(), "The occupancy from the provided ID is null");
 
                // save files to bucket store // TODO: they should already be saved at this point, but we can verify they exist
-               String filePaths = adj.getFilePaths();
-               if (filePaths != null && !filePaths.isEmpty()) {
-                   // handle file paths to bucket store
-               }
 
                var dsQuery = obsStore.getDataStreams().select(new DataStreamFilter.Builder()
                        .withInternalIDs(obs.getDataStreamID())
@@ -87,11 +83,9 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
                if (adj.getSecondaryInspectionStatus() == null)
                    return CommandStatus.failed(command.getID(), "Please specify a secondary inspection status");
 
-               // HERE U GO KALEN
                BigId dataStreamId = obs.getDataStreamID();
                DataComponent recordStructure = obsStore.getDataStreams().get(new DataStreamKey(dataStreamId)).getRecordStructure();
 
-               // Secondary inspection
                parent.adjudicationOutput.setData(adj);
 
                var commandId = getParentProducer().getParentHub().getIdEncoders().getCommandIdEncoder().encodeID(command.getID());
@@ -102,7 +96,6 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
 
                adjIdCount = adjIdCount + 1;
 
-
                // increment the count by one
                result.setIntValue(9, adjIdCount);
 
@@ -110,7 +103,6 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> {
                // need to refresh the size of the data array
                var adjIdArray = ((DataArrayImpl) recordStructure.getComponent("adjudicatedIdsArray").getComponent("adjudicatedIds"));
                adjIdArray.updateSize();
-
 
                result.setStringValue(9 + adjIdCount, commandId);
 

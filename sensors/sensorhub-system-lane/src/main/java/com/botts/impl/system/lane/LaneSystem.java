@@ -66,6 +66,7 @@ import java.util.concurrent.*;
 public class LaneSystem extends SensorSystem {
 
     private static final String URN_PREFIX = "urn:";
+    private static final String LANE_SYSTEM_PREFIX = URN_PREFIX + "osh:system:lane:";
     private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
     private static final String BASE_VIDEO_DIRECTORY = "./web/video/";
@@ -101,7 +102,6 @@ public class LaneSystem extends SensorSystem {
             }
         }
 
-
         // Ensure name is at most 12 characters
         if (config.name.length() > 12)
             throw new SensorHubException("Lane name must be 12 or less characters", new IllegalArgumentException("Module name must be 12 or less characters"));
@@ -130,11 +130,13 @@ public class LaneSystem extends SensorSystem {
             }
             // Initial FFmpeg config
             var ffmpegConfigList = getConfiguration().laneOptionsConfig.ffmpegConfig;
-            for (var simpleConfig : ffmpegConfigList) {
-                FFMPEGConfig config = createFFmpegConfig(simpleConfig, ffmpegConfigList.indexOf(simpleConfig));
-                var ffmpegModule = createFFmpegModule(config);
-                if (occupancyWrapper != null) {
-                    occupancyWrapper.addFFmpegSensor(ffmpegModule);
+            if (ffmpegConfigList != null) {
+                for (var simpleConfig : ffmpegConfigList) {
+                    FFMPEGConfig config = createFFmpegConfig(simpleConfig, ffmpegConfigList.indexOf(simpleConfig));
+                    var ffmpegModule = createFFmpegModule(config);
+                    if (occupancyWrapper != null) {
+                        occupancyWrapper.addFFmpegSensor(ffmpegModule);
+                    }
                 }
             }
         }
@@ -213,7 +215,13 @@ public class LaneSystem extends SensorSystem {
     @Override
     protected void afterStart() throws SensorHubException {
         super.afterStart();
-        adjudicationControl.setObsStore(getParentHub().getSystemDriverRegistry().getDatabase(getUniqueIdentifier()).getObservationStore());
+
+        var obsStore = getParentHub().getSystemDriverRegistry().getDatabase(getUniqueIdentifier()).getObservationStore();
+        if (obsStore == null) {
+            getLogger().error("Cannot get obs store.");
+            return;
+        }
+        adjudicationControl.setObsStore(obsStore);
     }
 
     @Override
@@ -243,7 +251,7 @@ public class LaneSystem extends SensorSystem {
     }
 
     private String createLaneUID(String suffix) {
-        return URN_PREFIX + "osh:system:lane:" + suffix;
+        return LANE_SYSTEM_PREFIX + suffix;
     }
 
     private synchronized void deleteSystemsFromDatabase(List<String> systemUIDs) {
