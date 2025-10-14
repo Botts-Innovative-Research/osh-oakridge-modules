@@ -79,10 +79,6 @@ public class LaneSystem extends SensorSystem {
 
     AdjudicationControl adjudicationControl;
 
-    protected ModuleSecurity getSecurityHandler() {
-        return this.securityHandler;
-    }
-
     @Override
     protected void doInit() throws SensorHubException {
         threadPool = Executors.newSingleThreadExecutor();

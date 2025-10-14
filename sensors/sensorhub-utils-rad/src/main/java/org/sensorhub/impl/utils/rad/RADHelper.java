@@ -320,7 +320,7 @@ public class RADHelper extends GeoPosHelper {
         var adjIdArray = createAdjudicatedIdsArray();
         return createRecord()
                 .name("adjudicatedIdsArray")
-                .description("List of adjudicated ids for this record")
+                .description("An array of command IDs of the adjudication control associated to an adjudication by the command's result")
                 .addField(adjCount.getName(), adjCount)
                 .addField(adjIdArray.getName(), adjIdArray)
                 .build();
@@ -331,6 +331,7 @@ public class RADHelper extends GeoPosHelper {
                 .name("adjudicatedIdsCount")
                 .id("adjudicatedIdsCount")
                 .label("Adjudicated IDs Count")
+                .description("The number of adjudicated command ids for the alarming occupancy event record")
                 .definition(getRadUri("AdjudicatedIdsCount"))
                 .build();
     }
@@ -340,7 +341,7 @@ public class RADHelper extends GeoPosHelper {
         return createArray()
                 .name("adjudicatedIds")
                 .label("Adjudicated IDs")
-                .description("Comma separated adjudicated IDs")
+                .description("List of Adjudicated Command IDs")
                 .definition(getRadUri("AdjudicatedIdsArray"))
                 .withVariableSize("adjudicatedIdsCount")
                 .withElement(adjId.getName(), adjId)
@@ -354,6 +355,33 @@ public class RADHelper extends GeoPosHelper {
                 .name("adjudicationId")
                 .description("ID of the Adjudication record")
                 .definition(getRadUri("AdjudicationId"))
+                .build();
+    }
+
+    public DataComponent createVideoPathRecord(){
+        return createRecord()
+                .name("videoPathRecord")
+                .description("Record that holds a list of video paths")
+                .addField("videoPathCount", createCount()
+                        .label("Video Path Count")
+                        .name("videoPathCount")
+                        .description("Count of the number of video paths provided")
+                        .definition(getRadUri("VideoPathCount"))
+                        .id("videoPathCount")
+                        .build())
+                .addField("videoPaths", createArray()
+                        .name("videoPaths")
+                        .label("Video Paths")
+                        .description("List of video paths recorded during an alarming occupancy")
+                        .definition(getRadUri("VideoPathsArray"))
+                        .withVariableSize("videoPathCount")
+                        .withElement("videoPath", createText()
+                                .name("videoPath")
+                                .label("Video Path")
+                                .description("Path of the recorded video during an alarming occupancy")
+                                .definition(getRadUri("VideoPath"))
+                                .build())
+                        .build())
                 .build();
     }
 

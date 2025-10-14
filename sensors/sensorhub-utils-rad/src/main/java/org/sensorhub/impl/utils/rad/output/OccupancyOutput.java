@@ -41,7 +41,7 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         var maxGamma = radHelper.createMaxGamma();
         var maxNeutron = radHelper.createMaxNeutron();
         var adjudicatedIds = radHelper.createAdjudicationIdArray();
-        var videoPaths = radHelper.createVideoPaths();
+        var videoPaths = radHelper.createVideoPathRecord();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
@@ -71,6 +71,8 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         else
             dataBlock = latestRecord.renew();
 
+        dataStruct.setData(dataBlock);
+
         int index = 0;
         dataBlock.setDoubleValue(index++, System.currentTimeMillis()/1000);
         dataBlock.setIntValue(index++, occupancy.getOccupancyCount());
@@ -88,7 +90,11 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         adjIdArray.updateSize();
 //        dataBlock.setStringValue(index++, "");
 
-        dataBlock.setStringValue(index++, ""); // filepaths todo: turn this into a dataarray too
+        dataBlock.setIntValue(index++, 0); // video path count
+
+        var videoPathArray = ((DataArrayImpl) dataStruct.getComponent("videoPathRecord").getComponent("videoPaths"));
+        adjIdArray.updateSize();
+//        dataBlock.setStringValue(index++, "");
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));
