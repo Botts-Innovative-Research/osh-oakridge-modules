@@ -208,7 +208,12 @@ public class LaneSystem extends SensorSystem {
     protected void afterStart() throws SensorHubException {
         super.afterStart();
 
-        var obsStore = getParentHub().getSystemDriverRegistry().getDatabase(getUniqueIdentifier()).getObservationStore();
+        var db = getParentHub().getSystemDriverRegistry().getDatabase(getUniqueIdentifier());
+        if (db == null) {
+            getLogger().error("Cannot get database for lane {}", getUniqueIdentifier());
+            return;
+        }
+        var obsStore = db.getObservationStore();
         if (obsStore == null) {
             getLogger().error("Cannot get obs store for lane {}", getUniqueIdentifier());
             return;
