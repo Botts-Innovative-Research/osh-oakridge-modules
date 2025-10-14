@@ -1,9 +1,10 @@
 description = 'OSCAR Service Module'
 ext.details = 'Provides necessary configuration and performs specific operations for OSCAR'
-version = '1.0.1'
+version = '1.0.2'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+
     implementation project(':sensorhub-utils-rad')
     implementation project(':sensorhub-service-bucket')
 
@@ -11,6 +12,9 @@ dependencies {
     implementation project(':sensorhub-service-bucket') // service for file system
     implementation("jfree:jfreechart:1.0.13") // charts
     implementation("com.itextpdf:itext7-core:9.3.0") //pdfs
+
+    testImplementation 'org.sensorhub:sensorhub-datastore-h2:' + oshCoreVersion
+    testImplementation 'org.sensorhub:sensorhub-service-consys:' + oshCoreVersion
 }
   
 // add info to OSGi manifest

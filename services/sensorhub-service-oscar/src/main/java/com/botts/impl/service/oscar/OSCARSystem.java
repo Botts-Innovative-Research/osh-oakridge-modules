@@ -32,8 +32,12 @@ public class OSCARSystem extends AbstractSensorDriver {
     public static String DESCRIPTION = "System used for performing OSCAR operations";
     public static String UID = "urn:ornl:oscar:system:";
 
+    String nodeId;
+
     protected OSCARSystem(String nodeId) {
         super(UID + nodeId, NAME);
+        this.nodeId = nodeId;
+
         removeAllOutputs();
         removeAllControlInputs();
     }
@@ -103,6 +107,10 @@ public class OSCARSystem extends AbstractSensorDriver {
     @Override
     protected void addOutput(IStreamingDataInterface dataInterface, boolean isStatus) {
         super.addOutput(dataInterface, isStatus);
+    }
+
+    public String getNodeId(){
+        return nodeId;
     }
 
     @Override

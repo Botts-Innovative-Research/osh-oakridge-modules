@@ -1,7 +1,6 @@
 package com.botts.impl.sensor.rapiscan.eml;
 
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
-import com.botts.impl.sensor.rapiscan.output.GammaThresholdOutput;
 import gov.llnl.ernie.analysis.AnalysisException;
 import gov.llnl.ernie.api.ERNIE_lane;
 import gov.llnl.ernie.api.Results;

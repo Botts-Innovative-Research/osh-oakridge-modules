@@ -41,7 +41,7 @@ public class GammaOutput extends AbstractSensorOutput<AspectSensor> {
         dataRecord = radHelper.createRecord()
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
-                .definition(RADHelper.getRadUri("gamma-counts"))
+                .definition(RADHelper.getRadUri("Gamma"))
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(gammaAlarmState.getName(), gammaAlarmState)
                 .addField(gammaCount.getName(), gammaCount)
