@@ -150,7 +150,7 @@ public class OccupancyWrapper {
                     .subscribe(event -> {
                         var observations = event.getObservations();
 
-                        observationHelper.addFfmpegOut(observations[0], cameras.size());
+                        observationHelper.addFfmpegOut(observations[0], cameraSubscriptions.size());
                         /*
                         for (var obs : observations) {
                             observationHelper.setFfmpegOut(obs);
