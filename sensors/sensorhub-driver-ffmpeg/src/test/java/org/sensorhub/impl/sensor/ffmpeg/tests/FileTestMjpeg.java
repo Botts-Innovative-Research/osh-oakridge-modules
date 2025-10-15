@@ -34,6 +34,6 @@ public class FileTestMjpeg extends ConnectionTest {
         config.connectionConfig.reconnectAttempts = 10;
         config.fileConfig.videoClipDirectory = "";
         config.fileConfig.hlsDirectory = "";
-        config.connection.useHLS = false;
+        config.output.useHLS = false;
     }
 }

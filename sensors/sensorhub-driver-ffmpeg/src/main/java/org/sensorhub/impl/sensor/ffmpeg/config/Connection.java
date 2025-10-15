@@ -44,7 +44,4 @@ public class Connection {
 
     @DisplayInfo(label = "TCP", desc = "Select if using TCP network protocol. Otherwise driver will use UDP.")
     public boolean useTCP = false;
-
-    @DisplayInfo(label = "HLS", desc = "Select if using HLS video streaming protocol.")
-    public boolean useHLS = false;
 }

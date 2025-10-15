@@ -6,6 +6,7 @@ import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.TextEncoding;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avformat.AVFormatContext;
+import org.bytedeco.ffmpeg.avformat.AVIOContext;
 import org.bytedeco.ffmpeg.avformat.AVStream;
 import org.bytedeco.ffmpeg.avformat.Write_packet_Pointer_BytePointer_int;
 import org.bytedeco.ffmpeg.avutil.AVDictionary;
@@ -39,7 +40,7 @@ import static org.bytedeco.ffmpeg.global.avutil.*;
 
 public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSensorOutput<FFMPEGSensorBase<FFMPEGConfigType>> implements DataBufferListener {
 
-    public static final String OUTPUT_NAME = "FileNameOutput";
+    public String outputName = "FileNameOutput";
     public static final String OUTPUT_LABEL = "FFmpeg file output name";
     final DataComponent outputStruct;
     final TextEncoding outputEncoding;
@@ -64,12 +65,13 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     ByteArraySeekableBuffer seekableBuffer;
     String fileName;
 
-    public FileOutput(FFMPEGSensorBase<FFMPEGConfigType> parentSensor) throws SensorHubException {
-        super(OUTPUT_NAME, parentSensor);
+    public FileOutput(FFMPEGSensorBase<FFMPEGConfigType> parentSensor, String name) throws SensorHubException {
+        super(name, parentSensor);
+        this.outputName = name;
         var helper = new SWEHelper();
 
         outputStruct = helper.createText()
-                .name(OUTPUT_NAME)
+                .name(outputName)
                 .label(OUTPUT_LABEL)
                 .build();
 
@@ -109,8 +111,22 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         }
     }
 
+    public void publish() {
+        if (this.fileName != null && !this.fileName.isBlank()) {
+            this.outputStruct.renewDataBlock();
+            this.outputStruct.getData().setStringValue(this.fileName);
+            this.eventHandler.publish(new DataEvent(System.currentTimeMillis(), this, outputStruct.getData().clone()));
+        }
+    }
+
+    /**
+     * Write video data to an OutputStream. A file name is still required for determining file format and
+     * broadcasting the file name with {@link #publish()}.
+     * @param outputStream
+     * @param fileName
+     * @throws IOException
+     */
     public void openFile(OutputStream outputStream, String fileName) throws IOException {
-        avutil.av_log_set_level(avutil.AV_LOG_VERBOSE);
         try {
             if (doFileWrite) {
                 throw new IOException("Already writing to file " + this.fileName);
@@ -130,7 +146,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
             AVStream inputStream = this.parentSensor.getProcessor().getAvStream();
 
             outputContext = new AVFormatContext(null);
-            avformat_alloc_output_context2(outputContext, null, "mp4", null); // Assuming always mp4 output
+            avformat_alloc_output_context2(outputContext, null, null, this.fileName); // Assuming always mp4 output
 
             outputVideoStream = avformat.avformat_new_stream(outputContext, null);
 
@@ -173,6 +189,102 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
             //outputContext.pb().position(0);
 
             AVDictionary options = null;
+            if (this.fileName.endsWith(".m3u8")) {
+                options = hlsOptions();
+            }
+
+            if ((ret = avformat.avformat_write_header(outputContext, options)) < 0) {
+                logFFmpeg(ret);
+                throw new IOException("Could not write header to file.");
+            }
+
+            while (!framesSinceKey.isEmpty()) {
+                AVPacket packet = framesSinceKey.pop();
+                packetTiming(packet);
+                av_write_frame(outputContext, packet);
+                av_packet_free(packet);
+            }
+
+            doFileWrite = true;
+        } catch (Exception e) {
+            throw new IOException("Could not open output file " + fileName, e);
+        }
+    }
+
+    /**
+     * Write video data to a file. Format determined by file name suffix.
+     * @param fileName
+     * @throws IOException
+     */
+    public void openFile(String fileName) throws IOException {
+        try {
+            if (doFileWrite) {
+                throw new IOException("Already writing to file " + this.fileName);
+            }
+
+            this.outputStream = null;
+            this.fileName = fileName;
+
+            seekableBuffer = null;
+            writeCallback = null;
+            seekCallback = null;
+
+            filePts = 0;
+            int ret;
+
+            //AVFormatContext inputContext = this.parentSensor.getProcessor().getAvFormatContext();
+            AVStream inputStream = this.parentSensor.getProcessor().getAvStream();
+
+            outputContext = new AVFormatContext(null);
+            avformat_alloc_output_context2(outputContext, null, null, this.fileName); // Assuming always mp4 output
+
+            outputVideoStream = avformat.avformat_new_stream(outputContext, null);
+
+            avcodec.avcodec_parameters_copy(outputVideoStream.codecpar(), inputStream.codecpar());
+
+            // We're transcoding, need to override some of the copied values
+            outputVideoStream.codecpar().codec_id(AV_CODEC_ID_H264);
+            outputVideoStream.codecpar().codec_tag(0);
+
+            if (inputStream.time_base().num() == 0 || inputStream.time_base().den() == 0) {
+                outputVideoStream.time_base(new AVRational());
+                outputVideoStream.time_base().num(1);
+                outputVideoStream.time_base().den(90000);
+            } else {
+                outputVideoStream.time_base(new AVRational(inputStream.time_base()));
+            }
+
+            if (inputStream.avg_frame_rate().num() == 0 || inputStream.avg_frame_rate().den() == 0) {
+                outputVideoStream.avg_frame_rate(new AVRational());
+                outputVideoStream.avg_frame_rate().num(30);
+                outputVideoStream.avg_frame_rate().den(1);
+            } else {
+                outputVideoStream.avg_frame_rate(new AVRational(inputStream.avg_frame_rate()));
+            }
+
+            outputVideoStream.start_time(0);
+            //outputVideoStream.position(0);
+            outputVideoStream.r_frame_rate(new AVRational(inputStream.r_frame_rate()));
+
+            ptsInc = outputVideoStream.time_base().den() / (outputVideoStream.avg_frame_rate().num());
+            //timeBase = (double) inputStream.time_base().num() / inputStream.time_base().den();
+
+            if ((outputContext.oformat().flags() & AVFMT_NOFILE) == 0) {
+                AVIOContext avioContext = new AVIOContext(null);
+                if (avio_open(avioContext, this.fileName, AVIO_FLAG_WRITE) < 0) {
+                    throw new IOException("Could not open file.");
+                }
+                outputContext.pb(avioContext);
+            }
+
+            outputContext.start_time(0);
+            outputContext.position(0);
+            //outputContext.pb().position(0);
+
+            AVDictionary options = null;
+            if (this.fileName.endsWith(".m3u8")) {
+                options = hlsOptions();
+            }
 
             if ((ret = avformat.avformat_write_header(outputContext, options)) < 0) {
                 logFFmpeg(ret);
@@ -215,7 +327,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         return options;
     }
 
-    public void closeFile(boolean doFilenameOutput) throws IOException {
+    public void closeFile() throws IOException {
         if (doFileWrite) {
             doFileWrite = false;
             hasHadKey = false;
@@ -225,23 +337,27 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                     avio_flush(outputContext.pb());
 
 
-                    outputStream.write(seekableBuffer.getData());
-                    outputStream.flush();
-                    outputStream.close();
+                    if (outputStream != null) {
+                        outputStream.write(seekableBuffer.getData());
+                        outputStream.flush();
+                        outputStream.close();
+                        outputStream = null;
+                    }
 
                     avio_close(outputContext.pb());
                     outputContext.pb(null);
 
-                    writeCallback.free();
-                    seekCallback.free();
+                    if (writeCallback != null) {
+                        writeCallback.free();
+                        writeCallback = null;
+                    }
+                    if (seekCallback != null) {
+                        seekCallback.free();
+                        seekCallback = null;
+                    }
 
                     avformat_free_context(outputContext);
                     outputContext = null;
-                }
-                if (doFilenameOutput) {
-                    this.outputStruct.renewDataBlock();
-                    this.outputStruct.getData().setStringValue(this.fileName);
-                    this.eventHandler.publish(new DataEvent(System.currentTimeMillis(), this, outputStruct.getData().clone()));
                 }
             } catch (Exception e) {
                 throw new IOException("Could not close output file " + this.fileName + ".", e);
