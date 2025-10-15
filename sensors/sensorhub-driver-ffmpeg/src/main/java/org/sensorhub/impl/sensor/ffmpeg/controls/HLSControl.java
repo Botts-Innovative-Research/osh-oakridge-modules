@@ -47,11 +47,6 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
         return this.fileOutput;
     }
 
-    @Override
-    public boolean isWriting() {
-        return !fileName.isEmpty();
-    }
-
     public void init() {
         SWEHelper fac = new SWEHelper();
 
