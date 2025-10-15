@@ -17,9 +17,10 @@ package com.botts.impl.service.bucket;
 
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
+import com.botts.api.service.bucket.IObjectHandler;
 import com.botts.impl.service.bucket.filesystem.FileSystemBucketStore;
 import com.botts.impl.service.bucket.handler.BucketHandler;
-import com.botts.impl.service.bucket.handler.ObjectHandler;
+import com.botts.impl.service.bucket.handler.DefaultObjectHandler;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.service.AbstractHttpServiceModule;
 import org.sensorhub.utils.NamedThreadFactory;
@@ -28,6 +29,7 @@ import org.vast.util.Asserts;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -37,6 +39,8 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
     private BucketServlet servlet;
     private ScheduledExecutorService threadPool;
     private IBucketStore bucketStore;
+    private final List<IObjectHandler> objectHandlers = new CopyOnWriteArrayList<>();
+    private DefaultObjectHandler defaultObjectHandler;
 
     @Override
     public void doInit() throws SensorHubException {
@@ -47,7 +51,7 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
         try {
             bucketStore = new FileSystemBucketStore(Path.of(config.fileStoreRootDir));
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new SensorHubException("Unable to initialize default file system bucket store");
         }
 
         if (config.initialBuckets != null && !config.initialBuckets.isEmpty())
@@ -68,10 +72,10 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
                 Runtime.getRuntime().availableProcessors(),
                 new NamedThreadFactory("BucketStorageService-Pool"));
 
-        ObjectHandler objectHandler = new ObjectHandler(bucketStore);
-        BucketHandler bucketHandler = new BucketHandler(bucketStore, objectHandler);
+        defaultObjectHandler = new DefaultObjectHandler(bucketStore);
+        BucketHandler bucketHandler = new BucketHandler(this);
 
-        this.servlet = new BucketServlet(this, securityHandler, bucketHandler, objectHandler);
+        this.servlet = new BucketServlet(this, securityHandler, bucketHandler);
 
         deploy();
     }
@@ -118,6 +122,24 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
     @Override
     public ExecutorService getThreadPool() {
         return threadPool;
+    }
+
+    @Override
+    public void registerObjectHandler(IObjectHandler handler) {
+        objectHandlers.add(handler);
+    }
+
+    @Override
+    public void unregisterObjectHandler(IObjectHandler handler) {
+        objectHandlers.remove(handler);
+    }
+
+    @Override
+    public IObjectHandler getObjectHandler(String bucketName, String objectKey) {
+        return objectHandlers.stream()
+                .filter(handler -> objectKey.matches(handler.getObjectPattern()))
+                .findFirst()
+                .orElse(defaultObjectHandler);
     }
 
     @Override

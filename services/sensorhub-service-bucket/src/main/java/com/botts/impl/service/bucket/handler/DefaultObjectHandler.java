@@ -1,7 +1,7 @@
 package com.botts.impl.service.bucket.handler;
 
 import com.botts.api.service.bucket.IBucketStore;
-import com.botts.api.service.bucket.IResourceHandler;
+import com.botts.api.service.bucket.IObjectHandler;
 import com.botts.impl.service.bucket.util.RequestContext;
 import com.botts.impl.service.bucket.util.ServiceErrors;
 import org.sensorhub.api.datastore.DataStoreException;
@@ -9,12 +9,13 @@ import org.sensorhub.api.datastore.DataStoreException;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.regex.Pattern;
 
-public class ObjectHandler implements IResourceHandler {
+public class DefaultObjectHandler implements IObjectHandler {
 
     private final IBucketStore bucketStore;
 
-    public ObjectHandler(IBucketStore bucketStore) {
+    public DefaultObjectHandler(IBucketStore bucketStore) {
         this.bucketStore = bucketStore;
     }
 
@@ -110,4 +111,8 @@ public class ObjectHandler implements IResourceHandler {
         }
     }
 
+    @Override
+    public String getObjectPattern() {
+        return Pattern.compile(".*").pattern();
+    }
 }
