@@ -31,7 +31,7 @@ import java.util.concurrent.Flow;
 
 public class OccupancyWrapper {
     public static final String OCCUPANCY = "occupancy";
-    public static final String VIDEO_FILE_OUTPUT = FileOutput.OUTPUT_NAME;
+    //public static final String VIDEO_FILE_OUTPUT = FileOutput.outputName;
     public static final String DAILYFILE_NAME = "dailyFile";
 
     private static final Logger logger = LoggerFactory.getLogger(OccupancyWrapper.class);
@@ -145,6 +145,24 @@ public class OccupancyWrapper {
 
     public void registerFFmpegListeners() {
         for (var camera : cameras) {
+            for (var command : camera.getCommandInputs().values()) {
+                if (command instanceof FileControl<?> fileControl) {
+                    var output = fileControl.getFileOutput();
+                    hub.getEventBus().newSubscription(ObsEvent.class)
+                            .withTopicID(EventUtils.getDataStreamDataTopicID(camera.getUniqueIdentifier(), output.getName()))
+                            .subscribe(event -> {
+                                var observations = event.getObservations();
+
+                                observationHelper.addFfmpegOut(observations[0], cameraSubscriptions.size());
+                            })
+                            .thenAccept(subscription -> {
+                                subscription.request(Long.MAX_VALUE);
+                                cameraSubscriptions.put(camera, subscription);
+                            });
+                    break; // Only support one file control output.
+                }
+            }
+            /*
             hub.getEventBus().newSubscription(ObsEvent.class)
                     .withTopicID(EventUtils.getDataStreamDataTopicID(camera.getUniqueIdentifier(), VIDEO_FILE_OUTPUT))
                     .subscribe(event -> {
@@ -156,12 +174,14 @@ public class OccupancyWrapper {
                             observationHelper.setFfmpegOut(obs);
                         }
 
-                         */
+
                     })
                     .thenAccept(subscription -> {
                         subscription.request(Long.MAX_VALUE);
                         cameraSubscriptions.put(camera, subscription);
                     });
+
+             */
         }
 
     }
