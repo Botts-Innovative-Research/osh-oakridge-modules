@@ -108,10 +108,8 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
                var result = obs.getResult();
                var adjIdCount = result.getIntValue(9);
 
-               adjIdCount++;
-
                // increment the count by one
-               result.setIntValue(9, adjIdCount);
+               result.setIntValue(9, adjIdCount++);
 
                // need to refresh the size of the data array
                var adjIdArray = ((DataArrayImpl) recordStructure.getComponent("adjudicatedIdsArray").getComponent("adjudicatedIds"));

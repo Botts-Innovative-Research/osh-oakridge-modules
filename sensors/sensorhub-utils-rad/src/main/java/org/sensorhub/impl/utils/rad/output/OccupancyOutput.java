@@ -90,10 +90,10 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         adjIdArray.updateSize();
 //        dataBlock.setStringValue(index++, "");
 
-        dataBlock.setIntValue(index++, 0); // video path count
+        dataBlock.setIntValue(index, 0); // video path count
 
         var videoPathArray = ((DataArrayImpl) dataStruct.getComponent("videoPathRecord").getComponent("videoPaths"));
-        adjIdArray.updateSize();
+        videoPathArray.updateSize();
 //        dataBlock.setStringValue(index++, "");
 
         latestRecord = dataBlock;
