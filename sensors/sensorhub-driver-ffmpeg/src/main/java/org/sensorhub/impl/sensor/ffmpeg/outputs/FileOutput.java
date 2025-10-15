@@ -79,6 +79,11 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     }
 
     @Override
+    public boolean isWriting() {
+        return doFileWrite;
+    }
+
+    @Override
     public void onDataBuffer(DataBufferRecord record) {
         synchronized (contextLock) {
             var data = record.getDataBuffer();

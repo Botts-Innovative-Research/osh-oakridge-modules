@@ -18,7 +18,7 @@ import com.botts.api.service.bucket.IBucketStore;
 
 import java.util.Collections;
 
-public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractSensorControl<FFMPEGSensorBase<FFmpegConfigType>> {
+public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractSensorControl<FFMPEGSensorBase<FFmpegConfigType>> implements FFmpegControl {
     public static final String SENSOR_CONTROL_NAME = "ffmpegFileControl";
     private static final String SENSOR_CONTROL_LABEL = "FFmpeg File Control";
     public static final String CMD_OPEN_FILE = "startFile";
@@ -46,8 +46,14 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
         }
     }
 
+    @Override
     public FileOutput<?> getFileOutput() {
         return this.fileOutput;
+    }
+
+    @Override
+    public boolean isWriting() {
+        return !fileName.isEmpty();
     }
 
     public void init() {

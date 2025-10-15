@@ -14,7 +14,7 @@ import org.vast.swe.SWEHelper;
 
 import java.util.Collections;
 
-public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractSensorControl<FFMPEGSensorBase<FFmpegConfigType>> {
+public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractSensorControl<FFMPEGSensorBase<FFmpegConfigType>> implements FFmpegControl {
     public static final String SENSOR_CONTROL_NAME = "ffmpegHlsControl";
     private static final String SENSOR_CONTROL_LABEL = "FFmpeg HLS Control";
     public static final String CMD_START_STREAM = "startStream";
@@ -42,8 +42,14 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
         }
     }
 
+    @Override
     public FileOutput<?> getFileOutput() {
         return this.fileOutput;
+    }
+
+    @Override
+    public boolean isWriting() {
+        return !fileName.isEmpty();
     }
 
     public void init() {
