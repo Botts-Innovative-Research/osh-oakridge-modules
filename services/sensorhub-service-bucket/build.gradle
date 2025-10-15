@@ -1,6 +1,6 @@
 description = 'Bucket Storage Service'
 ext.details = 'Generic object storage service to easily serve objects/files'
-version = '1.0.0'
+version = '1.1.0'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
