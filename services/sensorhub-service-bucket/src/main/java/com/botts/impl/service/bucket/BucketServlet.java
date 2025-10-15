@@ -1,8 +1,6 @@
 package com.botts.impl.service.bucket;
 
-import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.service.bucket.handler.BucketHandler;
-import com.botts.impl.service.bucket.handler.ObjectHandler;
 import com.botts.impl.service.bucket.util.InvalidRequestException;
 import com.botts.impl.service.bucket.util.RequestContext;
 import org.sensorhub.api.security.ISecurityManager;
@@ -34,22 +32,18 @@ public class BucketServlet extends HttpServlet {
     private final ExecutorService threadPool;
     private final ModuleSecurity securityHandler;
     private final Logger log;
-    private final IBucketStore bucketStore;
     private final BucketSecurity sec;
     private final BucketHandler bucketHandler;
-    private final ObjectHandler objectHandler;
 
-    public BucketServlet(BucketService service, ModuleSecurity securityHandler, BucketHandler bucketHandler, ObjectHandler objectHandler) {
+    public BucketServlet(BucketService service, ModuleSecurity securityHandler, BucketHandler bucketHandler) {
         this.sec = (BucketSecurity) securityHandler;
         this.threadPool = service.getThreadPool();
         this.securityHandler = securityHandler;
         this.log = service.getLogger();
-        this.bucketStore = service.getBucketStore();
 
         var endpointUrl = service.getPublicEndpointUrl();
         this.rootUrl = endpointUrl.endsWith("/") ? endpointUrl.substring(0, endpointUrl.length()-1) : endpointUrl;
         this.bucketHandler = bucketHandler;
-        this.objectHandler = objectHandler;
     }
 
     @Override

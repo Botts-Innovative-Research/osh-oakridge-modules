@@ -22,7 +22,8 @@ public class FileSystemBucketStore implements IBucketStore {
             Map.entry("application/pdf", ".pdf"),
             Map.entry("text/plain", ".txt"),
             Map.entry("text/csv", ".csv"),
-            Map.entry("application/json", ".json")
+            Map.entry("application/json", ".json"),
+            Map.entry("application/test", ".test")
     );
     private final Path rootDirectory;
 
@@ -156,8 +157,21 @@ public class FileSystemBucketStore implements IBucketStore {
         Path path = getBucketPath(bucketName).resolve(key);
         if (!Files.exists(path))
             throw new DataStoreException(OBJECT_NOT_FOUND + bucketName, new IllegalArgumentException());
+
         try {
-            return Files.probeContentType(path);
+            String mimeType = Files.probeContentType(path);
+            if (mimeType != null)
+                return mimeType;
+
+            String lowerKey = key.toLowerCase();
+            for (Map.Entry<String, String> entry : MIME_EXTENSION_MAP.entrySet()) {
+                String mime = entry.getKey();
+                String extension = entry.getValue();
+                if (lowerKey.endsWith(extension))
+                    return mime;
+            }
+
+            return "application/octet-stream";
         } catch (IOException e) {
             throw new DataStoreException("Unable to resolve mime type", e);
         }
