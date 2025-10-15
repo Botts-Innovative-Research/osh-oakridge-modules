@@ -16,12 +16,15 @@ import com.botts.impl.system.lane.AdjudicationControl;
 import com.botts.impl.system.lane.Descriptor;
 import com.botts.impl.system.lane.LaneSystem;
 import com.botts.impl.system.lane.config.*;
+import net.opengis.swe.v20.DataComponent;
 import org.junit.*;
 import org.junit.runners.MethodSorters;
 import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.command.ICommandStatus;
+import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.BigIdLong;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.SensorHub;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
@@ -35,6 +38,7 @@ import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.vast.data.DataArrayImpl;
 import org.vast.data.DataBlockMixed;
 import org.vast.data.DataBlockString;
 
@@ -202,7 +206,7 @@ public class LaneTests {
         var control = (AdjudicationControl) lane.getCommandInputs().get(AdjudicationControl.NAME);
         var adjData = Adjudication.fromAdjudication(new Adjudication.Builder()
                 .feedback("hey where did u get that")
-                .adjudicationCode(Adjudication.AdjudicationCode.AUTHORIZED_TEST)
+                .adjudicationCode(0)
                 .isotopes(List.of("Xenon", "Uranium-238"))
                 .secondaryInspectionStatus(Adjudication.SecondaryInspectionStatus.NONE)
                 .filePaths(List.of("test.txt", "hello.ts", "hello.p", "f.p", "ruby.sheila"))
@@ -223,6 +227,7 @@ public class LaneTests {
         // Adjudication ID got added to occupancy observation
         assertEquals(cmdIdEncoder.encodeID(cmd.getID()), obsStore.get(obsId).getResult().getStringValue(10));
         // TODO: add more assertions
+
         assertNotNull(res.getResult().getInlineRecords());
         var data = res.getResult().getInlineRecords().stream().toList().get(0);
         for (int i = 0; i < data.getAtomCount(); i++) {
@@ -239,6 +244,50 @@ public class LaneTests {
             } catch (Exception e) {
                 break;
             }
+        }
+
+        System.out.println("-------------------------------------------------");
+
+        // check command id is inserted correctly into occupancy record
+
+        var adjData2 = Adjudication.fromAdjudication(new Adjudication.Builder()
+                .feedback("second adjudication feedback")
+                .adjudicationCode(2)
+                .isotopes(List.of("Cobalt-60"))
+                .secondaryInspectionStatus(Adjudication.SecondaryInspectionStatus.REQUESTED)
+                .filePaths(List.of("report2.txt"))
+                .occupancyId(encodedObsId)
+                .vehicleId("XYZ789")
+                .build());
+
+        var cmd2 = new CommandData.Builder()
+                .withId(new BigIdLong(1, 4))
+                .withParams(adjData2)
+                .withCommandStream(new BigIdLong(1, 3))
+                .withSender("Kalyn")
+                .build();
+
+        var res2 = control.submitCommand(cmd2).get();
+
+        System.out.println("Status 2: " + res2.getStatusCode());
+        System.out.println("Message 2: " + res2.getMessage());
+        assertNull(res2.getMessage());
+        assertEquals(res2.getStatusCode(), ICommandStatus.CommandStatusCode.COMPLETED);
+
+        BigId decodedObsId = obsIdEncoder.decodeID(encodedObsId);
+        var obs = obsStore.get(decodedObsId);
+
+        int numAdjs = obs.getResult().getIntValue(9);
+        System.out.println("Adjudication IDs");
+        for (int i = 0; i < numAdjs; i++) {
+            var id = obs.getResult().getStringValue(10+i);
+            assertNotNull(id);
+            assertFalse(id.isBlank());
+            if (i == 0)
+                assertEquals(cmdIdEncoder.encodeID(cmd.getID()), id);
+            else if (i == 1)
+                assertEquals(cmdIdEncoder.encodeID(cmd2.getID()), id);
+            System.out.println(id);
         }
     }
 

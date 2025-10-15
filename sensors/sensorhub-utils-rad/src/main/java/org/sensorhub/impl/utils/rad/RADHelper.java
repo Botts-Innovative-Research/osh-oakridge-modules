@@ -315,16 +315,6 @@ public class RADHelper extends GeoPosHelper {
     }
 
 
-    public DataComponent createAdjudicationIdArray(){
-        var adjCount = createAdjudicatedIdCount();
-        var adjIdArray = createAdjudicatedIdsArray();
-        return createRecord()
-                .name("adjudicatedIdsArray")
-                .description("An array of command IDs of the adjudication control associated to an adjudication by the command's result")
-                .addField(adjCount.getName(), adjCount)
-                .addField(adjIdArray.getName(), adjIdArray)
-                .build();
-    }
 
     public Count createAdjudicatedIdCount() {
         return createCount()
@@ -358,35 +348,32 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-    public DataComponent createVideoPathRecord(){
-        return createRecord()
-                .name("videoPathRecord")
-                .description("Record that holds a list of video paths")
-                .addField("videoPathCount", createCount()
-                        .label("Video Path Count")
-                        .name("videoPathCount")
-                        .description("Count of the number of video paths provided")
-                        .definition(getRadUri("VideoPathCount"))
-                        .id("videoPathCount")
-                        .build())
-                .addField("videoPaths", createArray()
-                        .name("videoPaths")
-                        .label("Video Paths")
-                        .description("List of video paths recorded during an alarming occupancy")
-                        .definition(getRadUri("VideoPathsArray"))
-                        .withVariableSize("videoPathCount")
-                        .withElement("videoPath", createText()
-                                .name("videoPath")
-                                .label("Video Path")
-                                .description("Path of the recorded video during an alarming occupancy")
-                                .definition(getRadUri("VideoPath"))
-                                .build())
-                        .build())
+
+    public Count createVideoPathCount() {
+        return createCount()
+                .label("Video Path Count")
+                .name("videoPathCount")
+                .description("Count of the number of video paths provided")
+                .definition(getRadUri("VideoPathCount"))
+                .id("videoPathCount")
+                .build();
+    }
+
+    public DataArray createVideoPathsArray(){
+        var videoPath = createVideoPath();
+
+        return createArray()
+                .name("videoPaths")
+                .label("Video Paths")
+                .description("List of video paths recorded during an alarming occupancy")
+                .definition(getRadUri("VideoPathsArray"))
+                .withVariableSize("videoPathCount")
+                .withElement(videoPath.getName(), createVideoPath())
                 .build();
     }
 
 
-    public Text createVideoPaths() {
+    public Text createVideoPath() {
         return createText()
                 .name("videoPaths")
                 .label("Video Paths")
@@ -1065,9 +1052,10 @@ public class RADHelper extends GeoPosHelper {
                         .definition(SWEHelper.getPropertyUri("Feedback"))
                         .optional(true)
                         .build())
-                .addField("adjudicationCode", createText()
+                .addField("adjudicationCode", createCount()
                         .label("Adjudication Code")
                         .definition(SWEHelper.getPropertyUri("AdjudicationCode"))
+                        .addAllowedInterval(0,11)
                         .optional(false)
                         .build())
                 .addField("isotopesCount", createCount()

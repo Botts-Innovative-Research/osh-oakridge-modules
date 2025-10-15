@@ -5,15 +5,12 @@ import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
-import org.sensorhub.api.data.IDataProducer;
 import org.sensorhub.api.sensor.ISensorModule;
-import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.VarRateSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vast.data.DataArrayImpl;
 import org.vast.data.TextEncodingImpl;
 
 public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRateSensorOutput<SensorType> {
@@ -40,8 +37,10 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         var neutronAlarm = radHelper.createNeutronAlarm();
         var maxGamma = radHelper.createMaxGamma();
         var maxNeutron = radHelper.createMaxNeutron();
-        var adjudicatedIds = radHelper.createAdjudicationIdArray();
-        var videoPaths = radHelper.createVideoPathRecord();
+        var adjudicationIdsCount = radHelper.createAdjudicatedIdCount();
+        var adjudicatedIds = radHelper.createAdjudicatedIdsArray();
+        var videoPathCount = radHelper.createVideoPathCount();
+        var videoPaths = radHelper.createVideoPathsArray();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
@@ -58,7 +57,9 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
                 .addField(neutronAlarm.getName(), neutronAlarm)
                 .addField(maxGamma.getName(), maxGamma)
                 .addField(maxNeutron.getName(), maxNeutron)
+                .addField(adjudicationIdsCount.getName(), adjudicationIdsCount)
                 .addField(adjudicatedIds.getName(), adjudicatedIds)
+                .addField(videoPathCount.getName(), videoPathCount)
                 .addField(videoPaths.getName(), videoPaths)
                 .build();
 
@@ -85,20 +86,10 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         dataBlock.setIntValue(index++, occupancy.getMaxNeutronCount());
 
         dataBlock.setIntValue(index++, 0); // adj id count
-
-        var adjIdArray = ((DataArrayImpl) dataStruct.getComponent("adjudicatedIdsArray").getComponent("adjudicatedIds"));
-        adjIdArray.updateSize();
-//        dataBlock.setStringValue(index++, "");
-
         dataBlock.setIntValue(index, 0); // video path count
-
-        var videoPathArray = ((DataArrayImpl) dataStruct.getComponent("videoPathRecord").getComponent("videoPaths"));
-        videoPathArray.updateSize();
-//        dataBlock.setStringValue(index++, "");
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));
-
     }
 
     @Override

@@ -17,7 +17,7 @@ import java.util.function.IntUnaryOperator;
 public class Adjudication {
 
     private String feedback;
-    private AdjudicationCode adjudicationCode;
+    private int adjudicationCode;
     private List<String> isotopes;
     private SecondaryInspectionStatus secondaryInspectionStatus;
     private List<String> filePaths;
@@ -27,43 +27,6 @@ public class Adjudication {
 
     public enum SecondaryInspectionStatus {
         NONE, REQUESTED, COMPLETED
-    }
-
-    public static String REAL_ALARM = "Real Alarm";
-    public static String INNOCENT_ALARM = "Innocent Alarm";
-    public static String FALSE_ALARM = "False Alarm";
-    public static String OTHER_ALARM = "Other";
-    public static String TAMPER_FAULT_ALARM = "Tamper/Fault";
-    public static String TEST_MAINTENANCE_ALARM = "Test/Maintenance";
-
-    public enum AdjudicationCode {
-        UNKNOWN("", ""),
-        CONTRABAND_FOUND("Code 1: Contraband Found", REAL_ALARM),
-        REAL_ALARM_OTHER("Code 2: Other", REAL_ALARM),
-        MEDICAL_ISOTOPE_FOUND( "Code 3: Medical Isotope Found", INNOCENT_ALARM),
-        NORM_FOUND("Code 4: NORM Found", INNOCENT_ALARM),
-        DECLARED_SHIPMENT_RADIOACTIVE_MATERIAL("Code 5: Declared Shipment of Radioactive Material", INNOCENT_ALARM),
-        INSPECTION_NEGATIVE("Code 6: Physical Inspection Negative", FALSE_ALARM),
-        RIID_ASP_BACKGROUND_ONLY("Code 7: RIID/ASP Indicates Background Only", FALSE_ALARM),
-        FALSE_ALARM_OTHER("Code 8: Other", FALSE_ALARM),
-        AUTHORIZED_TEST("Code 9: Authorized Test, Maintenance, or Training Activity", TEST_MAINTENANCE_ALARM),
-        UNAUTHORIZED_ACTIVITY("Code 10: Unauthorized Activity", TAMPER_FAULT_ALARM),
-        OTHER("Code 11: Other", OTHER_ALARM);
-
-        private final String label;
-        private final String group;
-
-        AdjudicationCode(String label, String group) {
-            this.label = label;
-            this.group = group;
-        }
-
-        public String getLabel() {
-            return label;
-        }
-        public String getGroup() {
-            return group;
-        }
     }
 
     public static class Builder {
@@ -79,7 +42,7 @@ public class Adjudication {
             return this;
         }
 
-        public Builder adjudicationCode(AdjudicationCode code) {
+        public Builder adjudicationCode(int code) {
             instance.adjudicationCode = code;
             return this;
         }
@@ -118,7 +81,7 @@ public class Adjudication {
         return feedback;
     }
 
-    public AdjudicationCode getAdjudicationCode() {
+    public int getAdjudicationCode() {
         return adjudicationCode;
     }
 
@@ -152,7 +115,7 @@ public class Adjudication {
         int index = 0;
 
         dataBlock.setStringValue(index++, adjudication.getFeedback());
-        dataBlock.setStringValue(index++, adjudication.getAdjudicationCode().toString());
+        dataBlock.setIntValue(index++, adjudication.getAdjudicationCode());
 
         var isotopeCount = adjudication.getIsotopes().size();
         dataBlock.setIntValue(index++, isotopeCount);
@@ -187,7 +150,7 @@ public class Adjudication {
         int index = 0;
 
         var feedback = dataBlock.getStringValue(index++);
-        var adjudicationCode = AdjudicationCode.valueOf(dataBlock.getStringValue(index++));
+        var adjudicationCode = dataBlock.getIntValue(index++);
         var isotopeCount = dataBlock.getIntValue(index++);
 
         List<String> isotopes = new ArrayList<>();

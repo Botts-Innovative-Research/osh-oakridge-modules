@@ -1,16 +1,19 @@
 package com.botts.impl.system.lane;
 
+import net.opengis.swe.v20.DataArray;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import org.sensorhub.api.command.*;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.IdEncoder;
+import org.sensorhub.api.data.ObsData;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Adjudication;
+import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.vast.data.DataArrayImpl;
 import org.vast.swe.SWEHelper;
 import org.vast.util.TimeExtent;
@@ -100,23 +103,15 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
                if (adj.getSecondaryInspectionStatus() == null)
                    return CommandStatus.failed(command.getID(), "Please specify a secondary inspection status");
 
-               BigId dataStreamId = obs.getDataStreamID();
-               DataComponent recordStructure = obsStore.getDataStreams().get(new DataStreamKey(dataStreamId)).getRecordStructure();
-
+               // ----------------------------------------------------------------------------------------------------------
+               // update the occupancy adjudication command IDs array with latest command id
                var commandId = getParentProducer().getParentHub().getIdEncoders().getCommandIdEncoder().encodeID(command.getID());
-
                var result = obs.getResult();
-               var adjIdCount = result.getIntValue(9);
-               
+               var occupancy = Occupancy.toOccupancy(result);
 
-               // increment the count by one
-               result.setIntValue(9, ++adjIdCount);
-
-               // need to refresh the size of the data array
-               var adjIdArray = ((DataArrayImpl) recordStructure.getComponent("adjudicatedIdsArray").getComponent("adjudicatedIds"));
-               adjIdArray.updateSize();
-
-               result.setStringValue(9 + adjIdCount, commandId);
+               occupancy.addAdjudicatedId(commandId);
+               DataBlock newOccupancyResult = Occupancy.fromOccupancy(occupancy);
+               obs.getResult().setUnderlyingObject(newOccupancyResult.getUnderlyingObject());
 
                String systemUID = getParentProducer().getParentSystemUID() != null ?
                        getParentProducer().getParentSystemUID() :
@@ -150,14 +145,16 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
     }
 
     private DataBlock createResultData(Adjudication adjudication, String username) {
+        resultStructure.clearData();
         DataBlock dataBlock = resultStructure.createDataBlock();
+        dataBlock.updateAtomCount();
         resultStructure.setData(dataBlock);
 
         int index = 0;
 
         dataBlock.setStringValue(index++, username == null ? "Unknown" : username);
         dataBlock.setStringValue(index++, adjudication.getFeedback());
-        dataBlock.setStringValue(index++, adjudication.getAdjudicationCode().toString());
+        dataBlock.setIntValue(index++, adjudication.getAdjudicationCode());
 
         int isotopeCount =  adjudication.getIsotopes().size();
         dataBlock.setIntValue(index++, isotopeCount);
