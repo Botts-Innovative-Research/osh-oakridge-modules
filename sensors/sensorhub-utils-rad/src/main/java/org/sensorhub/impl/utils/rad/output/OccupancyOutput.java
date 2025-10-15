@@ -1,22 +1,25 @@
-package com.botts.impl.sensor.rapiscan.output;
+package org.sensorhub.impl.utils.rad.output;
 
-import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
-import org.sensorhub.impl.sensor.AbstractSensorOutput;
+import org.sensorhub.api.data.IDataProducer;
+import org.sensorhub.api.sensor.ISensorModule;
+import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.sensor.VarRateSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
+import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.vast.data.DataArrayImpl;
 import org.vast.data.TextEncodingImpl;
-import org.vast.data.TextImpl;
 
-public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
+public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRateSensorOutput<SensorType> {
 
-    private static final String SENSOR_OUTPUT_NAME = "occupancy";
-    private static final String SENSOR_OUTPUT_LABEL = "Occupancy";
+    public static final String NAME = "occupancy";
+    private static final String LABEL = "Occupancy";
 
     private static final Logger logger = LoggerFactory.getLogger(OccupancyOutput.class);
 
@@ -24,11 +27,9 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
 
-    public OccupancyOutput(RapiscanSensor parentSensor){
-        super(SENSOR_OUTPUT_NAME, parentSensor);
-    }
+    public OccupancyOutput(SensorType parentSensor) {
+        super(NAME, parentSensor, 4);
 
-    public void init(){
         RADHelper radHelper = new RADHelper();
         var samplingTime = radHelper.createPrecisionTimeStamp();
         var occupancyCount = radHelper.createOccupancyCount();
@@ -39,16 +40,14 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
         var neutronAlarm = radHelper.createNeutronAlarm();
         var maxGamma = radHelper.createMaxGamma();
         var maxNeutron = radHelper.createMaxNeutron();
-        var isAdjudicated = radHelper.createIsAdjudicated();
-        var placeHolder = radHelper.createPlaceholder();
-        placeHolder.setName("videoFile");
-        placeHolder.setLabel("Video File");
+        var adjudicatedIds = radHelper.createAdjudicationIdArray();
+        var videoPaths = radHelper.createVideoPathRecord();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
-                .label(SENSOR_OUTPUT_LABEL)
+                .label(LABEL)
                 .updatable(true)
-                .definition(RADHelper.getRadUri("occupancy"))
+                .definition(RADHelper.getRadUri("Occupancy"))
                 .description("System occupancy count since midnight each day")
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(occupancyCount.getName(), occupancyCount)
@@ -59,33 +58,44 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
                 .addField(neutronAlarm.getName(), neutronAlarm)
                 .addField(maxGamma.getName(), maxGamma)
                 .addField(maxNeutron.getName(), maxNeutron)
-                .addField(isAdjudicated.getName(), isAdjudicated)
-                .addField(placeHolder.getName(), placeHolder) // TODO Set the definition here
+                .addField(adjudicatedIds.getName(), adjudicatedIds)
+                .addField(videoPaths.getName(), videoPaths)
                 .build();
+
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
 
-    public void onNewMessage(long startTime, long endTime, Boolean isGammaAlarm, Boolean isNeutronAlarm, String[] csvString, int gammaMax, int neutronMax){
-        if (latestRecord == null) {
-
+    public void setData(Occupancy occupancy) {
+        if (latestRecord == null)
             dataBlock = dataStruct.createDataBlock();
-
-        } else {
-
+        else
             dataBlock = latestRecord.renew();
-        }
-        int index =0;
 
-        dataBlock.setLongValue(index++, System.currentTimeMillis()/1000);
-        dataBlock.setIntValue(index++, Integer.parseInt(csvString[1])); //occupancy count
-        dataBlock.setLongValue(index++, startTime/1000);
-        dataBlock.setLongValue(index++, endTime/1000);
-        dataBlock.setDoubleValue(index++, Double.parseDouble(csvString[2])/1000); //neutron background
-        dataBlock.setBooleanValue(index++, isGammaAlarm);
-        dataBlock.setBooleanValue(index++, isNeutronAlarm);
-        dataBlock.setIntValue(index++, gammaMax);
-        dataBlock.setIntValue(index++, neutronMax);
-        dataBlock.setBooleanValue(index, false);
+        dataStruct.setData(dataBlock);
+
+        int index = 0;
+        dataBlock.setDoubleValue(index++, System.currentTimeMillis()/1000);
+        dataBlock.setIntValue(index++, occupancy.getOccupancyCount());
+        dataBlock.setDoubleValue(index++, occupancy.getStartTime());
+        dataBlock.setDoubleValue(index++, occupancy.getEndTime());
+        dataBlock.setDoubleValue(index++, occupancy.getNeutronBackground());
+        dataBlock.setBooleanValue(index++, occupancy.hasGammaAlarm());
+        dataBlock.setBooleanValue(index++, occupancy.hasNeutronAlarm());
+        dataBlock.setIntValue(index++, occupancy.getMaxGammaCount());
+        dataBlock.setIntValue(index++, occupancy.getMaxNeutronCount());
+
+        dataBlock.setIntValue(index++, 0); // adj id count
+
+        var adjIdArray = ((DataArrayImpl) dataStruct.getComponent("adjudicatedIdsArray").getComponent("adjudicatedIds"));
+        adjIdArray.updateSize();
+//        dataBlock.setStringValue(index++, "");
+
+        dataBlock.setIntValue(index, 0); // video path count
+
+        var videoPathArray = ((DataArrayImpl) dataStruct.getComponent("videoPathRecord").getComponent("videoPaths"));
+        videoPathArray.updateSize();
+//        dataBlock.setStringValue(index++, "");
+
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));
 
@@ -99,10 +109,5 @@ public class OccupancyOutput  extends AbstractSensorOutput<RapiscanSensor> {
     @Override
     public DataEncoding getRecommendedEncoding() {
         return dataEncoding;
-    }
-
-    @Override
-    public double getAverageSamplingPeriod() {
-        return 0;
     }
 }

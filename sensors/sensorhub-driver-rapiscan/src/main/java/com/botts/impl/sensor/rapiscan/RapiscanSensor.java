@@ -13,7 +13,6 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.rapiscan;
 
-import com.botts.impl.sensor.rapiscan.control.AdjudicationControl;
 import com.botts.impl.sensor.rapiscan.eml.EMLService;
 import com.botts.impl.sensor.rapiscan.eml.outputs.EMLAnalysisOutput;
 import com.botts.impl.sensor.rapiscan.eml.outputs.EMLContextualOutput;
@@ -24,6 +23,7 @@ import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.comm.RobustIPConnection;
 import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,7 +52,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     // Outputs
     private GammaOutput gammaOutput;
     private NeutronOutput neutronOutput;
-    private OccupancyOutput occupancyOutput;
+    private OccupancyOutput<RapiscanSensor> occupancyOutput;
     private LocationOutput locationOutput;
     private TamperOutput tamperOutput;
     private SpeedOutput speedOutput;
@@ -61,7 +61,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     private GammaThresholdOutput gammaThresholdOutput;
     private DailyFileOutput dailyFileOutput;
     private ConnectionStatusOutput connectionStatusOutput;
-    private AdjudicationControl adjudicationControl;
 
     private EMLAnalysisOutput emlAnalysisOutput;
     private EMLScanContextualOutput emlScanContextualOutput;
@@ -84,7 +83,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
         // Add outputs
         createOutputs();
-        createControls();
 
         // Register GammaThresholdOutput as a listener to SetupGammaOutput
         setupGammaOutput.registerListener(gammaThresholdOutput);
@@ -165,9 +163,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         addOutput(neutronOutput, false);
         neutronOutput.init();
 
-        occupancyOutput = new OccupancyOutput(this);
+        occupancyOutput = new OccupancyOutput<>(this);
         addOutput(occupancyOutput, false);
-        occupancyOutput.init();
 
         locationOutput = new LocationOutput(this);
         locationOutput.init();
@@ -201,11 +198,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         connectionStatusOutput.init();
     }
 
-    public void createControls() {
-        adjudicationControl = new AdjudicationControl(this);
-        addControlInput(adjudicationControl);
-        adjudicationControl.init();
-    }
 
     @Override
     protected void doStart() throws SensorHubException {
@@ -276,7 +268,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         return neutronOutput;
     }
 
-    public OccupancyOutput getOccupancyOutput() {
+    public OccupancyOutput<RapiscanSensor> getOccupancyOutput() {
         return occupancyOutput;
     }
 

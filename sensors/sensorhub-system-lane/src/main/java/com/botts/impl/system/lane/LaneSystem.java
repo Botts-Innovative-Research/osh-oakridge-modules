@@ -41,6 +41,7 @@ import org.sensorhub.api.system.SystemRemovedEvent;
 import org.sensorhub.impl.comm.TCPCommProviderConfig;
 import org.sensorhub.impl.module.AbstractModule;
 import org.sensorhub.impl.module.ModuleRegistry;
+import org.sensorhub.impl.module.ModuleSecurity;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
@@ -65,6 +66,7 @@ import java.util.concurrent.*;
 public class LaneSystem extends SensorSystem {
 
     private static final String URN_PREFIX = "urn:";
+    private static final String LANE_SYSTEM_PREFIX = URN_PREFIX + "osh:system:lane:";
     private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
     private static final String BASE_VIDEO_DIRECTORY = "./web/video/";
@@ -75,6 +77,7 @@ public class LaneSystem extends SensorSystem {
     Map<String, FFMPEGConfig> ffmpegConfigs = null;
     OccupancyWrapper occupancyWrapper;
 
+    AdjudicationControl adjudicationControl;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -93,7 +96,6 @@ public class LaneSystem extends SensorSystem {
                 generateXmlID(DEFAULT_XMLID_PREFIX, config.uniqueID);
             }
         }
-
 
         // Ensure name is at most 12 characters
         if (config.name.length() > 12)
@@ -123,14 +125,20 @@ public class LaneSystem extends SensorSystem {
             }
             // Initial FFmpeg config
             var ffmpegConfigList = getConfiguration().laneOptionsConfig.ffmpegConfig;
-            for (var simpleConfig : ffmpegConfigList) {
-                FFMPEGConfig config = createFFmpegConfig(simpleConfig, ffmpegConfigList.indexOf(simpleConfig));
-                var ffmpegModule = createFFmpegModule(config);
-                if (occupancyWrapper != null) {
-                    occupancyWrapper.addFFmpegSensor(ffmpegModule);
+            if (ffmpegConfigList != null) {
+                for (var simpleConfig : ffmpegConfigList) {
+                    FFMPEGConfig config = createFFmpegConfig(simpleConfig, ffmpegConfigList.indexOf(simpleConfig));
+                    var ffmpegModule = createFFmpegModule(config);
+                    if (occupancyWrapper != null) {
+                        occupancyWrapper.addFFmpegSensor(ffmpegModule);
+                    }
                 }
             }
         }
+
+        adjudicationControl = new AdjudicationControl(this);
+        addControlInput(adjudicationControl);
+
 
         String statusMsg = "Note: ";
         if (existingRPMModule == null)
@@ -197,6 +205,23 @@ public class LaneSystem extends SensorSystem {
     }
 
     @Override
+    protected void afterStart() throws SensorHubException {
+        super.afterStart();
+
+        var db = getParentHub().getSystemDriverRegistry().getDatabase(getUniqueIdentifier());
+        if (db == null) {
+            getLogger().error("Cannot get database for lane {}", getUniqueIdentifier());
+            return;
+        }
+        var obsStore = db.getObservationStore();
+        if (obsStore == null) {
+            getLogger().error("Cannot get obs store for lane {}", getUniqueIdentifier());
+            return;
+        }
+        adjudicationControl.setObsStore(obsStore);
+    }
+
+    @Override
     public void cleanup() throws SensorHubException {
         super.cleanup();
 
@@ -223,7 +248,7 @@ public class LaneSystem extends SensorSystem {
     }
 
     private String createLaneUID(String suffix) {
-        return URN_PREFIX + "osh:system:lane:" + suffix;
+        return LANE_SYSTEM_PREFIX + suffix;
     }
 
     private synchronized void deleteSystemsFromDatabase(List<String> systemUIDs) {

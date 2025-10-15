@@ -1,6 +1,6 @@
 description = 'Lane System'
 ext.details = "Sensor system for RPM lanes"
-version = '1.0.0'
+version = '2.0.0'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
