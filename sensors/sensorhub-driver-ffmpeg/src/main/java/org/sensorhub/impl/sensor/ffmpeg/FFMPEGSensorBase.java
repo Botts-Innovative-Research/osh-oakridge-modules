@@ -202,7 +202,9 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         try {
             var fileOutput = new FileOutput<>(this, "HLSControlOutput");
             hlsControl = new HLSControl<>(this, fileOutput);
+            hlsControl.init();
             addOutput(fileOutput, false);
+            addControlInput(hlsControl);
             mpegTsProcessor.addVideoDataBufferListener(fileOutput);
         } catch (Exception e) {
             logger.error("Could not initialize HLS stream.", e);

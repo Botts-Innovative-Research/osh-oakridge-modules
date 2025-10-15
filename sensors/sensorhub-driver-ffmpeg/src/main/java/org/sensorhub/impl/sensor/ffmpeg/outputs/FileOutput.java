@@ -41,7 +41,6 @@ import static org.bytedeco.ffmpeg.global.avutil.*;
 public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSensorOutput<FFMPEGSensorBase<FFMPEGConfigType>> implements DataBufferListener {
 
     public String outputName = "FileNameOutput";
-    public static final String OUTPUT_LABEL = "FFmpeg file output name";
     final DataComponent outputStruct;
     final TextEncoding outputEncoding;
 
@@ -72,7 +71,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
         outputStruct = helper.createText()
                 .name(outputName)
-                .label(OUTPUT_LABEL)
+                .label(outputName)
                 .build();
 
         outputEncoding = helper.newTextEncoding();
