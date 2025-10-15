@@ -53,7 +53,7 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                 .name(getName())
                 .label(SENSOR_CONTROL_LABEL)
                 .addField(STREAM_CONTROL, fac.createCategory()
-                        .label("File I/O")
+                        .label("Stream Command")
                         .addAllowedValues(CMD_START_STREAM, CMD_END_STREAM)
                         .build())
                 .build();
