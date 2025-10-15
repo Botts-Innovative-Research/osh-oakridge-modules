@@ -1052,7 +1052,7 @@ public class RADHelper extends GeoPosHelper {
                         .definition(SWEHelper.getPropertyUri("Feedback"))
                         .optional(true)
                         .build())
-                .addField("adjudicationCode", createQuantity()
+                .addField("adjudicationCode", createCount()
                         .label("Adjudication Code")
                         .definition(SWEHelper.getPropertyUri("AdjudicationCode"))
                         .addAllowedInterval(0,11)
