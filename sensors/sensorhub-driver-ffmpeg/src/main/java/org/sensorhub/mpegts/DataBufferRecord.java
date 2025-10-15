@@ -26,6 +26,8 @@ public class DataBufferRecord {
      */
     double presentationTimeStamp;
 
+    boolean keyFrame;
+
     /**
      * The data buffer to be stored
      */
@@ -41,6 +43,14 @@ public class DataBufferRecord {
 
         this.presentationTimeStamp = presentationTimeStamp;
         this.dataBuffer = dataBuffer;
+        keyFrame = false;
+    }
+
+    public DataBufferRecord(double presentationTimeStamp, byte[] dataBuffer, boolean isKeyFrame) {
+
+        this.presentationTimeStamp = presentationTimeStamp;
+        this.dataBuffer = dataBuffer;
+        keyFrame = isKeyFrame;
     }
 
     /**
@@ -60,4 +70,6 @@ public class DataBufferRecord {
     public byte[] getDataBuffer() {
         return dataBuffer;
     }
+
+    public boolean isKeyFrame() { return keyFrame; }
 }

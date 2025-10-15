@@ -41,9 +41,12 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
         var maxGamma = radHelper.createMaxGamma();
         var maxNeutron = radHelper.createMaxNeutron();
         var isAdjudicated = radHelper.createIsAdjudicated();
-        var placeHolder = radHelper.createPlaceholder();
-        placeHolder.setName("videoFile");
-        placeHolder.setLabel("Video File");
+        var fileCount = radHelper.createCount().name("fileCount").id("fileCount").value(0);
+        var placeHolder = radHelper.createArray()
+                .name("videoFile")
+                .label("Video File")
+                .withVariableSize("fileCount")
+                .withElement("arrayElement", radHelper.createText());
 
         dataRecord = radHelper.createRecord()
                 .name(getName())
@@ -59,7 +62,8 @@ public class OccupancyOutput extends AbstractSensorOutput<AspectSensor> {
                 .addField(maxGamma.getName(), maxGamma)
                 .addField(maxNeutron.getName(), maxNeutron)
                 .addField(isAdjudicated.getName(), isAdjudicated)
-                .addField(placeHolder.getName(), placeHolder)
+                .addField("fileCount", fileCount)
+                .addField("videoFile", placeHolder)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
