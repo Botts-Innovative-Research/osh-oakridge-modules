@@ -11,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.Assert.*;
 
@@ -172,6 +171,22 @@ public abstract class AbstractBucketStoreTest {
         bucketStore.putObject(TEST_BUCKET, key, getTestObjectInputStream(), Collections.emptyMap());
         assertTrue(bucketStore.objectExists(TEST_BUCKET, key));
         String mimeType = bucketStore.getObjectMimeType(TEST_BUCKET, key);
+        assertNotNull(mimeType);
+        assertFalse(mimeType.isBlank());
+        System.out.println(mimeType);
+
+        key = "weird-object.m3u8";
+        bucketStore.putObject(TEST_BUCKET, key, getTestObjectInputStream(), Collections.emptyMap());
+        assertTrue(bucketStore.objectExists(TEST_BUCKET, key));
+        mimeType = bucketStore.getObjectMimeType(TEST_BUCKET, key);
+        assertNotNull(mimeType);
+        assertFalse(mimeType.isBlank());
+        System.out.println(mimeType);
+
+        key = "test-obj.test";
+        bucketStore.putObject(TEST_BUCKET, key, getTestObjectInputStream(), Collections.emptyMap());
+        assertTrue(bucketStore.objectExists(TEST_BUCKET, key));
+        mimeType = bucketStore.getObjectMimeType(TEST_BUCKET, key);
         assertNotNull(mimeType);
         assertFalse(mimeType.isBlank());
         System.out.println(mimeType);

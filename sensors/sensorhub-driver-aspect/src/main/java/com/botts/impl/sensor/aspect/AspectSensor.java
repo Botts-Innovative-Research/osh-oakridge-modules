@@ -14,13 +14,13 @@ package com.botts.impl.sensor.aspect;
 
 
 import com.botts.impl.sensor.aspect.comm.IModbusTCPCommProvider;
-import com.botts.impl.sensor.aspect.control.AdjudicationControl;
 import com.botts.impl.sensor.aspect.output.*;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import com.ghgande.j2mod.modbus.ModbusException;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,11 +43,10 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
 
     GammaOutput gammaOutput;
     NeutronOutput neutronOutput;
-    OccupancyOutput occupancyOutput;
+    OccupancyOutput<AspectSensor> occupancyOutput;
     SpeedOutput speedOutput;
     SensorLocationOutput sensorLocationOutput;
     DailyFileOutput dailyFileOutput;
-    AdjudicationControl adjudicationControl;
     ConnectionStatusOutput connectionStatusOutput;
 
     public int laneID;
@@ -87,7 +86,6 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
 
         occupancyOutput = new OccupancyOutput(this);
         addOutput(occupancyOutput, false);
-        occupancyOutput.init();
 
         speedOutput = new SpeedOutput(this);
         addOutput(speedOutput, false);
@@ -103,12 +101,6 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         connectionStatusOutput = new ConnectionStatusOutput(this);
         addOutput(connectionStatusOutput, false);
         connectionStatusOutput.init();
-
-        adjudicationControl = new AdjudicationControl(this);
-        addControlInput(adjudicationControl);
-        adjudicationControl.init();
-
-
     }
 
     public void tryConnection() throws SensorHubException {
@@ -244,7 +236,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     public NeutronOutput getNeutronOutput() {
         return neutronOutput;
     }
-    public OccupancyOutput getOccupancyOutput() {
+    public OccupancyOutput<AspectSensor> getOccupancyOutput() {
         return occupancyOutput;
     }
     public SpeedOutput getSpeedOutput() {

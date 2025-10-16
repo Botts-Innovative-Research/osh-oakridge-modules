@@ -1,6 +1,8 @@
 package com.botts.impl.service.bucket.handler;
 
+import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
+import com.botts.api.service.bucket.IObjectHandler;
 import com.botts.api.service.bucket.IResourceHandler;
 import com.botts.impl.service.bucket.util.RequestContext;
 import com.botts.impl.service.bucket.util.ServiceErrors;
@@ -12,11 +14,10 @@ import java.io.IOException;
 public class BucketHandler implements IResourceHandler {
 
     IBucketStore bucketStore;
-    IResourceHandler objectHandler;
+    IBucketService service;
 
-    public BucketHandler(IBucketStore bucketStore, IResourceHandler objectHandler) {
-        this.bucketStore = bucketStore;
-        this.objectHandler = objectHandler;
+    public BucketHandler(IBucketService service) {
+        this.bucketStore = service.getBucketStore();
     }
 
     @Override
@@ -39,6 +40,7 @@ public class BucketHandler implements IResourceHandler {
             var bucketPerms = sec.getBucketPermissions().get(bucketName);
             if (ctx.hasObjectKey()) {
                 sec.checkPermission(bucketPerms.get);
+                var objectHandler = service.getObjectHandler(bucketName, ctx.getObjectKey());
                 objectHandler.doGet(ctx);
             } else {
                 sec.checkPermission(bucketPerms.list);
@@ -87,6 +89,7 @@ public class BucketHandler implements IResourceHandler {
         if (ctx.hasBucketName()) {
             if (!bucketStore.bucketExists(bucketName))
                 throw ServiceErrors.notFound(bucketName);
+            var objectHandler = service.getObjectHandler(bucketName, ctx.getObjectKey());
             objectHandler.doPost(ctx);
         } else
             throw ServiceErrors.unsupportedOperation("Creating bucket via POST is not currently supported");
@@ -123,6 +126,7 @@ public class BucketHandler implements IResourceHandler {
             if (!sec.getBucketPermissions().containsKey(bucketName))
                 throw ServiceErrors.forbidden(bucketName);
 
+            var objectHandler = service.getObjectHandler(bucketName, ctx.getObjectKey());
             objectHandler.doPut(ctx);
         }
     }
@@ -149,6 +153,7 @@ public class BucketHandler implements IResourceHandler {
                 throw ServiceErrors.internalError(IBucketStore.FAILED_DELETE_BUCKET + bucketName);
             }
         } else {
+            var objectHandler = service.getObjectHandler(bucketName, ctx.getObjectKey());
             objectHandler.doDelete(ctx);
         }
     }

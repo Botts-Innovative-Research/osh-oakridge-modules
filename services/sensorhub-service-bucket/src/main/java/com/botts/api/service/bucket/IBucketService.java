@@ -10,4 +10,10 @@ public interface IBucketService {
 
     ExecutorService getThreadPool();
 
+    void registerObjectHandler(IObjectHandler handler);
+
+    void unregisterObjectHandler(IObjectHandler handler);
+
+    IObjectHandler getObjectHandler(String bucketName, String objectKey);
+
 }

@@ -6,7 +6,7 @@ import com.botts.impl.service.bucket.filesystem.FileSystemBucketStore;
 import java.io.IOException;
 import java.nio.file.Path;
 
-public class TestFileSystemStore extends AbstractBucketStoreTest {
+public class FileSystemStoreTest extends AbstractBucketStoreTest {
 
     IBucketStore bucketStore;
 

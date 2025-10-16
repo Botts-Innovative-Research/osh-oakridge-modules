@@ -4,6 +4,7 @@ import com.botts.impl.sensor.aspect.output.*;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
 import com.ghgande.j2mod.modbus.net.TCPMasterConnection;
+import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -77,7 +78,18 @@ public class MessageHandler {
                     parentSensor.speedOutput.setData(monitorRegisters, timestamp);
 
                     if (checkOccupancyRecord(monitorRegisters, timestamp)) {
-                        parentSensor.occupancyOutput.setData(monitorRegisters, timestamp, startTime, endTime, gammaAlarm, neutronAlarm, maxGamma, maxNeutron);
+                        Occupancy occupancy = new Occupancy.Builder()
+                                .occupancyCount(monitorRegisters.getObjectCounter())
+                                .startTime(startTime)
+                                .endTime(endTime)
+                                .neutronBackground(monitorRegisters.getNeutronChannelBackground())
+                                .gammaAlarm(gammaAlarm)
+                                .neutronAlarm(neutronAlarm)
+                                .maxGammaCount(maxGamma)
+                                .maxNeutronCount(maxNeutron)
+                                .build();
+
+                        parentSensor.occupancyOutput.setData(occupancy);
                     }
 
                 }

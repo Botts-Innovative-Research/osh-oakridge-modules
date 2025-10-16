@@ -25,7 +25,7 @@ import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
 
 public class ClientConfigOutput extends AbstractSensorOutput<OSCARSystem> {
-
+// TODO: MAKE IT CONTROL AND USE STATUS RESULTS STUFF DO VALIDATION IN HERE AND MAKE THE STUFF WORK
     public static final String NAME = "clientConfig";
     public static final String LABEL = "Client Config";
     public static final String DESCRIPTION = "Configuration of nodes for OSCAR-viewer connected to this node";
