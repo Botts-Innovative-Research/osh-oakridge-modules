@@ -3,12 +3,11 @@ package com.botts.impl.system.lane.helpers.occupancy;
 import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.system.lane.helpers.occupancy.state.*;
-import net.opengis.swe.v20.DataChoice;
-import net.opengis.swe.v20.DataComponent;
-import net.opengis.swe.v20.Text;
+import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.command.IStreamingControlInterface;
+import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.data.ObsEvent;
 import org.sensorhub.api.datastore.obs.IObsStore;
@@ -18,6 +17,7 @@ import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.controls.FileControl;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
+import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.DataBlockMixed;
@@ -40,8 +40,8 @@ public class OccupancyWrapper {
     private volatile StateManager stateManager;
     private final ObservationHelper observationHelper = new ObservationHelper();
     static final int OBS_BUFFER_SECONDS = 1;
-    static final int DATA_FILE_COUNT_INDEX = 10;
-    static final int DATA_FILE_NAME_INDEX = 11;
+    static final int DATA_FILE_COUNT_INDEX = 11;
+    static final int DATA_FILE_NAME_INDEX = 12;
     static final int GAMMA_INDEX = 5;
     static final int NEUTRON_INDEX = 6;
     Instant startTime = Instant.now();
@@ -104,6 +104,13 @@ public class OccupancyWrapper {
         }
         registerFFmpegListeners();
         registerOcucpancyListener();
+
+        var rpmOutput = rpm.getOutputs().values().stream().filter(entry -> entry instanceof OccupancyOutput).findFirst();
+        if (rpmOutput.isPresent()) {
+            observationHelper.setOccupancyStruct(rpmOutput.get().getRecordDescription());
+        } else {
+            throw new RuntimeException("Could not set RPM occupancy data structure.");
+        }
     }
 
     public void stop() {
@@ -132,9 +139,6 @@ public class OccupancyWrapper {
                     if (obs.getResult().getBooleanValue(GAMMA_INDEX) || obs.getResult().getBooleanValue(NEUTRON_INDEX))
                         observationHelper.setRpmOcc(obs);
 
-                    for (var obs1 : observations) {
-
-                    }
                 })
                 .thenAccept(subscription ->{
                     subscription.request(Long.MAX_VALUE);
@@ -380,6 +384,11 @@ public class OccupancyWrapper {
         private final Object lock = new Object();
         private int count = 0;
         private int totalCams = 2;
+        private DataComponent occupancyRecord;
+
+        public void setOccupancyStruct(DataComponent occupancyRecord) {
+            this.occupancyRecord = occupancyRecord;
+        }
 
         public synchronized void setRpmOcc(IObsData rpmOcc) {
             this.rpmOcc = rpmOcc;
@@ -435,22 +444,31 @@ public class OccupancyWrapper {
                             .build()).findFirst();
 
                     if (observation.isPresent()) {
-                        var dataBlock = observation.get().getResult();
-                        var fileBlock = ((DataBlockMixed) dataBlock).getUnderlyingObject()[DATA_FILE_NAME_INDEX];
 
-                        dataBlock.setIntValue(DATA_FILE_COUNT_INDEX, count);
-                        fileBlock.resize(count);
+                        var dataBlock = observation.get().getResult();
+
+                        occupancyRecord.setData(dataBlock);
+                        occupancyRecord.getComponent("videoPathCount").getData().setIntValue(count);
+                        var fileArray = (DataArray)occupancyRecord.getComponent("videoPaths");
+                        //dataBlock.setIntValue(DATA_FILE_COUNT_INDEX, count);
+                        fileArray.updateSize();
+                        //fileBlock.resize(count);
                         dataBlock.updateAtomCount();
 
-                        int fileIndex = DATA_FILE_NAME_INDEX;
+                        //int fileIndex = occupancyRecord.getComponentIndex("videoPaths");
+                        int fileIndex = 0;
+                        var fileData = fileArray.getData();
 
                         for (var file : files) {
-                            dataBlock.setStringValue(fileIndex++, file);
+                            //dataBlock.setStringValue(fileIndex++, file);
+                            fileData.setStringValue(fileIndex++, file);
                         }
                     }
 
                     this.clear();
-                } catch (Exception ignored) {} // Try-catch is just a safety net; ensures lock is always released
+                } catch (Exception ignored) {
+                    count = 0;
+                }
             }
         }
     }

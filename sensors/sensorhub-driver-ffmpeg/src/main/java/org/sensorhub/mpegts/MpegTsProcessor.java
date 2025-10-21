@@ -548,7 +548,7 @@ public class MpegTsProcessor extends Thread {
         logger.debug("processStream");
 
         if (streamOpened) {
-            avutil.av_log_set_level(avutil.AV_LOG_DEBUG);
+            //avutil.av_log_set_level(avutil.AV_LOG_DEBUG);
             // Allocate the codec contexts and attempt to open them
             openCodecContext();
 
@@ -643,14 +643,16 @@ public class MpegTsProcessor extends Thread {
                     if (doTranscode) {
                         // Slight optimization to skip processing if listeners are doing nothing
                         // Assuming this is jpeg. Otherwise, may have keyframe issues.
-                        doProcessing = false;
                         for (DataBufferListener listener : videoDataBufferListeners) {
                             if (listener.isWriting()) {
                                 doProcessing = true;
                                 break;
                             }
+                            doProcessing = false;
                         }
+
                         if (!doProcessing) {
+                            encoder.getOutQueue().clear();
                             continue;
                         }
 

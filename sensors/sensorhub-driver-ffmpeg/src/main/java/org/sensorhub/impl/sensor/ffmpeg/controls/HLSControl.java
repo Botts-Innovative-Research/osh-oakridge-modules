@@ -2,17 +2,23 @@ package org.sensorhub.impl.sensor.ffmpeg.controls;
 
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
+import com.botts.impl.service.bucket.BucketService;
+import com.botts.impl.service.bucket.BucketServlet;
 import net.opengis.swe.v20.*;
 import net.opengis.swe.v20.Boolean;
 import org.sensorhub.api.command.CommandException;
 import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.api.service.IHttpServer;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
+import org.sensorhub.impl.sensor.ffmpeg.controls.hls.HlsStreamHandler;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
+import org.sensorhub.impl.service.HttpServer;
 import org.vast.swe.SWEHelper;
 
 import java.util.Collections;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractSensorControl<FFMPEGSensorBase<FFmpegConfigType>> implements FFmpegControl {
     public static final String SENSOR_CONTROL_NAME = "ffmpegHlsControl";
@@ -24,6 +30,9 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
     public static final String VIDEO_BUCKET = "videos";
 
     private final IBucketStore bucketStore;
+    private final IBucketService bucketService;
+    private final HttpServer httpServer;
+    private static final AtomicReference<HlsStreamHandler> hlsHandler = new AtomicReference<>();
     DataRecord commandData;
     String fileName = "";
     private final FileOutput fileOutput;
@@ -33,8 +42,15 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
 
         this.fileOutput = fileOutput;
 
-        var bucketService = sensor.getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
+
+        httpServer = sensor.getParentHub().getModuleRegistry().getModuleByType(HttpServer.class);
+        bucketService = sensor.getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
         bucketStore = bucketService.getBucketStore();
+
+        if (hlsHandler.get() == null) {
+            hlsHandler.set(new HlsStreamHandler(bucketService));
+            bucketService.registerObjectHandler(hlsHandler.get());
+        }
 
         boolean videosBucketExists = bucketStore.bucketExists(VIDEO_BUCKET);
         if (!videosBucketExists) {
@@ -80,22 +96,25 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                 return false;
 
             fileName = "streams/" + parentSensor.getUniqueIdentifier().replace(':', '-')
-                    + "/" + "live.m3u8";
+                    + "/live.m3u8";
 
             try {
                 //this.parentSensor.getProcessor().openFile(fileName);
                 this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap()).close();
-                this.fileOutput.openFile(bucketStore.getResourceURI(VIDEO_BUCKET, fileName));
+                String uri = bucketStore.getResourceURI(VIDEO_BUCKET, fileName);
+                //bucketStore.deleteObject(VIDEO_BUCKET, fileName);
+                this.fileOutput.openFile(uri);
                 this.fileOutput.publish();
-                this.parentSensor.reportStatus("Writing to file: " + fileName);
+                this.parentSensor.reportStatus("Writing video stream: " + fileName);
             } catch (Exception e) {
+                fileName = null;
                 commandStatus = false;
             }
         } else if (selected.equals(CMD_END_STREAM)) {
             if (fileName.isEmpty()) { return false; }
             try {
                 this.fileOutput.closeFile();
-
+                this.parentSensor.reportStatus("Closing video stream: " + fileName);
                 fileName = "";
             } catch (Exception e) {
                 commandStatus = false;

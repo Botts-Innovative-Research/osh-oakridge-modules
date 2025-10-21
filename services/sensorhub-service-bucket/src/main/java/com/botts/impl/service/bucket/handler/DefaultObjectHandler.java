@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 
 public class DefaultObjectHandler implements IObjectHandler {
 
-    private final IBucketStore bucketStore;
+    protected final IBucketStore bucketStore;
 
     public DefaultObjectHandler(IBucketStore bucketStore) {
         this.bucketStore = bucketStore;
