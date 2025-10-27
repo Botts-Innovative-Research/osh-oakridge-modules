@@ -19,6 +19,7 @@ import org.vast.swe.SWEHelper;
 import org.vast.util.TimeExtent;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 public class AdjudicationControl extends AbstractSensorControl<LaneSystem> implements IStreamingControlInterfaceWithResult {
@@ -82,6 +83,9 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
                if (decodedObsId == null)
                    return CommandStatus.failed(command.getID(), "The provided occupancy ID is invalid.");
 
+               if (obsStore == null)
+                   return CommandStatus.failed(command.getID(), "Please attach this lane to a database, or restart the lane");
+
                // Validate obs ID is in database
                if (!obsStore.containsKey(decodedObsId))
                    return CommandStatus.failed(command.getID(), "The provided occupancy ID was not found in the database.");
@@ -91,14 +95,14 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
                if (obs == null)
                    return CommandStatus.failed(command.getID(), "The occupancy from the provided ID is null");
 
-               var dsQuery = obsStore.getDataStreams().select(new DataStreamFilter.Builder()
-                       .withInternalIDs(obs.getDataStreamID())
-                       .withObservedProperties(RADHelper.getRadUri("Occupancy"))
-                       .build());
-               var ds = dsQuery.findAny().get();
+               var ds = obsStore.getDataStreams().get(new DataStreamKey(obs.getDataStreamID()));
                if (ds == null)
                    return CommandStatus.failed(command.getID(), "The provided occupancy ID is not part of an RPM");
 
+               var dsDef = ds.getRecordStructure().getDefinition();
+               var expectedDef = RADHelper.getRadUri("Occupancy");
+               if (!Objects.equals(expectedDef, dsDef))
+                   return CommandStatus.failed(command.getID(), "The provided occupancy ID is not part of an RPM");
 
                if (adj.getSecondaryInspectionStatus() == null)
                    return CommandStatus.failed(command.getID(), "Please specify a secondary inspection status");
@@ -112,6 +116,7 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
                occupancy.addAdjudicatedId(commandId);
                DataBlock newOccupancyResult = Occupancy.fromOccupancy(occupancy);
                obs.getResult().setUnderlyingObject(newOccupancyResult.getUnderlyingObject());
+               obs.getResult().updateAtomCount();
 
                String systemUID = getParentProducer().getParentSystemUID() != null ?
                        getParentProducer().getParentSystemUID() :
