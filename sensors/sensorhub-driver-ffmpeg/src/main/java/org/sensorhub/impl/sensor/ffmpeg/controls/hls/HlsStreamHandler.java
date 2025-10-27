@@ -39,10 +39,18 @@ public class HlsStreamHandler extends DefaultObjectHandler {
     public void doGet(RequestContext ctx) throws IOException, SecurityException {
         var bucketName = ctx.getBucketName();
         var objectKey = ctx.getObjectKey();
+        boolean objectExists;
         var sec = ctx.getSecurityHandler();
         sec.checkPermission(sec.getBucketPermission(bucketName).get);
 
-        boolean objectExists = bucketStore.objectExists(bucketName, objectKey);
+        // Assignment is intentional here
+        // Temp file is required so that ffmpeg can continue writing to the playlist file
+        if ( !(objectExists = bucketStore.objectExists(bucketName, objectKey)) ) {
+            if (objectExists = bucketStore.objectExists(bucketName, objectKey + ".temp")) {
+                objectKey += ".temp";
+            }
+        }
+
         if (!objectExists)
             throw ServiceErrors.notFound(objectKey + " in bucket " + bucketName);
 
