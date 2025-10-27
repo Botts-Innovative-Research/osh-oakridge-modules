@@ -54,24 +54,25 @@ public class SiteDiagramForm extends GenericConfigForm {
 
         try {
             String imagePath = getSiteImagePath();
-            var splitPath = imagePath.split("/")[imagePath.split("/").length - 1];
 
-            var resolvedPath = bucketStore.getResourceURI(SITE_MAP_BUCKET, splitPath);
+            if (imagePath != null) {
+                var splitPath = imagePath.split("/")[imagePath.split("/").length - 1];
+                var resolvedPath = bucketStore.getResourceURI(SITE_MAP_BUCKET, splitPath);
 
-            if (resolvedPath != null && !resolvedPath.isEmpty()) {
-                if (propId.equals("location.lon")) {
-                    addSiteMapComponent(resolvedPath);
-                    lonField = (TextField) field;
-                }
+                if (resolvedPath != null && !resolvedPath.isEmpty()) {
+                    if (propId.equals("location.lon")) {
+                        addSiteMapComponent(resolvedPath);
+                        lonField = (TextField) field;
+                    }
 
-                if(propId.equals("location.lat")) {
-                    latField = (TextField) field;
+                    if(propId.equals("location.lat")) {
+                        latField = (TextField) field;
+                    }
                 }
             }
         } catch (SensorHubException e) {
             getOshLogger().error("Error building SiteMap Diagram field", e);
         }
-
 
         return field;
     }
