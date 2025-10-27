@@ -10,7 +10,6 @@ import org.vast.swe.SWEHelper;
 import org.vast.util.TimeExtent;
 
 import java.time.Instant;
-import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 
 public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implements IStreamingControlInterfaceWithResult {
@@ -70,7 +69,7 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
                 var latestObsId = statsOutput.waitForLatestObservationId();
                 if (latestObsId == null)
                     return CommandStatus.failed(command.getID(), "Could not generate latest statistics observation.");
-                result = CommandResult.withObsInDatastream(command.getCommandStreamID(),Collections.singleton(latestObsId));
+                result = CommandResult.withObservation(latestObsId);
             }
             return new CommandStatus.Builder()
                     .withResult(result)
