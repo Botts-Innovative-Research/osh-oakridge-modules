@@ -102,7 +102,6 @@ public class OccupancyWrapper {
             observationHelper.setObsStore(rpmObs);
         } catch (Exception ignored) {
         }
-        registerFFmpegListeners();
         registerOcucpancyListener();
 
         var rpmOutput = rpm.getOutputs().values().stream().filter(entry -> entry instanceof OccupancyOutput).findFirst();
@@ -144,50 +143,6 @@ public class OccupancyWrapper {
                     subscription.request(Long.MAX_VALUE);
                     occupancySubscription = subscription;
                 });
-    }
-
-
-    public void registerFFmpegListeners() {
-        for (var camera : cameras) {
-            for (var command : camera.getCommandInputs().values()) {
-                if (command instanceof FileControl<?> fileControl) {
-                    var output = fileControl.getFileOutput();
-                    hub.getEventBus().newSubscription(ObsEvent.class)
-                            .withTopicID(EventUtils.getDataStreamDataTopicID(camera.getUniqueIdentifier(), output.getName()))
-                            .subscribe(event -> {
-                                var observations = event.getObservations();
-
-                                observationHelper.addFfmpegOut(observations[0], cameraSubscriptions.size());
-                            })
-                            .thenAccept(subscription -> {
-                                subscription.request(Long.MAX_VALUE);
-                                cameraSubscriptions.put(camera, subscription);
-                            });
-                    break; // Only support one file control output.
-                }
-            }
-            /*
-            hub.getEventBus().newSubscription(ObsEvent.class)
-                    .withTopicID(EventUtils.getDataStreamDataTopicID(camera.getUniqueIdentifier(), VIDEO_FILE_OUTPUT))
-                    .subscribe(event -> {
-                        var observations = event.getObservations();
-
-                        observationHelper.addFfmpegOut(observations[0], cameraSubscriptions.size());
-                        /*
-                        for (var obs : observations) {
-                            observationHelper.setFfmpegOut(obs);
-                        }
-
-
-                    })
-                    .thenAccept(subscription -> {
-                        subscription.request(Long.MAX_VALUE);
-                        cameraSubscriptions.put(camera, subscription);
-                    });
-
-             */
-        }
-
     }
 
     public void registerDailyFileListener() {
@@ -267,7 +222,11 @@ public class OccupancyWrapper {
                     }
 
                     fileIoItem.getData().setBooleanValue(wasAlarming); // boolean determines whether the video recording is saved
-                    commandInterface.submitCommand(new CommandData(++cmdId, command.getData()));
+                    commandInterface.submitCommand(new CommandData(++cmdId, command.getData())).whenComplete((result, error) -> {
+                        for (var obs : result.getResult().getInlineRecords()) {
+                            this.observationHelper.addFfmpegOut(obs.getStringValue(), size);
+                        }
+                    });
                 }
 
                 //doPublish = true;
@@ -379,7 +338,7 @@ public class OccupancyWrapper {
 
     private static class ObservationHelper {
         private IObsData rpmOcc;
-        private final ArrayList<IObsData> ffmpegOuts = new ArrayList<>();
+        private final ArrayList<String> ffmpegOuts = new ArrayList<>();
         private IObsStore obsStore;
         private final Object lock = new Object();
         private int count = 0;
@@ -395,9 +354,9 @@ public class OccupancyWrapper {
             correlateObs();
         }
 
-        public void addFfmpegOut(IObsData ffmpegOut, int totalCams) {
+        public void addFfmpegOut(String videoFile, int totalCams) {
             synchronized (lock) {
-                this.ffmpegOuts.add(ffmpegOut);
+                this.ffmpegOuts.add(videoFile);
                 count++;
                 this.totalCams = totalCams;
                 correlateObs();
@@ -424,11 +383,7 @@ public class OccupancyWrapper {
                     if (rpmOcc == null || count < totalCams)
                         return;
 
-                    ArrayList<String> files = new ArrayList<>();
-
-                    for (var ffmpegOut : ffmpegOuts) {
-                        files.add(ffmpegOut.getResult().getStringValue());
-                    }
+                    ArrayList<String> files = new ArrayList<>(ffmpegOuts);
                     //rpmOcc.getResult().setStringValue(DATA_FILE_NAME_INDEX, files);
                     /*
                     var observation = obsStore.select(new ObsFilter.Builder()

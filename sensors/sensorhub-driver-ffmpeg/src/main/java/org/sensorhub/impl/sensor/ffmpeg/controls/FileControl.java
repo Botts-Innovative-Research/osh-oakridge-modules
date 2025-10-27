@@ -17,6 +17,7 @@ import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
 
 import java.util.Collections;
+import java.util.concurrent.CompletableFuture;
 
 public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractSensorControl<FFMPEGSensorBase<FFmpegConfigType>> implements FFmpegControl {
     public static final String SENSOR_CONTROL_NAME = "ffmpegFileControl";
@@ -29,6 +30,7 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
 
     private final IBucketStore bucketStore;
     DataRecord commandData;
+    DataRecord resultData;
     String fileName = "";
     private final FileOutput fileOutput;
 
@@ -61,13 +63,20 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                         .label("File I/O")
                         .addItem(CMD_OPEN_FILE, fac.createText()
                                 .label("Start File")
-                                .description("Directory for video file.")
+                                .description("Start recording video to a file.")
+                                .definition(SWEHelper.getPropertyUri("VideoStart"))
                                 .build())
                         .addItem(CMD_CLOSE_FILE, fac.createBoolean()
                                 .value(true)
                                 .label("Save File")
+                                .label("Stop recording. Save file if true, discard if false.")
+                                .definition(SWEHelper.getPropertyUri("VideoStop"))
                                 .build())
                         .build())
+                .build();
+
+        resultData = fac.createRecord().name("result")
+                .addField("streamPath", fac.createText())
                 .build();
     }
 
@@ -78,54 +87,75 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
     }
 
     @Override
-    protected boolean execCommand(DataBlock cmdData) throws CommandException {
-        boolean commandStatus = true;
-        DataRecord commandData = this.commandData.copy();
-        commandData.setData(cmdData);
-        var selected = ((DataChoice)commandData.getComponent(0)).getSelectedItem();
-        if (selected == null)
-            return false;
-
-        if (selected.getName().equals(CMD_OPEN_FILE)) {
-            if (!fileName.isEmpty())
-                return false;
-
-            fileName = "clips/" + parentSensor.getUniqueIdentifier().replace(':', '-')
-                    + "/" + selected.getData().getStringValue();
-
-            if (!fileName.contains(".")) {
-                fileName += ".mp4";
-            }
-
-            try {
-                //this.parentSensor.getProcessor().openFile(fileName);
-                var outputStream = this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap());
-                this.fileOutput.openFile(outputStream, bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName));
-                this.parentSensor.reportStatus("Writing to file: " + fileName);
-            } catch (Exception e) {
+    public CompletableFuture<ICommandStatus> submitCommand(ICommandData command) {
+        return CompletableFuture.supplyAsync(() -> {
+            boolean commandStatus = true;
+            boolean reportFileName = false;
+            String fileNameTemp = "";
+            DataRecord commandData = this.commandData.copy();
+            commandData.setData(command.getParams());
+            var selected = ((DataChoice) commandData.getComponent(0)).getSelectedItem();
+            if (selected == null)
                 commandStatus = false;
-            }
-        } else if (selected.getName().equals(CMD_CLOSE_FILE)) {
-            if (fileName.isEmpty()) { return false; }
-            boolean saveFile = ((Boolean) selected).getValue();
-            try {
-                this.fileOutput.closeFile();
 
-                // Delete file if we do not want to save
-                if (!saveFile) {
-                    bucketStore.deleteObject(VIDEO_BUCKET, fileName);
-                    this.parentSensor.reportStatus("Discarded file: " + fileName);
-                } else {
-                    this.fileOutput.publish();
-                    this.parentSensor.reportStatus("Saved file: " + fileName);
+            else if (selected.getName().equals(CMD_OPEN_FILE)) {
+                if (!fileName.isEmpty())
+                    commandStatus = false;
+
+                else {
+                    fileName = "clips/" + parentSensor.getUniqueIdentifier().replace(':', '-')
+                            + "/" + selected.getData().getStringValue();
+
+                    if (!fileName.contains(".")) {
+                        fileName += ".mp4";
+                    }
+
+                    try {
+                        //this.parentSensor.getProcessor().openFile(fileName);
+                        var outputStream = this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap());
+                        this.fileOutput.openFile(outputStream, bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName));
+                        this.parentSensor.reportStatus("Writing to file: " + fileName);
+                    } catch (Exception e) {
+                        commandStatus = false;
+                    }
                 }
-                fileName = "";
-            } catch (Exception e) {
+            } else if (selected.getName().equals(CMD_CLOSE_FILE)) {
+                if (fileName.isEmpty())
+                    commandStatus = false;
+                else {
+                    boolean saveFile = ((Boolean) selected).getValue();
+                    try {
+                        this.fileOutput.closeFile();
+
+                        // Delete file if we do not want to save
+                        if (!saveFile) {
+                            bucketStore.deleteObject(VIDEO_BUCKET, fileName);
+                            this.parentSensor.reportStatus("Discarded file: " + fileName);
+                        } else {
+                            this.parentSensor.reportStatus("Saved file: " + fileName);
+                            fileNameTemp = fileName;
+                            reportFileName = true;
+                        }
+                        fileName = "";
+                    } catch (Exception e) {
+                        commandStatus = false;
+                    }
+                }
+            } else {
                 commandStatus = false;
             }
-        } else {
-            throw new CommandException("Invalid Command");
-        }
-        return commandStatus;
+
+            CommandStatus.Builder status = new CommandStatus.Builder()
+                    .withCommand(command.getID())
+                    .withStatusCode(commandStatus ? ICommandStatus.CommandStatusCode.ACCEPTED : ICommandStatus.CommandStatusCode.FAILED);
+
+            if (commandStatus && reportFileName) {
+                resultData.renewDataBlock();
+                resultData.getData().setStringValue(fileNameTemp);
+                ICommandResult result = CommandResult.withData(resultData.getData());
+                status.withResult(result);
+            }
+            return status.build();
+        });
     }
 }

@@ -6,7 +6,7 @@ import com.botts.impl.service.bucket.BucketService;
 import com.botts.impl.service.bucket.BucketServlet;
 import net.opengis.swe.v20.*;
 import net.opengis.swe.v20.Boolean;
-import org.sensorhub.api.command.CommandException;
+import org.sensorhub.api.command.*;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.service.IHttpServer;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
@@ -18,13 +18,14 @@ import org.sensorhub.impl.service.HttpServer;
 import org.vast.swe.SWEHelper;
 
 import java.util.Collections;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractSensorControl<FFMPEGSensorBase<FFmpegConfigType>> implements FFmpegControl {
     public static final String SENSOR_CONTROL_NAME = "ffmpegHlsControl";
     private static final String SENSOR_CONTROL_LABEL = "FFmpeg HLS Control";
     public static final String CMD_START_STREAM = "startStream";
-    public static final String CMD_END_STREAM = "endFile";
+    public static final String CMD_END_STREAM = "endStream";
     public static final String STREAM_CONTROL = "streamControl";
     //public static final String VIDEO_BUCKET = Constants.VIDEO_BUCKET;
     public static final String VIDEO_BUCKET = "videos";
@@ -34,6 +35,7 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
     private final HttpServer httpServer;
     private static final AtomicReference<HlsStreamHandler> hlsHandler = new AtomicReference<>();
     DataRecord commandData;
+    DataRecord resultData;
     String fileName = "";
     private final FileOutput fileOutput;
 
@@ -72,7 +74,12 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                 .addField(STREAM_CONTROL, fac.createCategory()
                         .label("Stream Command")
                         .addAllowedValues(CMD_START_STREAM, CMD_END_STREAM)
+                        .definition(SWEHelper.getPropertyUri("StreamControl"))
                         .build())
+                .build();
+
+        resultData = fac.createRecord().name("result")
+                .addField("streamPath", fac.createText())
                 .build();
     }
 
@@ -83,55 +90,75 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
     }
 
     @Override
-    protected boolean execCommand(DataBlock cmdData) throws CommandException {
-        boolean commandStatus = true;
-        DataRecord commandData = this.commandData.copy();
-        commandData.setData(cmdData);
-        var selected = ((Category)commandData.getComponent(0)).getValue();
-        if (selected == null)
-            return false;
+    public CompletableFuture<ICommandStatus> submitCommand(ICommandData command) {
 
-        if (selected.equals(CMD_START_STREAM)) {
-            if (!fileName.isEmpty())
-                return false;
+        return CompletableFuture.supplyAsync(() -> {
+            boolean commandStatus = true;
+            boolean reportFileName = false;
+            DataRecord commandData = this.commandData.copy();
+            commandData.setData(command.getParams());
+            var selected = ((Category)commandData.getComponent(0)).getValue();
 
-            fileName = "streams/" + parentSensor.getUniqueIdentifier().replace(':', '-')
-                    + "/live.m3u8";
-
-            try {
-                //this.parentSensor.getProcessor().openFile(fileName);
-                this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap()).close();
-                String uri = bucketStore.getResourceURI(VIDEO_BUCKET, fileName);
-                //bucketStore.deleteObject(VIDEO_BUCKET, fileName);
-                this.fileOutput.openFile(uri);
-                this.fileOutput.publish();
-                hlsHandler.get().addControl(fileName, this);
-                this.parentSensor.reportStatus("Writing video stream: " + fileName);
-            } catch (Exception e) {
-                fileName = null;
+            if (selected == null)
                 commandStatus = false;
-            }
-        } else if (selected.equals(CMD_END_STREAM)) {
-            if (fileName.isEmpty()) { return false; }
-            try {
-                this.fileOutput.closeFile();
-                this.parentSensor.reportStatus("Closing video stream: " + fileName);
-                hlsHandler.get().removeControl(fileName, this);
 
-                // File cleanup
-                var fileNameNoExt = fileName.substring(0, fileName.lastIndexOf('.'));
-                var filteredNames = bucketStore.listObjects(VIDEO_BUCKET).stream().filter(name -> name.contains(fileNameNoExt)).toList();
-                for (String hlsFile : filteredNames) {
-                    bucketStore.deleteObject(VIDEO_BUCKET, hlsFile);
+            else if (selected.equals(CMD_START_STREAM)) {
+                if (!fileName.isEmpty())
+                    commandStatus = false;
+                else {
+                    fileName = "streams/" + parentSensor.getUniqueIdentifier().replace(':', '-')
+                            + "/live.m3u8";
+
+                    try {
+                        //this.parentSensor.getProcessor().openFile(fileName);
+                        this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap()).close();
+                        String uri = bucketStore.getResourceURI(VIDEO_BUCKET, fileName);
+                        //bucketStore.deleteObject(VIDEO_BUCKET, fileName);
+                        this.fileOutput.openFile(uri);
+                        hlsHandler.get().addControl(fileName, this);
+                        this.parentSensor.reportStatus("Writing video stream: " + fileName);
+                        reportFileName = true;
+                        fileOutput.publish();
+                    } catch (Exception e) {
+                        fileName = null;
+                        commandStatus = false;
+                    }
                 }
+            } else if (selected.equals(CMD_END_STREAM)) {
+                if (fileName.isEmpty())
+                    commandStatus = false;
+                else {
+                    try {
+                        this.fileOutput.closeFile();
+                        this.parentSensor.reportStatus("Closing video stream: " + fileName);
+                        hlsHandler.get().removeControl(fileName, this);
 
-                fileName = "";
-            } catch (Exception e) {
+                        // File cleanup
+                        var fileNameNoExt = fileName.substring(0, fileName.lastIndexOf('.'));
+                        var filteredNames = bucketStore.listObjects(VIDEO_BUCKET).stream().filter(name -> name.contains(fileNameNoExt)).toList();
+                        for (String hlsFile : filteredNames) {
+                            bucketStore.deleteObject(VIDEO_BUCKET, hlsFile);
+                        }
+
+                        fileName = "";
+                    } catch (Exception e) {
+                        commandStatus = false;
+                    }
+                }
+            } else {
                 commandStatus = false;
             }
-        } else {
-            throw new CommandException("Invalid Command");
-        }
-        return commandStatus;
+
+            CommandStatus.Builder status = new CommandStatus.Builder()
+                    .withCommand(command.getID())
+                    .withStatusCode(commandStatus ? ICommandStatus.CommandStatusCode.ACCEPTED : ICommandStatus.CommandStatusCode.FAILED);
+            if (commandStatus && reportFileName) {
+                resultData.renewDataBlock();
+                resultData.getData().setStringValue(fileName);
+                ICommandResult result = CommandResult.withData(resultData.getData());
+                status.withResult(result);
+            }
+            return status.build();
+        });
     }
 }
