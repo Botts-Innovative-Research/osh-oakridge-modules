@@ -287,6 +287,8 @@ public class LaneTests {
                 assertEquals(cmdIdEncoder.encodeID(cmd.getID()), id);
             else if (i == 1)
                 assertEquals(cmdIdEncoder.encodeID(cmd2.getID()), id);
+            else if (i == obs.getResult().getAtomCount())
+                fail("Index out of bounds! This will not serialize properly");
             System.out.println(id);
         }
     }

@@ -7,6 +7,7 @@ import jakarta.xml.bind.JAXBException;
 import jakarta.xml.bind.Unmarshaller;
 import net.opengis.swe.v20.*;
 import net.opengis.swe.v20.Boolean;
+import org.sensorhub.impl.utils.rad.model.Adjudication;
 import org.vast.swe.SWEBuilders;
 import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
@@ -1076,6 +1077,7 @@ public class RADHelper extends GeoPosHelper {
                         .label("Secondary Inspection Status")
                         .definition(SWEHelper.getPropertyUri("SecondaryInspectionStatus"))
                         .optional(false)
+                        .addAllowedValues(Adjudication.SecondaryInspectionStatus.class)
                         .build())
                 .addField("filePathCount", createCount()
                         .label("File Path Count")
