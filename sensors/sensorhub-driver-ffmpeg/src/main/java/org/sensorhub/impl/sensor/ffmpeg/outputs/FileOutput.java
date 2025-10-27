@@ -139,6 +139,14 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         }
     }
 
+    public void publish(String fileNameOverride) {
+        if (fileNameOverride != null && !fileNameOverride.isBlank()) {
+            this.outputStruct.renewDataBlock();
+            this.outputStruct.getData().setStringValue(fileNameOverride);
+            this.eventHandler.publish(new DataEvent(System.currentTimeMillis(), this, outputStruct.getData().clone()));
+        }
+    }
+
     // TODO Reduce reused code
     /**
      * Write video data to an OutputStream. A file name is still required for determining file format and

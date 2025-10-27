@@ -6,6 +6,7 @@ import org.sensorhub.api.datastore.DataStoreException;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Map;
@@ -233,7 +234,7 @@ public class FileSystemBucketStore implements IBucketStore {
             throw new DataStoreException(BUCKET_NOT_FOUND);
         if (!objectExists(bucketName, key))
             throw new DataStoreException(OBJECT_NOT_FOUND + bucketName);
-        return bucketName + "/" + key;
+        return Paths.get(bucketName, key).toString();
     }
 
 

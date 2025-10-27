@@ -16,6 +16,7 @@ import org.vast.swe.SWEHelper;
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
 
+import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 
@@ -103,8 +104,8 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                     commandStatus = false;
 
                 else {
-                    fileName = "clips/" + parentSensor.getUniqueIdentifier().replace(':', '-')
-                            + "/" + selected.getData().getStringValue();
+                    fileName = Paths.get("clips", parentSensor.getUniqueIdentifier().replace(':', '-'),
+                            selected.getData().getStringValue()).toString();
 
                     if (!fileName.contains(".")) {
                         fileName += ".mp4";
@@ -150,10 +151,12 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                     .withStatusCode(commandStatus ? ICommandStatus.CommandStatusCode.ACCEPTED : ICommandStatus.CommandStatusCode.FAILED);
 
             if (commandStatus && reportFileName) {
-                resultData.renewDataBlock();
-                resultData.getData().setStringValue(fileNameTemp);
-                ICommandResult result = CommandResult.withData(resultData.getData());
-                status.withResult(result);
+                try {
+                    resultData.renewDataBlock();
+                    resultData.getData().setStringValue(bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileNameTemp));
+                    ICommandResult result = CommandResult.withData(resultData.getData());
+                    status.withResult(result);
+                } catch (Exception ignored) {}
             }
             return status.build();
         });

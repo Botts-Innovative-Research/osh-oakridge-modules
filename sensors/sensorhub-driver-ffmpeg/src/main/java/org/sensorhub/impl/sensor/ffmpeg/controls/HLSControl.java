@@ -17,6 +17,8 @@ import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
 import org.sensorhub.impl.service.HttpServer;
 import org.vast.swe.SWEHelper;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
@@ -37,6 +39,7 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
     DataRecord commandData;
     DataRecord resultData;
     String fileName = "";
+    Path filePath = Paths.get(VIDEO_BUCKET);
     private final FileOutput fileOutput;
 
     public HLSControl(FFMPEGSensorBase<FFmpegConfigType> sensor, FileOutput fileOutput) throws DataStoreException {
@@ -95,9 +98,9 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
         return CompletableFuture.supplyAsync(() -> {
             boolean commandStatus = true;
             boolean reportFileName = false;
-            DataRecord commandData = this.commandData.copy();
-            commandData.setData(command.getParams());
-            var selected = ((Category)commandData.getComponent(0)).getValue();
+            //DataRecord commandData = this.commandData.copy();
+            //commandData.setData(command.getParams());
+            var selected = command.getParams().getStringValue();
 
             if (selected == null)
                 commandStatus = false;
@@ -106,9 +109,8 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                 if (!fileName.isEmpty())
                     commandStatus = false;
                 else {
-                    fileName = "streams/" + parentSensor.getUniqueIdentifier().replace(':', '-')
-                            + "/live.m3u8";
-
+                    filePath = Paths.get("streams", parentSensor.getUniqueIdentifier().replace(':', '-'), "live.m3u8");
+                    fileName = filePath.toString();
                     try {
                         //this.parentSensor.getProcessor().openFile(fileName);
                         this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap()).close();
@@ -118,7 +120,7 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                         hlsHandler.get().addControl(fileName, this);
                         this.parentSensor.reportStatus("Writing video stream: " + fileName);
                         reportFileName = true;
-                        fileOutput.publish();
+                        fileOutput.publish(bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName));
                     } catch (Exception e) {
                         fileName = null;
                         commandStatus = false;
@@ -135,7 +137,9 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
 
                         // File cleanup
                         var fileNameNoExt = fileName.substring(0, fileName.lastIndexOf('.'));
-                        var filteredNames = bucketStore.listObjects(VIDEO_BUCKET).stream().filter(name -> name.contains(fileNameNoExt)).toList();
+                        var filteredNames = bucketStore.listObjects(VIDEO_BUCKET).stream().filter(name -> {
+                            return name.contains(fileNameNoExt);
+                        }).toList();
                         for (String hlsFile : filteredNames) {
                             bucketStore.deleteObject(VIDEO_BUCKET, hlsFile);
                         }
@@ -153,10 +157,12 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                     .withCommand(command.getID())
                     .withStatusCode(commandStatus ? ICommandStatus.CommandStatusCode.ACCEPTED : ICommandStatus.CommandStatusCode.FAILED);
             if (commandStatus && reportFileName) {
-                resultData.renewDataBlock();
-                resultData.getData().setStringValue(fileName);
-                ICommandResult result = CommandResult.withData(resultData.getData());
-                status.withResult(result);
+                try {
+                    resultData.renewDataBlock();
+                    resultData.getData().setStringValue(bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName));
+                    ICommandResult result = CommandResult.withData(resultData.getData());
+                    status.withResult(result);
+                } catch (Exception ignored) {}
             }
             return status.build();
         });
