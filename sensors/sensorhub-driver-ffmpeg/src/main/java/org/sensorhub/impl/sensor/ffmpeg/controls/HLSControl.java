@@ -105,6 +105,7 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                 //bucketStore.deleteObject(VIDEO_BUCKET, fileName);
                 this.fileOutput.openFile(uri);
                 this.fileOutput.publish();
+                hlsHandler.get().addControl(fileName, this);
                 this.parentSensor.reportStatus("Writing video stream: " + fileName);
             } catch (Exception e) {
                 fileName = null;
@@ -115,6 +116,7 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
             try {
                 this.fileOutput.closeFile();
                 this.parentSensor.reportStatus("Closing video stream: " + fileName);
+                hlsHandler.get().removeControl(fileName, this);
                 fileName = "";
             } catch (Exception e) {
                 commandStatus = false;
