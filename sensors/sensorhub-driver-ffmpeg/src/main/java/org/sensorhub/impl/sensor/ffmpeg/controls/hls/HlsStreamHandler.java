@@ -7,6 +7,7 @@ import com.botts.impl.service.bucket.util.RequestContext;
 import com.botts.impl.service.bucket.util.ServiceErrors;
 import net.opengis.swe.v20.Category;
 import org.sensorhub.api.command.CommandData;
+import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.sensor.ffmpeg.controls.HLSControl;
 
@@ -84,7 +85,7 @@ public class HlsStreamHandler extends DefaultObjectHandler {
         } catch (DataStoreException e) {
             throw ServiceErrors.internalError(IBucketStore.FAILED_GET_OBJECT + bucketName);
         }
-        // TODO: Map object key to a ffmpeg driver control so we can target the correct streams to cancel
+
         // Should repeatedly request these
         if (ctx.getObjectKey().endsWith(".m3u8"))
             activeStreams.put(ctx.getObjectKey(), System.currentTimeMillis());
@@ -106,15 +107,14 @@ public class HlsStreamHandler extends DefaultObjectHandler {
             var command = control.getCommandDescription().clone();
             command.renewDataBlock();
             ((Category)command.getComponent(0)).setValue(HLSControl.CMD_END_STREAM);
-            control.submitCommand(new CommandData.Builder().withParams(command.getData()).build());
+            control.submitCommand(new CommandData.Builder().withParams(command.getData()).withCommandStream(BigId.NONE).build());
         }
     }
 
     private void cleanupInactiveStreams() {
-        long now = System.currentTimeMillis();
         // Remove active streams after timeout
         activeStreams.entrySet().removeIf(entry -> {
-            if (now - entry.getValue() > STREAM_TIMEOUT_MS) {
+            if (System.currentTimeMillis() - entry.getValue() > STREAM_TIMEOUT_MS) {
                 stopStream(activeControls.remove(entry.getKey())); // Remove the corresponding control and stop its stream
                 return true;
             }
