@@ -23,7 +23,7 @@ import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractSensorControl<FFMPEGSensorBase<FFmpegConfigType>> implements FFmpegControl {
+public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractSensorControl<FFMPEGSensorBase<FFmpegConfigType>> implements FFmpegControl, IStreamingControlInterfaceWithResult {
     public static final String SENSOR_CONTROL_NAME = "ffmpegHlsControl";
     private static final String SENSOR_CONTROL_LABEL = "FFmpeg HLS Control";
     public static final String CMD_START_STREAM = "startStream";
@@ -166,5 +166,10 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
             }
             return status.build();
         });
+    }
+
+    @Override
+    public DataComponent getResultDescription() {
+        return resultData;
     }
 }
