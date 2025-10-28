@@ -17,7 +17,6 @@ package com.botts.impl.service.oscar;
 
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
-import com.botts.impl.service.oscar.clientconfig.ClientConfigOutput;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
 import com.botts.impl.service.oscar.siteinfo.SitemapDiagramHandler;
@@ -36,7 +35,6 @@ import java.util.concurrent.TimeoutException;
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     SiteInfoOutput siteInfoOutput;
     RequestReportControl reportControl;
-    ClientConfigOutput clientConfigOutput;
     StatisticsOutput statsOutput;
     StatisticsControl statsControl;
 
@@ -79,9 +77,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     public void createOutputs(){
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
-
-        clientConfigOutput = new ClientConfigOutput(system);
-        system.addOutput(clientConfigOutput, false);
 
         statsOutput = new StatisticsOutput(system, getParentHub().getDatabaseRegistry().getFederatedDatabase());
         system.addOutput(statsOutput, false);
