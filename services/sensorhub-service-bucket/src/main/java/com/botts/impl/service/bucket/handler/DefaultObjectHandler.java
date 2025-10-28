@@ -44,6 +44,7 @@ public class DefaultObjectHandler implements IObjectHandler {
             ctx.getResponse().setContentType(mimeType);
             InputStream objectData = bucketStore.getObject(bucketName, objectKey);
             objectData.transferTo(ctx.getResponse().getOutputStream());
+            objectData.close();
         } catch (DataStoreException e) {
             throw ServiceErrors.internalError(IBucketStore.FAILED_GET_OBJECT + bucketName);
         }
