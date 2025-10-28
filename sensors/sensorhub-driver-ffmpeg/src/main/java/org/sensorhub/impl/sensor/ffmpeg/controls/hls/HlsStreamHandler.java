@@ -43,17 +43,9 @@ public class HlsStreamHandler extends DefaultObjectHandler {
     public void doGet(RequestContext ctx) throws IOException, SecurityException {
         var bucketName = ctx.getBucketName();
         var objectKey = Paths.get(ctx.getObjectKey()).toString();
-        boolean objectExists;
+        boolean objectExists = bucketStore.objectExists(bucketName, objectKey);
         var sec = ctx.getSecurityHandler();
         sec.checkPermission(sec.getBucketPermission(bucketName).get);
-
-        // Assignment is intentional here
-        // Temp file is required so that ffmpeg can continue writing to the playlist file
-        if ( !(objectExists = bucketStore.objectExists(bucketName, objectKey)) ) {
-            if (objectExists = bucketStore.objectExists(bucketName, objectKey + TEMP_SUFFIX)) {
-                objectKey += TEMP_SUFFIX;
-            }
-        }
 
         if (!objectExists)
             throw ServiceErrors.notFound(objectKey + " in bucket " + bucketName);
@@ -71,20 +63,9 @@ public class HlsStreamHandler extends DefaultObjectHandler {
         try {
             ctx.getResponse().setContentType(mimeType);
             InputStream objectData;
-
-            if (objectKey.endsWith(M3U8_SUFFIX)) {
-                // Need to make to rename this file so that ffmpeg can continue writing playlist
-                var original = new File(bucketStore.getResourceURI(bucketName, objectKey));
-                var tempFile = new File(bucketStore.getResourceURI(bucketName, objectKey) + TEMP_SUFFIX);
-                original.renameTo(tempFile);
-                objectData = bucketStore.getObject(bucketName, objectKey + TEMP_SUFFIX);
-                objectData.transferTo(ctx.getResponse().getOutputStream());
-                bucketStore.deleteObject(bucketName, objectKey + TEMP_SUFFIX);
-            } else {
-                objectData = bucketStore.getObject(bucketName, objectKey);
-                objectData.transferTo(ctx.getResponse().getOutputStream());
-            }
-
+            objectData = bucketStore.getObject(bucketName, objectKey);
+            objectData.transferTo(ctx.getResponse().getOutputStream());
+            objectData.close();
         } catch (DataStoreException e) {
             throw ServiceErrors.internalError(IBucketStore.FAILED_GET_OBJECT + bucketName);
         }
