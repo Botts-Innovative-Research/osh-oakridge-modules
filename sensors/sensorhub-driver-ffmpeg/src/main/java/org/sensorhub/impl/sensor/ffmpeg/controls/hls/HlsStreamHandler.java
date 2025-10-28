@@ -26,7 +26,6 @@ public class HlsStreamHandler extends DefaultObjectHandler {
 
     private static final Pattern HLS_PATTERN = Pattern.compile(".*\\.(m3u8|ts)$");
     private static final long STREAM_TIMEOUT_MS = 30000;
-    private static final String TEMP_SUFFIX = ".temp";
     private static final String M3U8_SUFFIX = ".m3u8";
 
     private final Map<String, Long> activeStreams = new ConcurrentHashMap<>();
@@ -71,8 +70,8 @@ public class HlsStreamHandler extends DefaultObjectHandler {
         }
 
         // Should repeatedly request these
-        if (objectKey.endsWith(M3U8_SUFFIX) || objectKey.endsWith(M3U8_SUFFIX + TEMP_SUFFIX))
-            activeStreams.put(objectKey.substring(0, objectKey.indexOf(M3U8_SUFFIX) + M3U8_SUFFIX.length()), System.currentTimeMillis());
+        if (objectKey.endsWith(M3U8_SUFFIX))
+            activeStreams.put(objectKey, System.currentTimeMillis());
     }
 
     // Called by ffmpeg hlscontrols
