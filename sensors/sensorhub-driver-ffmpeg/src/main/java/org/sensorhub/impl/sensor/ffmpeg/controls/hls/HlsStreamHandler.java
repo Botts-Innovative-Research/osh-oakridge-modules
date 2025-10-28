@@ -26,6 +26,8 @@ public class HlsStreamHandler extends DefaultObjectHandler {
 
     private static final Pattern HLS_PATTERN = Pattern.compile(".*\\.(m3u8|ts)$");
     private static final long STREAM_TIMEOUT_MS = 30000;
+    private static final String TEMP_SUFFIX = ".temp";
+    private static final String M3U8_SUFFIX = ".m3u8";
 
     private final Map<String, Long> activeStreams = new ConcurrentHashMap<>();
     private final Map<String, HLSControl<?>> activeControls = new ConcurrentHashMap<>();
@@ -48,8 +50,8 @@ public class HlsStreamHandler extends DefaultObjectHandler {
         // Assignment is intentional here
         // Temp file is required so that ffmpeg can continue writing to the playlist file
         if ( !(objectExists = bucketStore.objectExists(bucketName, objectKey)) ) {
-            if (objectExists = bucketStore.objectExists(bucketName, objectKey + ".temp")) {
-                objectKey += ".temp";
+            if (objectExists = bucketStore.objectExists(bucketName, objectKey + TEMP_SUFFIX)) {
+                objectKey += TEMP_SUFFIX;
             }
         }
 
@@ -70,14 +72,14 @@ public class HlsStreamHandler extends DefaultObjectHandler {
             ctx.getResponse().setContentType(mimeType);
             InputStream objectData;
 
-            if (objectKey.endsWith(".m3u8")) {
+            if (objectKey.endsWith(M3U8_SUFFIX)) {
                 // Need to make to rename this file so that ffmpeg can continue writing playlist
                 var original = new File(bucketStore.getResourceURI(bucketName, objectKey));
-                var tempFile = new File(bucketStore.getResourceURI(bucketName, objectKey) + ".temp");
+                var tempFile = new File(bucketStore.getResourceURI(bucketName, objectKey) + TEMP_SUFFIX);
                 original.renameTo(tempFile);
-                objectData = bucketStore.getObject(bucketName, objectKey + ".temp");
+                objectData = bucketStore.getObject(bucketName, objectKey + TEMP_SUFFIX);
                 objectData.transferTo(ctx.getResponse().getOutputStream());
-                bucketStore.deleteObject(bucketName, objectKey + ".temp");
+                bucketStore.deleteObject(bucketName, objectKey + TEMP_SUFFIX);
             } else {
                 objectData = bucketStore.getObject(bucketName, objectKey);
                 objectData.transferTo(ctx.getResponse().getOutputStream());
@@ -88,8 +90,8 @@ public class HlsStreamHandler extends DefaultObjectHandler {
         }
 
         // Should repeatedly request these
-        if (objectKey.endsWith(".m3u8") || objectKey.endsWith(".m3u8.temp"))
-            activeStreams.put(objectKey.substring(0, objectKey.indexOf(".m3u8") + ".m3u8".length()), System.currentTimeMillis());
+        if (objectKey.endsWith(M3U8_SUFFIX) || objectKey.endsWith(M3U8_SUFFIX + TEMP_SUFFIX))
+            activeStreams.put(objectKey.substring(0, objectKey.indexOf(M3U8_SUFFIX) + M3U8_SUFFIX.length()), System.currentTimeMillis());
     }
 
     // Called by ffmpeg hlscontrols
