@@ -14,6 +14,7 @@ import org.sensorhub.impl.sensor.ffmpeg.controls.HLSControl;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Paths;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -39,7 +40,7 @@ public class HlsStreamHandler extends DefaultObjectHandler {
     @Override
     public void doGet(RequestContext ctx) throws IOException, SecurityException {
         var bucketName = ctx.getBucketName();
-        var objectKey = ctx.getObjectKey();
+        var objectKey = Paths.get(ctx.getObjectKey()).toString();
         boolean objectExists;
         var sec = ctx.getSecurityHandler();
         sec.checkPermission(sec.getBucketPermission(bucketName).get);
@@ -87,8 +88,8 @@ public class HlsStreamHandler extends DefaultObjectHandler {
         }
 
         // Should repeatedly request these
-        if (ctx.getObjectKey().endsWith(".m3u8"))
-            activeStreams.put(ctx.getObjectKey(), System.currentTimeMillis());
+        if (objectKey.endsWith(".m3u8") || objectKey.endsWith(".m3u8.temp"))
+            activeStreams.put(objectKey.substring(0, objectKey.indexOf(".m3u8") + ".m3u8".length()), System.currentTimeMillis());
     }
 
     // Called by ffmpeg hlscontrols
