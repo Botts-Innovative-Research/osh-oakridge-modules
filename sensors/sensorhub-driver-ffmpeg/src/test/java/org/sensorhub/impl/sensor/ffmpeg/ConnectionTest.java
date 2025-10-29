@@ -141,25 +141,11 @@ public abstract class ConnectionTest {
     public void cleanup() throws Exception {
         driver.stop();
 
+        var store = bucketService.getBucketStore();
+        var files = store.listObjects("videos");
 
-        try {
-            Files.walk(tempDirectory.resolve("videos").resolve("streams"))
-                    .sorted(Comparator.reverseOrder())
-                    .map(Path::toFile)
-                    .forEach(File::delete);
-            logger.debug("Temporary directory deleted: {}", tempDirectory.toAbsolutePath());
-        } catch (IOException e) {
-            logger.debug("Error deleting temporary directory: {}", e.getMessage());
-        }
-
-        try {
-            Files.walk(tempDirectory.resolve("videos").resolve("clips"))
-                    .sorted(Comparator.reverseOrder())
-                    .map(Path::toFile)
-                    .forEach(File::delete);
-            logger.debug("Temporary directory deleted: {}", tempDirectory.toAbsolutePath());
-        } catch (IOException e) {
-            logger.debug("Error deleting temporary directory: {}", e.getMessage());
+        for (var file : files) {
+            store.deleteObject("videos", file);
         }
     }
 
