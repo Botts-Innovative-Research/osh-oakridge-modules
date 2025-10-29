@@ -21,7 +21,7 @@ public class Adjudication {
     private List<String> isotopes;
     private SecondaryInspectionStatus secondaryInspectionStatus;
     private List<String> filePaths;
-    private String occupancyObservationId;
+    private String occupancyObsId;
     private String vehicleId;
 
 
@@ -57,8 +57,8 @@ public class Adjudication {
             return this;
         }
 
-        public Builder occupancyObservationId(String occupancyObservationId) {
-            instance.occupancyObservationId = occupancyObservationId;
+        public Builder occupancyObsId(String occupancyObsId) {
+            instance.occupancyObsId = occupancyObsId;
             return this;
         }
 
@@ -97,8 +97,8 @@ public class Adjudication {
         return filePaths;
     }
 
-    public String getOccupancyObservationId() {
-        return occupancyObservationId;
+    public String getOccupancyObsId() {
+        return occupancyObsId;
     }
 
     public String getVehicleId() {
@@ -139,7 +139,7 @@ public class Adjudication {
         for (int i = 0; i < filesCount; i++ )
             dataBlock.setStringValue(index++, adjudication.getFilePaths().get(i));
         
-        dataBlock.setStringValue(index++, adjudication.getOccupancyObservationId());
+        dataBlock.setStringValue(index++, adjudication.getOccupancyObsId());
         dataBlock.setStringValue(index, adjudication.getVehicleId());
 
         return dataBlock;
@@ -164,7 +164,7 @@ public class Adjudication {
         for (int i = 0; i < filePathCount; i++)
             filePaths.add(dataBlock.getStringValue(index++));
 
-        var occupancyObservationId = dataBlock.getStringValue(index++);
+        var occupancyObsId = dataBlock.getStringValue(index++);
         var vehicleId = dataBlock.getStringValue(index);
 
         return new Builder()
@@ -173,7 +173,7 @@ public class Adjudication {
                 .isotopes(isotopes)
                 .secondaryInspectionStatus(secondaryInspectionStatus)
                 .filePaths(filePaths)
-                .occupancyObservationId(occupancyObservationId)
+                .occupancyObsId(occupancyObsId)
                 .vehicleId(vehicleId)
                 .build();
     }

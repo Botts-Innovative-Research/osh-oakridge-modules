@@ -74,12 +74,12 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
                var adj = Adjudication.toAdjudication(cmdData);
 
                // Validate obs ID is present
-               String occupancyObservationId = adj.getOccupancyObservationId();
-               if (occupancyObservationId == null || occupancyObservationId.isBlank())
+               String occupancyObsId = adj.getOccupancyObsId();
+               if (occupancyObsId == null || occupancyObsId.isBlank())
                    return CommandStatus.failed(command.getID(), "Occupancy Observation ID field must not be blank.");
 
                // Validate obs ID is valid
-               BigId decodedObsId = obsIdEncoder.decodeID(occupancyObservationId);
+               BigId decodedObsId = obsIdEncoder.decodeID(occupancyObsId);
                if (decodedObsId == null)
                    return CommandStatus.failed(command.getID(), "The provided occupancy observation ID is invalid.");
 
@@ -184,7 +184,7 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
             dataBlock.setStringValue(index++, adjudication.getFilePaths().get(i));
 
 
-        dataBlock.setStringValue(index++, adjudication.getOccupancyObservationId());
+        dataBlock.setStringValue(index++, adjudication.getOccupancyObsId());
         dataBlock.setStringValue(index, adjudication.getVehicleId());
 
         return dataBlock;
