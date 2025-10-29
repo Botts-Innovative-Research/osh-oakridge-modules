@@ -15,6 +15,8 @@ package org.sensorhub.impl.sensor.ffmpeg;
 
 import com.botts.impl.service.bucket.BucketService;
 import com.botts.impl.service.bucket.BucketServiceConfig;
+import net.opengis.swe.v20.Category;
+import net.opengis.swe.v20.DataChoice;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.global.avcodec;
 import org.bytedeco.ffmpeg.global.avutil;
@@ -23,6 +25,9 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.sensorhub.api.ISensorHub;
+import org.sensorhub.api.command.CommandData;
+import org.sensorhub.api.command.IStreamingControlInterface;
+import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.SensorHub;
@@ -32,19 +37,30 @@ import org.sensorhub.impl.process.video.transcoder.coders.SwScaler;
 import org.sensorhub.impl.process.video.transcoder.formatters.PacketFormatter;
 import org.sensorhub.impl.process.video.transcoder.formatters.RgbFormatter;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
+import org.sensorhub.impl.sensor.ffmpeg.controls.FileControl;
+import org.sensorhub.impl.sensor.ffmpeg.controls.HLSControl;
+import org.sensorhub.impl.service.HttpServerConfig;
+import org.sensorhub.mpegts.DataBufferListener;
+import org.sensorhub.mpegts.DataBufferRecord;
 import org.sensorhub.mpegts.MpegTsProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.bytedeco.ffmpeg.global.avutil.*;;
+import static org.bytedeco.ffmpeg.global.avutil.*;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.color.ColorSpace;
 import java.awt.image.*;
+import java.io.File;
+import java.io.IOException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -60,30 +76,44 @@ public abstract class ConnectionTest {
     static final int SLEEP_DURATION_MS = 5000;
     static final int INIT_REATTEMPTS = 5;
     private final Object syncObject = new Object();
-    ISensorHub hub;
-    ModuleRegistry reg;
+
+    static ISensorHub hub = null;
+    static ModuleRegistry reg = null;
+    static BucketService bucketService = null;
+
+    private static final String TEST_BUCKET_DIRECTORY = "testBucketServiceRootDir";
+    private static Path tempDirectory;
 
     @Before
     public void init() throws Exception {
-        hub = new SensorHub();
-        hub.start();
-        reg = hub.getModuleRegistry();
+        if (hub == null || reg == null) {
+            hub = new SensorHub();
+            hub.start();
+            reg = hub.getModuleRegistry();
+            var httpModule = new HttpServerConfig();
+            httpModule.autoStart = true;
+            reg.loadModule(httpModule);
+        }
 
-        /*
-        var bucketServiceConfig = new BucketServiceConfig();
-        bucketServiceConfig.autoStart = true;
-        bucketServiceConfig.id = "testBucketService";
-        bucketServiceConfig.name = "testBucketService";
-        bucketServiceConfig.initialBuckets = Collections.singletonList("video");
-        var rootDir = Paths.get(".").toAbsolutePath();
+        //var rootDir = Paths.get(TEST_BUCKET_DIRECTORY);
         try {
-            Files.createDirectory(rootDir);
+            if (tempDirectory == null) {
+                tempDirectory = Files.createTempDirectory(TEST_BUCKET_DIRECTORY).toAbsolutePath();
+            }
         } catch (FileAlreadyExistsException ignored) {}
-        bucketServiceConfig.fileStoreRootDir = rootDir.toString();
 
-        var bucketService = reg.loadModule(bucketServiceConfig);
+        if (bucketService == null) {
+            var bucketServiceConfig = new BucketServiceConfig();
+            bucketServiceConfig.autoStart = true;
+            bucketServiceConfig.id = "testBucketService";
+            bucketServiceConfig.name = "testBucketService";
+            bucketServiceConfig.initialBuckets = Collections.singletonList("videos");
 
-         */
+            bucketServiceConfig.fileStoreRootDir = tempDirectory.toString();
+
+            bucketService = (BucketService) reg.loadModule(bucketServiceConfig);
+
+        }
 
         FFMPEGConfig config = new FFMPEGConfig();
 
@@ -110,6 +140,27 @@ public abstract class ConnectionTest {
     @After
     public void cleanup() throws Exception {
         driver.stop();
+
+
+        try {
+            Files.walk(tempDirectory.resolve("videos").resolve("streams"))
+                    .sorted(Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .forEach(File::delete);
+            logger.debug("Temporary directory deleted: {}", tempDirectory.toAbsolutePath());
+        } catch (IOException e) {
+            logger.debug("Error deleting temporary directory: {}", e.getMessage());
+        }
+
+        try {
+            Files.walk(tempDirectory.resolve("videos").resolve("clips"))
+                    .sorted(Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .forEach(File::delete);
+            logger.debug("Temporary directory deleted: {}", tempDirectory.toAbsolutePath());
+        } catch (IOException e) {
+            logger.debug("Error deleting temporary directory: {}", e.getMessage());
+        }
     }
 
     protected abstract void populateConfig(FFMPEGConfig config);
@@ -162,7 +213,20 @@ public abstract class ConnectionTest {
 
         if (mpegTsProcessor.hasVideoStream()) {
 
-            mpegTsProcessor.setVideoDataBufferListener(Assert::assertNotNull);
+            var dblistener = new DataBufferListener() {
+
+                @Override
+                public void onDataBuffer(DataBufferRecord record) {
+                    Assert.assertNotNull(record);
+                }
+
+                @Override
+                public boolean isWriting() {
+                    return true;
+                }
+            };
+
+            mpegTsProcessor.setVideoDataBufferListener(dblistener);
         }
 
         mpegTsProcessor.processStream();
@@ -266,9 +330,20 @@ public abstract class ConnectionTest {
             scaler.start();
             decoder.start();
 
-            driver.mpegTsProcessor.addVideoDataBufferListener(dataBufferRecord -> {
-                inputPacketQueue.add(packetF.convertInput(dataBufferRecord.getDataBuffer()));
-            });
+            var dblistener = new DataBufferListener() {
+
+                @Override
+                public void onDataBuffer(DataBufferRecord record) {
+                    inputPacketQueue.add(packetF.convertInput(record.getDataBuffer()));
+                }
+
+                @Override
+                public boolean isWriting() {
+                    return true;
+                }
+            };
+
+            driver.mpegTsProcessor.addVideoDataBufferListener(dblistener);
 
             scheduler.schedule(() -> {
                 run.set(false);
@@ -306,9 +381,117 @@ public abstract class ConnectionTest {
             } catch (InterruptedException ignored) {
                 logger.error("Error: ", ignored);
             } finally {
+                mpegTsProcessor.removeVideoDataBufferListener(dblistener);
                 driver.stop();
                 window.dispose();
             }
+        }
+    }
+
+    @Test
+    public void testMp4FileOutput() throws SensorHubException {
+        driver.start();
+        MpegTsProcessor mpegTsProcessor = driver.mpegTsProcessor;
+        final long fileRecordTime = 5000;
+
+        Optional<IStreamingControlInterface> fileControl = driver.getCommandInputs().values().stream().filter(c -> c instanceof FileControl).findFirst();
+        if (fileControl.isPresent()) {
+            var struct = fileControl.get().getCommandDescription().clone();
+            struct.renewDataBlock();
+
+            // --------- Open File ---------
+            DataChoice fileIO = (DataChoice) struct.getComponent(0);
+
+            fileIO.setSelectedItem(FileControl.CMD_OPEN_FILE);
+            var item = fileIO.getSelectedItem();
+            if (!item.hasData()) {
+                item.renewDataBlock();
+            }
+
+            String fileName = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss_SSS").withLocale(Locale.US).withZone(ZoneId.systemDefault()).format(Instant.now()) + ".mp4";
+            item.getData().setStringValue(fileName);
+
+            fileControl.get().submitCommand(new CommandData.Builder()
+                    .withCommandStream(BigId.NONE)
+                    .withId(BigId.NONE)
+                    .withParams(struct.getData())
+                    .build());
+
+            try {
+                Thread.sleep(fileRecordTime);
+            } catch (InterruptedException ignored) {}
+
+
+            // --------- Close File ---------
+            fileIO.setSelectedItem(FileControl.CMD_CLOSE_FILE);
+            var fileIoItem = fileIO.getSelectedItem();
+
+            if (fileIoItem.getData() == null) {
+                fileIoItem.renewDataBlock();
+            }
+
+            fileIoItem.getData().setBooleanValue(true);
+
+            var result = fileControl.get().submitCommand(new CommandData.Builder()
+                    .withCommandStream(BigId.NONE)
+                    .withId(BigId.NONE)
+                    .withParams(struct.getData())
+                    .build());
+
+            var commandOutputData = result.join().getResult().getInlineRecords().stream().findFirst();
+
+            assertTrue(commandOutputData.isPresent());
+
+            String filePath = commandOutputData.get().getStringValue();
+
+            assertTrue(Files.exists(tempDirectory.resolve(filePath)));
+        } else {
+            fail("FileControl not found");
+        }
+    }
+
+    @Test
+    public void testHlsFileOutput() throws SensorHubException {
+        driver.start();
+        MpegTsProcessor mpegTsProcessor = driver.mpegTsProcessor;
+        final long fileRecordTime = 5000;
+
+        Optional<IStreamingControlInterface> fileControl = driver.getCommandInputs().values().stream().filter(c -> c instanceof HLSControl<?>).findFirst();
+        if (fileControl.isPresent()) {
+
+            // --------- Start Stream ---------
+            var struct = fileControl.get().getCommandDescription().clone();
+            struct.renewDataBlock();
+            ((Category)struct.getComponent(0)).setValue(HLSControl.CMD_START_STREAM);
+
+            var result = fileControl.get().submitCommand(new CommandData.Builder()
+                    .withCommandStream(BigId.NONE)
+                    .withId(BigId.NONE)
+                    .withParams(struct.getData())
+                    .build());
+
+            try {
+                Thread.sleep(fileRecordTime);
+            } catch (InterruptedException ignored) {}
+
+            var commandOutputData = result.join().getResult().getInlineRecords().stream().findFirst();
+
+            assertTrue(commandOutputData.isPresent());
+
+            String filePath = commandOutputData.get().getStringValue();
+
+            assertTrue(Files.exists(tempDirectory.resolve(filePath)));
+
+            // --------- End Stream ---------
+            ((Category)struct.getComponent(0)).setValue(HLSControl.CMD_START_STREAM);
+
+            fileControl.get().submitCommand(new CommandData.Builder()
+                    .withCommandStream(BigId.NONE)
+                    .withId(BigId.NONE)
+                    .withParams(struct.getData())
+                    .build());
+        } else {
+            fail("HLSControl not found");
         }
     }
 }
