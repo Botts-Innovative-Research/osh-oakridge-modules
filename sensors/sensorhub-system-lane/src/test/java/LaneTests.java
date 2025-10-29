@@ -210,7 +210,7 @@ public class LaneTests {
                 .isotopes(List.of("Xenon", "Uranium-238"))
                 .secondaryInspectionStatus(Adjudication.SecondaryInspectionStatus.NONE)
                 .filePaths(List.of("test.txt", "hello.ts", "hello.p", "f.p", "ruby.sheila"))
-                .occupancyId(encodedObsId)
+                .occupancyObsId(encodedObsId)
                 .vehicleId("ABC123")
                 .build());
         var cmd = new CommandData.Builder()
@@ -256,7 +256,7 @@ public class LaneTests {
                 .isotopes(List.of("Cobalt-60"))
                 .secondaryInspectionStatus(Adjudication.SecondaryInspectionStatus.REQUESTED)
                 .filePaths(List.of("report2.txt"))
-                .occupancyId(encodedObsId)
+                .occupancyObsId(encodedObsId)
                 .vehicleId("XYZ789")
                 .build());
 
