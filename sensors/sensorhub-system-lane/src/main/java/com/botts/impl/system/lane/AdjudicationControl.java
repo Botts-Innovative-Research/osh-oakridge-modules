@@ -74,21 +74,21 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
                var adj = Adjudication.toAdjudication(cmdData);
 
                // Validate obs ID is present
-               String observationId = adj.getObservationId();
-               if (observationId == null || observationId.isBlank())
-                   return CommandStatus.failed(command.getID(), "Observation ID field must not be blank.");
+               String occupancyObservationId = adj.getOccupancyObservationId();
+               if (occupancyObservationId == null || occupancyObservationId.isBlank())
+                   return CommandStatus.failed(command.getID(), "Occupancy Observation ID field must not be blank.");
 
                // Validate obs ID is valid
-               BigId decodedObsId = obsIdEncoder.decodeID(observationId);
+               BigId decodedObsId = obsIdEncoder.decodeID(occupancyObservationId);
                if (decodedObsId == null)
-                   return CommandStatus.failed(command.getID(), "The provided observation ID is invalid.");
+                   return CommandStatus.failed(command.getID(), "The provided occupancy observation ID is invalid.");
 
                if (obsStore == null)
                    return CommandStatus.failed(command.getID(), "Please attach this lane to a database, or restart the lane");
 
                // Validate obs ID is in database
                if (!obsStore.containsKey(decodedObsId))
-                   return CommandStatus.failed(command.getID(), "The provided occupancy ID was not found in the database.");
+                   return CommandStatus.failed(command.getID(), "The provided occupancy observation ID was not found in the database.");
 
                // Validate obs' data stream matches occupancy datastream
                var obs = obsStore.get(decodedObsId);
@@ -97,12 +97,12 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
 
                var ds = obsStore.getDataStreams().get(new DataStreamKey(obs.getDataStreamID()));
                if (ds == null)
-                   return CommandStatus.failed(command.getID(), "The provided occupancy ID is not part of an RPM");
+                   return CommandStatus.failed(command.getID(), "The provided occupancy observation ID is not part of an RPM");
 
                var dsDef = ds.getRecordStructure().getDefinition();
                var expectedDef = RADHelper.getRadUri("Occupancy");
                if (!Objects.equals(expectedDef, dsDef))
-                   return CommandStatus.failed(command.getID(), "The provided occupancy ID is not part of an RPM");
+                   return CommandStatus.failed(command.getID(), "The provided occupancy observation ID is not part of an RPM");
 
                if (adj.getSecondaryInspectionStatus() == null)
                    return CommandStatus.failed(command.getID(), "Please specify a secondary inspection status");
@@ -184,7 +184,7 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
             dataBlock.setStringValue(index++, adjudication.getFilePaths().get(i));
 
 
-        dataBlock.setStringValue(index++, adjudication.getObservationId());
+        dataBlock.setStringValue(index++, adjudication.getOccupancyObservationId());
         dataBlock.setStringValue(index, adjudication.getVehicleId());
 
         return dataBlock;
