@@ -1133,6 +1133,43 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public DataRecord createOccupancy() {
+        var samplingTime = createPrecisionTimeStamp();
+        var occupancyCount = createOccupancyCount();
+        var occupancyStart = createOccupancyStartTime();
+        var occupancyEnd = createOccupancyEndTime();
+        var neutronBackground = createNeutronBackground();
+        var gammaAlarm = createGammaAlarm();
+        var neutronAlarm = createNeutronAlarm();
+        var maxGamma = createMaxGamma();
+        var maxNeutron = createMaxNeutron();
+        var adjudicationIdsCount = createAdjudicatedIdCount();
+        var adjudicatedIds = createAdjudicatedIdsArray();
+        var videoPathCount = createVideoPathCount();
+        var videoPaths = createVideoPathsArray();
+
+        return createRecord()
+                .name("occupancy")
+                .label("Occupancy")
+                .updatable(true)
+                .definition(RADHelper.getRadUri("Occupancy"))
+                .description("System occupancy count since midnight each day")
+                .addField(samplingTime.getName(), samplingTime)
+                .addField(occupancyCount.getName(), occupancyCount)
+                .addField(occupancyStart.getName(), occupancyStart)
+                .addField(occupancyEnd.getName(), occupancyEnd)
+                .addField(neutronBackground.getName(), neutronBackground)
+                .addField(gammaAlarm.getName(), gammaAlarm)
+                .addField(neutronAlarm.getName(), neutronAlarm)
+                .addField(maxGamma.getName(), maxGamma)
+                .addField(maxNeutron.getName(), maxNeutron)
+                .addField(adjudicationIdsCount.getName(), adjudicationIdsCount)
+                .addField(adjudicatedIds.getName(), adjudicatedIds)
+                .addField(videoPathCount.getName(), videoPathCount)
+                .addField(videoPaths.getName(), videoPaths)
+                .build();
+    }
+
     public DataRecord createCountStatistics() {
         return createRecord()
                 .name("counts")
