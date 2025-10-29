@@ -21,7 +21,7 @@ public class Adjudication {
     private List<String> isotopes;
     private SecondaryInspectionStatus secondaryInspectionStatus;
     private List<String> filePaths;
-    private String occupancyId;
+    private String observationId;
     private String vehicleId;
 
 
@@ -57,8 +57,8 @@ public class Adjudication {
             return this;
         }
 
-        public Builder occupancyId(String occupancyId) {
-            instance.occupancyId = occupancyId;
+        public Builder observationId(String observationId) {
+            instance.observationId = observationId;
             return this;
         }
 
@@ -97,8 +97,8 @@ public class Adjudication {
         return filePaths;
     }
 
-    public String getOccupancyId() {
-        return occupancyId;
+    public String getObservationId() {
+        return observationId;
     }
 
     public String getVehicleId() {
@@ -139,7 +139,7 @@ public class Adjudication {
         for (int i = 0; i < filesCount; i++ )
             dataBlock.setStringValue(index++, adjudication.getFilePaths().get(i));
         
-        dataBlock.setStringValue(index++, adjudication.getOccupancyId());
+        dataBlock.setStringValue(index++, adjudication.getObservationId());
         dataBlock.setStringValue(index, adjudication.getVehicleId());
 
         return dataBlock;
@@ -164,7 +164,7 @@ public class Adjudication {
         for (int i = 0; i < filePathCount; i++)
             filePaths.add(dataBlock.getStringValue(index++));
 
-        var occupancyId = dataBlock.getStringValue(index++);
+        var observationId = dataBlock.getStringValue(index++);
         var vehicleId = dataBlock.getStringValue(index);
 
         return new Builder()
@@ -173,7 +173,7 @@ public class Adjudication {
                 .isotopes(isotopes)
                 .secondaryInspectionStatus(secondaryInspectionStatus)
                 .filePaths(filePaths)
-                .occupancyId(occupancyId)
+                .observationId(observationId)
                 .vehicleId(vehicleId)
                 .build();
     }
