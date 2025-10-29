@@ -33,40 +33,8 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         super(NAME, parentSensor, 4);
 
         RADHelper radHelper = new RADHelper();
-        var samplingTime = radHelper.createPrecisionTimeStamp();
-        var occupancyCount = radHelper.createOccupancyCount();
-        var occupancyStart = radHelper.createOccupancyStartTime();
-        var occupancyEnd = radHelper.createOccupancyEndTime();
-        var neutronBackground = radHelper.createNeutronBackground();
-        var gammaAlarm = radHelper.createGammaAlarm();
-        var neutronAlarm = radHelper.createNeutronAlarm();
-        var maxGamma = radHelper.createMaxGamma();
-        var maxNeutron = radHelper.createMaxNeutron();
-        var adjudicationIdsCount = radHelper.createAdjudicatedIdCount();
-        var adjudicatedIds = radHelper.createAdjudicatedIdsArray();
-        var videoPathCount = radHelper.createVideoPathCount();
-        var videoPaths = radHelper.createVideoPathsArray();
 
-        dataStruct = radHelper.createRecord()
-                .name(getName())
-                .label(LABEL)
-                .updatable(true)
-                .definition(RADHelper.getRadUri("Occupancy"))
-                .description("System occupancy count since midnight each day")
-                .addField(samplingTime.getName(), samplingTime)
-                .addField(occupancyCount.getName(), occupancyCount)
-                .addField(occupancyStart.getName(), occupancyStart)
-                .addField(occupancyEnd.getName(), occupancyEnd)
-                .addField(neutronBackground.getName(), neutronBackground)
-                .addField(gammaAlarm.getName(), gammaAlarm)
-                .addField(neutronAlarm.getName(), neutronAlarm)
-                .addField(maxGamma.getName(), maxGamma)
-                .addField(maxNeutron.getName(), maxNeutron)
-                .addField(adjudicationIdsCount.getName(), adjudicationIdsCount)
-                .addField(adjudicatedIds.getName(), adjudicatedIds)
-                .addField(videoPathCount.getName(), videoPathCount)
-                .addField(videoPaths.getName(), videoPaths)
-                .build();
+        dataStruct = radHelper.createOccupancy();
 
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
