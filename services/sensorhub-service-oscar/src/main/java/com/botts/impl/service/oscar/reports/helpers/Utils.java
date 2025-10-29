@@ -6,7 +6,7 @@ import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
 
-import java.time.Instant;
+import java.time.*;
 import java.time.temporal.ChronoUnit;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -65,6 +65,7 @@ public class Utils {
         return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
                         .withSystems(new SystemFilter.Builder()
                                 .withUniqueIDs(laneUID)
+                                .withValidTimeDuring(begin, end)
                                 .build())
                         .withDataStreams(new DataStreamFilter.Builder()
                                 .withObservedProperties(observedProperties)
@@ -74,22 +75,25 @@ public class Utils {
                         .build()).count();
     }
 
-    public static Map<Instant, Long> countObservationsByDay(OSCARServiceModule module, Predicate<IObsData> predicate, Instant startDate, Instant endDate, String... observedProperties){
+    public static Map<Instant, Long> countObservationsByDay(String laneUid, OSCARServiceModule module, Predicate<IObsData> predicate, Instant startInstant, Instant endInstant, String... observedProperties){
         Map<Instant, Long> result = new LinkedHashMap<>();
 
-        while (startDate.isBefore(endDate)) {
-            Instant currentDay = startDate;
-            Instant endOfCurrentDay = currentDay.plus(1, ChronoUnit.DAYS);
+        ZoneId zoneId = ZoneId.systemDefault();
 
-            if(endOfCurrentDay.isAfter(endDate)){
-                endOfCurrentDay = endDate;
-            }
+        LocalDate startDate = startInstant.atZone(zoneId).toLocalDate();
+        LocalDate endDate = endInstant.atZone(zoneId).toLocalDate();
+        LocalDate currentDate = startDate;
 
-            long count = Utils.countObservations(module,  predicate, currentDay, endOfCurrentDay, observedProperties);
-            result.put(currentDay, count);
+        while (!currentDate.isAfter(endDate)) {
+            Instant startOfDay = currentDate.atStartOfDay(zoneId).toInstant();
+            Instant endOfDay = currentDate.plusDays(1).atStartOfDay(zoneId).toInstant();
 
-            startDate = endOfCurrentDay;
+            long count = Utils.countObservationsFromLane(laneUid, module, predicate, startOfDay, endOfDay, observedProperties);
+            result.put(startOfDay, count);
+
+            currentDate = currentDate.plusDays(1);
         }
+
         return result;
     }
 

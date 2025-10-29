@@ -69,18 +69,18 @@ public class EventReport extends Report {
     }
     private void addHeader(){
         document.add(new Paragraph("Event Report").setFontSize(16).simulateBold());
-        document.add(new Paragraph("Event Type:" + eventType).setFontSize(12));
-        document.add(new Paragraph("Lane UIDs:" + laneUID).setFontSize(12));
+        document.add(new Paragraph("Event Type: " + eventType).setFontSize(12));
+        document.add(new Paragraph("Lane UIDs: " + laneUID).setFontSize(12));
         document.add(new Paragraph("\n"));
     }
 
     private void addAlarmStatisticsByDay(){
         document.add(new Paragraph("Alarm Statistics").setFontSize(12));
 
-        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(module, Utils.gammaPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(module, Utils.neutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(module, Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(module, Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
+        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(laneUID, module, Utils.gammaPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(laneUID, module, Utils.neutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(laneUID, module, Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(laneUID, module, Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
 
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
@@ -137,11 +137,12 @@ public class EventReport extends Report {
 
     private void addFaultStatisticsByDay(){
 
-        Map<Instant, Long> gammaHighDaily = Utils.countObservationsByDay(module, Utils.gammaHighPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-        Map<Instant, Long> gammaLowDaily = Utils.countObservationsByDay(module, Utils.gammaLowPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-        Map<Instant, Long> neutronHighDaily = Utils.countObservationsByDay(module, Utils.neutronHighPredicate, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
+        Map<Instant, Long> gammaHighDaily = Utils.countObservationsByDay(laneUID, module, Utils.gammaHighPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        Map<Instant, Long> gammaLowDaily = Utils.countObservationsByDay(laneUID, module, Utils.gammaLowPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        Map<Instant, Long> neutronHighDaily = Utils.countObservationsByDay(laneUID, module, Utils.neutronHighPredicate, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
+        Map<Instant, Long> tamperDaily = Utils.countObservationsByDay(laneUID, module, Utils.tamperPredicate, start, end, RADHelper.DEF_TAMPER);
+
 //        Map<Instant, Long> extendedOccupancyDaily = Utils.countObservationsByDay(module, Utils.extendedOccPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> tamperDaily = Utils.countObservationsByDay(module, Utils.tamperPredicate, start, end, RADHelper.DEF_TAMPER);
 //        Map<Instant, Long> commDaily = Utils.countObservationsByDay(module, Utils.commsPredicate, start, end, RADHelper.DEF_OCCUPANCY);
 //        Map<Instant, Long> cameraDaily = Utils.countObservationsByDay(module, Utils.cameraPredicate, start, end, RADHelper.DEF_OCCUPANCY);
 
@@ -212,11 +213,11 @@ public class EventReport extends Report {
 
     private void addAlarmOccStatisticsByDay(){
 
-        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(module, Utils.gammaPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(module, Utils.neutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(module, Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> totalOccupancyDaily = Utils.countObservationsByDay(module, Utils.occupancyTotalPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(module, Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
+        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(laneUID, module, Utils.gammaPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(laneUID, module, Utils.neutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(laneUID, module, Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> totalOccupancyDaily = Utils.countObservationsByDay(laneUID, module, Utils.occupancyTotalPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(laneUID, module, Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 

@@ -17,6 +17,7 @@ public class BucketHandler implements IResourceHandler {
     IBucketService service;
 
     public BucketHandler(IBucketService service) {
+        this.service = service;
         this.bucketStore = service.getBucketStore();
     }
 

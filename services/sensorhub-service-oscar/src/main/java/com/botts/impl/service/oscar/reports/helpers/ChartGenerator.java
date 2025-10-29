@@ -100,6 +100,8 @@ public class ChartGenerator {
         plot.setDomainAxis(domainAxis);
         plot.setRangeAxis(rangeAxis);
 
+        plot.getDomainAxis().setCategoryLabelPositions(CategoryLabelPositions.UP_45);
+
         plot.setDataset(0, stackedBarDataset);
         plot.setRenderer(0, new StackedBarRenderer());
 
