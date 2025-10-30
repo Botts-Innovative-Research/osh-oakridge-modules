@@ -1,26 +1,23 @@
 package org.sensorhub.impl.sensor.ffmpeg;
 
-import java.io.IOException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.function.Consumer;
 
+import net.opengis.swe.v20.DataChoice;
+import net.opengis.swe.v20.Category;
+import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.event.Event;
-import org.sensorhub.api.event.IEventListener;
 import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
-import org.sensorhub.impl.sensor.DefaultLocationOutput;
-import org.sensorhub.impl.sensor.DefaultLocationOutputLLA;
 import org.sensorhub.impl.sensor.ffmpeg.common.SyncTime;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.ffmpeg.controls.FileControl;
-import org.sensorhub.impl.sensor.ffmpeg.outputs.LocationOutput;
+import org.sensorhub.impl.sensor.ffmpeg.controls.HLSControl;
+import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.Video;
 import org.sensorhub.mpegts.MpegTsProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vast.ogc.om.MovingFeature;
 import org.vast.swe.SWEConstants;
 import org.vast.util.Asserts;
 
@@ -55,7 +52,9 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
      */
     protected Video<FFMPEGconfigType> videoOutput;
 
-    protected FileControl fileControl;
+    protected FileControl<FFMPEGconfigType> fileControl;
+
+    protected HLSControl<FFMPEGconfigType> hlsControl;
 
     /**
      * Keeps track of the times in the data stream so that we can put an accurate phenomenon time in the data blocks.
@@ -97,12 +96,15 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         	} finally {
         		// Regardless of exceptions, go ahead and set it to null. If there were severe problems we can hope
         		// that garbage collection will take care of it eventually.
+                mpegTsProcessor.clearVideoDataBufferListeners();
         		mpegTsProcessor = null;
         	}
         }
         // We also have to clear out the video output since its settings may have changed (based on having a new input
         // video, for example).
         videoOutput = null;
+        fileControl = null;
+        hlsControl = null;
 
         // The non-on-demand subclass will override this method to also open up the stream to get video frame size.
 
@@ -120,7 +122,19 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
     protected void doStop() throws SensorHubException {
         super.doStop();
         try {
-            mpegTsProcessor.closeFile();
+            if (fileControl != null) {
+                var command = (DataChoice) fileControl.getCommandDescription();
+                command.renewDataBlock();
+                command.setSelectedItem(FileControl.CMD_CLOSE_FILE);
+                command.getComponent(FileControl.CMD_CLOSE_FILE).getData().setBooleanValue(false);
+                this.fileControl.submitCommand((new CommandData.Builder()).withParams(command.getData()).build()).join();
+            }
+            if (hlsControl != null) {
+                var command = (Category) hlsControl.getCommandDescription();
+                command.renewDataBlock();
+                command.setValue(HLSControl.CMD_END_STREAM);
+                hlsControl.submitCommand((new CommandData.Builder()).withParams(command.getData()).build()).join();
+            }
         } catch (Exception ignored) {}
         stopStream();
         shutdownExecutor();
@@ -183,11 +197,31 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         }
     }
 
-    protected void createFileControl() {
-        fileControl = new FileControl<FFMPEGconfigType>(this);
-        addControlInput(fileControl);
+
+    protected void createHLSControl() {
         try {
+            var fileOutput = new FileOutput<>(this, "HLSControlOutput");
+            hlsControl = new HLSControl<>(this, fileOutput);
+            hlsControl.init();
+            addOutput(fileOutput, false);
+            addControlInput(hlsControl);
+            mpegTsProcessor.addVideoDataBufferListener(fileOutput);
+        } catch (Exception e) {
+            logger.error("Could not initialize HLS stream.", e);
+        }
+    }
+
+
+
+    protected void createFileControl() {
+        try {
+            var fileOutput = new FileOutput<>(this, "FileControlOutput");
+            fileControl = new FileControl<>(this, fileOutput);
+            mpegTsProcessor.addVideoDataBufferListener(fileOutput);
+
             fileControl.init();
+            addControlInput(fileControl);
+            addOutput(fileOutput, false);
         } catch (Exception e) {
             logger.error("Could not initialize file control.", e);
         }
@@ -233,16 +267,21 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	        	mpegTsProcessor.queryEmbeddedStreams();
 	            // If there is a video content in the stream
 	            if (mpegTsProcessor.hasVideoStream()) {
+
 	            	// In case we were waiting until we got video data to make the video frame output, we go ahead and do
 	            	// that now.
-	            	if (videoOutput == null) {
+	            	if (videoOutput == null && config.output.useVideoFrames) {
 	            		int[] videoDimensions = mpegTsProcessor.getVideoStreamFrameDimensions();
 	            		String codecFormat = mpegTsProcessor.getCodecName();
-	            		createVideoOutput(videoDimensions, codecFormat);
+	            		//createVideoOutput(videoDimensions, codecFormat);
+                        createVideoOutput(videoDimensions, "h264");
+                        mpegTsProcessor.addVideoDataBufferListener(videoOutput);
 	            	}
+
                     createFileControl();
-	                // Set video stream packet listener to video output
-	                mpegTsProcessor.setVideoDataBufferListener(videoOutput);
+
+                    if (config.output.useHLS)
+                        createHLSControl();
 	            }
 	        } else {
 	        	throw new SensorHubException("Unable to open stream from data source");
