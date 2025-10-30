@@ -15,10 +15,12 @@ public class SonyMjpegAuth extends ConnectionTest {
         config.connection.fps = 24;
         config.name = "MJPEG Sony Test with Auth";
         config.serialNumber = "test_mjpeg_sony_auth";
-        config.autoStart = true;
+        config.autoStart = false;
         config.connection.connectionString = System.getenv(SONY_MJPEG_AUTH_IP);
         config.moduleClass = FFMPEGSensor.class.getCanonicalName();
         config.connectionConfig.connectTimeout = 5000;
         config.connectionConfig.reconnectAttempts = 10;
+        config.output.useVideoFrames = false;
+        config.output.useHLS = true;
     }
 }

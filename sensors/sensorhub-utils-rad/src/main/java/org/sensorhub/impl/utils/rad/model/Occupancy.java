@@ -149,6 +149,7 @@ public class Occupancy {
         OccupancyOutput output = new OccupancyOutput(new SensorSystem());
         DataComponent resultStructure = output.getRecordDescription();
         DataBlock dataBlock = resultStructure.createDataBlock();
+        dataBlock.updateAtomCount();
         resultStructure.setData(dataBlock);
 
         int index = 0;

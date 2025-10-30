@@ -140,6 +140,11 @@ public class Video<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSensor
     }
 
     @Override
+    public boolean isWriting() {
+        return true;
+    }
+
+    @Override
     public DataComponent getRecordDescription() {
 
         return dataStruct;

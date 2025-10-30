@@ -18,8 +18,6 @@ package com.botts.impl.system.lane.config;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
 
-import java.util.List;
-
 /**
  * Configuration settings for the Lane Sensor System.
  *
