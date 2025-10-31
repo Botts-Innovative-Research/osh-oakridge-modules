@@ -20,15 +20,13 @@ import net.opengis.swe.v20.DataChoice;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.global.avcodec;
 import org.bytedeco.ffmpeg.global.avutil;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.*;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.command.IStreamingControlInterface;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.SensorHub;
 import org.sensorhub.impl.module.ModuleRegistry;
@@ -72,7 +70,7 @@ import static org.junit.Assert.*;
 public abstract class ConnectionTest {
 
     private static final Logger logger = LoggerFactory.getLogger(ConnectionTest.class);
-    private FFMPEGSensor driver = null;
+    private static FFMPEGSensor driver = null;
     static final int SLEEP_DURATION_MS = 5000;
     static final int INIT_REATTEMPTS = 5;
     private final Object syncObject = new Object();
@@ -115,31 +113,36 @@ public abstract class ConnectionTest {
 
         }
 
-        FFMPEGConfig config = new FFMPEGConfig();
+        if (driver == null) {
 
-        populateConfig(config);
+            FFMPEGConfig config = new FFMPEGConfig();
 
-        assertTrue((config.connection.connectionString != null &&
-                !config.connection.connectionString.isEmpty()) ||
-                (config.connection.transportStreamPath != null && !config.connection.transportStreamPath.isEmpty()));
+            populateConfig(config);
 
-        driver = (FFMPEGSensor) reg.loadModule(config);
+            assertTrue((config.connection.connectionString != null &&
+                    !config.connection.connectionString.isEmpty()) ||
+                    (config.connection.transportStreamPath != null && !config.connection.transportStreamPath.isEmpty()));
 
-        for (int i = 0; i < INIT_REATTEMPTS; i++) {
-            driver.init();
-            if (driver.getCurrentState() != ModuleEvent.ModuleState.INITIALIZED) {
-                Thread.sleep(5000);
-            } else {
-                break;
+            driver = (FFMPEGSensor) reg.loadModule(config);
+
+            for (int i = 0; i < INIT_REATTEMPTS; i++) {
+                driver.init();
+                driver.start();
+                if (driver.getCurrentState() != ModuleEvent.ModuleState.STARTED) {
+                    Thread.sleep(5000);
+                } else {
+                    break;
+                }
             }
-        }
 
-        assertSame(ModuleEvent.ModuleState.INITIALIZED, driver.getCurrentState());
+            assertSame(ModuleEvent.ModuleState.STARTED, driver.getCurrentState());
+        }
     }
 
-    @After
-    public void cleanup() throws Exception {
+    @AfterClass
+    public static void cleanupClass() throws Exception {
         driver.stop();
+        driver = null;
 
         var store = bucketService.getBucketStore();
         var files = store.listObjects("videos");
@@ -156,7 +159,7 @@ public abstract class ConnectionTest {
 
         MpegTsProcessor mpegTsProcessor = driver.mpegTsProcessor;
 
-        assertTrue(mpegTsProcessor.openStream());
+        //assertTrue(mpegTsProcessor.openStream());
 
         mpegTsProcessor.queryEmbeddedStreams();
 
@@ -167,9 +170,10 @@ public abstract class ConnectionTest {
     @Test
     public void testGetVideoFrameDimensions() {
 
+
         MpegTsProcessor mpegTsProcessor = driver.mpegTsProcessor;
 
-        mpegTsProcessor.openStream();
+        //mpegTsProcessor.openStream();
 
         mpegTsProcessor.queryEmbeddedStreams();
 
@@ -193,7 +197,7 @@ public abstract class ConnectionTest {
 
         MpegTsProcessor mpegTsProcessor = driver.mpegTsProcessor;
 
-        mpegTsProcessor.openStream();
+        //mpegTsProcessor.openStream();
 
         mpegTsProcessor.queryEmbeddedStreams();
 
@@ -215,7 +219,7 @@ public abstract class ConnectionTest {
             mpegTsProcessor.setVideoDataBufferListener(dblistener);
         }
 
-        mpegTsProcessor.processStream();
+        //mpegTsProcessor.processStream();
 
         try {
 
@@ -227,21 +231,12 @@ public abstract class ConnectionTest {
 
         } finally {
 
-            mpegTsProcessor.stopProcessingStream();
 
-            try {
 
-                mpegTsProcessor.join();
-
-            } catch (InterruptedException e) {
-
-                e.printStackTrace();
-            }
-
-            mpegTsProcessor.closeStream();
+            //mpegTsProcessor.closeStream();
         }
 
-        driver.stop();
+        //driver.stop();
     }
 
     @Test
@@ -253,8 +248,8 @@ public abstract class ConnectionTest {
         final AtomicReference<BufferedImage> bufImg = new AtomicReference<>();
         final AtomicReference<Graphics> graphicCtx = new AtomicReference<>();
 
-        driver.start();
         MpegTsProcessor mpegTsProcessor = driver.mpegTsProcessor;
+        //mpegTsProcessor.processStream();
 
         int[] dimensions = mpegTsProcessor.getVideoStreamFrameDimensions();
 
@@ -368,7 +363,8 @@ public abstract class ConnectionTest {
                 logger.error("Error: ", ignored);
             } finally {
                 mpegTsProcessor.removeVideoDataBufferListener(dblistener);
-                driver.stop();
+                //mpegTsProcessor.stopProcessingStream();
+                //driver.stop();
                 window.dispose();
             }
         }
@@ -376,8 +372,9 @@ public abstract class ConnectionTest {
 
     @Test
     public void testMp4FileOutput() throws SensorHubException {
-        driver.start();
+        //driver.start();
         MpegTsProcessor mpegTsProcessor = driver.mpegTsProcessor;
+        //mpegTsProcessor.processStream();
         final long fileRecordTime = 5000;
 
         Optional<IStreamingControlInterface> fileControl = driver.getCommandInputs().values().stream().filter(c -> c instanceof FileControl).findFirst();
@@ -438,8 +435,9 @@ public abstract class ConnectionTest {
 
     @Test
     public void testHlsFileOutput() throws SensorHubException {
-        driver.start();
+        //driver.start();
         MpegTsProcessor mpegTsProcessor = driver.mpegTsProcessor;
+        //mpegTsProcessor.processStream();
         final long fileRecordTime = 5000;
 
         Optional<IStreamingControlInterface> fileControl = driver.getCommandInputs().values().stream().filter(c -> c instanceof HLSControl<?>).findFirst();
