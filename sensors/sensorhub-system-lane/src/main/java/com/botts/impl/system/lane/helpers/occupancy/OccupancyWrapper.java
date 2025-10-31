@@ -17,6 +17,7 @@ import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.controls.FileControl;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
+import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -103,13 +104,6 @@ public class OccupancyWrapper {
         } catch (Exception ignored) {
         }
         registerOcucpancyListener();
-
-        var rpmOutput = rpm.getOutputs().values().stream().filter(entry -> entry instanceof OccupancyOutput).findFirst();
-        if (rpmOutput.isPresent()) {
-            observationHelper.setOccupancyStruct(rpmOutput.get().getRecordDescription());
-        } else {
-            throw new RuntimeException("Could not set RPM occupancy data structure.");
-        }
     }
 
     public void stop() {
@@ -343,11 +337,6 @@ public class OccupancyWrapper {
         private final Object lock = new Object();
         private int count = 0;
         private int totalCams = 2;
-        private DataComponent occupancyRecord;
-
-        public void setOccupancyStruct(DataComponent occupancyRecord) {
-            this.occupancyRecord = occupancyRecord;
-        }
 
         public synchronized void setRpmOcc(IObsData rpmOcc) {
             this.rpmOcc = rpmOcc;
@@ -384,14 +373,7 @@ public class OccupancyWrapper {
                         return;
 
                     ArrayList<String> files = new ArrayList<>(ffmpegOuts);
-                    //rpmOcc.getResult().setStringValue(DATA_FILE_NAME_INDEX, files);
-                    /*
-                    var observation = obsStore.select(new ObsFilter.Builder()
-                            .withPhenomenonTimeDuring(rpmOcc.getResultTime().minusSeconds(OBS_BUFFER_SECONDS), rpmOcc.getResultTime().plusSeconds(OBS_BUFFER_SECONDS))
-                            .withLimit(1)
-                            .build()).findFirst();
 
-                     */
                     var observation = obsStore.select(new ObsFilter.Builder()
                             .withDataStreams(rpmOcc.getDataStreamID())
                             .withPhenomenonTimeDuring(rpmOcc.getPhenomenonTime().minusSeconds(OBS_BUFFER_SECONDS), rpmOcc.getPhenomenonTime().plusSeconds(OBS_BUFFER_SECONDS))
@@ -400,29 +382,22 @@ public class OccupancyWrapper {
 
                     if (observation.isPresent()) {
 
-                        var dataBlock = observation.get().getResult();
-
-                        occupancyRecord.setData(dataBlock);
-                        occupancyRecord.getComponent("videoPathCount").getData().setIntValue(count);
-                        var fileArray = (DataArray)occupancyRecord.getComponent("videoPaths");
-                        //dataBlock.setIntValue(DATA_FILE_COUNT_INDEX, count);
-                        fileArray.updateSize();
-                        //fileBlock.resize(count);
-                        dataBlock.updateAtomCount();
-
-                        //int fileIndex = occupancyRecord.getComponentIndex("videoPaths");
-                        int fileIndex = 0;
-                        var fileData = fileArray.getData();
+                        var result = observation.get().getResult();
+                        var occupancy = Occupancy.toOccupancy(result);
 
                         for (var file : files) {
-                            //dataBlock.setStringValue(fileIndex++, file);
-                            fileData.setStringValue(fileIndex++, file);
+                            occupancy.addVideoPath(file);
                         }
+
+                        DataBlock occData = Occupancy.fromOccupancy(occupancy);
+                        result.setUnderlyingObject(occData.getUnderlyingObject());
+                        result.updateAtomCount();
                     }
 
                     this.clear();
-                } catch (Exception ignored) {
-                    count = 0;
+                } catch (Exception e) {
+                    logger.error("Error while adding video path to occupancy.", e);
+                    this.clear();
                 }
             }
         }
