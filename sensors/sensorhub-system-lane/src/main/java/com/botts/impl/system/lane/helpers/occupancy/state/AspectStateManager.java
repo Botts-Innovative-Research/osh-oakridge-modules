@@ -18,19 +18,19 @@ public class AspectStateManager extends StateManager {
 
 
     private int getObjectCount() {
-        return Integer.getInteger(dailyParsed[OBJECT_COUNT]);
+        return Integer.parseInt(dailyParsed[OBJECT_COUNT]);
     }
 
     private int getGammaChannelStatus() {
-        return Integer.getInteger(dailyParsed[GAMMA_CHANNEL_STATUS]);
+        return Integer.parseInt(dailyParsed[GAMMA_CHANNEL_STATUS]);
     }
 
     private int getNeutronChannelStatus() {
-        return Integer.getInteger(dailyParsed[NEUTRON_CHANNEL_STATUS]);
+        return Integer.parseInt(dailyParsed[NEUTRON_CHANNEL_STATUS]);
     }
 
     private int getInputSignals() {
-        return Integer.getInteger(dailyParsed[INPUT_SIGNALS]);
+        return Integer.parseInt(dailyParsed[INPUT_SIGNALS]);
     }
 
     // The following three methods are from the aspect MonitorRegisters class
