@@ -34,9 +34,11 @@ public class BucketServlet extends HttpServlet {
     private final Logger log;
     private final BucketSecurity sec;
     private final BucketHandler bucketHandler;
+    private final boolean enableCors;
 
     public BucketServlet(BucketService service, ModuleSecurity securityHandler, BucketHandler bucketHandler) {
         this.sec = (BucketSecurity) securityHandler;
+        this.enableCors = service.getConfiguration().enableCORS;
         this.threadPool = service.getThreadPool();
         this.securityHandler = securityHandler;
         this.log = service.getLogger();
@@ -270,6 +272,13 @@ public class BucketServlet extends HttpServlet {
     @Override
     protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         logRequest(req);
+        String origin = req.getHeader("Origin");
+        if (enableCors && origin != null && !origin.isBlank()) {
+            resp.setHeader("Access-Control-Allow-Origin", origin);
+            resp.setHeader("Access-Control-Allow-Credentials", "true");
+            resp.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE, PUT");
+            resp.setHeader("Access-Control-Allow-Headers", "X-Requested-With, Content-Type, Accept, Authorization, Cache-Control");
+        }
         super.service(req, resp);
     }
 

@@ -323,6 +323,10 @@ public class LaneSystem extends SensorSystem {
                     occupancyWrapper.start();
                 }
 
+                if (event.getNewState() == ModuleEvent.ModuleState.STOPPING) {
+                    occupancyWrapper.stop();
+                }
+
                 // New module loaded
                 if (event.getNewState() == ModuleEvent.ModuleState.LOADED) {
 
@@ -504,7 +508,8 @@ public class LaneSystem extends SensorSystem {
         config.moduleClass = FFMPEGSensor.class.getCanonicalName();
         config.connectionConfig.connectTimeout = 5000;
         config.connectionConfig.reconnectAttempts = 10;
-        config.connection.useHLS = false;
+        config.output.useHLS = true;
+        config.output.useVideoFrames = false;
         config.fileConfig.hlsDirectory = VIDEO_STREAMING_DIRECTORY;
         config.fileConfig.videoClipDirectory = VIDEO_CLIPS_DIRECTORY;
         return config;

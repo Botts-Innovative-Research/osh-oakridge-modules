@@ -32,8 +32,7 @@ public class FileTestMjpeg extends ConnectionTest {
         config.moduleClass = FFMPEGSensor.class.getCanonicalName();
         config.connectionConfig.connectTimeout = 5000;
         config.connectionConfig.reconnectAttempts = 10;
-        config.fileConfig.videoClipDirectory = "";
-        config.fileConfig.hlsDirectory = "";
-        config.connection.useHLS = false;
+        config.output.useVideoFrames = false;
+        config.output.useHLS = true;
     }
 }

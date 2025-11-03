@@ -18,6 +18,7 @@ import org.bytedeco.ffmpeg.avcodec.AVCodecContext;
 import org.bytedeco.ffmpeg.avcodec.AVCodecParameters;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avformat.AVFormatContext;
+import org.bytedeco.ffmpeg.avformat.AVStream;
 import org.bytedeco.ffmpeg.avutil.AVDictionary;
 import org.bytedeco.ffmpeg.avutil.AVRational;
 import org.bytedeco.ffmpeg.global.avcodec;
@@ -28,7 +29,6 @@ import org.sensorhub.impl.process.video.transcoder.coders.Coder;
 import org.sensorhub.impl.process.video.transcoder.coders.Decoder;
 import org.sensorhub.impl.process.video.transcoder.coders.Encoder;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
-import org.sensorhub.impl.sensor.ffmpeg.outputs.HLSOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -227,20 +227,6 @@ public class MpegTsProcessor extends Thread {
         this.useTCP = useTCP;
     }
 
-    public void openFile(String outputFile) throws IOException {
-        List<FileOutput> fileOutputList = getVideoDataBufferListenersByType(FileOutput.class);
-        for (var fileOutput : fileOutputList) {
-            fileOutput.openFile(outputFile, this.avFormatContext, this.videoStreamId);
-        }
-    }
-
-    public void closeFile() throws IOException {
-        List<FileOutput> fileOutputList = getVideoDataBufferListenersByType(FileOutput.class);
-        for (var fileOutput : fileOutputList) {
-            fileOutput.closeFile();
-        }
-    }
-
     /**
      * Attempts to open the stream given the {@link MpegTsProcessor#streamSource}
      * Opening the stream entails establishing appropriate connection and ability to
@@ -288,6 +274,14 @@ public class MpegTsProcessor extends Thread {
         }
 
         return streamOpened;
+    }
+
+    public AVFormatContext getAvFormatContext() {
+        return this.avFormatContext;
+    }
+
+    public AVStream getAvStream() {
+        return this.avFormatContext.streams(videoStreamId);
     }
 
     /**
@@ -554,16 +548,9 @@ public class MpegTsProcessor extends Thread {
         logger.debug("processStream");
 
         if (streamOpened) {
-            avutil.av_log_set_level(avutil.AV_LOG_DEBUG);
+            //avutil.av_log_set_level(avutil.AV_LOG_DEBUG);
             // Allocate the codec contexts and attempt to open them
             openCodecContext();
-            for (var hls : getVideoDataBufferListenersByType(HLSOutput.class)) {
-                try {
-                    hls.initStream(avFormatContext, videoStreamId);
-                } catch (Exception e) {
-                    logger.error("Could not initialize HLS stream.", e);
-                }
-            }
 
             if (doTranscode) {
                 var settings = new HashMap<String, Integer>();
@@ -615,14 +602,6 @@ public class MpegTsProcessor extends Thread {
                 decoder.join();
             } catch (Exception ignored) {}
         }
-
-        for (var hls : getVideoDataBufferListenersByType(HLSOutput.class)) {
-            try {
-                hls.stopStream();
-            } catch (Exception e) {
-                logger.error("Could not stop HLS stream.", e);
-            }
-        }
     }
 
     /**
@@ -641,8 +620,9 @@ public class MpegTsProcessor extends Thread {
             long startTime = System.currentTimeMillis();
             long frameCount = 0;
             int retCode;
-            while (!terminateProcessing.get() && (retCode = av_read_frame(avFormatContext, avPacket)) >= 0) {
+            boolean doProcessing = true;
 
+            while (!terminateProcessing.get() && (retCode = av_read_frame(avFormatContext, avPacket)) >= 0) {
                 // If it is a video or data frame and there is a listener registered
                 if ((avPacket.stream_index() == videoStreamId) && (!videoDataBufferListeners.isEmpty())) {
 
@@ -661,6 +641,21 @@ public class MpegTsProcessor extends Thread {
                     }
 
                     if (doTranscode) {
+                        // Slight optimization to skip processing if listeners are doing nothing
+                        // Assuming this is jpeg. Otherwise, may have keyframe issues.
+                        for (DataBufferListener listener : videoDataBufferListeners) {
+                            if (listener.isWriting()) {
+                                doProcessing = true;
+                                break;
+                            }
+                            doProcessing = false;
+                        }
+
+                        if (!doProcessing) {
+                            encoder.getOutQueue().clear();
+                            continue;
+                        }
+
                         decodeQueue.add(avcodec.av_packet_clone(avPacket));
                         var outQueue = encoder.getOutQueue();
 

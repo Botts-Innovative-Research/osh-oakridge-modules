@@ -16,7 +16,6 @@ package org.sensorhub.impl.sensor.ffmpeg.config;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.api.sensor.SensorConfig;
-import org.sensorhub.impl.comm.RobustIPConnectionConfig;
 import org.sensorhub.impl.module.RobustConnectionConfig;
 
 /**
@@ -50,6 +49,10 @@ public class FFMPEGConfig extends SensorConfig {
     @DisplayInfo.Required
     @DisplayInfo(label = "Files", desc = "Configuration options for saving video files")
     public FileConfig fileConfig = new FileConfig();
+
+    @DisplayInfo.Required
+    @DisplayInfo(label = "Outputs", desc = "Configuration options for FFmpeg driver output")
+    public Output output = new Output();
 
 
     public PositionConfig positionConfig = new PositionConfig();

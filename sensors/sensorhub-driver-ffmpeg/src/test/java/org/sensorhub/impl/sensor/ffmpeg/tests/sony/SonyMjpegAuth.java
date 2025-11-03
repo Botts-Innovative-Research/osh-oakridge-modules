@@ -20,5 +20,7 @@ public class SonyMjpegAuth extends ConnectionTest {
         config.moduleClass = FFMPEGSensor.class.getCanonicalName();
         config.connectionConfig.connectTimeout = 5000;
         config.connectionConfig.reconnectAttempts = 10;
+        config.output.useVideoFrames = false;
+        config.output.useHLS = true;
     }
 }
