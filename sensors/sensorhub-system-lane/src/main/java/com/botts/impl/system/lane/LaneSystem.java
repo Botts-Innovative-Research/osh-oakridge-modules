@@ -69,7 +69,9 @@ public class LaneSystem extends SensorSystem {
     private static final String LANE_SYSTEM_PREFIX = URN_PREFIX + "osh:system:lane:";
     private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
-    private static final String BASE_VIDEO_DIRECTORY = "./web/video/";
+    private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
+    private static final String VIDEO_CLIPS_DIRECTORY = "clips/";
+    private static final String VIDEO_STREAMING_DIRECTORY = "streaming/";
 
     AbstractSensorModule<?> existingRPMModule = null;
     Flow.Subscription subscription = null;
@@ -121,7 +123,7 @@ public class LaneSystem extends SensorSystem {
             }
             if (existingRPMModule != null) {
                 occupancyWrapper = new OccupancyWrapper(getParentHub(), existingRPMModule);
-                occupancyWrapper.videoNamePrefix = BASE_VIDEO_DIRECTORY + "lane"  + "/";
+                //occupancyWrapper.videoNamePrefix = BASE_VIDEO_DIRECTORY + "lane" + getConfiguration().groupID + "/";
             }
             // Initial FFmpeg config
             var ffmpegConfigList = getConfiguration().laneOptionsConfig.ffmpegConfig;
@@ -321,6 +323,10 @@ public class LaneSystem extends SensorSystem {
                     occupancyWrapper.start();
                 }
 
+                if (event.getNewState() == ModuleEvent.ModuleState.STOPPING) {
+                    occupancyWrapper.stop();
+                }
+
                 // New module loaded
                 if (event.getNewState() == ModuleEvent.ModuleState.LOADED) {
 
@@ -502,6 +508,10 @@ public class LaneSystem extends SensorSystem {
         config.moduleClass = FFMPEGSensor.class.getCanonicalName();
         config.connectionConfig.connectTimeout = 5000;
         config.connectionConfig.reconnectAttempts = 10;
+        config.output.useHLS = true;
+        config.output.useVideoFrames = false;
+        config.fileConfig.hlsDirectory = VIDEO_STREAMING_DIRECTORY;
+        config.fileConfig.videoClipDirectory = VIDEO_CLIPS_DIRECTORY;
         return config;
     }
 

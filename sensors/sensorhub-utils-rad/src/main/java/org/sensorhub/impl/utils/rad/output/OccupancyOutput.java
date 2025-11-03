@@ -67,10 +67,7 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
     }
 
     public void setData(Occupancy occupancy) {
-        if (latestRecord == null)
-            dataBlock = dataStruct.createDataBlock();
-        else
-            dataBlock = latestRecord.renew();
+        dataBlock = dataStruct.createDataBlock();
 
         dataStruct.setData(dataBlock);
 
