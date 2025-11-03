@@ -113,8 +113,9 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
 
                     try {
                         //this.parentSensor.getProcessor().openFile(fileName);
-                        var outputStream = this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap());
-                        this.fileOutput.openFile(outputStream, bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName));
+                        //var outputStream = this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap());
+                        this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap()).close();
+                        this.fileOutput.openFile(bucketStore.getResourceURI(VIDEO_BUCKET, fileName));
                         this.parentSensor.reportStatus("Writing to file: " + fileName);
                     } catch (Exception e) {
                         commandStatus = false;
