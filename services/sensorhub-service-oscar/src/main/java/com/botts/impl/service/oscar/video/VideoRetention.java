@@ -9,7 +9,11 @@ import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.impl.utils.rad.RADHelper;
+import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
+import org.sensorhub.mpegts.MpegTsProcessor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -20,20 +24,20 @@ import java.util.Collections;
 
 public class VideoRetention extends Thread {
 
+    private static final Logger logger = LoggerFactory.getLogger(VideoRetention.class);
     IObsStore obsStore;
     final TemporalAmount decimTimeOffset, deletionTimeOffset;
-    final static RADHelper radHelper = new RADHelper();
-    final DataRecord occupancyRecord;
     final IBucketStore bucketStore;
+    final int frameCount;
 
-    VideoRetention(IObsStore obsStore, IBucketStore bucketStore, TemporalAmount decimTimeOffset, TemporalAmount deletionTimeOffset, int frameCount) {
+    public VideoRetention(IObsStore obsStore, IBucketStore bucketStore, TemporalAmount decimTimeOffset, TemporalAmount deletionTimeOffset, int frameCount) {
         super();
         threadSettings();
         this.obsStore = obsStore;
         this.decimTimeOffset = decimTimeOffset;
         this.deletionTimeOffset = deletionTimeOffset;
-        this.occupancyRecord = radHelper.createOccupancy();
         this.bucketStore = bucketStore;
+        this.frameCount = frameCount;
     }
 
     private void threadSettings() {
@@ -41,6 +45,7 @@ public class VideoRetention extends Thread {
         this.setPriority(Thread.MIN_PRIORITY);
     }
 
+    // TODO Consider adding delay between each query/decimation iteration
     @Override
     public void run() {
         while(!Thread.currentThread().isInterrupted()) {
@@ -50,29 +55,53 @@ public class VideoRetention extends Thread {
                     .build()).toList();
 
             for (var obs : observations) {
-                occupancyRecord.renewDataBlock();
-                occupancyRecord.setData(obs.getResult());
-
-                DataArray files = (DataArray) occupancyRecord.getField(radHelper.createVideoPathsArray().getName());
-                for (int i = 0; i < files.getArraySizeComponent().getValue(); i++) {
-                    String fileName = files.getData().getStringValue(i);
-
-                    try {
-                        originalMp4 = bucketStore.getObject("", fileName);
-                    } catch (DataStoreException e) {
-                        throw new RuntimeException(e);
-                    }
-
-                    try {
-                        decimatedMp4 = bucketStore.putObject("", fileName + ".tmp", Collections.emptyMap());
-                    } catch (DataStoreException e) {
-                        throw new RuntimeException(e);
-                    }
-
-
-
+                var occupancy = Occupancy.toOccupancy(obs.getResult());
+                for (String videoFile : occupancy.getVideoPaths()) {
+                    decimate(videoFile);
                 }
             }
+        }
+    }
+
+    public void decimate(String fileName) {
+        String originalMp4;
+        String decimatedMp4;
+
+        try {
+            originalMp4 = bucketStore.getResourceURI("", fileName);
+        } catch (DataStoreException e) {
+            throw new RuntimeException(e);
+        }
+
+        try {
+            decimatedMp4 = bucketStore.getResourceURI("", fileName + ".tmp");
+        } catch (DataStoreException e) {
+            throw new RuntimeException(e);
+        }
+
+        MpegTsProcessor videoInput = new MpegTsProcessor(originalMp4);
+        videoInput.openStream();
+        videoInput.queryEmbeddedStreams();
+
+        VideoKeyframeDecimator videoOutput = new VideoKeyframeDecimator(decimatedMp4, frameCount, videoInput.getAvStream());
+        videoInput.addVideoDataBufferListener(videoOutput);
+
+        videoOutput.setFileCloseCallback(() -> {
+            videoInput.stopProcessingStream();
+            try {
+                videoInput.join();
+            } catch (Exception ignored) {}
+            videoInput.closeStream();
+        });
+
+        videoInput.processStream();
+
+        try {
+            videoInput.join();
+        } catch (InterruptedException e) {
+            logger.warn("Interrupted while waiting for video processing to finish. Writing output early, stopping thread.", e);
+            videoOutput.closeFile();
+            Thread.currentThread().interrupt();
         }
     }
 }
