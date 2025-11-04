@@ -108,7 +108,11 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     @Override
     protected void doStop() throws SensorHubException {
         super.doStop();
-        statsOutput.stop();
+        try {
+            statsOutput.stop();
+        } catch (Exception ex) {
+            getLogger().error("Could not stop stats output", ex);
+        }
     }
 
     public SitemapDiagramHandler getSitemapDiagramHandler() {
