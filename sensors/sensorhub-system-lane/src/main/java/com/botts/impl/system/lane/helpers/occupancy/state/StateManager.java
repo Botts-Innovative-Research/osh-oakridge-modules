@@ -31,7 +31,7 @@ public abstract class StateManager {
     DataComponent dailyFile;
     State currentState;
     List<IStateListener> listeners = new ArrayList<IStateListener>();
-    Map<State, Runnable[]> stateActionMap = new HashMap<>();
+    Map<State, Runnable> stateActionMap = new HashMap<>();
     //Map<State, Transition[]> transitionMap = new HashMap<State, Transition[]>();
 
     public StateManager() {
@@ -39,29 +39,62 @@ public abstract class StateManager {
         initStates();
     }
 
+    protected abstract boolean isAlarming();
+
+    protected abstract boolean isOccupied();
+
+    protected abstract boolean isNonOccupied();
+
 
     /**
      * Create states and their actions. Each "during" action should contain the state's transitions to other states using
      * {@link #transitionToState(State)} to invoke the transition. In this method, each state must be registered by
      * invoking {@link #registerState(State, Runnable[])}.
      */
-    protected abstract void initStates();
+    private void initStates() {
+        Runnable nonOccupancyTransition;
+        Runnable occupancyTransition;
+        Runnable alarmTransition;
 
-    protected void registerState(State state, Runnable[] stateActions) {
-        if (stateActions == null || stateActions.length != 3) {
-            throw new IllegalArgumentException("State actions must have length 3, including to, during, and after actions.");
-        }
+        // The "to" and "from" transitional runnables may be unneeded. Keeping them only for the time being.
+        // --------------------------- Non-occupancy actions ---------------------------
+        nonOccupancyTransition = () -> {
+            if (isOccupied())
+                transitionToState(State.OCCUPANCY);
+            else if (isAlarming()) {
+                // Might be possible to receive alarm characters when previously not occupied? Including transition in case
+                transitionToState(State.ALARMING_OCCUPANCY);
+            }
+        };
+
+        // --------------------------- Non-alarming occupancy actions ---------------------------
+        occupancyTransition = () -> {
+            if (isAlarming())
+                transitionToState(State.ALARMING_OCCUPANCY);
+            else if (isNonOccupied())
+                transitionToState(State.NON_OCCUPANCY);
+        };
+
+        // --------------------------- Alarming occupancy actions ---------------------------
+        alarmTransition = () -> {
+            if (isNonOccupied())
+                transitionToState(State.NON_OCCUPANCY);
+        };
+
+        registerState(State.NON_OCCUPANCY,  nonOccupancyTransition);
+        registerState(State.OCCUPANCY,  occupancyTransition);
+        registerState(State.ALARMING_OCCUPANCY,  alarmTransition);
+    }
+
+    protected void registerState(State state, Runnable transitionFunction) {
+        Objects.requireNonNull(state);
+        Objects.requireNonNull(transitionFunction);
         /*
         if (transitions == null || transitions.length == 0) {
             throw new IllegalArgumentException("Transition count must be greater than 0.");
         }
          */
-        for (int i = TO_STATE; i <= FROM_STATE; i++) {
-            if (stateActions[i] == null) {
-                stateActions[i] = () -> {};
-            }
-        }
-        stateActionMap.put(state, stateActions);
+        stateActionMap.put(state, transitionFunction);
         //transitionMap.put(state, transitions);
     }
 
@@ -70,7 +103,7 @@ public abstract class StateManager {
         try {
             this.dailyFile = dailyFile;
             parseDailyFile();
-            stateActionMap.get(currentState)[DURING_STATE].run();
+            stateActionMap.get(currentState).run();
         } finally {
             lock.unlock();
         }
@@ -79,8 +112,6 @@ public abstract class StateManager {
     protected abstract void parseDailyFile();
 
     protected void transitionToState(State newState) {
-        stateActionMap.get(currentState)[FROM_STATE].run();
-        stateActionMap.get(newState)[TO_STATE].run();
         notifyStateTransition(currentState, newState);
         currentState = newState;
     }
