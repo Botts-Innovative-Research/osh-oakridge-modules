@@ -18,19 +18,19 @@ public class AspectStateManager extends StateManager {
 
 
     private int getObjectCount() {
-        return Integer.getInteger(dailyParsed[OBJECT_COUNT]);
+        return Integer.parseInt(dailyParsed[OBJECT_COUNT]);
     }
 
     private int getGammaChannelStatus() {
-        return Integer.getInteger(dailyParsed[GAMMA_CHANNEL_STATUS]);
+        return Integer.parseInt(dailyParsed[GAMMA_CHANNEL_STATUS]);
     }
 
     private int getNeutronChannelStatus() {
-        return Integer.getInteger(dailyParsed[NEUTRON_CHANNEL_STATUS]);
+        return Integer.parseInt(dailyParsed[NEUTRON_CHANNEL_STATUS]);
     }
 
     private int getInputSignals() {
-        return Integer.getInteger(dailyParsed[INPUT_SIGNALS]);
+        return Integer.parseInt(dailyParsed[INPUT_SIGNALS]);
     }
 
     // The following three methods are from the aspect MonitorRegisters class
@@ -44,10 +44,12 @@ public class AspectStateManager extends StateManager {
                 || (getNeutronChannelStatus() & ChannelStatus.Alarm2.getValue()) == ChannelStatus.Alarm2.getValue();
     }
 
+    @Override
     protected boolean isAlarming() {
         return isGammaAlarm() || isNeutronAlarm();
     }
 
+    @Override
     protected boolean isOccupied() {
         return (getInputSignals() & Inputs.Occup0.getValue()) == Inputs.Occup0.getValue()
                 || (getInputSignals() & Inputs.Occup1.getValue()) == Inputs.Occup1.getValue()
@@ -56,41 +58,8 @@ public class AspectStateManager extends StateManager {
     }
 
     @Override
-    protected void initStates() {
-        Runnable[] nonOccupancyActions = new Runnable[3];
-        Runnable[] occupancyActions = new Runnable[3];
-        Runnable[] alarmActions = new Runnable[3];
-
-        // The "to" and "from" transitional runnables may be unneeded. Keeping them only for the time being.
-        // --------------------------- Non-occupancy actions ---------------------------
-        nonOccupancyActions[TO_STATE] = () -> {};
-        nonOccupancyActions[DURING_STATE] = () -> {
-            if (isOccupied())
-                transitionToState(State.OCCUPANCY);
-        };
-        nonOccupancyActions[FROM_STATE] = () -> {};
-
-        // --------------------------- Non-alarming occupancy actions ---------------------------
-        occupancyActions[TO_STATE] = () -> {};
-        occupancyActions[DURING_STATE] = () -> {
-            if (isAlarming())
-                transitionToState(State.ALARMING_OCCUPANCY);
-            else if (!isOccupied())
-                transitionToState(State.NON_OCCUPANCY);
-        };
-        occupancyActions[FROM_STATE] = () -> {};
-
-        // --------------------------- Alarming occupancy actions ---------------------------
-        alarmActions[TO_STATE] = () -> {};
-        alarmActions[DURING_STATE] = () -> {
-            if (!isOccupied())
-                transitionToState(State.NON_OCCUPANCY);
-        };
-        alarmActions[FROM_STATE] = () -> {};
-
-        registerState(State.NON_OCCUPANCY,  nonOccupancyActions);
-        registerState(State.OCCUPANCY,  occupancyActions);
-        registerState(State.ALARMING_OCCUPANCY,  alarmActions);
+    protected boolean isNonOccupied() {
+        return !isAlarming() && !isOccupied();
     }
 
     @Override

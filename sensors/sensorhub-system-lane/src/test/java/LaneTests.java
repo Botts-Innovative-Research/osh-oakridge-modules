@@ -68,8 +68,8 @@ public class LaneTests {
     private String LANE_UID = "1";
     private String LANE_NAME = "Test Lane";
 
-    private static final String RPM_HOST = "100.94.197.23";
-//    private static final String RPM_HOST = System.getenv("RPM_HOST"); //"192.168.1.211";
+//    private static final String RPM_HOST = "100.94.197.23";
+    private static final String RPM_HOST = System.getenv("RPM_HOST"); //"192.168.1.211";
     private static final int RAPISCAN_PORT = 1601;
     private static final int ASPECT_PORT = 502;
 

@@ -106,8 +106,10 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                 commandStatus = false;
 
             else if (selected.equals(CMD_START_STREAM)) {
-                if (!fileName.isEmpty())
-                    commandStatus = false;
+                if (!fileName.isEmpty()) {
+                    commandStatus = true;
+                    reportFileName = true;
+                }
                 else {
                     filePath = Paths.get("streams", parentSensor.getUniqueIdentifier().replace(':', '-'), "live.m3u8");
                     fileName = filePath.toString();
