@@ -65,7 +65,7 @@ public class VideoKeyframeDecimator implements DataBufferListener {
     public void onDataBuffer(DataBufferRecord record) {
         long timestamp = (long)(record.getPresentationTimestamp() * timeBase.den() / timeBase.num());
 
-        if (timestamp > keyFrameDuration * currentDecFrame) {
+        if (record.isKeyFrame() && timestamp > keyFrameDuration * currentDecFrame) {
             currentDecFrame++;
 
             byte[] data = record.getDataBuffer();
