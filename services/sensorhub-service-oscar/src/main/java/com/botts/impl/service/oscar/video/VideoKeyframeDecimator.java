@@ -9,6 +9,11 @@ import org.bytedeco.ffmpeg.global.avformat;
 import org.sensorhub.mpegts.DataBufferListener;
 import org.sensorhub.mpegts.DataBufferRecord;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
 import static org.bytedeco.ffmpeg.global.avcodec.av_new_packet;
 import static org.bytedeco.ffmpeg.global.avcodec.av_packet_alloc;
 import static org.bytedeco.ffmpeg.global.avformat.*;
@@ -22,6 +27,7 @@ public class VideoKeyframeDecimator implements DataBufferListener {
     boolean isWriting = true;
 
     final int totalKeyframe;
+    static final int frameTimeout = 5;
     long duration;
     long keyFrameDuration;
     long currentDecFrame = 0;
@@ -30,6 +36,9 @@ public class VideoKeyframeDecimator implements DataBufferListener {
     AVRational timeBase;
 
     Runnable closeCallback;
+
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private ScheduledFuture<?> timeoutTask;
 
     VideoKeyframeDecimator(String outputFileName, int totalKeyframe, AVStream otherStream) {
         this.outputFileName = outputFileName;
@@ -60,9 +69,19 @@ public class VideoKeyframeDecimator implements DataBufferListener {
         avformat.avformat_write_header(avFormatContext, (AVDictionary) null);
     }
 
+    private void resetFrameTimeout() {
+        if (timeoutTask != null && !timeoutTask.isDone()) {
+            timeoutTask.cancel(false);
+        }
+
+        timeoutTask = scheduler.schedule(this::closeFile, frameTimeout, TimeUnit.SECONDS);
+    }
 
     @Override
     public void onDataBuffer(DataBufferRecord record) {
+        if (!isWriting)
+            return;
+
         long timestamp = (long)(record.getPresentationTimestamp() * timeBase.den() / timeBase.num());
 
         if (record.isKeyFrame() && timestamp > keyFrameDuration * currentDecFrame) {
@@ -74,18 +93,26 @@ public class VideoKeyframeDecimator implements DataBufferListener {
             av_new_packet(avPacket, data.length);
             avPacket.data().put(data);
             avPacket.duration(keyFrameDuration);
+            avPacket.pts(keyFrameDuration * currentDecFrame);
+            avPacket.dts(keyFrameDuration * currentDecFrame);
             avPacket.time_base(timeBase);
 
             avformat.av_write_frame(avFormatContext, avPacket);
 
             if (currentDecFrame >= totalKeyframe) {
-                isWriting = false;
-                avformat.av_write_trailer(avFormatContext);
-                avformat.avio_close(avFormatContext.pb());
+                closeFile();
+            }
+        }
+    }
 
-                if (closeCallback != null) {
-                    closeCallback.run();
-                }
+    public synchronized void closeFile() {
+        if (isWriting) {
+            isWriting = false;
+            avformat.av_write_trailer(avFormatContext);
+            avformat.avio_close(avFormatContext.pb());
+
+            if (closeCallback != null) {
+                closeCallback.run();
             }
         }
     }
