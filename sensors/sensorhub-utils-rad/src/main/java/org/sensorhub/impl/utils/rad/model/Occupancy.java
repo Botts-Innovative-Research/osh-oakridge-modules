@@ -21,8 +21,8 @@ public class Occupancy {
     private boolean hasNeutronAlarm;
     private int maxGammaCount;
     private int maxNeutronCount;
-    private List<String> adjudicatedIds = List.of();
-    private List<String> videoPaths = List.of();
+    private List<String> adjudicatedIds = new ArrayList<>();
+    private List<String> videoPaths = new ArrayList<>();
 
     public int getOccupancyCount() {
         return occupancyCount;
