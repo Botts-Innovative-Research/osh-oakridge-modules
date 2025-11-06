@@ -80,7 +80,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         videoRetention = new VideoRetention(getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore(),
                 bucketStore,
                 Period.ofDays(5), Period.ofDays(10),
-                100);
+                5);
 
         system.updateSensorDescription();
     }
