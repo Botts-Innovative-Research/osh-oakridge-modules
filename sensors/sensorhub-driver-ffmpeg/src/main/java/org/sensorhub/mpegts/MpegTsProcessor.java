@@ -110,6 +110,8 @@ public class MpegTsProcessor extends Thread {
      */
     private static final Logger logger = LoggerFactory.getLogger(MpegTsProcessor.class);
 
+    boolean injectExtradata = false;
+
     /**
      * Name of thread
      */
@@ -280,6 +282,8 @@ public class MpegTsProcessor extends Thread {
         return this.avFormatContext;
     }
 
+    public void setInjectExtradata(boolean injectExtradata) {this.injectExtradata = injectExtradata;}
+
     public AVStream getAvStream() {
         return this.avFormatContext.streams(videoStreamId);
     }
@@ -331,9 +335,11 @@ public class MpegTsProcessor extends Thread {
             // PPS/SPS extradata from AVCC to Annex B.
             // TODO: Detect AVCC, convert to Annex B
             int extraSize = avFormatContext.streams(streamId).codecpar().extradata_size();
-            if (extraSize > 0 && avFormatContext.streams(streamId).codecpar().codec_id() == avcodec.AV_CODEC_ID_H264) {
+            if (injectExtradata && extraSize > 0 && avFormatContext.streams(streamId).codecpar().codec_id() == avcodec.AV_CODEC_ID_H264) {
                 spsPpsHeader = new byte[extraSize];
                 avFormatContext.streams(streamId).codecpar().extradata().get(spsPpsHeader);
+            } else {
+                spsPpsHeader = null;
             }
 
 
