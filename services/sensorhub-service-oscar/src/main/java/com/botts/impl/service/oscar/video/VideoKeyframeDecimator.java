@@ -6,6 +6,7 @@ import org.bytedeco.ffmpeg.avutil.AVDictionary;
 import org.bytedeco.ffmpeg.avutil.AVRational;
 import org.bytedeco.ffmpeg.global.avcodec;
 import org.bytedeco.ffmpeg.global.avformat;
+import org.bytedeco.ffmpeg.global.avutil;
 import org.sensorhub.mpegts.DataBufferListener;
 import org.sensorhub.mpegts.DataBufferRecord;
 
@@ -18,6 +19,7 @@ import static org.bytedeco.ffmpeg.global.avcodec.*;
 import static org.bytedeco.ffmpeg.global.avformat.*;
 import static org.bytedeco.ffmpeg.global.avformat.AVIO_FLAG_WRITE;
 import static org.bytedeco.ffmpeg.global.avutil.AV_NOPTS_VALUE;
+import static org.bytedeco.ffmpeg.global.avutil.av_rescale_q;
 
 // TODO Should this be moved to the ffmpeg driver package?
 public class VideoKeyframeDecimator implements DataBufferListener {
@@ -58,10 +60,8 @@ public class VideoKeyframeDecimator implements DataBufferListener {
         avStream = avformat.avformat_new_stream(avFormatContext, null);
         avcodec.avcodec_parameters_copy(avStream.codecpar(), otherStream.codecpar());
         avStream.codecpar().format(otherStream.codecpar().format());
-        timeBase = otherStream.time_base();
-        duration = otherStream.duration();
-        avStream.time_base(timeBase);
-        avStream.duration(duration);
+        avStream.codecpar().extradata(otherStream.codecpar().extradata());
+        avStream.codecpar().extradata_size(otherStream.codecpar().extradata_size());
 
         if ((avFormatContext.oformat().flags() & AVFMT_NOFILE) == 0) {
             AVIOContext avioContext = new AVIOContext(null);
@@ -72,6 +72,21 @@ public class VideoKeyframeDecimator implements DataBufferListener {
         }
 
         avformat.avformat_write_header(avFormatContext, (AVDictionary) null);
+
+        timeBase = avStream.time_base();
+        duration = av_rescale_q(otherStream.duration(), otherStream.time_base(), avStream.time_base());
+        //avStream.time_base(timeBase);
+        //avStream.duration(duration);
+        //avFormatContext.duration(duration);
+
+        if (timeBase != null) {
+            var frameRate = avutil.av_make_q(totalKeyframe * timeBase.den(), (int) duration * timeBase.num());
+            avStream.avg_frame_rate(frameRate);
+            avStream.r_frame_rate(frameRate);
+        }
+        else {
+            avStream.avg_frame_rate(avutil.av_make_q(30, 1));
+        }
     }
 
     private void resetFrameTimeout() {
@@ -88,27 +103,29 @@ public class VideoKeyframeDecimator implements DataBufferListener {
             if (!isWriting)
                 return;
 
-            resetFrameTimeout();
+            //resetFrameTimeout();
             long timestamp = (long) (record.getPresentationTimestamp() * timeBase.den() / timeBase.num());
 
 
             if (record.isKeyFrame() && timestamp >= keyFrameDuration * currentDecFrame) {
-
+            //if (timestamp >= keyFrameDuration * currentDecFrame) {
                 byte[] data = record.getDataBuffer();
                 AVPacket avPacket = av_packet_alloc();
 
                 av_new_packet(avPacket, data.length);
                 avPacket.data().put(data);
+                avPacket.time_base();
                 avPacket.stream_index(avStream.index());
                 avPacket.duration(keyFrameDuration);
-                avPacket.pts(keyFrameDuration * currentDecFrame);
-                avPacket.dts(keyFrameDuration * currentDecFrame);
-                avPacket.time_base(timeBase);
+                long ts = keyFrameDuration * currentDecFrame;
+                avPacket.pts(ts);
+                avPacket.dts(ts);
+
                 avPacket.flags(avPacket.flags() | avcodec.AV_PKT_FLAG_KEY);
 
                 avformat.av_interleaved_write_frame(avFormatContext, avPacket);
 
-                av_packet_unref(avPacket);
+                //av_packet_unref(avPacket);
 
                 currentDecFrame++;
                 if (currentDecFrame >= totalKeyframe) {
