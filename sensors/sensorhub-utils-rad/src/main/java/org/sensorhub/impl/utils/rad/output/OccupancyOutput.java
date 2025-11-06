@@ -13,6 +13,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRateSensorOutput<SensorType> {
 
     public static final String NAME = "occupancy";
@@ -23,6 +26,8 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
+
+    protected final List<OccupancyCallback> occupancyCallbacks = new ArrayList<>();
 
     public OccupancyOutput(SensorType parentSensor) {
         super(NAME, parentSensor, 4);
@@ -67,27 +72,30 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
     }
 
     public void setData(Occupancy occupancy) {
-        dataBlock = dataStruct.createDataBlock();
+
+        augmentOccupancy(occupancy);
+
+        dataBlock = Occupancy.fromOccupancy(occupancy);
 
         dataStruct.setData(dataBlock);
-
-        int index = 0;
-        dataBlock.setDoubleValue(index++, System.currentTimeMillis()/1000);
-        dataBlock.setIntValue(index++, occupancy.getOccupancyCount());
-        dataBlock.setDoubleValue(index++, occupancy.getStartTime());
-        dataBlock.setDoubleValue(index++, occupancy.getEndTime());
-        dataBlock.setDoubleValue(index++, occupancy.getNeutronBackground());
-        dataBlock.setBooleanValue(index++, occupancy.hasGammaAlarm());
-        dataBlock.setBooleanValue(index++, occupancy.hasNeutronAlarm());
-        dataBlock.setIntValue(index++, occupancy.getMaxGammaCount());
-        dataBlock.setIntValue(index++, occupancy.getMaxNeutronCount());
-
-        dataBlock.setIntValue(index++, 0); // adj id count
-        dataBlock.setIntValue(index, 0); // video path count
 
         latestRecord = dataBlock;
         eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));
     }
+
+    /**
+     * Use callbacks to modify occupancy data before publishing. (Ex: Add video paths)
+     * @param occupancy
+     */
+    private void augmentOccupancy(Occupancy occupancy) {
+        for (OccupancyCallback callback : occupancyCallbacks) {
+            callback.call(occupancy);
+        }
+    }
+
+    public void addOccupancyCallback(OccupancyCallback callback) { this.occupancyCallbacks.add(callback); }
+
+    public void removeOccupancyCallback(OccupancyCallback callback) { this.occupancyCallbacks.remove(callback); }
 
     @Override
     public DataComponent getRecordDescription() {
@@ -98,4 +106,7 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
     public DataEncoding getRecommendedEncoding() {
         return dataEncoding;
     }
+
+    @FunctionalInterface
+    public interface OccupancyCallback { public void call(Occupancy occupancy); }
 }
