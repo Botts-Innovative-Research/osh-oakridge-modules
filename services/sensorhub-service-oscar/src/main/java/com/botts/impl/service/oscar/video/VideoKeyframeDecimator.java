@@ -14,8 +14,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
-import static org.bytedeco.ffmpeg.global.avcodec.av_new_packet;
-import static org.bytedeco.ffmpeg.global.avcodec.av_packet_alloc;
+import static org.bytedeco.ffmpeg.global.avcodec.*;
 import static org.bytedeco.ffmpeg.global.avformat.*;
 import static org.bytedeco.ffmpeg.global.avformat.AVIO_FLAG_WRITE;
 import static org.bytedeco.ffmpeg.global.avutil.AV_NOPTS_VALUE;
@@ -33,12 +32,15 @@ public class VideoKeyframeDecimator implements DataBufferListener {
     long currentDecFrame = 0;
 
     AVFormatContext avFormatContext;
+    AVStream avStream;
     AVRational timeBase;
 
     Runnable closeCallback;
 
+    final Object lock = new Object();
+
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private ScheduledFuture<?> timeoutTask;
+    private volatile ScheduledFuture<?> timeoutTask;
 
     VideoKeyframeDecimator(String outputFileName, int totalKeyframe, AVStream otherStream) {
         this.outputFileName = outputFileName;
@@ -51,12 +53,15 @@ public class VideoKeyframeDecimator implements DataBufferListener {
 
     public void openOutputFile(String fileName, AVStream otherStream) {
         avFormatContext = new AVFormatContext(null);
-        avformat.avformat_alloc_output_context2(avFormatContext, null, null, fileName);
+        avformat.avformat_alloc_output_context2(avFormatContext, null, "mp4", null);
 
-        var avStream = avformat.avformat_new_stream(avFormatContext, null);
+        avStream = avformat.avformat_new_stream(avFormatContext, null);
         avcodec.avcodec_parameters_copy(avStream.codecpar(), otherStream.codecpar());
+        avStream.codecpar().format(otherStream.codecpar().format());
         timeBase = otherStream.time_base();
         duration = otherStream.duration();
+        avStream.time_base(timeBase);
+        avStream.duration(duration);
 
         if ((avFormatContext.oformat().flags() & AVFMT_NOFILE) == 0) {
             AVIOContext avioContext = new AVIOContext(null);
@@ -70,49 +75,59 @@ public class VideoKeyframeDecimator implements DataBufferListener {
     }
 
     private void resetFrameTimeout() {
-        if (timeoutTask != null && !timeoutTask.isDone()) {
+        if (timeoutTask != null) {
             timeoutTask.cancel(false);
         }
 
-        timeoutTask = scheduler.schedule(this::closeFile, frameTimeout, TimeUnit.SECONDS);
+        //timeoutTask = scheduler.schedule(this::closeFile, frameTimeout, TimeUnit.SECONDS);
     }
 
     @Override
     public void onDataBuffer(DataBufferRecord record) {
-        if (!isWriting)
-            return;
+        synchronized (lock) {
+            if (!isWriting)
+                return;
 
-        long timestamp = (long)(record.getPresentationTimestamp() * timeBase.den() / timeBase.num());
+            resetFrameTimeout();
+            long timestamp = (long) (record.getPresentationTimestamp() * timeBase.den() / timeBase.num());
 
-        if (record.isKeyFrame() && timestamp > keyFrameDuration * currentDecFrame) {
-            currentDecFrame++;
 
-            byte[] data = record.getDataBuffer();
-            AVPacket avPacket = av_packet_alloc();
+            if (record.isKeyFrame() && timestamp >= keyFrameDuration * currentDecFrame) {
 
-            av_new_packet(avPacket, data.length);
-            avPacket.data().put(data);
-            avPacket.duration(keyFrameDuration);
-            avPacket.pts(keyFrameDuration * currentDecFrame);
-            avPacket.dts(keyFrameDuration * currentDecFrame);
-            avPacket.time_base(timeBase);
+                byte[] data = record.getDataBuffer();
+                AVPacket avPacket = av_packet_alloc();
 
-            avformat.av_write_frame(avFormatContext, avPacket);
+                av_new_packet(avPacket, data.length);
+                avPacket.data().put(data);
+                avPacket.stream_index(avStream.index());
+                avPacket.duration(keyFrameDuration);
+                avPacket.pts(keyFrameDuration * currentDecFrame);
+                avPacket.dts(keyFrameDuration * currentDecFrame);
+                avPacket.time_base(timeBase);
+                avPacket.flags(avPacket.flags() | avcodec.AV_PKT_FLAG_KEY);
 
-            if (currentDecFrame >= totalKeyframe) {
-                closeFile();
+                avformat.av_interleaved_write_frame(avFormatContext, avPacket);
+
+                av_packet_unref(avPacket);
+
+                currentDecFrame++;
+                if (currentDecFrame >= totalKeyframe) {
+                    closeFile();
+                }
             }
         }
     }
 
-    public synchronized void closeFile() {
-        if (isWriting) {
-            isWriting = false;
-            avformat.av_write_trailer(avFormatContext);
-            avformat.avio_close(avFormatContext.pb());
+    public void closeFile() {
+        synchronized (lock) {
+            if (isWriting) {
+                isWriting = false;
+                avformat.av_write_trailer(avFormatContext);
+                avformat.avio_close(avFormatContext.pb());
 
-            if (closeCallback != null) {
-                closeCallback.run();
+                if (closeCallback != null) {
+                    closeCallback.run();
+                }
             }
         }
     }

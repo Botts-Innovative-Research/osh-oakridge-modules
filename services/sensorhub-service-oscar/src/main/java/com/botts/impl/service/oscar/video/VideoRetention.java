@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.temporal.Temporal;
 import java.time.temporal.TemporalAmount;
@@ -64,20 +65,9 @@ public class VideoRetention extends Thread {
     }
 
     public void decimate(String fileName) {
-        String originalMp4;
-        String decimatedMp4;
 
-        try {
-            originalMp4 = bucketStore.getResourceURI("", fileName);
-        } catch (DataStoreException e) {
-            throw new RuntimeException(e);
-        }
-
-        try {
-            decimatedMp4 = bucketStore.getResourceURI("", fileName + ".tmp");
-        } catch (DataStoreException e) {
-            throw new RuntimeException(e);
-        }
+        String originalMp4 = fileName;
+        String decimatedMp4 = fileName + ".tmp";
 
         MpegTsProcessor videoInput = new MpegTsProcessor(originalMp4);
         videoInput.openStream();
