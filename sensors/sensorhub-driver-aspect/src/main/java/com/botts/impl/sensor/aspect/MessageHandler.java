@@ -82,6 +82,7 @@ public class MessageHandler {
                                 .occupancyCount(monitorRegisters.getObjectCounter())
                                 .startTime(startTime)
                                 .endTime(endTime)
+                                .samplingTime(timestamp)
                                 .neutronBackground(monitorRegisters.getNeutronChannelBackground())
                                 .gammaAlarm(gammaAlarm)
                                 .neutronAlarm(neutronAlarm)
