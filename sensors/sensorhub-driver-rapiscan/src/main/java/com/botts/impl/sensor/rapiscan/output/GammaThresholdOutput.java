@@ -12,6 +12,8 @@ import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
+import java.time.Instant;
+
 public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> implements IEventListener {
 
     private static final String SENSOR_OUTPUT_NAME = "gammaThreshold";
@@ -73,7 +75,7 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> i
         // Publish threshold data
         int index = 0;
 
-        dataBlock.setLongValue(index++, System.currentTimeMillis()/1000);
+        dataBlock.setTimeStamp(index++, Instant.now());
 
         double sqrtBackgroundSum = Math.sqrt(latestBackgroundSum);
 
@@ -122,7 +124,7 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> i
         sigmaVal = (foregroundSum - latestBackgroundSum)
                 / Math.sqrt(latestBackgroundSum);
 
-        dataBlock.setLongValue(0, System.currentTimeMillis()/1000);
+        dataBlock.setTimeStamp(0, Instant.now());
         dataBlock.setDoubleValue(1, latestThreshold); //Threshold should be set from before. If it's not, then this will never be called
         dataBlock.setDoubleValue(2, sigmaVal);
         dataBlock.setDoubleValue(3, nVal);

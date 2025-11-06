@@ -10,6 +10,7 @@ import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
+import java.time.Instant;
 import java.util.Objects;
 
 public class GammaOutput extends AbstractSensorOutput<RapiscanSensor> {
@@ -74,7 +75,7 @@ public class GammaOutput extends AbstractSensorOutput<RapiscanSensor> {
             dataBlock = latestRecord.renew();
         }
 
-        dataBlock.setLongValue(0,timeStamp/1000);
+        dataBlock.setTimeStamp(0, Instant.ofEpochMilli(timeStamp));
         dataBlock.setStringValue(1, alarmState);
 
         String mainChar = csvString[0];

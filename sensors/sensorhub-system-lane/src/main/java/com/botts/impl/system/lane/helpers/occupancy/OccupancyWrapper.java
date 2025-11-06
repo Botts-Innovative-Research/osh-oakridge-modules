@@ -7,21 +7,20 @@ import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.command.IStreamingControlInterface;
-import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.data.ObsEvent;
+import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.event.EventUtils;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.controls.FileControl;
-import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
-import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
+import org.sensorhub.utils.Async;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vast.data.DataBlockMixed;
 import org.vast.util.Asserts;
 
 import java.time.Instant;
@@ -29,6 +28,8 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.Flow;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class OccupancyWrapper {
     public static final String OCCUPANCY = "occupancy";
@@ -372,27 +373,45 @@ public class OccupancyWrapper {
                     if (rpmOcc == null || count < totalCams)
                         return;
 
-                    ArrayList<String> files = new ArrayList<>(ffmpegOuts);
+                    ArrayList<String> tempFiles = new ArrayList<>(ffmpegOuts);
+                    var tempRpmOcc = rpmOcc;
 
-                    var observation = obsStore.select(new ObsFilter.Builder()
-                            .withDataStreams(rpmOcc.getDataStreamID())
-                            .withPhenomenonTimeDuring(rpmOcc.getPhenomenonTime().minusSeconds(OBS_BUFFER_SECONDS), rpmOcc.getPhenomenonTime().plusSeconds(OBS_BUFFER_SECONDS))
-                            .withLimit(1)
-                            .build()).findFirst();
+                    Thread.ofVirtual().start(() -> {
+                        try {
+                            obsStore.commit();
+                            AtomicReference<Map.Entry<BigId, IObsData>> observationRef = new AtomicReference<>();
+                            // Check for obs
+                            Async.waitForCondition(() -> {
+                                var obs = obsStore.selectEntries(new ObsFilter.Builder()
+                                        .withDataStreams(tempRpmOcc.getDataStreamID())
+                                        .withPhenomenonTimeDuring(tempRpmOcc.getPhenomenonTime().minusSeconds(OBS_BUFFER_SECONDS),
+                                                tempRpmOcc.getPhenomenonTime().plusSeconds(OBS_BUFFER_SECONDS))
+                                        .withLimit(1)
+                                        .build()).findFirst();
 
-                    if (observation.isPresent()) {
+                                obs.ifPresent(observationRef::set);
+                                return obs.isPresent();
+                            }, 500, 2000);
+                            // Perform obs update
+                            var key = observationRef.get().getKey();
+                            var obs = observationRef.get().getValue();
+                            var result = obs.getResult();
+                            var occupancy = Occupancy.toOccupancy(result);
 
-                        var result = observation.get().getResult();
-                        var occupancy = Occupancy.toOccupancy(result);
+                            for (var file : tempFiles)
+                                occupancy.addVideoPath(file);
 
-                        for (var file : files) {
-                            occupancy.addVideoPath(file);
+                            DataBlock occData = Occupancy.fromOccupancy(occupancy);
+                            result.setUnderlyingObject(occData.getUnderlyingObject());
+                            result.updateAtomCount();
+
+                            obsStore.put(key, obs);
+                        } catch (TimeoutException e) {
+                            logger.error("Timed out trying to get observation ");
+                        } catch (DataStoreException e) {
+                            logger.error("Unable to commit obs store before updating occupancy");
                         }
-
-                        DataBlock occData = Occupancy.fromOccupancy(occupancy);
-                        result.setUnderlyingObject(occData.getUnderlyingObject());
-                        result.updateAtomCount();
-                    }
+                    });
 
                     this.clear();
                 } catch (Exception e) {
