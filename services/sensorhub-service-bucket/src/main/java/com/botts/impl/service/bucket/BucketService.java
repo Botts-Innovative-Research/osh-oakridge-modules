@@ -21,6 +21,7 @@ import com.botts.api.service.bucket.IObjectHandler;
 import com.botts.impl.service.bucket.filesystem.FileSystemBucketStore;
 import com.botts.impl.service.bucket.handler.BucketHandler;
 import com.botts.impl.service.bucket.handler.DefaultObjectHandler;
+import com.botts.impl.service.bucket.handler.MP4Handler;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.service.AbstractHttpServiceModule;
 import org.sensorhub.utils.NamedThreadFactory;
@@ -41,6 +42,7 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
     private IBucketStore bucketStore;
     private final List<IObjectHandler> objectHandlers = new CopyOnWriteArrayList<>();
     private DefaultObjectHandler defaultObjectHandler;
+    private MP4Handler mp4Handler;
 
     @Override
     public void doInit() throws SensorHubException {
@@ -74,6 +76,9 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
 
         defaultObjectHandler = new DefaultObjectHandler(bucketStore);
         BucketHandler bucketHandler = new BucketHandler(this);
+        if (mp4Handler == null)
+            mp4Handler = new MP4Handler(bucketStore);
+        registerObjectHandler(mp4Handler);
 
         this.servlet = new BucketServlet(this, securityHandler, bucketHandler);
 
@@ -106,6 +111,11 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
 
         if (threadPool != null)
             threadPool.shutdown();
+
+        if (mp4Handler != null)
+            unregisterObjectHandler(mp4Handler);
+
+        super.doStop();
     }
 
     @Override

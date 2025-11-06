@@ -157,6 +157,16 @@ public class FileSystemBucketStore implements IBucketStore {
     }
 
     @Override
+    public long getObjectSize(String bucketName, String key) throws DataStoreException {
+        Path file = getBucketPath(bucketName).resolve(key);
+        if (!Files.exists(file))
+            throw new DataStoreException(OBJECT_NOT_FOUND + bucketName, new IllegalArgumentException());
+        if (!file.toFile().isFile())
+            throw new DataStoreException("Object is not readable");
+        return file.toFile().length();
+    }
+
+    @Override
     public String getObjectMimeType(String bucketName, String key) throws DataStoreException {
         Path path = getBucketPath(bucketName).resolve(key);
         if (!Files.exists(path))
