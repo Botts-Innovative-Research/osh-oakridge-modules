@@ -295,7 +295,7 @@ public class AdjudicationReport extends Report {
             );
 
             if (chart == null) {
-                document.add(new Paragraph("Isotopse chart failed to create"));
+                document.add(new Paragraph("Isotope chart failed to create"));
                 return;
             }
 
