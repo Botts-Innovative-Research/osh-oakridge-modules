@@ -1,7 +1,12 @@
 package com.botts.impl.service.oscar.reports.helpers;
 
 import com.botts.impl.service.oscar.OSCARServiceModule;
+import org.sensorhub.api.command.ICommandStatus;
+import org.sensorhub.api.command.ICommandStreamInfo;
 import org.sensorhub.api.data.IObsData;
+import org.sensorhub.api.datastore.command.CommandFilter;
+import org.sensorhub.api.datastore.command.CommandStatusFilter;
+import org.sensorhub.api.datastore.command.CommandStreamFilter;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
@@ -58,6 +63,15 @@ public class Utils {
     }
 
 
+    public static long countStatusResults(String laneUID, OSCARServiceModule module, Predicate<ICommandStatus> valuePredicate, Instant begin, Instant end){
+        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getCommandStatusStore().select(new CommandStatusFilter.Builder()
+                        .withStatus(ICommandStatus.CommandStatusCode.COMPLETED)
+                        .withReportTimeDuring(begin, end)
+                        .withValuePredicate(valuePredicate)
+                        .withCommands(new CommandFilter.Builder().withSystems(new SystemFilter.Builder().withUniqueIDs(laneUID).build()).build())
+                        .build()).count();
+    }
+
     //  suppressed : RPM Gamma Alert = true  but the EML Gamma Alert = false (release)
     // so count how many times the RPM had a true alarm but the EML decided it was false
 
@@ -93,15 +107,26 @@ public class Utils {
         return result;
     }
 
-    public static Iterator<IObsData> getQuery(OSCARServiceModule module, String laneUID, Instant startDate, Instant endDate, String... observedProperties){
+    public static Iterator<IObsData> getQuery(OSCARServiceModule module, String laneUID, Instant begin, Instant end, String... observedProperties){
         return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
                 .withSystems(new SystemFilter.Builder()
                         .withUniqueIDs(laneUID)
                         .build())
                 .withDataStreams(new DataStreamFilter.Builder()
-                        .withValidTimeDuring(startDate, endDate)
+                        .withValidTimeDuring(begin, end)
                         .withObservedProperties(observedProperties)
                         .build())
                 .build()).iterator();
+    }
+
+    public static Iterator<ICommandStatus> queryCommandStatus(OSCARServiceModule module, String laneUID, Instant begin, Instant end){
+        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getCommandStatusStore().select(new CommandStatusFilter.Builder()
+                .withStatus(ICommandStatus.CommandStatusCode.COMPLETED)
+                .withReportTimeDuring(begin, end)
+                .withCommands(new CommandFilter.Builder()
+                        .withSystems(new SystemFilter.Builder()
+                        .withUniqueIDs(laneUID)
+                        .build())
+                .build()).build()).iterator();
     }
 }

@@ -8,6 +8,8 @@ import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Image;
 import com.itextpdf.layout.element.Paragraph;
+import com.itextpdf.layout.element.Table;
+import com.itextpdf.layout.properties.UnitValue;
 import org.checkerframework.checker.units.qual.A;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.AxisLocation;
@@ -17,6 +19,9 @@ import org.jfree.chart.plot.CategoryPlot;
 import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.renderer.category.BarRenderer;
 import org.jfree.data.category.DefaultCategoryDataset;
+import org.sensorhub.api.command.ICommandData;
+import org.sensorhub.api.command.ICommandStatus;
+import org.sensorhub.api.command.ICommandStreamInfo;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.utils.rad.RADHelper;
@@ -41,6 +46,21 @@ public class AdjudicationReport extends Report {
     ChartGenerator chartGenerator;
 
     String laneUIDs;
+
+    private static final List<Map<String, Object>> ADJUDICATION_CODES = List.of(
+            Map.of("code", 0, "label", "", "group", "Other"),
+            Map.of("code", 1, "label", "Code 1: Contraband Found", "group", "Real Alarm"),
+            Map.of("code", 2, "label", "Code 2: Other", "group", "Real Alarm"),
+            Map.of("code", 3, "label", "Code 3: Medical Isotope Found", "group", "Innocent Alarm"),
+            Map.of("code", 4, "label", "Code 4: NORM Found", "group", "Innocent Alarm"),
+            Map.of("code", 5, "label", "Code 5: Declared Shipment of Radioactive Material", "group", "Innocent Alarm"),
+            Map.of("code", 6, "label", "Code 6: Physical Inspection Negative", "group", "False Alarm"),
+            Map.of("code", 7, "label", "Code 7: RIID/ASP Indicates Background Only", "group", "False Alarm"),
+            Map.of("code", 8, "label", "Code 8: Other", "group", "False Alarm"),
+            Map.of("code", 9, "label", "Code 9: Authorized Test, Maintenance, or Training Activity", "group", "Test/Maintenance"),
+            Map.of("code", 10, "label", "Code 10: Unauthorized Activity", "group", "Tamper/Fault"),
+            Map.of("code", 11, "label", "Code 11: Other", "group", "Other")
+    );
     
     public AdjudicationReport(OutputStream out, Instant startTime, Instant endTime, String laneUIDs, OSCARServiceModule module) {
         super(out, startTime, endTime, module);
@@ -56,10 +76,11 @@ public class AdjudicationReport extends Report {
     @Override
     public void generate(){
         addHeader();
-        addDisposition();
-        addIsotopeResults();
-//        addSecondaryInspectionDetails();
-//        addAdjudicationDetails();
+
+        for (var laneUID : laneUIDs.split(",")){
+            createDispositionChart(laneUID);
+            createIsotopeChart(laneUID);
+        }
 
         document.close();
         chartGenerator = null;
@@ -77,49 +98,47 @@ public class AdjudicationReport extends Report {
         document.add(new Paragraph("\n"));
     }
 
-    private void addDisposition() {
-        document.add(new Paragraph("Disposition").setFontSize(12));
 
-        String title = "Disposition";
+    private void createDispositionChart(String laneUID) {
+        document.add(new Paragraph("Disposition - " + laneUID).setFontSize(12));
+
+        String title =  "Disposition";
         String yLabel = "% of Total Number of Records";
+
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
-        Map<String, List<String>> dispositions = new LinkedHashMap<>();
-
-        dispositions.put("Other", Arrays.asList("No Disposition", "Code 11: Other"));
-        dispositions.put("Real Alarm", Arrays.asList("Code 1: Contraband Found", "Code 2: Other"));
-        dispositions.put("Innocent Alarm", Arrays.asList("Code 3: Medical Isotope Found", "Code 4: NORM Found", "Code 5: Declared Shipment of Radioactive Material"));
-        dispositions.put("False Alarm", Arrays.asList("Code 6: Physical Inspection Negative", "Code 7: RIID/ASP Indicates Background Only", "Code 8: Other"));
-        dispositions.put("Test/Maintenance",  Arrays.asList("Code 9: Authorized Test, Maintenance, or Training Activity"));
-        dispositions.put("Tamper/Fault", Arrays.asList("Code 10: Unauthorized Activity"));
-
-        long totalRecords = Utils.countObservations(module, obsData -> true, start, end, RADHelper.DEF_ADJUDICATION);
+        long totalRecords = Utils.countStatusResults(laneUID, module, cmdData -> true, start, end);
 
         if (totalRecords == 0) {
-            document.add(new Paragraph("No data available for the selected time period"));
+            document.add(new Paragraph("No data available for the selected time period and selected lane: "+ laneUID));
             return;
         }
 
-        for (Map.Entry<String, List<String>> entry : dispositions.entrySet()) {
-            String group = entry.getKey();
-            List<String> codes = entry.getValue();
+        List<Map<String, String>> tableRows = new ArrayList<>();
 
-            for (String code : codes) {
-                Predicate<IObsData> predicate = (obsData) ->
-                        obsData.getResult().getStringValue(3).contains(code);
+        for (var item : ADJUDICATION_CODES) {
+            int code = (int) item.get("code");
+            String label = (String) item.get("label");
+            String group = (String) item.get("group");
 
-                long count = Utils.countObservations(
-                        module,
-                        predicate,
-                        start,
-                        end,
-                        RADHelper.DEF_ADJUDICATION
-                );
-                double percentage = (count / (double) totalRecords) * 100.0;
+            Predicate<ICommandStatus> predicate = (cmdData) ->
+                    cmdData.getResult().getInlineRecords().stream().toList().get(2).getIntValue() == code;
 
-                dataset.addValue(percentage, group, code);
+            long count = Utils.countStatusResults(laneUID, module, predicate, start, end);
+            double percentage = (count / (double) totalRecords) * 100.0;
+
+            if (label != null && !label.isEmpty()) {
+                dataset.addValue(percentage, group, label);
             }
+
+            tableRows.add(Map.of(
+                    "Code", String.valueOf(code),
+                    "Label", label.isEmpty() ? "(None)" : label,
+                    "Group", group,
+                    "Count", String.valueOf(count),
+                    "Percent", String.format("%.1f%%", percentage)
+            ));
         }
 
         try {
@@ -145,8 +164,8 @@ public class AdjudicationReport extends Report {
             renderer.setSeriesPaint(dataset.getRowIndex("Real Alarm"), Color.RED);
             renderer.setSeriesPaint(dataset.getRowIndex("Innocent Alarm"), Color.BLUE);
             renderer.setSeriesPaint(dataset.getRowIndex("False Alarm"), Color.GREEN);
-            renderer.setSeriesPaint(dataset.getRowIndex("Test/Maintenance"), Color.GRAY);
-            renderer.setSeriesPaint(dataset.getRowIndex("Tamper/Fault"), new Color(128, 0, 128, 255));
+            renderer.setSeriesPaint(dataset.getRowIndex("Test/Maintenance"), Color.ORANGE);
+            renderer.setSeriesPaint(dataset.getRowIndex("Tamper/Fault"), new Color(128, 0, 128));
             renderer.setItemMargin(0.05);
 
             NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
@@ -154,13 +173,41 @@ public class AdjudicationReport extends Report {
             rangeAxis.setTickUnit(new NumberTickUnit(10));
 
             Image image = addChartAsImage(chart);
-
             document.add(image);
             document.add(new Paragraph("\n"));
+
+            Table table = createDispositionTable(tableRows);
+            document.add(table);
+            document.add(new Paragraph("\n"));
+
         } catch (IOException e) {
             module.getLogger().error("Error adding chart to report", e);
         }
     }
+
+    private Table createDispositionTable(List<Map<String, String>> rows) {
+        if (rows.isEmpty())
+            return null;
+
+        List<String> headers = List.of("Code", "Label", "Group", "Count", "Percent");
+        float[] columnWidths = new float[headers.size()];
+        Arrays.fill(columnWidths, 1.0f);
+
+        Table table = new Table(UnitValue.createPercentArray(columnWidths))
+                .setWidth(UnitValue.createPercentValue(100));
+
+        for (String header : headers) {
+            table.addHeaderCell(tableGenerator.createHeaderCell(header));
+        }
+
+        for (Map<String, String> row : rows) {
+            for (String header : headers) {
+                table.addCell(tableGenerator.createValueCell(row.get(header)));
+            }
+        }
+        return table;
+    }
+
 
     private Image addChartAsImage(JFreeChart chart) throws IOException {
         BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
@@ -173,15 +220,13 @@ public class AdjudicationReport extends Report {
        return image;
     }
 
+    private void createIsotopeChart(String laneUID) {
+        document.add(new Paragraph("SI Results - " + laneUID).setFontSize(12));
 
-    private void addIsotopeResults() {
-        document.add(new Paragraph("Secondary Inspection Results").setFontSize(12));
-
-        String title = "Secondary Inspection Results";
+        String title = "Isotope Results";
         String yLabel = "Count";
         String xLabel = "Isotope";
 
-        // List of isotope mappings: Key = Symbol, Value = Search Term
         Map<String, String> isotopes = Map.ofEntries(
                 Map.entry("Np", "Neptunium"),
                 Map.entry("Pu", "Plutonium"),
@@ -212,8 +257,11 @@ public class AdjudicationReport extends Report {
                 Map.entry("Xe", "Xenon"),
                 Map.entry("K", "Potassium"),
                 Map.entry("Ra", "Radium"),
-                Map.entry("Th", "Thorium")
+                Map.entry("Th", "Thorium"),
+                Map.entry("Unk", "Unknown")
         );
+
+        Map<String, String> tableData = new LinkedHashMap<>();
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
@@ -221,17 +269,18 @@ public class AdjudicationReport extends Report {
             String symbol = entry.getKey();
             String name = entry.getValue();
 
-            Predicate<IObsData> predicate = (obsData) -> obsData.getResult().getStringValue(4).contains(name);
+            Predicate<ICommandStatus> predicate = (cmdData) -> cmdData.getResult().getInlineRecords().stream().toList().get(4).getStringValue().contains(name);
 
-            long count = Utils.countObservations(
+            long count = Utils.countStatusResults(
+                    laneUID,
                     module,
                     predicate,
                     start,
-                    end,
-                    RADHelper.DEF_ADJUDICATION
+                    end
             );
 
             dataset.addValue(count, name, symbol);
+            tableData.put(symbol, String.valueOf(count));
         }
 
         try {
@@ -245,7 +294,7 @@ public class AdjudicationReport extends Report {
             );
 
             if (chart == null) {
-                document.add(new Paragraph("Secondary Inspection chart failed to create"));
+                document.add(new Paragraph("Isotopse chart failed to create"));
                 return;
             }
 
@@ -255,6 +304,10 @@ public class AdjudicationReport extends Report {
             Image image = addChartAsImage(chart);
 
             document.add(image);
+            document.add(new Paragraph("\n"));
+
+            Table table = tableGenerator.addTable(tableData);
+            document.add(table);
             document.add(new Paragraph("\n"));
         } catch (IOException e) {
             module.getLogger().error("Error adding chart to report", e);
@@ -301,7 +354,6 @@ public class AdjudicationReport extends Report {
         return secInsDetailsMap;
     }
 
-
     private void addAdjudicationDetails() {
         document.add(new Paragraph("\n"));
 
@@ -326,11 +378,11 @@ public class AdjudicationReport extends Report {
     private Map<String, String> collectAdjudicationDetails(String laneUID) {
         Map<String, String> adjDetailsMap = new LinkedHashMap<>();
 
-        var query = Utils.getQuery(module, laneUID, start, end, RADHelper.DEF_ADJUDICATION);
-
+        var query = Utils.queryCommandStatus(module, laneUID, start, end);
         while (query.hasNext()) {
             var entry = query.next();
-            var result = entry.getResult();
+            var result = entry.getResult().getInlineRecords().stream().toList().get(0);
+
 
             adjDetailsMap.put("Username", result.getStringValue(0));
             adjDetailsMap.put("Feedback", result.getStringValue(1));
