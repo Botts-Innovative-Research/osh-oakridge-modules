@@ -23,11 +23,13 @@ import com.botts.impl.service.oscar.siteinfo.SitemapDiagramHandler;
 import com.botts.impl.service.oscar.spreadsheet.SpreadsheetHandler;
 import com.botts.impl.service.oscar.stats.StatisticsControl;
 import com.botts.impl.service.oscar.stats.StatisticsOutput;
+import com.botts.impl.service.oscar.video.VideoRetention;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.module.AbstractModule;
 
+import java.time.Period;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -44,6 +46,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     SpreadsheetHandler spreadsheetHandler;
     OSCARSystem system;
     IBucketStore bucketStore;
+
+    VideoRetention videoRetention;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -64,12 +68,19 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         if (config.spreadsheetConfigPath != null && !config.spreadsheetConfigPath.isEmpty())
             spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
 
+
+
         system = new OSCARSystem(config.nodeId);
 
         createOutputs();
         createControls();
 
         sitemapDiagramHandler = new SitemapDiagramHandler(getBucketService(), siteInfoOutput, this);
+
+        videoRetention = new VideoRetention(getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore(),
+                bucketStore,
+                Period.ofDays(5), Period.ofDays(10),
+                100);
 
         system.updateSensorDescription();
     }
@@ -103,6 +114,9 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         }
 
         statsOutput.start();
+
+        //videoRetention.start();
+        videoRetention.decimate(bucketStore.getResourceURI(Constants.VIDEO_BUCKET, "test.mp4"));
     }
 
     @Override
@@ -112,6 +126,13 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
             statsOutput.stop();
         } catch (Exception ex) {
             getLogger().error("Could not stop stats output", ex);
+        }
+
+        videoRetention.interrupt();
+        try {
+            videoRetention.join();
+        } catch (InterruptedException e) {
+            getLogger().error("Could not stop video retention", e);
         }
     }
 
