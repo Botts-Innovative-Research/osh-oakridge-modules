@@ -67,9 +67,10 @@ public class VideoRetention extends Thread {
     public void decimate(String fileName) {
 
         String originalMp4 = fileName;
-        String decimatedMp4 = fileName + ".tmp";
+        String decimatedMp4 = fileName.substring(0, fileName.lastIndexOf('.')) + "_decimated.mp4";
 
         MpegTsProcessor videoInput = new MpegTsProcessor(originalMp4);
+        videoInput.setInjectExtradata(false);
         videoInput.openStream();
         videoInput.queryEmbeddedStreams();
 
