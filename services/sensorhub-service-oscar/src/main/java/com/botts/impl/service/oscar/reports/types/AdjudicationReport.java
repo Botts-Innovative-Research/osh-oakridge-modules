@@ -81,6 +81,7 @@ public class AdjudicationReport extends Report {
             createDispositionChart(laneUID);
             createIsotopeChart(laneUID);
         }
+        addAdjudicationDetails();
 
         document.close();
         chartGenerator = null;
@@ -363,7 +364,6 @@ public class AdjudicationReport extends Report {
             var adjDetailsMap = collectAdjudicationDetails(laneUID);
             adjByLanesMap.put(laneUID, adjDetailsMap);
         }
-
 
         var table = tableGenerator.addLanesTable(adjByLanesMap);
         if (table == null) {

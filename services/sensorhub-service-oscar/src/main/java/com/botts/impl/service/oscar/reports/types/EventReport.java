@@ -8,6 +8,8 @@ import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Image;
 import com.itextpdf.layout.element.Paragraph;
+import com.itextpdf.layout.element.Table;
+import org.jfree.data.category.CategoryDataset;
 import org.jfree.data.category.DefaultCategoryDataset;
 import org.sensorhub.impl.utils.rad.RADHelper;
 
@@ -19,6 +21,7 @@ import java.io.OutputStream;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class EventReport extends Report {
@@ -32,6 +35,8 @@ public class EventReport extends Report {
 
     String laneUID;
     EventReportType eventType;
+
+    private record DatasetResult(DefaultCategoryDataset dataset, Map<String, String> tableData) {}
 
     public EventReport(OutputStream outputStream, Instant startTime, Instant endTime, EventReportType eventType, String laneUID, OSCARServiceModule module) {
         super(outputStream, startTime, endTime, module);
@@ -77,29 +82,9 @@ public class EventReport extends Report {
     private void addAlarmStatisticsByDay(){
         document.add(new Paragraph("Alarm Statistics").setFontSize(12));
 
-        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(module, Utils.gammaPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(module, Utils.neutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(module, Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(module, Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
-
-
-        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
-
-        for(Map.Entry<Instant, Long> entry : gammaDaily.entrySet()){
-            dataset.addValue(entry.getValue(), "Gamma",  formatter.format(entry.getKey()));
-        }
-
-        for(Map.Entry<Instant, Long> entry : gammaNeutronDaily.entrySet()){
-            dataset.addValue(entry.getValue(), "Gamma-Neutron",  formatter.format(entry.getKey()));
-        }
-
-        for(Map.Entry<Instant, Long> entry : neutronDaily.entrySet()){
-            dataset.addValue(entry.getValue(), "Neutron",  formatter.format(entry.getKey()));
-        }
-
-        for(Map.Entry<Instant, Long> entry : emlSuppressedDaily.entrySet()){
-            dataset.addValue(entry.getValue(), "EML-Suppressed",  formatter.format(entry.getKey()));
-        }
+        DatasetResult result = buildAlarmingDatasetAndTable();
+        DefaultCategoryDataset dataset = result.dataset();
+        Map<String, String> tableData = result.tableData();
 
         String title = "Alarms";
         String xAxis = "Dates";
@@ -126,7 +111,11 @@ public class EventReport extends Report {
             Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
 
             document.add(image);
+            document.add(new Paragraph("\n"));
 
+            Table table = tableGenerator.addTable(tableData);
+            document.add(table);
+            document.add(new Paragraph("\n"));
         } catch (IOException e) {
             module.getLogger().error("Error creating Alarm chart", e);
             return;
@@ -145,22 +134,27 @@ public class EventReport extends Report {
 //        Map<Instant, Long> commDaily = Utils.countObservationsByDay(module, Utils.commsPredicate, start, end, RADHelper.DEF_OCCUPANCY);
 //        Map<Instant, Long> cameraDaily = Utils.countObservationsByDay(module, Utils.cameraPredicate, start, end, RADHelper.DEF_OCCUPANCY);
 
+        Map<String, String> tableData = new LinkedHashMap<>();
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
         for(Map.Entry<Instant, Long> entry : gammaHighDaily.entrySet()){
             dataset.addValue(entry.getValue(), "Gamma High",  formatter.format(entry.getKey()));
+            tableData.put("Gamma High", entry.getValue().toString());
         }
 
         for(Map.Entry<Instant, Long> entry : gammaLowDaily.entrySet()){
             dataset.addValue(entry.getValue(), "Gamma Low",  formatter.format(entry.getKey()));
+            tableData.put("Gamma Low", entry.getValue().toString());
         }
         for(Map.Entry<Instant, Long> entry : neutronHighDaily.entrySet()){
             dataset.addValue(entry.getValue(), "Neutron High",  formatter.format(entry.getKey()));
+            tableData.put("Neutron High", entry.getValue().toString());
         }
 
         for(Map.Entry<Instant, Long> entry : tamperDaily.entrySet()){
             dataset.addValue(entry.getValue(), "Tamper",  formatter.format(entry.getKey()));
+            tableData.put("Tamper", entry.getValue().toString());
         }
 
 //        for(Map.Entry<Instant, Long> entry : extendedOccupancyDaily.entrySet()){
@@ -201,6 +195,10 @@ public class EventReport extends Report {
             Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
 
             document.add(image);
+            document.add(new Paragraph("\n"));
+            Table table = tableGenerator.addTable(tableData);
+            document.add(table);
+            document.add(new Paragraph("\n"));
 
         } catch (IOException e) {
             module.getLogger().error("Error creating SOH chart", e);
@@ -212,35 +210,19 @@ public class EventReport extends Report {
 
     private void addAlarmOccStatisticsByDay(){
 
-        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(module, Utils.gammaPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(module, Utils.neutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(module, Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
         Map<Instant, Long> totalOccupancyDaily = Utils.countObservationsByDay(module, Utils.occupancyTotalPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(module, Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
 
-        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+        DatasetResult result = buildAlarmingDatasetAndTable();
+        DefaultCategoryDataset dataset = result.dataset();
+        Map<String, String> tableData = result.tableData();
 
-        for(Map.Entry<Instant, Long> entry : gammaDaily.entrySet()){
-            dataset.addValue(entry.getValue(), "Gamma",  formatter.format(entry.getKey()));
-        }
-
-        for(Map.Entry<Instant, Long> entry : gammaNeutronDaily.entrySet()){
-            dataset.addValue(entry.getValue(), "Gamma-Neutron",  formatter.format(entry.getKey()));
-        }
-
-        for(Map.Entry<Instant, Long> entry : neutronDaily.entrySet()){
-            dataset.addValue(entry.getValue(), "Neutron",  formatter.format(entry.getKey()));
-        }
-
-        for(Map.Entry<Instant, Long> entry : emlSuppressedDaily.entrySet()){
-            dataset.addValue(entry.getValue(), "EML-Suppressed",  formatter.format(entry.getKey()));
-        }
 
         // this will be a linegraph on top of the bar chart
         DefaultCategoryDataset occDataset = new DefaultCategoryDataset();
 
         for(Map.Entry<Instant, Long> entry : totalOccupancyDaily.entrySet()){
             occDataset.addValue(entry.getValue(), "TotalOccupancy",  formatter.format(entry.getKey()));
+            tableData.put("Total Occupancy", entry.getValue().toString());
         }
 
         String title = "Alarms and Occupancies";
@@ -271,7 +253,11 @@ public class EventReport extends Report {
             Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
 
             document.add(image);
+            document.add(new Paragraph("\n"));
 
+            Table table = tableGenerator.addTable(tableData);
+            document.add(table);
+            document.add(new Paragraph("\n"));
         } catch (IOException e) {
             module.getLogger().error("Error creating Alarm-Occupancy chart", e);
             return;
@@ -280,4 +266,37 @@ public class EventReport extends Report {
         document.add(new Paragraph("\n"));
     }
 
+
+    private DatasetResult buildAlarmingDatasetAndTable() {
+        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(module, Utils.gammaPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(module, Utils.neutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(module, Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(module, Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
+
+
+        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+        Map<String, String> tableData = new LinkedHashMap<>();
+
+        for (Map.Entry<Instant, Long> entry : gammaDaily.entrySet()) {
+            dataset.addValue(entry.getValue(), "Gamma", formatter.format(entry.getKey()));
+            tableData.put("Gamma", entry.getValue().toString());
+        }
+
+        for (Map.Entry<Instant, Long> entry : gammaNeutronDaily.entrySet()) {
+            dataset.addValue(entry.getValue(), "Gamma-Neutron", formatter.format(entry.getKey()));
+            tableData.put("Gamma-Neutron", entry.getValue().toString());
+        }
+
+        for (Map.Entry<Instant, Long> entry : neutronDaily.entrySet()) {
+            dataset.addValue(entry.getValue(), "Neutron", formatter.format(entry.getKey()));
+            tableData.put("Neutron", entry.getValue().toString());
+        }
+
+        for (Map.Entry<Instant, Long> entry : emlSuppressedDaily.entrySet()) {
+            dataset.addValue(entry.getValue(), "EML-Suppressed", formatter.format(entry.getKey()));
+            tableData.put("EML-Suppressed", entry.getValue().toString());
+        }
+
+        return new DatasetResult(dataset, tableData);
+    }
 }
