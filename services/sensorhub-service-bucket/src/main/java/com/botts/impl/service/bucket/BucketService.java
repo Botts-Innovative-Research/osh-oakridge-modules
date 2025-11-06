@@ -21,6 +21,7 @@ import com.botts.api.service.bucket.IObjectHandler;
 import com.botts.impl.service.bucket.filesystem.FileSystemBucketStore;
 import com.botts.impl.service.bucket.handler.BucketHandler;
 import com.botts.impl.service.bucket.handler.DefaultObjectHandler;
+import com.botts.impl.service.bucket.handler.MP4Handler;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.service.AbstractHttpServiceModule;
 import org.sensorhub.utils.NamedThreadFactory;
@@ -74,6 +75,7 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
 
         defaultObjectHandler = new DefaultObjectHandler(bucketStore);
         BucketHandler bucketHandler = new BucketHandler(this);
+        registerObjectHandler(new MP4Handler(bucketStore));
 
         this.servlet = new BucketServlet(this, securityHandler, bucketHandler);
 
