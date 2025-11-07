@@ -349,7 +349,7 @@ public class AdjudicationReport extends Report {
 
         var table = tableGenerator.addListToTable(adjTableData);
         if (table == null) {
-            document.add(new Paragraph("Failed to add Fault Stats table to pdf"));
+            document.add(new Paragraph("Failed to add adjudicatio details to pdf"));
             return;
         }
 

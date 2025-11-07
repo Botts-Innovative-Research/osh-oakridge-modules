@@ -72,7 +72,7 @@ public class Utils {
                         .withStatus(ICommandStatus.CommandStatusCode.COMPLETED)
                         .withReportTimeDuring(begin, end)
                         .withValuePredicate(valuePredicate)
-                        .withCommands(new CommandFilter.Builder().withSystems(new SystemFilter.Builder().withUniqueIDs(laneUID).build()).build())
+                        .withCommands(new CommandFilter.Builder().withSystems().withUniqueIDs(laneUID).done().build())
                         .build()).count();
     }
 
@@ -81,14 +81,13 @@ public class Utils {
 
     public static long countObservationsFromLane(String laneUID, OSCARServiceModule module, Predicate<IObsData> valuePredicate, Instant begin, Instant end, String... observedProperties){
         return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
-                        .withSystems(new SystemFilter.Builder()
-                                .withUniqueIDs(laneUID)
-                                .build())
+                        .withSystems().withUniqueIDs(laneUID)
+                        .done()
                         .withDataStreams(new DataStreamFilter.Builder()
                                 .withObservedProperties(observedProperties)
-                                .withValidTimeDuring(begin, end)
                                 .build())
                         .withValuePredicate(valuePredicate)
+                        .withResultTimeDuring(begin, end)
                         .build()).count();
     }
 
@@ -107,31 +106,11 @@ public class Utils {
             }
 
             long count = countObservationsFromLane(laneUIDs, module,  predicate, currentDay, endOfCurrentDay, observedProperties);
-            System.out.println("*8*********************");
-            System.out.println("count: "+ count);
+
             result.put(currentDay, count);
 
             start = endOfCurrentDay;
         }
-
-
-//        ZoneId zone = ZoneId.systemDefault();
-//        ZonedDateTime currentDay = start.atZone(zone).truncatedTo(ChronoUnit.DAYS);
-//
-//        while (currentDay.isBefore(end.atZone(zone))) {
-//            ZonedDateTime endOfCurrentDay = currentDay.plusDays(1);
-//            if (endOfCurrentDay.isAfter(end.atZone(zone))) {
-//                endOfCurrentDay = end.atZone(zone);
-//            }
-//
-//            Instant beginInstant = currentDay.toInstant();
-//            Instant endInstant = endOfCurrentDay.toInstant();
-//
-//            long count = countObservationsFromLane(laneUIDs, module, predicate, beginInstant, endInstant, observedProperties);
-//            result.put(beginInstant, count);
-//
-//            currentDay = endOfCurrentDay;
-//        }
 
         return result;
     }
@@ -140,10 +119,7 @@ public class Utils {
         return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getCommandStatusStore().select(new CommandStatusFilter.Builder()
                 .withStatus(ICommandStatus.CommandStatusCode.COMPLETED)
                 .withReportTimeDuring(begin, end)
-                .withCommands(new CommandFilter.Builder()
-                        .withSystems(new SystemFilter.Builder()
-                        .withUniqueIDs(laneUID)
-                        .build())
+                .withCommands(new CommandFilter.Builder().withSystems().withUniqueIDs(laneUID).done()
                 .build()).build()).iterator();
     }
 }
