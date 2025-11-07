@@ -345,7 +345,8 @@ public class OccupancyWrapper {
             try {
                 Async.waitForCondition(() -> ffmpegOuts.size() >= totalCams, FILE_TIMEOUT);
             } catch (TimeoutException e) {
-                throw new RuntimeException(e);
+//                throw new RuntimeException(e);
+                logger.error("Failed to get video files", e);
             }
 
             for (String path : ffmpegOuts) {
