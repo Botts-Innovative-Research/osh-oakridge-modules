@@ -12,6 +12,8 @@ import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
 
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -91,37 +93,47 @@ public class Utils {
     public static Map<Instant, Long> countObservationsByDay(String laneUIDs, OSCARServiceModule module, Predicate<IObsData> predicate, Instant startDate, Instant endDate, String... observedProperties){
         Map<Instant, Long> result = new LinkedHashMap<>();
 
-        while (startDate.isBefore(endDate)) {
-            Instant currentDay = startDate;
+        var start = startDate;
+        var end = endDate;
+
+        while (start.isBefore(end)) {
+            Instant currentDay = start;
             Instant endOfCurrentDay = currentDay.plus(1, ChronoUnit.DAYS);
 
-            if(endOfCurrentDay.isAfter(endDate)){
-                endOfCurrentDay = endDate;
+            if(endOfCurrentDay.isAfter(end)){
+                endOfCurrentDay = end;
             }
 
-            long count = Utils.countObservationsFromLane(laneUIDs, module,  predicate, currentDay, endOfCurrentDay, observedProperties);
-            if (count > 0) {
-                result.put(currentDay, count);
-            }
+            long count = countObservationsFromLane(laneUIDs, module,  predicate, currentDay, endOfCurrentDay, observedProperties);
 
+            result.put(currentDay, count);
 
-            startDate = endOfCurrentDay;
+            start = endOfCurrentDay;
         }
         return result;
-    }
 
-    public static Iterator<IObsData> getQuery(OSCARServiceModule module, String laneUID, Instant begin, Instant end, String... observedProperties){
-        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
-                .withSystems(new SystemFilter.Builder()
-                        .withUniqueIDs(laneUID)
-                        .build())
-                .withDataStreams(new DataStreamFilter.Builder()
-                        .withValidTimeDuring(begin, end)
-                        .withObservedProperties(observedProperties)
-                        .build())
-                .build()).iterator();
+//        ZoneId zone = ZoneId.systemDefault();
+//        ZonedDateTime currentDay = startDate.atZone(zone).truncatedTo(ChronoUnit.DAYS);
+//
+//        while (currentDay.isBefore(endDate.atZone(zone))) {
+//            ZonedDateTime endOfCurrentDay = currentDay.plusDays(1);
+//            if (endOfCurrentDay.isAfter(endDate.atZone(zone))) {
+//                endOfCurrentDay = endDate.atZone(zone);
+//            }
+//
+//            Instant beginInstant = currentDay.toInstant();
+//            Instant endInstant = endOfCurrentDay.toInstant();
+//
+//            long count = countObservationsFromLane(laneUIDs, module, predicate, beginInstant, endInstant, observedProperties);
+//            result.put(beginInstant, count);
+//            module.getLogger().info("Obs count: " + count);
+//            module.getLogger().info("beginInstant " + beginInstant);
+//            currentDay = endOfCurrentDay;
+//        }
+//
+//        return result;
     }
-
+    
     public static Iterator<ICommandStatus> queryCommandStatus(OSCARServiceModule module, String laneUID, Instant begin, Instant end){
         return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getCommandStatusStore().select(new CommandStatusFilter.Builder()
                 .withStatus(ICommandStatus.CommandStatusCode.COMPLETED)

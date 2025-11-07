@@ -20,7 +20,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -48,6 +51,18 @@ public class EventReport extends Report {
         this.laneUIDs = laneUIDs;
         this.tableGenerator = new TableGenerator();
         this.chartGenerator = new ChartGenerator(module);
+
+        ZoneId systemZone = ZoneId.systemDefault();
+
+        ZonedDateTime localStart = start.atZone(systemZone).truncatedTo(ChronoUnit.DAYS);
+        ZonedDateTime localEnd = end.atZone(systemZone);
+
+        if (localEnd.toLocalTime().equals(java.time.LocalTime.MIDNIGHT)) {
+            localEnd = localEnd.plusDays(1).minusNanos(1);
+        }
+
+        this.start = localStart.toInstant();
+        this.end = localEnd.toInstant();
     }
 
     @Override
@@ -75,8 +90,9 @@ public class EventReport extends Report {
     }
 
     private void addHeader(){
-        document.add(new Paragraph("Event Report").setFontSize(16).simulateBold());
-        document.add(new Paragraph("Event Type:" + eventType).setFontSize(12));
+        document.add(new Paragraph("Event Report ").setFontSize(16).simulateBold());
+        document.add(new Paragraph("Event Type: " + eventType).setFontSize(12));
+        document.add(new Paragraph("Requested Time: " + start + "-" + end).setFontSize(12));
         document.add(new Paragraph("\n"));
     }
 
@@ -275,11 +291,71 @@ public class EventReport extends Report {
     }
 
 
+//        Map<Instant, Long> gammaDaily = new LinkedHashMap<>();
+//        Map<Instant, Long> neutronDaily  = new LinkedHashMap<>();
+//        Map<Instant, Long> gammaNeutronDaily  = new LinkedHashMap<>();
+//        Map<Instant, Long> emlSuppressedDaily = new LinkedHashMap<>();
+//
+//        var startTime = start;
+//        var endTime = end;
+//
+//        while (startTime.isBefore(endTime)) {
+//            Instant currentDay = startTime;
+//            Instant endOfCurrentDay = currentDay.plus(1, ChronoUnit.DAYS);
+//
+//            if(endOfCurrentDay.isAfter(endTime)){
+//                endOfCurrentDay = endTime;
+//            }
+//
+//            var query = Utils.getQuery(module, laneUIDs, currentDay, endOfCurrentDay, RADHelper.DEF_OCCUPANCY);
+//
+//            long gammaCount = 0;
+//            long neutronCount = 0;
+//            long emlSuppressedCount = 0;
+//            long gammaNeutronCount = 0;
+//
+//            while (query.hasNext()) {
+//                var entry = query.next();
+//                var result = entry.getResult();
+//
+//                var gamma = result.getBooleanValue(4);
+//                var neutron = result.getBooleanValue(5);
+//
+//                if (gamma && neutron) {
+//                    gammaNeutronCount++;
+//                } else if (gamma && !neutron) {
+//                    gammaCount++;
+//                } else if (!gamma && neutron) {
+//                    neutronCount++;
+//                }
+//            }
+//
+//            var query2 = Utils.getQuery(module, laneUIDs, currentDay, endOfCurrentDay, RADHelper.DEF_EML_ANALYSIS);
+//
+//            while (query2.hasNext()) {
+//                var entry = query2.next();
+//                var result = entry.getResult();
+//
+//                if (result.getStringValue(0).equals("RELEASE")) {
+//                    emlSuppressedCount++;
+//                }
+//            }
+//
+//            gammaDaily.put(currentDay, gammaCount);
+//            neutronDaily.put(currentDay, neutronCount);
+//            emlSuppressedDaily.put(currentDay, emlSuppressedCount);
+//            gammaNeutronDaily.put(currentDay, gammaNeutronCount);
+//
+//            startTime = endOfCurrentDay;
+//        }
+
     private DatasetResult buildAlarmingDatasetAndTable() {
+
         Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.gammaPredicate, start, end, RADHelper.DEF_OCCUPANCY);
         Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.neutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
         Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
         Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
+
 
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
