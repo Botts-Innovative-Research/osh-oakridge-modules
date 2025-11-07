@@ -11,6 +11,7 @@ import com.itextpdf.layout.element.Paragraph;
 import com.itextpdf.layout.element.Table;
 import org.jfree.data.category.CategoryDataset;
 import org.jfree.data.category.DefaultCategoryDataset;
+import org.sensorhub.api.data.IObsData;
 import org.sensorhub.impl.utils.rad.RADHelper;
 
 import javax.imageio.ImageIO;
@@ -26,6 +27,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Predicate;
 
 public class EventReport extends Report {
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
@@ -349,15 +351,16 @@ public class EventReport extends Report {
 //            startTime = endOfCurrentDay;
 //        }
 
+
+
     private DatasetResult buildAlarmingDatasetAndTable() {
 
         Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.gammaPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.neutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
+        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(laneUIDs, module,  Utils.neutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(laneUIDs, module,  Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(laneUIDs, module,  Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
 
-
-
+        
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
         Map<String, Map<String, String>> tableDataByDate = new LinkedHashMap<>();
 

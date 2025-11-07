@@ -24,9 +24,9 @@ import java.util.function.Predicate;
 public class Utils {
 
     // ALARMS
-    public static Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(4) && obsData.getResult().getBooleanValue(5);
-    public static Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(4) && !obsData.getResult().getBooleanValue(5);
-    public static Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(4) && obsData.getResult().getBooleanValue(5);
+    public static Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+    public static Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
+    public static Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
     public static Predicate<IObsData> occupancyTotalPredicate = (obsData) -> true;
 
     // EML
@@ -105,7 +105,8 @@ public class Utils {
             }
 
             long count = countObservationsFromLane(laneUIDs, module,  predicate, currentDay, endOfCurrentDay, observedProperties);
-
+            System.out.println("*8*********************");
+            System.out.println("count: "+ count);
             result.put(currentDay, count);
 
             start = endOfCurrentDay;
