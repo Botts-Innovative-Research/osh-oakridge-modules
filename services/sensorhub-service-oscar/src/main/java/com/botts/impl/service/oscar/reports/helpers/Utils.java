@@ -95,7 +95,7 @@ public class Utils {
 
         var start = startDate;
         var end = endDate;
-
+//
         while (start.isBefore(end)) {
             Instant currentDay = start;
             Instant endOfCurrentDay = currentDay.plus(1, ChronoUnit.DAYS);
@@ -110,15 +110,15 @@ public class Utils {
 
             start = endOfCurrentDay;
         }
-        return result;
 
+        
 //        ZoneId zone = ZoneId.systemDefault();
-//        ZonedDateTime currentDay = startDate.atZone(zone).truncatedTo(ChronoUnit.DAYS);
+//        ZonedDateTime currentDay = start.atZone(zone).truncatedTo(ChronoUnit.DAYS);
 //
-//        while (currentDay.isBefore(endDate.atZone(zone))) {
+//        while (currentDay.isBefore(end.atZone(zone))) {
 //            ZonedDateTime endOfCurrentDay = currentDay.plusDays(1);
-//            if (endOfCurrentDay.isAfter(endDate.atZone(zone))) {
-//                endOfCurrentDay = endDate.atZone(zone);
+//            if (endOfCurrentDay.isAfter(end.atZone(zone))) {
+//                endOfCurrentDay = end.atZone(zone);
 //            }
 //
 //            Instant beginInstant = currentDay.toInstant();
@@ -126,12 +126,11 @@ public class Utils {
 //
 //            long count = countObservationsFromLane(laneUIDs, module, predicate, beginInstant, endInstant, observedProperties);
 //            result.put(beginInstant, count);
-//            module.getLogger().info("Obs count: " + count);
-//            module.getLogger().info("beginInstant " + beginInstant);
+//
 //            currentDay = endOfCurrentDay;
 //        }
-//
-//        return result;
+
+        return result;
     }
     
     public static Iterator<ICommandStatus> queryCommandStatus(OSCARServiceModule module, String laneUID, Instant begin, Instant end){
