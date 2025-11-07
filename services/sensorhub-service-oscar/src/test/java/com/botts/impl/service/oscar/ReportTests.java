@@ -364,7 +364,7 @@ public class ReportTests {
     private String createCommandParams(ReportCmdType cmdType, String start, String end, String laneUID, EventReportType eventType) {
         return
         "{\n" +
-                "    \"params\": {\n" +
+                "    \"parameters\": {\n" +
                 "        \"reportType\": \"" + cmdType.name() + "\",\n" +
                 "        \"startDateTime\": \"" + start + "\",\n" +
                 "        \"endDateTime\": \"" + end + "\",\n" +
