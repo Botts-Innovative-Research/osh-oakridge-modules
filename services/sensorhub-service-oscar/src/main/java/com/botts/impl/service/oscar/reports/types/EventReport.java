@@ -33,19 +33,19 @@ public class EventReport extends Report {
     TableGenerator tableGenerator;
     ChartGenerator chartGenerator;
 
-    String laneUID;
+    String laneUIDs;
     EventReportType eventType;
 
-    private record DatasetResult(DefaultCategoryDataset dataset, Map<String, String> tableData) {}
+    private record DatasetResult(DefaultCategoryDataset dataset, Map<String, Map<String, String>> tableData) {}
 
-    public EventReport(OutputStream outputStream, Instant startTime, Instant endTime, EventReportType eventType, String laneUID, OSCARServiceModule module) {
+    public EventReport(OutputStream outputStream, Instant startTime, Instant endTime, EventReportType eventType, String laneUIDs, OSCARServiceModule module) {
         super(outputStream, startTime, endTime, module);
 
         pdfDocument = new PdfDocument(new PdfWriter(outputStream));
         document = new Document(pdfDocument);
 
         this.eventType = eventType;
-        this.laneUID = laneUID;
+        this.laneUIDs = laneUIDs;
         this.tableGenerator = new TableGenerator();
         this.chartGenerator = new ChartGenerator(module);
     }
@@ -63,6 +63,7 @@ public class EventReport extends Report {
         else if (eventType.equals(EventReportType.SOH))
             addFaultStatisticsByDay();
 
+
         document.close();
         chartGenerator = null;
         tableGenerator = null;
@@ -72,19 +73,19 @@ public class EventReport extends Report {
     public String getReportType() {
         return ReportCmdType.EVENT.name();
     }
+
     private void addHeader(){
         document.add(new Paragraph("Event Report").setFontSize(16).simulateBold());
         document.add(new Paragraph("Event Type:" + eventType).setFontSize(12));
-        document.add(new Paragraph("Lane UIDs:" + laneUID).setFontSize(12));
         document.add(new Paragraph("\n"));
     }
 
-    private void addAlarmStatisticsByDay(){
+    private void addAlarmStatisticsByDay() {
         document.add(new Paragraph("Alarm Statistics").setFontSize(12));
 
         DatasetResult result = buildAlarmingDatasetAndTable();
         DefaultCategoryDataset dataset = result.dataset();
-        Map<String, String> tableData = result.tableData();
+        Map<String, Map<String, String>> tableData = result.tableData();
 
         String title = "Alarms";
         String xAxis = "Dates";
@@ -98,7 +99,7 @@ public class EventReport extends Report {
                     dataset
             );
 
-            if(chart == null){
+            if (chart == null) {
                 document.add(new Paragraph("Alarm Chart failed to create"));
                 return;
             }
@@ -113,7 +114,7 @@ public class EventReport extends Report {
             document.add(image);
             document.add(new Paragraph("\n"));
 
-            Table table = tableGenerator.addTable(tableData);
+            Table table = tableGenerator.addTableByDate(tableData);
             document.add(table);
             document.add(new Paragraph("\n"));
         } catch (IOException e) {
@@ -126,35 +127,40 @@ public class EventReport extends Report {
 
     private void addFaultStatisticsByDay(){
 
-        Map<Instant, Long> gammaHighDaily = Utils.countObservationsByDay(module, Utils.gammaHighPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-        Map<Instant, Long> gammaLowDaily = Utils.countObservationsByDay(module, Utils.gammaLowPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-        Map<Instant, Long> neutronHighDaily = Utils.countObservationsByDay(module, Utils.neutronHighPredicate, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
+        Map<Instant, Long> gammaHighDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.gammaHighPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        Map<Instant, Long> gammaLowDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.gammaLowPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        Map<Instant, Long> neutronHighDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.neutronHighPredicate, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
+        Map<Instant, Long> tamperDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.tamperPredicate, start, end, RADHelper.DEF_TAMPER);
 //        Map<Instant, Long> extendedOccupancyDaily = Utils.countObservationsByDay(module, Utils.extendedOccPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> tamperDaily = Utils.countObservationsByDay(module, Utils.tamperPredicate, start, end, RADHelper.DEF_TAMPER);
 //        Map<Instant, Long> commDaily = Utils.countObservationsByDay(module, Utils.commsPredicate, start, end, RADHelper.DEF_OCCUPANCY);
 //        Map<Instant, Long> cameraDaily = Utils.countObservationsByDay(module, Utils.cameraPredicate, start, end, RADHelper.DEF_OCCUPANCY);
 
-        Map<String, String> tableData = new LinkedHashMap<>();
+        Map<String, Map<String, String>> tableDataByDate = new LinkedHashMap<>();
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
         for(Map.Entry<Instant, Long> entry : gammaHighDaily.entrySet()){
-            dataset.addValue(entry.getValue(), "Gamma High",  formatter.format(entry.getKey()));
-            tableData.put("Gamma High", entry.getValue().toString());
+            String date = formatter.format(entry.getKey());
+            dataset.addValue(entry.getValue(), "Gamma High", date);
+            tableDataByDate.computeIfAbsent(date, k -> new LinkedHashMap<>()).put("Gamma High", entry.getValue().toString());
         }
 
         for(Map.Entry<Instant, Long> entry : gammaLowDaily.entrySet()){
-            dataset.addValue(entry.getValue(), "Gamma Low",  formatter.format(entry.getKey()));
-            tableData.put("Gamma Low", entry.getValue().toString());
+            String date = formatter.format(entry.getKey());
+            dataset.addValue(entry.getValue(), "Gamma Low", date);
+            tableDataByDate.computeIfAbsent(date, k -> new LinkedHashMap<>()).put("Gamma Low", entry.getValue().toString());
         }
+
         for(Map.Entry<Instant, Long> entry : neutronHighDaily.entrySet()){
-            dataset.addValue(entry.getValue(), "Neutron High",  formatter.format(entry.getKey()));
-            tableData.put("Neutron High", entry.getValue().toString());
+            String date = formatter.format(entry.getKey());
+            dataset.addValue(entry.getValue(), "Neutron High", date);
+            tableDataByDate.computeIfAbsent(date, k -> new LinkedHashMap<>()).put("Neutron High", entry.getValue().toString());
         }
 
         for(Map.Entry<Instant, Long> entry : tamperDaily.entrySet()){
-            dataset.addValue(entry.getValue(), "Tamper",  formatter.format(entry.getKey()));
-            tableData.put("Tamper", entry.getValue().toString());
+            String date = formatter.format(entry.getKey());
+            dataset.addValue(entry.getValue(), "Tamper", date);
+            tableDataByDate.computeIfAbsent(date, k -> new LinkedHashMap<>()).put("Tamper", entry.getValue().toString());
         }
 
 //        for(Map.Entry<Instant, Long> entry : extendedOccupancyDaily.entrySet()){
@@ -196,7 +202,7 @@ public class EventReport extends Report {
 
             document.add(image);
             document.add(new Paragraph("\n"));
-            Table table = tableGenerator.addTable(tableData);
+            Table table = tableGenerator.addTableByDate(tableDataByDate);
             document.add(table);
             document.add(new Paragraph("\n"));
 
@@ -210,19 +216,21 @@ public class EventReport extends Report {
 
     private void addAlarmOccStatisticsByDay(){
 
-        Map<Instant, Long> totalOccupancyDaily = Utils.countObservationsByDay(module, Utils.occupancyTotalPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> totalOccupancyDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.occupancyTotalPredicate, start, end, RADHelper.DEF_OCCUPANCY);
 
         DatasetResult result = buildAlarmingDatasetAndTable();
         DefaultCategoryDataset dataset = result.dataset();
-        Map<String, String> tableData = result.tableData();
+        Map<String, Map<String, String>> tableData = result.tableData();
 
 
         // this will be a linegraph on top of the bar chart
         DefaultCategoryDataset occDataset = new DefaultCategoryDataset();
 
         for(Map.Entry<Instant, Long> entry : totalOccupancyDaily.entrySet()){
-            occDataset.addValue(entry.getValue(), "TotalOccupancy",  formatter.format(entry.getKey()));
-            tableData.put("Total Occupancy", entry.getValue().toString());
+            String date = formatter.format(entry.getKey());
+
+            occDataset.addValue(entry.getValue(), "TotalOccupancy", date);
+            tableData.computeIfAbsent(date, k -> new LinkedHashMap<>()).put("Total Occupancy", entry.getValue().toString());
         }
 
         String title = "Alarms and Occupancies";
@@ -255,7 +263,7 @@ public class EventReport extends Report {
             document.add(image);
             document.add(new Paragraph("\n"));
 
-            Table table = tableGenerator.addTable(tableData);
+            Table table = tableGenerator.addTableByDate(tableData);
             document.add(table);
             document.add(new Paragraph("\n"));
         } catch (IOException e) {
@@ -268,35 +276,43 @@ public class EventReport extends Report {
 
 
     private DatasetResult buildAlarmingDatasetAndTable() {
-        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(module, Utils.gammaPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(module, Utils.neutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(module, Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(module, Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
+        Map<Instant, Long> gammaDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.gammaPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> neutronDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.neutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(laneUIDs, module, Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
 
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
-        Map<String, String> tableData = new LinkedHashMap<>();
+        Map<String, Map<String, String>> tableDataByDate = new LinkedHashMap<>();
 
         for (Map.Entry<Instant, Long> entry : gammaDaily.entrySet()) {
-            dataset.addValue(entry.getValue(), "Gamma", formatter.format(entry.getKey()));
-            tableData.put("Gamma", entry.getValue().toString());
+            String date = formatter.format(entry.getKey());
+
+            dataset.addValue(entry.getValue(), "Gamma", date);
+            tableDataByDate.computeIfAbsent(date, k -> new LinkedHashMap<>()).put("Gamma", entry.getValue().toString());
         }
 
         for (Map.Entry<Instant, Long> entry : gammaNeutronDaily.entrySet()) {
-            dataset.addValue(entry.getValue(), "Gamma-Neutron", formatter.format(entry.getKey()));
-            tableData.put("Gamma-Neutron", entry.getValue().toString());
+            String date = formatter.format(entry.getKey());
+
+            dataset.addValue(entry.getValue(), "Gamma-Neutron", date);
+            tableDataByDate.computeIfAbsent(date, k -> new LinkedHashMap<>()).put("Gamma-Neutron", entry.getValue().toString());
         }
 
         for (Map.Entry<Instant, Long> entry : neutronDaily.entrySet()) {
-            dataset.addValue(entry.getValue(), "Neutron", formatter.format(entry.getKey()));
-            tableData.put("Neutron", entry.getValue().toString());
+            String date = formatter.format(entry.getKey());
+
+            dataset.addValue(entry.getValue(), "Neutron", date);
+            tableDataByDate.computeIfAbsent(date, k -> new LinkedHashMap<>()).put("Neutron", entry.getValue().toString());
         }
 
         for (Map.Entry<Instant, Long> entry : emlSuppressedDaily.entrySet()) {
-            dataset.addValue(entry.getValue(), "EML-Suppressed", formatter.format(entry.getKey()));
-            tableData.put("EML-Suppressed", entry.getValue().toString());
+            String date = formatter.format(entry.getKey());
+
+            dataset.addValue(entry.getValue(), "EML-Suppressed", date);
+            tableDataByDate.computeIfAbsent(date, k -> new LinkedHashMap<>()).put("EML-Suppressed", entry.getValue().toString());
         }
 
-        return new DatasetResult(dataset, tableData);
+        return new DatasetResult(dataset, tableDataByDate);
     }
 }

@@ -22,9 +22,9 @@ import java.util.function.Predicate;
 public class Utils {
 
     // ALARMS
-    public static Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
-    public static Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
-    public static Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+    public static Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(4) && obsData.getResult().getBooleanValue(5);
+    public static Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(4) && !obsData.getResult().getBooleanValue(5);
+    public static Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(4) && obsData.getResult().getBooleanValue(5);
     public static Predicate<IObsData> occupancyTotalPredicate = (obsData) -> true;
 
     // EML
@@ -35,9 +35,9 @@ public class Utils {
     public static Predicate<IObsData> gammaHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma High");
     public static Predicate<IObsData> gammaLowPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma Low");
     public static Predicate<IObsData> neutronHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Neutron High");
-    public static Predicate<IObsData> commsPredicate = (obsData) -> obsData.getResult().getBooleanValue(1); //TODO
-    public static Predicate<IObsData> cameraPredicate = (obsData) -> obsData.getResult().getBooleanValue(1); //TODO
-    public static Predicate<IObsData> extendedOccPredicate = (obsData) -> obsData.getResult().getBooleanValue(1); //TODO
+//    public static Predicate<IObsData> commsPredicate = (obsData) -> obsData.getResult().getBooleanValue(1); //TODO
+//    public static Predicate<IObsData> cameraPredicate = (obsData) -> obsData.getResult().getBooleanValue(1); //TODO
+//    public static Predicate<IObsData> extendedOccPredicate = (obsData) -> obsData.getResult().getBooleanValue(1); //TODO
 
 
     public static long calcEMLAlarmRate(long emlSuppCount, long alarmCount){
@@ -88,7 +88,7 @@ public class Utils {
                         .build()).count();
     }
 
-    public static Map<Instant, Long> countObservationsByDay(OSCARServiceModule module, Predicate<IObsData> predicate, Instant startDate, Instant endDate, String... observedProperties){
+    public static Map<Instant, Long> countObservationsByDay(String laneUIDs, OSCARServiceModule module, Predicate<IObsData> predicate, Instant startDate, Instant endDate, String... observedProperties){
         Map<Instant, Long> result = new LinkedHashMap<>();
 
         while (startDate.isBefore(endDate)) {
@@ -99,8 +99,11 @@ public class Utils {
                 endOfCurrentDay = endDate;
             }
 
-            long count = Utils.countObservations(module,  predicate, currentDay, endOfCurrentDay, observedProperties);
-            result.put(currentDay, count);
+            long count = Utils.countObservationsFromLane(laneUIDs, module,  predicate, currentDay, endOfCurrentDay, observedProperties);
+            if (count > 0) {
+                result.put(currentDay, count);
+            }
+
 
             startDate = endOfCurrentDay;
         }

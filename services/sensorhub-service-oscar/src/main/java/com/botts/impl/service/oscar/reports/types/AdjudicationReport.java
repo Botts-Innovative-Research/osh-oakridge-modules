@@ -61,7 +61,9 @@ public class AdjudicationReport extends Report {
             Map.of("code", 10, "label", "Code 10: Unauthorized Activity", "group", "Tamper/Fault"),
             Map.of("code", 11, "label", "Code 11: Other", "group", "Other")
     );
-    
+
+    private record DatasetResult(DefaultCategoryDataset dataset, Map<String, String> tableData) {}
+
     public AdjudicationReport(OutputStream out, Instant startTime, Instant endTime, String laneUIDs, OSCARServiceModule module) {
         super(out, startTime, endTime, module);
 
@@ -78,8 +80,10 @@ public class AdjudicationReport extends Report {
         addHeader();
 
         for (var laneUID : laneUIDs.split(",")){
+            document.add(new Paragraph("Lane UID: " + laneUIDs).setFontSize(12));
+
             createDispositionChart(laneUID);
-            createIsotopeChart(laneUID);
+            createIsotopeChartAndTable(laneUID);
         }
         addAdjudicationDetails();
 
@@ -95,10 +99,8 @@ public class AdjudicationReport extends Report {
 
     private void addHeader() {
         document.add(new Paragraph("Adjudication Report").setFontSize(16).simulateBold());
-        document.add(new Paragraph("Lane UID: " + laneUIDs).setFontSize(12));
         document.add(new Paragraph("\n"));
     }
-
 
     private void createDispositionChart(String laneUID) {
         document.add(new Paragraph("Disposition - " + laneUID).setFontSize(12));
@@ -123,8 +125,7 @@ public class AdjudicationReport extends Report {
             String label = (String) item.get("label");
             String group = (String) item.get("group");
 
-            Predicate<ICommandStatus> predicate = (cmdData) ->
-                    cmdData.getResult().getInlineRecords().stream().toList().get(2).getIntValue() == code;
+            Predicate<ICommandStatus> predicate = (cmdData) -> cmdData.getResult().getInlineRecords().stream().toList().get(0).getIntValue(2) == code;
 
             long count = Utils.countStatusResults(laneUID, module, predicate, start, end);
             double percentage = (count / (double) totalRecords) * 100.0;
@@ -195,7 +196,7 @@ public class AdjudicationReport extends Report {
         Arrays.fill(columnWidths, 1.0f);
 
         Table table = new Table(UnitValue.createPercentArray(columnWidths))
-                .setWidth(UnitValue.createPercentValue(100));
+                .setWidth(UnitValue.createPercentValue(75));
 
         for (String header : headers) {
             table.addHeaderCell(tableGenerator.createHeaderCell(header));
@@ -209,24 +210,7 @@ public class AdjudicationReport extends Report {
         return table;
     }
 
-
-    private Image addChartAsImage(JFreeChart chart) throws IOException {
-        BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
-        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-        ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
-
-        byte[] imageBytes = byteArrayOutputStream.toByteArray();
-        Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
-
-       return image;
-    }
-
-    private void createIsotopeChart(String laneUID) {
-        document.add(new Paragraph("SI Results - " + laneUID).setFontSize(12));
-
-        String title = "Isotope Results";
-        String yLabel = "Count";
-        String xLabel = "Isotope";
+    private DatasetResult buildIsotopeDatasetAndTable(String laneUID) {
 
         Map<String, String> isotopes = Map.ofEntries(
                 Map.entry("Np", "Neptunium"),
@@ -262,27 +246,63 @@ public class AdjudicationReport extends Report {
                 Map.entry("Unk", "Unknown")
         );
 
+        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
         Map<String, String> tableData = new LinkedHashMap<>();
 
-        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+        var query = Utils.queryCommandStatus(module, laneUID, start, end);
+
+        Map<String, Long> isotopeCounts = new HashMap<>();
+
+        while (query.hasNext()) {
+            var entry = query.next();
+            var resultList = entry.getResult().getInlineRecords().stream().toList();
+            var result = resultList.get(0);
+
+            int index = 3;
+            var isotopeCount = result.getIntValue(index++);
+
+            var isotopeList = new ArrayList<>();
+            for (int i = 0; i < isotopeCount; i++) {
+                isotopeList.add(result.getStringValue(index++));
+            }
+
+            for (Map.Entry<String, String> isotopeEntry : isotopes.entrySet()) {
+                String symbol = isotopeEntry.getKey();
+                String name = isotopeEntry.getValue();
+
+                for (var isotope : isotopeList) {
+                    if (isotope.equals(name)) {
+                        isotopeCounts.merge(symbol, 1L, Long::sum);
+                    }
+                }
+            }
+        }
 
         for (Map.Entry<String, String> entry : isotopes.entrySet()) {
             String symbol = entry.getKey();
             String name = entry.getValue();
-
-            Predicate<ICommandStatus> predicate = (cmdData) -> cmdData.getResult().getInlineRecords().stream().toList().get(4).getStringValue().contains(name);
-
-            long count = Utils.countStatusResults(
-                    laneUID,
-                    module,
-                    predicate,
-                    start,
-                    end
-            );
+            long count = isotopeCounts.getOrDefault(symbol, 0L);
 
             dataset.addValue(count, name, symbol);
             tableData.put(symbol, String.valueOf(count));
         }
+
+
+        return new DatasetResult(dataset, tableData);
+    }
+
+    private void createIsotopeChartAndTable(String laneUID) {
+        document.add(new Paragraph("\n"));
+        document.add(new Paragraph("Isotope Results - " + laneUID).setFontSize(12));
+
+        String title = "Isotope Results";
+        String yLabel = "Count";
+        String xLabel = "Isotope";
+
+        DatasetResult result = buildIsotopeDatasetAndTable(laneUID);
+        DefaultCategoryDataset dataset = result.dataset();
+        Map<String, String> tableData = result.tableData();
+
 
         try {
             var chart = chartGenerator.createChart(
@@ -310,90 +330,89 @@ public class AdjudicationReport extends Report {
             Table table = tableGenerator.addTable(tableData);
             document.add(table);
             document.add(new Paragraph("\n"));
+
         } catch (IOException e) {
             module.getLogger().error("Error adding chart to report", e);
         }
     }
 
-    private void addSecondaryInspectionDetails() {
-        document.add(new Paragraph("Secondary Inspection Details").setFontSize(12));
-
-        Map<String, Map<String, String>> secInspecDetails = new LinkedHashMap<>();
-
-        for (var lane : laneUIDs.split(",")) {
-            var counts = addSecondaryDetails(lane);
-            secInspecDetails.put(lane, counts);
-        }
-
-        var table = tableGenerator.addLanesTable(secInspecDetails);
-        if (table == null) {
-            document.add(new Paragraph("Failed to secondary inspection details"));
-            return;
-        }
-        document.add(table);
-        document.add(new Paragraph("\n"));
-    }
-
-    private Map<String, String> addSecondaryDetails(String laneUID) {
-        Map<String, String> secInsDetailsMap = new LinkedHashMap<>();
-
-        var query = Utils.getQuery(module, laneUID, start, end, RADHelper.DEF_ADJUDICATION);
-
-        while (query.hasNext()) {
-            var entry = query.next();
-            var result = entry.getResult();
-
-            secInsDetailsMap.put("Primary Date", result.getStringValue(0));
-            secInsDetailsMap.put("Primary Time", result.getStringValue(1));
-            secInsDetailsMap.put("Event Record ID", result.getStringValue(2));
-            secInsDetailsMap.put("Primary N.Sigma", result.getStringValue(3));
-            secInsDetailsMap.put("SI Result", result.getStringValue(4));
-            secInsDetailsMap.put("Cargo", result.getStringValue(5));
-            secInsDetailsMap.put("Disposition #", result.getStringValue(6));
-        }
-
-        return secInsDetailsMap;
-    }
-
     private void addAdjudicationDetails() {
         document.add(new Paragraph("\n"));
+        document.add(new Paragraph("Adjudication Details").setFontSize(12));
 
-        Map<String, Map<String,String>> adjByLanesMap = new LinkedHashMap<>();
+        Map<String, List<Map<String, String>>> adjTableData = new LinkedHashMap<>();
 
-        for (var laneUID : laneUIDs.split(", ")) {
-            var adjDetailsMap = collectAdjudicationDetails(laneUID);
-            adjByLanesMap.put(laneUID, adjDetailsMap);
+        for (var laneUID : laneUIDs.split(",")) {
+            var adjDetailsList = collectAdjudicationDetails(laneUID);
+            adjTableData.put(laneUID, adjDetailsList);
         }
 
-        var table = tableGenerator.addLanesTable(adjByLanesMap);
+        var table = tableGenerator.addListToTable(adjTableData);
         if (table == null) {
-            document.add(new Paragraph("Adjudication Details Table failed to create"));
+            document.add(new Paragraph("Failed to add Fault Stats table to pdf"));
             return;
         }
 
         document.add(table);
+
         document.add(new Paragraph("\n"));
     }
 
-    private Map<String, String> collectAdjudicationDetails(String laneUID) {
-        Map<String, String> adjDetailsMap = new LinkedHashMap<>();
+    private  List<Map<String, String>> collectAdjudicationDetails(String laneUID) {
+        List<Map<String, String>> adjDetailsList = new ArrayList<>();
 
         var query = Utils.queryCommandStatus(module, laneUID, start, end);
+
+        int ixx = 1;
         while (query.hasNext()) {
             var entry = query.next();
-            var result = entry.getResult().getInlineRecords().stream().toList().get(0);
+            var resultList = entry.getResult().getInlineRecords().stream().toList();
+            var result = resultList.get(0);
 
+            Map<String, String> adjDetailsMap = new LinkedHashMap<>();
+            adjDetailsMap.put("#", String.valueOf(ixx));
 
-            adjDetailsMap.put("Username", result.getStringValue(0));
-            adjDetailsMap.put("Feedback", result.getStringValue(1));
-            adjDetailsMap.put("Adjudication Code", result.getStringValue(2));
-            adjDetailsMap.put("Isotopes", result.getStringValue(3));
-            adjDetailsMap.put("File Paths", result.getStringValue(4));
-            adjDetailsMap.put("Occupancy ID", result.getStringValue(5));
-            adjDetailsMap.put("Alarming System ID", result.getStringValue(6));
-            adjDetailsMap.put("Vehicle ID", result.getStringValue(7));
-            adjDetailsMap.put("Secondary Inspection Status", result.getStringValue(8));
+            int index = 0;
+            adjDetailsMap.put("Username", result.getStringValue(index++));
+            adjDetailsMap.put("Feedback", result.getStringValue(index++));
+            adjDetailsMap.put("Adjudication Code", result.getStringValue(index++));
+            var isotopeCount = result.getIntValue(index++);
+            adjDetailsMap.put("Isotope Count", String.valueOf(isotopeCount));
+
+            var isotopes = new ArrayList<>();
+            for (int i = 0; i < isotopeCount; i++) {
+                isotopes.add(result.getStringValue(index++));
+            }
+            adjDetailsMap.put("Isotopes", isotopes.toString());
+            adjDetailsMap.put("Secondary Inspection Status", result.getStringValue(index++));
+
+            var fileCount = result.getIntValue(index++);
+            adjDetailsMap.put("File Path Count", String.valueOf(fileCount));
+
+            var filePaths = new ArrayList<>();
+            for (int i = 0; i < fileCount; i++) {
+                filePaths.add(result.getStringValue(index++));
+            }
+            adjDetailsMap.put("File Paths", filePaths.toString());
+            adjDetailsMap.put("Occupancy Obs ID", result.getStringValue(index++));
+            adjDetailsMap.put("Vehicle ID", result.getStringValue(index++));
+
+            adjDetailsList.add(adjDetailsMap);
+            ixx++;
         }
-        return adjDetailsMap;
+
+        return adjDetailsList;
     }
+
+    private Image addChartAsImage(JFreeChart chart) throws IOException {
+        BufferedImage bufferedImage = chart.createBufferedImage(1200, 600);
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
+
+        byte[] imageBytes = byteArrayOutputStream.toByteArray();
+        Image image = new Image(ImageDataFactory.create(imageBytes)).setAutoScale(true);
+
+        return image;
+    }
+
 }
