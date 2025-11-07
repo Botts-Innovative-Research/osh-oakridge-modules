@@ -95,7 +95,7 @@ public class Utils {
 
         var start = startDate;
         var end = endDate;
-//
+
         while (start.isBefore(end)) {
             Instant currentDay = start;
             Instant endOfCurrentDay = currentDay.plus(1, ChronoUnit.DAYS);
@@ -111,7 +111,7 @@ public class Utils {
             start = endOfCurrentDay;
         }
 
-        
+
 //        ZoneId zone = ZoneId.systemDefault();
 //        ZonedDateTime currentDay = start.atZone(zone).truncatedTo(ChronoUnit.DAYS);
 //

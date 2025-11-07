@@ -52,17 +52,17 @@ public class EventReport extends Report {
         this.tableGenerator = new TableGenerator();
         this.chartGenerator = new ChartGenerator(module);
 
-        ZoneId systemZone = ZoneId.systemDefault();
+//        ZoneId systemZone = ZoneId.systemDefault();
+//
+//        ZonedDateTime localStart = start.atZone(systemZone).truncatedTo(ChronoUnit.DAYS);
+//        ZonedDateTime localEnd = end.atZone(systemZone);
+//
+//        if (localEnd.toLocalTime().equals(java.time.LocalTime.MIDNIGHT)) {
+//            localEnd = localEnd.plusDays(1).minusNanos(1);
+//        }
 
-        ZonedDateTime localStart = start.atZone(systemZone).truncatedTo(ChronoUnit.DAYS);
-        ZonedDateTime localEnd = end.atZone(systemZone);
-
-        if (localEnd.toLocalTime().equals(java.time.LocalTime.MIDNIGHT)) {
-            localEnd = localEnd.plusDays(1).minusNanos(1);
-        }
-
-        this.start = localStart.toInstant();
-        this.end = localEnd.toInstant();
+        this.start = startTime;
+        this.end = endTime;
     }
 
     @Override
