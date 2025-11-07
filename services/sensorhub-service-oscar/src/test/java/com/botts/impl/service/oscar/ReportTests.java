@@ -197,6 +197,7 @@ public class ReportTests {
 
         String resPath = results.get(0).getStringValue();
         assertNotNull(resPath);
+        assertFalse(resPath.contains(":"));
 
         assertFalse(resPath.isEmpty());
         assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExists(resPath));
@@ -223,6 +224,7 @@ public class ReportTests {
 
         String resPath = results.get(0).getStringValue();
         assertNotNull(resPath);
+        assertFalse(resPath.contains(":"));
 
         assertFalse(resPath.isEmpty());
         assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExists(resPath));
@@ -248,6 +250,7 @@ public class ReportTests {
 
         String resPath = results.get(0).getStringValue();
         assertNotNull(resPath);
+        assertFalse(resPath.contains(":"));
 
         assertFalse(resPath.isEmpty());
         assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExists(resPath));
@@ -273,6 +276,7 @@ public class ReportTests {
 
         String resPath = results.get(0).getStringValue();
         assertNotNull(resPath);
+        assertFalse(resPath.contains(":"));
 
         assertFalse(resPath.isEmpty());
         assertTrue(oscarServiceModule.getBucketService().getBucketStore().objectExists(resPath));
@@ -364,7 +368,7 @@ public class ReportTests {
     private String createCommandParams(ReportCmdType cmdType, String start, String end, String laneUID, EventReportType eventType) {
         return
         "{\n" +
-                "    \"params\": {\n" +
+                "    \"parameters\": {\n" +
                 "        \"reportType\": \"" + cmdType.name() + "\",\n" +
                 "        \"startDateTime\": \"" + start + "\",\n" +
                 "        \"endDateTime\": \"" + end + "\",\n" +

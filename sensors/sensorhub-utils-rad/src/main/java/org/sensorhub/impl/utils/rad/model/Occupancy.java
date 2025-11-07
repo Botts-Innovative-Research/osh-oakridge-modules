@@ -21,8 +21,8 @@ public class Occupancy {
     private boolean hasNeutronAlarm;
     private int maxGammaCount;
     private int maxNeutronCount;
-    private List<String> adjudicatedIds = List.of();
-    private List<String> videoPaths = List.of();
+    private List<String> adjudicatedIds = new ArrayList<>();
+    private List<String> videoPaths = new ArrayList<>();
 
     public int getOccupancyCount() {
         return occupancyCount;
@@ -159,10 +159,10 @@ public class Occupancy {
         dataBlock.setDoubleValue(index++, occupancy.getStartTime());
         dataBlock.setDoubleValue(index++, occupancy.getEndTime());
         dataBlock.setDoubleValue(index++, occupancy.getNeutronBackground());
-        dataBlock.setIntValue(index++, occupancy.getMaxGammaCount());
-        dataBlock.setIntValue(index++, occupancy.getMaxNeutronCount());
         dataBlock.setBooleanValue(index++, occupancy.hasGammaAlarm());
         dataBlock.setBooleanValue(index++, occupancy.hasNeutronAlarm());
+        dataBlock.setIntValue(index++, occupancy.getMaxGammaCount());
+        dataBlock.setIntValue(index++, occupancy.getMaxNeutronCount());
 
         int cmdIdsCount = occupancy.getAdjudicatedIds().size();
         dataBlock.setDoubleValue(index++, cmdIdsCount);
@@ -203,10 +203,10 @@ public class Occupancy {
         var startTime = dataBlock.getDoubleValue(index++);
         var endTime = dataBlock.getDoubleValue(index++);
         var neutronBackground = dataBlock.getDoubleValue(index++);
-        var maxGammaCount = dataBlock.getIntValue(index++);
-        var maxNeutronCount = dataBlock.getIntValue(index++);
         var gammaAlarm = dataBlock.getBooleanValue(index++);
         var neutronAlarm = dataBlock.getBooleanValue(index++);
+        var maxGammaCount = dataBlock.getIntValue(index++);
+        var maxNeutronCount = dataBlock.getIntValue(index++);
         var cmdIdsCount = dataBlock.getIntValue(index++);
 
         List<String> cmdIds = new ArrayList<>();

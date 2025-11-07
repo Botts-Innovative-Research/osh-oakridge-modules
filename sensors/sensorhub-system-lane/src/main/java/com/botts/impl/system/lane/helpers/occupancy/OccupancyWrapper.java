@@ -7,7 +7,6 @@ import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.command.IStreamingControlInterface;
-import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.data.ObsEvent;
 import org.sensorhub.api.datastore.obs.IObsStore;
@@ -16,12 +15,11 @@ import org.sensorhub.api.event.EventUtils;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.controls.FileControl;
-import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
+import org.sensorhub.utils.Async;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.vast.data.DataBlockMixed;
 import org.vast.util.Asserts;
 
 import java.time.Instant;
@@ -29,6 +27,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.Flow;
+import java.util.concurrent.TimeoutException;
 
 public class OccupancyWrapper {
     public static final String OCCUPANCY = "occupancy";
@@ -98,12 +97,16 @@ public class OccupancyWrapper {
 
         registerStateListener();
         registerDailyFileListener();
+
         try {
-            rpmObs = hub.getSystemDriverRegistry().getDatabase(rpm.getParentSystemUID()).getObservationStore();
-            observationHelper.setObsStore(rpmObs);
+            var occOut = rpm.getOutputs().values().stream().filter((predicate) -> predicate instanceof OccupancyOutput).findFirst();
+            if (occOut.isPresent()) {
+                observationHelper.setOccupancyOutput((OccupancyOutput<?>) occOut.get());
+            } else {
+                logger.error("Could not find occupancy output; cannot add video paths to occupancy observations.");
+            }
         } catch (Exception ignored) {
         }
-        registerOcucpancyListener();
     }
 
     public void stop() {
@@ -121,22 +124,6 @@ public class OccupancyWrapper {
             subscription.cancel();
         }
         cameraSubscriptions.clear();
-    }
-
-    public void registerOcucpancyListener() {
-        hub.getEventBus().newSubscription(ObsEvent.class)
-                .withTopicID(EventUtils.getDataStreamDataTopicID(rpm.getUniqueIdentifier(), OCCUPANCY))
-                .subscribe((event) -> {
-                    var observations = event.getObservations();
-                    var obs = observations[0];
-                    if (obs.getResult().getBooleanValue(GAMMA_INDEX) || obs.getResult().getBooleanValue(NEUTRON_INDEX))
-                        observationHelper.setRpmOcc(obs);
-
-                })
-                .thenAccept(subscription ->{
-                    subscription.request(Long.MAX_VALUE);
-                    occupancySubscription = subscription;
-                });
     }
 
     public void registerDailyFileListener() {
@@ -331,75 +318,47 @@ public class OccupancyWrapper {
     }
 
     private static class ObservationHelper {
-        private IObsData rpmOcc;
         private final ArrayList<String> ffmpegOuts = new ArrayList<>();
-        private IObsStore obsStore;
+        private OccupancyOutput<?> occupancyOutput;
         private final Object lock = new Object();
-        private int count = 0;
         private int totalCams = 2;
-
-        public synchronized void setRpmOcc(IObsData rpmOcc) {
-            this.rpmOcc = rpmOcc;
-            correlateObs();
-        }
+        private final static int FILE_TIMEOUT = 1000;
 
         public void addFfmpegOut(String videoFile, int totalCams) {
             synchronized (lock) {
                 this.ffmpegOuts.add(videoFile);
-                count++;
                 this.totalCams = totalCams;
-                correlateObs();
             }
         }
 
-        public void setObsStore(IObsStore store) {
+        public void setOccupancyOutput(OccupancyOutput<?> occupancyOutput) {
             synchronized (lock) {
-                this.obsStore = store;
+                if (this.occupancyOutput != null)
+                    this.occupancyOutput.removeOccupancyCallback(this::occupancyCallback);
+
+                this.occupancyOutput = occupancyOutput;
+                this.occupancyOutput.addOccupancyCallback(this::occupancyCallback);
             }
+        }
+
+        private void occupancyCallback(Occupancy occupancy) {
+            try {
+                Async.waitForCondition(() -> ffmpegOuts.size() >= totalCams, FILE_TIMEOUT);
+            } catch (TimeoutException e) {
+//                throw new RuntimeException(e);
+                logger.error("Failed to get video files", e);
+            }
+
+            for (String path : ffmpegOuts) {
+                occupancy.addVideoPath(path);
+            }
+            clear();
         }
 
         // Called when transitioning to any occupancy state (from non-occupancy)
         private void clear() {
-            rpmOcc = null;
             ffmpegOuts.clear();
-            count = 0;
-            totalCams = 2;
-        }
-
-        private void correlateObs() {
-            synchronized (lock) {
-                try {
-                    if (rpmOcc == null || count < totalCams)
-                        return;
-
-                    ArrayList<String> files = new ArrayList<>(ffmpegOuts);
-
-                    var observation = obsStore.select(new ObsFilter.Builder()
-                            .withDataStreams(rpmOcc.getDataStreamID())
-                            .withPhenomenonTimeDuring(rpmOcc.getPhenomenonTime().minusSeconds(OBS_BUFFER_SECONDS), rpmOcc.getPhenomenonTime().plusSeconds(OBS_BUFFER_SECONDS))
-                            .withLimit(1)
-                            .build()).findFirst();
-
-                    if (observation.isPresent()) {
-
-                        var result = observation.get().getResult();
-                        var occupancy = Occupancy.toOccupancy(result);
-
-                        for (var file : files) {
-                            occupancy.addVideoPath(file);
-                        }
-
-                        DataBlock occData = Occupancy.fromOccupancy(occupancy);
-                        result.setUnderlyingObject(occData.getUnderlyingObject());
-                        result.updateAtomCount();
-                    }
-
-                    this.clear();
-                } catch (Exception e) {
-                    logger.error("Error while adding video path to occupancy.", e);
-                    this.clear();
-                }
-            }
+            totalCams = 0;
         }
     }
 }

@@ -236,6 +236,7 @@ public class MessageHandler {
                         .occupancyCount(Integer.parseInt(csvLine[1]))
                         .startTime(occupancyStartTime/1000d)
                         .endTime(occupancyEndTime/1000d)
+                        .samplingTime(System.currentTimeMillis()/1000d)
                         .neutronBackground(Double.parseDouble(csvLine[2])/1000)
                         .gammaAlarm(isGammaAlarm)
                         .neutronAlarm(isNeutronAlarm)

@@ -50,6 +50,8 @@ public interface IBucketStore {
 
     InputStream getObject(String bucketName, String key) throws DataStoreException;
 
+    long getObjectSize(String bucketName, String key) throws DataStoreException;
+
     String getObjectMimeType(String bucketName, String key) throws DataStoreException;
 
     void deleteObject(String bucketName, String key) throws DataStoreException;

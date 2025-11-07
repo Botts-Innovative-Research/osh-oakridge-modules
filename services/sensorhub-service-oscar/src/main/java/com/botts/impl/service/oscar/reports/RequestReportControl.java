@@ -182,7 +182,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             sb.append("_").append(eventType);
 
         sb.append("_").append(formatter.format(start)).append("_").append(".pdf");
-        return sb.toString().toLowerCase();
+        return sb.toString().toLowerCase().replace(":", "-");
     }
 
     // checks if a report file already exists in object store and only creates a new output if it doesnt exist

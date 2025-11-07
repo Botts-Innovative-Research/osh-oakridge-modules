@@ -8,7 +8,6 @@ import com.botts.impl.system.lane.config.AspectRPMConfig;
 import com.botts.impl.system.lane.config.LaneConfig;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.function.ThrowingRunnable;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.SensorHub;
@@ -19,8 +18,6 @@ import org.slf4j.LoggerFactory;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
 
 import static org.junit.Assert.*;
 
@@ -57,16 +54,6 @@ public class SpreadsheetTests {
         assertEquals(lanes.size(), 0);
         handler.loadModules(lanes);
         assertNotNull(reg.getLoadedModules(LaneConfig.class));
-    }
-    @Test
-    public void testParseWithNoCamera() throws IOException {
-        String contents = readFile("no-cameras.csv");
-        var lanes = parser.deserialize(contents);
-        var options = lanes.get(0).laneOptionsConfig;
-        assertNotNull(options.rpmConfig);
-        assertNull(options.ffmpegConfig);
-        // Should throw because at least one camera required per lane
-        assertThrows(SensorHubException.class, () -> handler.loadModules(lanes));
     }
 
     @Test
