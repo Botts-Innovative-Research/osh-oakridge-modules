@@ -360,7 +360,7 @@ public class EventReport extends Report {
         Map<Instant, Long> gammaNeutronDaily = Utils.countObservationsByDay(laneUIDs, module,  Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
         Map<Instant, Long> emlSuppressedDaily = Utils.countObservationsByDay(laneUIDs, module,  Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
 
-        
+
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
         Map<String, Map<String, String>> tableDataByDate = new LinkedHashMap<>();
 

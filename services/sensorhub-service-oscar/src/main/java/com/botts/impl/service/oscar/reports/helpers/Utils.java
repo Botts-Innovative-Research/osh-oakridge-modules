@@ -23,6 +23,8 @@ import java.util.function.Predicate;
 
 public class Utils {
 
+    // result time  === 0
+
     // ALARMS
     public static Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
     public static Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
@@ -30,7 +32,7 @@ public class Utils {
     public static Predicate<IObsData> occupancyTotalPredicate = (obsData) -> true;
 
     // EML
-    public static Predicate<IObsData> emlSuppressedPredicate = (obsData) -> obsData.getResult().getStringValue(0).equals("RELEASE");
+    public static Predicate<IObsData> emlSuppressedPredicate = (obsData) -> obsData.getResult().getIntValue(1) == 1; // RELEASE
 
     // FAULTS
     public static Predicate<IObsData> tamperPredicate = (obsData) -> obsData.getResult().getBooleanValue(1);
