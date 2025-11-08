@@ -6,6 +6,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import net.opengis.swe.v20.DataChoice;
 import net.opengis.swe.v20.Category;
 import org.sensorhub.api.command.CommandData;
+import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
@@ -121,23 +122,29 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
     @Override
     protected void doStop() throws SensorHubException {
         super.doStop();
-        try {
-            if (fileControl != null) {
-                var command = (DataChoice) fileControl.getCommandDescription();
-                command.renewDataBlock();
-                command.setSelectedItem(FileControl.CMD_CLOSE_FILE);
-                command.getComponent(FileControl.CMD_CLOSE_FILE).getData().setBooleanValue(false);
-                this.fileControl.submitCommand((new CommandData.Builder()).withParams(command.getData()).build()).join();
-            }
-            if (hlsControl != null) {
-                var command = (Category) hlsControl.getCommandDescription();
-                command.renewDataBlock();
-                command.setValue(HLSControl.CMD_END_STREAM);
-                hlsControl.submitCommand((new CommandData.Builder()).withParams(command.getData()).build()).join();
-            }
-        } catch (Exception ignored) {}
         stopStream();
         shutdownExecutor();
+    }
+
+    @Override
+    protected void beforeStop() {
+        try {
+            if (fileControl != null) {
+                var command = fileControl.getCommandDescription().copy();
+                command.renewDataBlock();
+                var choice = (DataChoice) command.getComponent(0);
+                choice.setSelectedItem(FileControl.CMD_CLOSE_FILE);
+                choice.getComponent(FileControl.CMD_CLOSE_FILE).getData().setBooleanValue(false);
+                this.fileControl.submitCommand(new CommandData.Builder().withCommandStream(BigId.NONE).withId(BigId.NONE).withParams(command.getData()).build()).join();
+            }
+            if (hlsControl != null) {
+                var command = hlsControl.getCommandDescription().copy();
+                command.renewDataBlock();
+                var cat = (Category) command.getComponent(0);
+                cat.setValue(HLSControl.CMD_END_STREAM);
+                hlsControl.submitCommand(new CommandData.Builder().withCommandStream(BigId.NONE).withId(BigId.NONE).withParams(command.getData()).build()).join();
+            }
+        } catch (Exception e) { logger.error("Error stopping video output", e); }
     }
 
     public MpegTsProcessor getProcessor() { return mpegTsProcessor; }
