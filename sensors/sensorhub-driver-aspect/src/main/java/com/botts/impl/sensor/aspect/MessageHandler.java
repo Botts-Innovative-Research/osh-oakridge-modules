@@ -124,7 +124,6 @@ public class MessageHandler {
         // If the occupancy count has changed, then we need to set the start time
         if (occupancyCount != monitorRegisters.getObjectCounter()) {
             startTime = timestamp;
-            System.out.println("occupancy started");
             endTime = 0;
             occupancyCount = monitorRegisters.getObjectCounter();
             gammaAlarm = false;
@@ -149,9 +148,7 @@ public class MessageHandler {
         }
 
         occupancyGammaBatch.addLast(monitorRegisters.getGammaChannelCount());
-        System.out.println(occupancyGammaBatch);
         occupancyNeutronBatch.addLast(monitorRegisters.getNeutronChannelCount());
-        System.out.println(occupancyNeutronBatch);
 
         // If the sensor is still occupied, wait for it to become unoccupied
         if (monitorRegisters.isOccupied()) {
