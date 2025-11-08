@@ -132,7 +132,7 @@ public class LaneSystem extends SensorSystem {
                     FFMPEGConfig config = createFFmpegConfig(simpleConfig, ffmpegConfigList.indexOf(simpleConfig));
                     var ffmpegModule = createFFmpegModule(config);
                     if (occupancyWrapper != null) {
-                        occupancyWrapper.addFFmpegSensor(ffmpegModule);
+                        //occupancyWrapper.addFFmpegSensor(ffmpegModule);
                     }
                 }
             }
@@ -319,20 +319,28 @@ public class LaneSystem extends SensorSystem {
             // Module STATE_CHANGED events
             if (event.getType() == ModuleEvent.Type.STATE_CHANGED) {
 
-                if (event.getModule() == existingRPMModule && event.getNewState() == ModuleEvent.ModuleState.STARTED) {
-                    occupancyWrapper.start();
+                if (event.getModule() == existingRPMModule) {
+                    if (event.getNewState() == ModuleEvent.ModuleState.STARTED) {
+                        occupancyWrapper.start();
+                    } else if (event.getNewState() == ModuleEvent.ModuleState.STOPPING) {
+                        occupancyWrapper.stop();
+                    }
                 }
 
-                if (event.getNewState() == ModuleEvent.ModuleState.STOPPING) {
-                    occupancyWrapper.stop();
-                }
-
-                // New module loaded
-                if (event.getNewState() == ModuleEvent.ModuleState.LOADED) {
-
-                    if (event.getModule() instanceof FFMPEGSensor ffmpegDriver){
-                        if(!ffmpegConfigs.containsKey(ffmpegDriver.getLocalID()))
-                            ffmpegConfigs.put(ffmpegDriver.getLocalID(), ffmpegDriver.getConfiguration());
+                else if (event.getModule() instanceof FFMPEGSensor ffmpegDriver && getMembers().containsValue(ffmpegDriver)) {
+                    switch (event.getNewState()) {
+                        case LOADED -> {
+                            if(!ffmpegConfigs.containsKey(ffmpegDriver.getLocalID()))
+                                ffmpegConfigs.put(ffmpegDriver.getLocalID(), ffmpegDriver.getConfiguration());
+                        }
+                        case STARTING -> {
+                            if (occupancyWrapper != null)
+                                occupancyWrapper.addFFmpegSensor(ffmpegDriver);
+                        }
+                        case STOPPING -> {
+                            if (occupancyWrapper != null)
+                                occupancyWrapper.removeFFmpegSensor(ffmpegDriver);
+                        }
                     }
                 }
             }

@@ -35,7 +35,7 @@ public class OccupancyWrapper {
     public static final String DAILYFILE_NAME = "dailyFile";
 
     private static final Logger logger = LoggerFactory.getLogger(OccupancyWrapper.class);
-    private List<FFMPEGSensorBase<?>> cameras = new ArrayList<>();
+    private final List<FFMPEGSensorBase<?>> cameras = new ArrayList<>();
     private AbstractSensorModule<?> rpm;
     private volatile StateManager stateManager;
     private final ObservationHelper observationHelper = new ObservationHelper();
@@ -54,7 +54,7 @@ public class OccupancyWrapper {
     long alarmTime;
     IObsStore rpmObs;
     Flow.Subscription dailyFileSubscription;
-    final Map<FFMPEGSensorBase<?>, Flow.Subscription> cameraSubscriptions = Collections.synchronizedMap(new HashMap<>());
+    //final Map<FFMPEGSensorBase<?>, Flow.Subscription> cameraSubscriptions = Collections.synchronizedMap(new HashMap<>());
     Flow.Subscription occupancySubscription;
     List<String> fileNames = new ArrayList<>();
     private long cmdId = 0;
@@ -119,11 +119,6 @@ public class OccupancyWrapper {
             occupancySubscription.cancel();
         }
         occupancySubscription = null;
-
-        for (var subscription : cameraSubscriptions.values()) {
-            subscription.cancel();
-        }
-        cameraSubscriptions.clear();
     }
 
     public void registerDailyFileListener() {
@@ -251,11 +246,11 @@ public class OccupancyWrapper {
     }
 
     public boolean isInitialized() {
-        return (rpm != null) && (cameras != null) && (!cameras.isEmpty());
+        return (rpm != null);
     }
 
     public void setFFmpegSensors(FFMPEGSensorBase<?>... sensors) {
-        cameras = Arrays.stream(sensors).toList();
+        cameras.addAll(Arrays.stream(sensors).toList());
     }
 
     public void setFFmpegSensors(List<FFMPEGSensorBase<?>> sensors) {
@@ -303,18 +298,11 @@ public class OccupancyWrapper {
     public void removeFFmpegSensor(FFMPEGSensorBase<?> sensor) {
         if (cameras.contains(sensor)) {
             cameras.remove(sensor);
-            if (cameraSubscriptions.containsKey(sensor)) {
-                cameraSubscriptions.get(sensor).cancel();
-            }
         }
     }
 
     public void clearFFmpegSensors() {
         cameras.clear();
-        for (var subscription : cameraSubscriptions.values()) {
-            subscription.cancel();
-        }
-        cameraSubscriptions.clear();
     }
 
     private static class ObservationHelper {

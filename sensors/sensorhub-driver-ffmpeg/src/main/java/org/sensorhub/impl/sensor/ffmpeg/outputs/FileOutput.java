@@ -52,14 +52,11 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     //private String outputFile = "";
     private AVFormatContext outputContext;
     private final Object contextLock = new Object();
-    private final ArrayDeque<AVPacket> framesSinceKey = new ArrayDeque<>();
     AVStream outputVideoStream;
     OutputStream outputStream;
-    int ptsInc;
-    long currentTime = 0;
     AVRational timeBase = new AVRational();
-    long filePts;
-    boolean hasHadKey = false;
+    AVRational inputTimeBase = new AVRational();
+    volatile long filePts;
     private WriteCallback writeCallback;
     private SeekCallback seekCallback;
     BytePointer buffer;
@@ -77,9 +74,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 .build();
 
         outputEncoding = helper.newTextEncoding();
-
-        timeBase.num(1);
-        timeBase.den(90000);
     }
 
     @Override
@@ -91,25 +85,15 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     public void onDataBuffer(DataBufferRecord record) {
         synchronized (contextLock) {
             var data = record.getDataBuffer();
-            long timestamp = (long)(record.getPresentationTimestamp() * timeBase.den() / timeBase.num());
-
-            // Guessing the previous timestamp if this is the first frame
-            if (currentTime == 0) {
-                currentTime = timestamp - (long)(1.0 / 24 * this.timeBase.den() / this.timeBase.num());
-            }
+            long timestamp = (long)(record.getPresentationTimestamp() * inputTimeBase.den() / inputTimeBase.num());
 
             AVPacket avPacket = av_packet_alloc();
             av_new_packet(avPacket, data.length);
             avPacket.data().put(data);
-            avPacket.duration(timestamp - currentTime);
-            avPacket.time_base(timeBase);
+            avPacket.pts(timestamp);
+            avPacket.dts(timestamp);
 
-            currentTime = timestamp;
-
-            boolean isKeyFrame = record.isKeyFrame();
-
-            if (isKeyFrame) {
-                hasHadKey = true;
+            if (record.isKeyFrame()) {
                 avPacket.flags(avPacket.flags() | avcodec.AV_PKT_FLAG_KEY);
             }
 
@@ -121,13 +105,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 } else {
                     logger.error("Cannot write to file; output context is null");
                 }
-            } else if (hasHadKey) {
-                if (isKeyFrame) {
-                    framesSinceKey.clear();
-                }
-                framesSinceKey.add(avPacket);
             }
-
         }
     }
 
@@ -221,8 +199,8 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
             }
 
              */
-            flushFrameBuffer();
 
+            timeBase = outputVideoStream.time_base();
             doFileWrite.set(true);
         } catch (Exception e) {
             throw new IOException("Could not open output file " + fileName, e);
@@ -305,9 +283,8 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
             }
 
              */
-            flushFrameBuffer();
-            outputContext.start_time(0);
-            outputContext.position(0);
+
+            timeBase = outputVideoStream.time_base();
             doFileWrite.set(true);
         } catch (Exception e) {
             throw new IOException("Could not open output file " + fileName, e);
@@ -326,12 +303,13 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         outputVideoStream = avformat.avformat_new_stream(outputContext, null);
 
         avcodec.avcodec_parameters_copy(outputVideoStream.codecpar(), inputStream.codecpar());
+        inputTimeBase = inputStream.time_base();
 
         // We're transcoding, need to override some of the copied values
         outputVideoStream.codecpar().codec_id(AV_CODEC_ID_H264);
         outputVideoStream.codecpar().codec_tag(0);
 
-        outputVideoStream.time_base(timeBase);
+        //outputVideoStream.time_base(timeBase);
         outputVideoStream.duration(AV_NOPTS_VALUE);
 
         outputVideoStream.start_time(0);
@@ -341,15 +319,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         outputContext.position(0);
     }
 
-    private void flushFrameBuffer() {
-        while (!framesSinceKey.isEmpty()) {
-            AVPacket packet = framesSinceKey.pop();
-            packetTiming(packet);
-            av_write_frame(outputContext, packet);
-            av_packet_free(packet);
-        }
-    }
-
     private void logFFmpeg(int retCode) {
         BytePointer buf = new BytePointer(AV_ERROR_MAX_STRING_SIZE);
         av_strerror(retCode, buf, buf.capacity());
@@ -357,9 +326,13 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     }
 
     private void packetTiming(AVPacket avPacket) {
-        filePts += avPacket.duration();
-        avPacket.pts(filePts);
-        avPacket.dts(filePts);
+        if (filePts <= 0) {
+            filePts = avPacket.pts();
+        }
+        long newPts = avutil.av_rescale_q(avPacket.pts() - filePts, timeBase, inputTimeBase);
+        avPacket.pts(newPts);
+        avPacket.dts(newPts);
+        avPacket.time_base(timeBase);
     }
 
     private static AVDictionary hlsOptions() {
@@ -377,10 +350,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         synchronized (contextLock) {
             if (doFileWrite.get()) {
                 doFileWrite.set(false);
-                hasHadKey = false;
-                currentTime = 0;
-                framesSinceKey.clear();
-                outputVideoStream.duration(filePts);
                 try {
                     if (outputContext.pb() != null) {
                         avio_flush(outputContext.pb());
