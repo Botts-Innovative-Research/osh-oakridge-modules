@@ -29,6 +29,7 @@ import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.module.AbstractModule;
 
+import java.time.Duration;
 import java.time.Period;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -77,10 +78,17 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         sitemapDiagramHandler = new SitemapDiagramHandler(getBucketService(), siteInfoOutput, this);
 
-        videoRetention = new VideoRetention(getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore(),
-                bucketStore,
-                Period.ofDays(5), Period.ofDays(10),
-                5);
+        if (getConfiguration().videoRetentionConfig != null) {
+            int frameCount = getConfiguration().videoRetentionConfig.enableFrameRetention ? getConfiguration().videoRetentionConfig.frameRetentionCount : 0;
+            videoRetention = new VideoRetention(getParentHub(),
+                    bucketStore,
+                    Duration.ofMinutes(getConfiguration().videoRetentionConfig.videoQueryPeriod),
+                    Duration.ofDays(getConfiguration().videoRetentionConfig.timeToRetention),
+                    frameCount);
+        } else {
+            videoRetention = null;
+            logger.info("No video retention config set.");
+        }
 
         system.updateSensorDescription();
     }
@@ -115,8 +123,9 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         statsOutput.start();
 
-        //videoRetention.start();
-        videoRetention.decimate(bucketStore.getResourceURI(Constants.VIDEO_BUCKET, "test.mp4"));
+        if (videoRetention != null)
+            videoRetention.start();
+        //videoRetention.decimate(bucketStore.getResourceURI(Constants.VIDEO_BUCKET, "test.mp4"));
     }
 
     @Override
@@ -128,12 +137,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
             getLogger().error("Could not stop stats output", ex);
         }
 
-        videoRetention.interrupt();
-        try {
-            videoRetention.join();
-        } catch (InterruptedException e) {
-            getLogger().error("Could not stop video retention", e);
-        }
+        if (videoRetention != null)
+            videoRetention.stop();
     }
 
     public SitemapDiagramHandler getSitemapDiagramHandler() {
