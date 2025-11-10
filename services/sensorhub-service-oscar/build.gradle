@@ -13,10 +13,13 @@ dependencies {
     implementation("jfree:jfreechart:1.0.13") // charts
     implementation("com.itextpdf:itext7-core:9.3.0") //pdfs
 
+    embeddedApi 'org.bytedeco:ffmpeg-platform:7.1-1.5.11'
+    implementation project(':sensorhub-driver-ffmpeg')
+
     testImplementation 'org.sensorhub:sensorhub-datastore-h2:' + oshCoreVersion
     testImplementation 'org.sensorhub:sensorhub-service-consys:' + oshCoreVersion
 }
-  
+
 // add info to OSGi manifest
 osgi {
     manifest {
@@ -42,4 +45,3 @@ ext.pom >>= {
         }
     }
 }
-
