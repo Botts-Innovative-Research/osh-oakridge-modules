@@ -21,6 +21,7 @@ import com.botts.impl.system.lane.LaneSystem;
 import com.botts.impl.system.lane.config.LaneConfig;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.module.ModuleRegistry;
 import org.slf4j.Logger;
 import org.vast.util.Asserts;
@@ -109,7 +110,21 @@ public class SpreadsheetHandler implements IFileHandler {
 
     public void loadModules(Collection<LaneConfig> laneConfigs) throws SensorHubException {
         for (var config : laneConfigs)
-            reg.loadModule(config);
+            reg.loadModuleAsync(config, (event) -> {
+                if (event instanceof ModuleEvent moduleEvent) {
+                    if (moduleEvent.getType() == ModuleEvent.Type.ERROR) {
+                        if (moduleEvent.getError() != null) {
+                            if (moduleEvent.getModule() != null && moduleEvent.getModule().getName() != null) {
+                                logger.warn("Could not import module: {}", moduleEvent.getModule().getName(), moduleEvent.getError());
+                            } else {
+                                logger.warn("Could not import module", moduleEvent.getError());
+                            }
+                        } else {
+                            logger.warn("Could not import module");
+                        }
+                    }
+                }
+            });
     }
 
 }
