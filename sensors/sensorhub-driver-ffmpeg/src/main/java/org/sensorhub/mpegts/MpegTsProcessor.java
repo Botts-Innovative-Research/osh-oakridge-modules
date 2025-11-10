@@ -110,6 +110,8 @@ public class MpegTsProcessor extends Thread {
      */
     private static final Logger logger = LoggerFactory.getLogger(MpegTsProcessor.class);
 
+    boolean injectExtradata = false;
+
     /**
      * Name of thread
      */
@@ -280,6 +282,8 @@ public class MpegTsProcessor extends Thread {
         return this.avFormatContext;
     }
 
+    public void setInjectExtradata(boolean injectExtradata) {this.injectExtradata = injectExtradata;}
+
     public AVStream getAvStream() {
         return this.avFormatContext.streams(videoStreamId);
     }
@@ -331,9 +335,11 @@ public class MpegTsProcessor extends Thread {
             // PPS/SPS extradata from AVCC to Annex B.
             // TODO: Detect AVCC, convert to Annex B
             int extraSize = avFormatContext.streams(streamId).codecpar().extradata_size();
-            if (extraSize > 0 && avFormatContext.streams(streamId).codecpar().codec_id() == avcodec.AV_CODEC_ID_H264) {
+            if (injectExtradata && extraSize > 0 && avFormatContext.streams(streamId).codecpar().codec_id() == avcodec.AV_CODEC_ID_H264) {
                 spsPpsHeader = new byte[extraSize];
                 avFormatContext.streams(streamId).codecpar().extradata().get(spsPpsHeader);
+            } else {
+                spsPpsHeader = null;
             }
 
 
@@ -623,8 +629,28 @@ public class MpegTsProcessor extends Thread {
             boolean doProcessing = true;
 
             while (!terminateProcessing.get() && (retCode = av_read_frame(avFormatContext, avPacket)) >= 0) {
-                // If it is a video or data frame and there is a listener registered
-                if ((avPacket.stream_index() == videoStreamId) && (!videoDataBufferListeners.isEmpty())) {
+                boolean skipProcessing = true;
+                for (DataBufferListener listener : videoDataBufferListeners) {
+                    if (listener.isWriting()) {
+                        skipProcessing = false;
+                        break;
+                    }
+                }
+                if (skipProcessing) {
+                    if (decodeQueue != null) {
+                        decodeQueue.clear();
+                    }
+                    if (decoder != null) {
+                        decoder.getOutQueue().clear();
+                    }
+                    if (encoder != null) {
+                        encoder.getOutQueue().clear();
+                    }
+                    continue;
+                }
+
+                // If it is a video or data frame
+                if ((avPacket.stream_index() == videoStreamId)) {
 
                     // if FPS is set, we may have to wait a little
                     if (fps > 0) {
@@ -641,21 +667,6 @@ public class MpegTsProcessor extends Thread {
                     }
 
                     if (doTranscode) {
-                        // Slight optimization to skip processing if listeners are doing nothing
-                        // Assuming this is jpeg. Otherwise, may have keyframe issues.
-                        for (DataBufferListener listener : videoDataBufferListeners) {
-                            if (listener.isWriting()) {
-                                doProcessing = true;
-                                break;
-                            }
-                            doProcessing = false;
-                        }
-
-                        if (!doProcessing) {
-                            encoder.getOutQueue().clear();
-                            continue;
-                        }
-
                         decodeQueue.add(avcodec.av_packet_clone(avPacket));
                         var outQueue = encoder.getOutQueue();
 
