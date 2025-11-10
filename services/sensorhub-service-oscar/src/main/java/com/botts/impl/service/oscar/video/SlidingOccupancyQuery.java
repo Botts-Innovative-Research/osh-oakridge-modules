@@ -11,60 +11,61 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.temporal.Temporal;
 import java.time.temporal.TemporalAmount;
 import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class SlidingOccupancyQuery {
     private static final Logger logger = LoggerFactory.getLogger(SlidingOccupancyQuery.class);
     private final String OCCUPANCY_NAME = OccupancyOutput.NAME;
 
-    TemporalAmount batchLength;
+    TemporalAmount batchWindowLength;
     TemporalAmount queryRangeStart;
     TemporalAmount queryRangeEnd;
-    //TemporalAmount queryDelta = Duration.ZERO;
-    Instant lastQueryTime = Instant.now();
-    final TemporalAmount queryError = Duration.ofSeconds(5);
+    static final TemporalAmount adjustableWindowIncreaseOnMiss = Duration.ofMinutes(30); // TODO Test different values
     QueryAction afterQueryAction;
 
-    final ScheduledExecutorService executor = Executors.newScheduledThreadPool(1);
-    ScheduledFuture future;
+    static final ThreadFactory minPriorityThreadFac = r -> {
+        Thread newThread = new Thread(r);
+        newThread.setPriority(Thread.MIN_PRIORITY);
+        return newThread;
+    };
+    final ScheduledExecutorService executor = Executors.newScheduledThreadPool(1, minPriorityThreadFac);
+    ScheduledFuture<?> future;
 
     ISensorHub hub;
 
-    public SlidingOccupancyQuery(ISensorHub hub, TemporalAmount batchLength, QueryAction afterQueryAction, TemporalAmount queryRangeStart, TemporalAmount queryRangeEnd) {
-        this.batchLength = batchLength;
+    public SlidingOccupancyQuery(ISensorHub hub, TemporalAmount batchWindowLength, QueryAction afterQueryAction, TemporalAmount queryRangeStart, TemporalAmount queryRangeEnd) {
+        this.batchWindowLength = batchWindowLength;
         this.afterQueryAction = afterQueryAction;
         this.queryRangeStart = queryRangeStart;
         this.queryRangeEnd = queryRangeEnd;
         this.hub = hub;
     }
 
+    public SlidingOccupancyQuery(ISensorHub hub, TemporalAmount batchWindowLength, QueryAction afterQueryAction, TemporalAmount queryRangeStart) {
+        this(hub, batchWindowLength, afterQueryAction, queryRangeStart, null);
+    }
+
     public void start() {
-        future = executor.scheduleAtFixedRate(this::queryOccupancies, 0, batchLength.get(TimeUnit.SECONDS.toChronoUnit()), TimeUnit.SECONDS);
+        // Should generally result in one or two queries per batch
+        future = executor.scheduleAtFixedRate(this::queryOccupancies, 0, batchWindowLength.get(TimeUnit.SECONDS.toChronoUnit()), TimeUnit.SECONDS);
     }
 
     private void queryOccupancies() {
         try {
-            logger.warn("Querying occupancies"); // TODO THIS IS DEBUG, REMOVE
 
             List<IObsData> decimObs;
-            TemporalAmount queryDelta;
-            Temporal lastQueryTime;
 
-            // batch start and batch end are in reverse. start is closest to now, end is further.
+            // batch start and batch end are in reverse. start is closest to now (larger), end is further (smaller).
             Instant batchStart = Instant.now().minus(this.queryRangeStart);
-            Instant batchEnd = batchStart.minus(batchLength).minus(queryError);
+            Instant batchEnd = batchStart.minus(batchWindowLength);
+            Instant queryEnd = queryRangeEnd == null ? Instant.EPOCH : Instant.now().minus(queryRangeEnd);
+            TemporalAmount adjustableBatchLength = batchWindowLength;
             boolean continueQuery = true;
 
             do {
-                lastQueryTime = Instant.now();
-
                 decimObs = hub.getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
                         .withDataStreams(new DataStreamFilter.Builder().withOutputNames(OccupancyOutput.NAME).build())
                         .withResultTimeDuring(batchEnd, batchStart)
@@ -74,24 +75,42 @@ public class SlidingOccupancyQuery {
                     if (!this.afterQueryAction.call(Occupancy.toOccupancy(obs.getResult()))) {
                         continueQuery = false;
                         break;
-                    };
+                    }
                 }
 
                 if (continueQuery) {
-                    queryDelta = Duration.between(lastQueryTime, Instant.now());
-                    batchStart = batchEnd.minus(queryDelta);
-                    batchEnd = batchStart.minus(batchLength).minus(queryError);
-                    continueQuery = batchStart.isBefore(Instant.now().minus(this.queryRangeEnd));
+                    if (decimObs.isEmpty()) {
+                        // If our list of observations is empty, increase the window size
+                        adjustableBatchLength = Duration.between(Instant.now(),
+                                Instant.now().plus(adjustableBatchLength).plus(adjustableWindowIncreaseOnMiss));
+                    } else {
+                        // Reset the window size if we're getting observations
+                        adjustableBatchLength = batchWindowLength;
+                    }
+                    batchStart = batchEnd;
+                    batchEnd = batchStart.minus(adjustableBatchLength);
+                    continueQuery = !batchStart.isBefore(queryEnd);
                 }
 
             } while(continueQuery);
-
-            logger.warn("Finished querying occupancies"); // TODO THIS IS DEBUG, REMOVE
 
         } catch (Exception e) {
             logger.warn("Exception while querying occupancies", e);
         }
 
+    }
+
+    public void stop() {
+        if (future != null) {
+            future.cancel(false);
+            executor.shutdown();
+            try {
+                executor.awaitTermination(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                logger.warn("Interrupted while waiting for occupancy query thread to terminate", e);
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
 
