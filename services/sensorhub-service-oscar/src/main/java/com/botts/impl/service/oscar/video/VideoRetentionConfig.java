@@ -19,10 +19,17 @@ import org.sensorhub.api.config.DisplayInfo;
 
 public class VideoRetentionConfig {
 
-    @DisplayInfo(label = "Max Age (days)", desc = "Maximum time in days to store video clips")
-    public int maxAge = 7;
+    @DisplayInfo(label = "Time to Keyframe Retention/Deletion (days)", desc = "Time in days until video data is either decimated or deleted.")
+    public int timeToRetention = 7;
 
-    @DisplayInfo(label = "3-Frame Persistence", desc = "Enable to permanently save 3 frames from each video clip")
-    public boolean use3FramePersistence = true;
+    @DisplayInfo(label = "Video Query Period (minutes)", desc = "Number of minutes between queries for occupancy video clips. " +
+            "Larger values will result in more occupancies/video paths being loaded at once.")
+    public int videoQueryPeriod = 1;
+
+    @DisplayInfo(label = "Enable Frame Retention", desc = "Instead of deleting the entire clip, all but a certain number of frames will be removed.")
+    public boolean enableFrameRetention = true;
+
+    @DisplayInfo(label = "Keyframe Retention Count", desc = "Number of frames of video to preserve. \"Enable Frame Retention\" must be enabled.")
+    public int frameRetentionCount = 5;
 
 }
