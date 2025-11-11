@@ -1,6 +1,5 @@
 package org.sensorhub.impl.sensor.ffmpeg.tests;
 
-import org.junit.Ignore;
 import org.sensorhub.impl.sensor.ffmpeg.ConnectionTest;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensor;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
@@ -10,11 +9,11 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Paths;
 
 
-public class FileTestMjpeg extends ConnectionTest {
+public class FileTestH264 extends ConnectionTest {
 
-    private static final Logger logger = LoggerFactory.getLogger(FileTestMjpeg.class);
+    private static final Logger logger = LoggerFactory.getLogger(FileTestH264.class);
 
-    public FileTestMjpeg() throws Exception {
+    public FileTestH264() throws Exception {
     }
 
     @Override
@@ -34,5 +33,6 @@ public class FileTestMjpeg extends ConnectionTest {
         config.connectionConfig.reconnectAttempts = 10;
         config.output.useVideoFrames = false;
         config.output.useHLS = true;
+        config.connection.loop = true;
     }
 }
