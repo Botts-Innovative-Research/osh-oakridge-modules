@@ -110,7 +110,7 @@ public class MpegTsProcessor extends Thread {
      */
     private static final Logger logger = LoggerFactory.getLogger(MpegTsProcessor.class);
 
-    boolean injectExtradata = false;
+    boolean injectExtradata = true;
 
     /**
      * Name of thread
