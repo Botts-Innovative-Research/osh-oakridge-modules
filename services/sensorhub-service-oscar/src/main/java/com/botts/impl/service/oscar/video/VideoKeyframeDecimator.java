@@ -1,5 +1,6 @@
 package com.botts.impl.service.oscar.video;
 
+import org.bytedeco.ffmpeg.avcodec.AVCodecParameters;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avformat.*;
 import org.bytedeco.ffmpeg.avutil.AVDictionary;
@@ -8,13 +9,18 @@ import org.bytedeco.ffmpeg.global.avcodec;
 import org.bytedeco.ffmpeg.global.avformat;
 import org.bytedeco.ffmpeg.global.avutil;
 import org.sensorhub.mpegts.DataBufferListener;
+import org.sensorhub.mpegts.FFmpegUtils;
 import org.sensorhub.mpegts.DataBufferRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
+import static org.bytedeco.ffmpeg.global.avutil.*;
 import static org.bytedeco.ffmpeg.global.avcodec.*;
 import static org.bytedeco.ffmpeg.global.avformat.*;
 import static org.bytedeco.ffmpeg.global.avformat.AVIO_FLAG_WRITE;
@@ -23,6 +29,7 @@ import static org.bytedeco.ffmpeg.global.avutil.av_rescale_q;
 
 // TODO Should this be moved to the ffmpeg driver package?
 public class VideoKeyframeDecimator implements DataBufferListener {
+    private static final Logger logger = LoggerFactory.getLogger(VideoKeyframeDecimator.class);
     final String outputFileName;
 
     boolean isWriting = true;
@@ -59,6 +66,8 @@ public class VideoKeyframeDecimator implements DataBufferListener {
 
         avStream = avformat.avformat_new_stream(avFormatContext, null);
         avcodec.avcodec_parameters_copy(avStream.codecpar(), otherStream.codecpar());
+        FFmpegUtils.cleanCodecParameters(avStream.codecpar());
+
         avStream.codecpar().format(otherStream.codecpar().format());
         avStream.codecpar().extradata(otherStream.codecpar().extradata());
         avStream.codecpar().extradata_size(otherStream.codecpar().extradata_size());
@@ -89,12 +98,14 @@ public class VideoKeyframeDecimator implements DataBufferListener {
         }
     }
 
+
+
     private void resetFrameTimeout() {
         if (timeoutTask != null) {
             timeoutTask.cancel(false);
         }
 
-        //timeoutTask = scheduler.schedule(this::closeFile, frameTimeout, TimeUnit.SECONDS);
+        timeoutTask = scheduler.schedule(this::closeFile, frameTimeout, TimeUnit.SECONDS);
     }
 
     @Override
@@ -103,7 +114,7 @@ public class VideoKeyframeDecimator implements DataBufferListener {
             if (!isWriting)
                 return;
 
-            //resetFrameTimeout();
+            resetFrameTimeout();
             long timestamp = (long) (record.getPresentationTimestamp() * timeBase.den() / timeBase.num());
 
 
