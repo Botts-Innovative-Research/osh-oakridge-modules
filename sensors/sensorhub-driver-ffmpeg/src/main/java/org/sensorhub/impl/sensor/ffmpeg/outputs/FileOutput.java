@@ -24,6 +24,7 @@ import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.util.ByteArraySeekableBuffer;
 import org.sensorhub.mpegts.DataBufferListener;
 import org.sensorhub.mpegts.DataBufferRecord;
+import org.sensorhub.mpegts.FFmpegUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.swe.SWEHelper;
@@ -303,6 +304,8 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         outputVideoStream = avformat.avformat_new_stream(outputContext, null);
 
         avcodec.avcodec_parameters_copy(outputVideoStream.codecpar(), inputStream.codecpar());
+        FFmpegUtils.cleanCodecParameters(outputVideoStream.codecpar());
+
         inputTimeBase = inputStream.time_base();
 
         // We're transcoding, need to override some of the copied values
