@@ -35,7 +35,6 @@ public class VideoKeyframeDecimator implements DataBufferListener {
     boolean isWriting = true;
 
     final int totalKeyframe;
-    static final int frameTimeout = 5;
     long duration;
     long keyFrameDuration;
     long currentDecFrame = 0;
@@ -47,9 +46,6 @@ public class VideoKeyframeDecimator implements DataBufferListener {
     Runnable closeCallback;
 
     final Object lock = new Object();
-
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private volatile ScheduledFuture<?> timeoutTask;
 
     VideoKeyframeDecimator(String outputFileName, int totalKeyframe, AVStream otherStream) {
         this.outputFileName = outputFileName;
@@ -98,23 +94,13 @@ public class VideoKeyframeDecimator implements DataBufferListener {
         }
     }
 
-
-
-    private void resetFrameTimeout() {
-        if (timeoutTask != null) {
-            timeoutTask.cancel(false);
-        }
-
-        timeoutTask = scheduler.schedule(this::closeFile, frameTimeout, TimeUnit.SECONDS);
-    }
-
     @Override
     public void onDataBuffer(DataBufferRecord record) {
         synchronized (lock) {
             if (!isWriting)
                 return;
 
-            resetFrameTimeout();
+            //resetFrameTimeout();
             long timestamp = (long) (record.getPresentationTimestamp() * timeBase.den() / timeBase.num());
 
 
