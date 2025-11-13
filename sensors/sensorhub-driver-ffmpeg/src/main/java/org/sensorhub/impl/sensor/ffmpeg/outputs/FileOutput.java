@@ -4,6 +4,7 @@ package org.sensorhub.impl.sensor.ffmpeg.outputs;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.TextEncoding;
+import org.bytedeco.ffmpeg.avcodec.AVCodecParameters;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avformat.AVFormatContext;
 import org.bytedeco.ffmpeg.avformat.AVIOContext;
@@ -31,7 +32,6 @@ import org.vast.swe.SWEHelper;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.util.ArrayDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.bytedeco.ffmpeg.global.avcodec.*;
@@ -171,7 +171,12 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
             outputVideoStream.position(0);
 
              */
-            initCtx();
+            AVCodecParameters avCodecParameters = this.parentSensor.getProcessor().getCodecParams();
+            if (avCodecParameters == null) {
+                logger.error("Could not open file output; this stream's codec parameters are null");
+                return;
+            }
+            initCtx(avCodecParameters);
 
             //timeBase = (double) inputStream.time_base().num() / inputStream.time_base().den();
 
@@ -252,7 +257,12 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
             outputVideoStream.position(0);
 
              */
-            initCtx();
+            AVCodecParameters avCodecParameters = this.parentSensor.getProcessor().getCodecParams();
+            if (avCodecParameters == null) {
+                logger.error("Could not open file output; this stream's codec parameters are null");
+                return;
+            }
+            initCtx(avCodecParameters);
 
             //timeBase = (double) inputStream.time_base().num() / inputStream.time_base().den();
 
@@ -292,21 +302,19 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         }
     }
 
-    private void initCtx() {
+    private void initCtx(AVCodecParameters codecParams) {
         filePts = 0;
 
         //AVFormatContext inputContext = this.parentSensor.getProcessor().getAvFormatContext();
-        AVStream inputStream = this.parentSensor.getProcessor().getAvStream();
-
         outputContext = new AVFormatContext(null);
         avformat_alloc_output_context2(outputContext, null, null, this.fileName);
 
         outputVideoStream = avformat.avformat_new_stream(outputContext, null);
 
-        avcodec.avcodec_parameters_copy(outputVideoStream.codecpar(), inputStream.codecpar());
+        avcodec.avcodec_parameters_copy(outputVideoStream.codecpar(), codecParams);
         FFmpegUtils.cleanCodecParameters(outputVideoStream.codecpar());
 
-        inputTimeBase = inputStream.time_base();
+        //inputTimeBase = avCodecParameters.time_base();
 
         // We're transcoding, need to override some of the copied values
         outputVideoStream.codecpar().codec_id(AV_CODEC_ID_H264);
