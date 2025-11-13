@@ -137,9 +137,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 if (doFileWrite.get()) {
                     throw new IOException("Already writing to file " + this.fileName);
                 }
-                //avutil.av_log_set_level(AV_LOG_DEBUG);
 
-                // TODO REMOVE REPEAT CODE
                 this.outputStream = null;
                 this.fileName = fileName;
 
@@ -180,15 +178,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                     throw new IOException("Could not write header to file.");
                 }
 
-            /*
-            while (!framesSinceKey.isEmpty()) {
-                AVPacket packet = framesSinceKey.pop();
-                packetTiming(packet);
-                av_write_frame(outputContext, packet);
-                av_packet_free(packet);
-            }
-
-             */
                 timeBase = outputVideoStream.time_base();
                 doFileWrite.set(true);
             }
