@@ -310,7 +310,7 @@ public class OccupancyWrapper {
         private OccupancyOutput<?> occupancyOutput;
         private final Object lock = new Object();
         private int totalCams = 2;
-        private final static int FILE_TIMEOUT = 1000;
+        private final static int FILE_TIMEOUT = 5000;
 
         public void addFfmpegOut(String videoFile, int totalCams) {
             synchronized (lock) {
