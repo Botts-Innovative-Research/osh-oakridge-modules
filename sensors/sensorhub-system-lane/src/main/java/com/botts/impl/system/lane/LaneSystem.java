@@ -328,19 +328,16 @@ public class LaneSystem extends SensorSystem {
                 }
 
                 else if (event.getModule() instanceof FFMPEGSensor ffmpegDriver && getMembers().containsValue(ffmpegDriver)) {
-                    switch (event.getNewState()) {
-                        case LOADED -> {
-                            if(!ffmpegConfigs.containsKey(ffmpegDriver.getLocalID()))
-                                ffmpegConfigs.put(ffmpegDriver.getLocalID(), ffmpegDriver.getConfiguration());
-                        }
-                        case STARTING -> {
-                            if (occupancyWrapper != null)
-                                occupancyWrapper.addFFmpegSensor(ffmpegDriver);
-                        }
-                        case STOPPING -> {
-                            if (occupancyWrapper != null)
-                                occupancyWrapper.removeFFmpegSensor(ffmpegDriver);
-                        }
+                    var state = event.getNewState();
+                    if (state == ModuleEvent.ModuleState.LOADED) {
+                        if(!ffmpegConfigs.containsKey(ffmpegDriver.getLocalID()))
+                            ffmpegConfigs.put(ffmpegDriver.getLocalID(), ffmpegDriver.getConfiguration());
+                    }
+
+                    if (state == ModuleEvent.ModuleState.STARTED) {
+                        occupancyWrapper.addFFmpegSensor(ffmpegDriver);
+                    } else {
+                        occupancyWrapper.removeFFmpegSensor(ffmpegDriver);
                     }
                 }
             }
