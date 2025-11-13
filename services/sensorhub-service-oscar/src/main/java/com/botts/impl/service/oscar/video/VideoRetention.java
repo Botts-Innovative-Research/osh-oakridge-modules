@@ -3,14 +3,12 @@ package com.botts.impl.service.oscar.video;
 import com.botts.api.service.bucket.IBucketStore;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.datastore.DataStoreException;
-import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.mpegts.MpegTsProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Paths;
-import java.time.Duration;
 import java.time.temporal.TemporalAmount;
 
 public class VideoRetention {
@@ -107,11 +105,11 @@ public class VideoRetention {
         videoInput.openStream();
         videoInput.queryEmbeddedStreams();
         var stream = videoInput.getAvStream();
-        if (stream.avg_frame_rate() == null || stream.avg_frame_rate().num() < stream.avg_frame_rate().den()) {
+        if (stream == null || stream.avg_frame_rate() == null || stream.avg_frame_rate().num() < stream.avg_frame_rate().den()) {
             return false; // if fps < 1, assume this file has already been decimated and we lost track somehow
         }
 
-        VideoKeyframeDecimator videoOutput = new VideoKeyframeDecimator(decimatedMp4, frameCount, videoInput.getAvStream());
+        VideoKeyframeDecimator videoOutput = new VideoKeyframeDecimator(decimatedMp4, frameCount, stream);
         videoInput.addVideoDataBufferListener(videoOutput);
 
         videoOutput.setFileCloseCallback(() -> {
