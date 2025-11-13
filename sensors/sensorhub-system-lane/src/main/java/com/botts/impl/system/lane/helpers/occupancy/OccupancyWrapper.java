@@ -335,6 +335,8 @@ public class OccupancyWrapper {
             } catch (TimeoutException e) {
 //                throw new RuntimeException(e);
                 logger.error("Failed to get video files", e);
+                clear();
+                return;
             }
 
             for (String path : ffmpegOuts) {
