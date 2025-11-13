@@ -25,19 +25,15 @@ import org.bytedeco.ffmpeg.global.avcodec;
 import org.bytedeco.ffmpeg.global.avformat;
 import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacpp.PointerPointer;
-import org.sensorhub.impl.process.video.transcoder.coders.Coder;
 import org.sensorhub.impl.process.video.transcoder.coders.Decoder;
 import org.sensorhub.impl.process.video.transcoder.coders.Encoder;
-import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.bytedeco.ffmpeg.global.avformat.*;
-import static org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_YUVJ420P;
 
 /**
  * The class provides a wrapper to bytedeco.org JavaCpp-Platform.
@@ -111,6 +107,8 @@ public class MpegTsProcessor extends Thread {
     private static final Logger logger = LoggerFactory.getLogger(MpegTsProcessor.class);
 
     boolean injectExtradata = true;
+
+    public final Object contextLock = new Object();
 
     /**
      * Name of thread
@@ -237,55 +235,80 @@ public class MpegTsProcessor extends Thread {
      * @return true if the stream is opened succesfully, false otherwise.
      */
     public boolean openStream() {
+        synchronized (contextLock) {
 
-        logger.debug("openStream");
+            try {
+                logger.debug("openStream");
 
-        avformat.avformat_network_init();
+                avformat.avformat_network_init();
 
-        AVDictionary options = new AVDictionary();
+                AVDictionary options = new AVDictionary();
 
 
-        if(useTCP){
-            avutil.av_dict_set(options, "rtsp_transport", "tcp", 0);
-        }
+                if (useTCP) {
+                    avutil.av_dict_set(options, "rtsp_transport", "tcp", 0);
+                }
 
-        avutil.av_dict_set(options, "timeout", Long.toString(timeout), 0);
+                avutil.av_dict_set(options, "timeout", Long.toString(timeout), 0);
 
-        // Create a new AV Format Context for I/O
-        avFormatContext = new AVFormatContext(null);
+                // Create a new AV Format Context for I/O
+                avFormatContext = new AVFormatContext(null);
 
-        int returnCode = avformat.avformat_open_input(avFormatContext, streamSource, null, options);
+                int returnCode = avformat.avformat_open_input(avFormatContext, streamSource, null, options);
 
-        // Attempt to open the stream, streamPath can be a file or URL
-        if (returnCode == 0) {
+                // Attempt to open the stream, streamPath can be a file or URL
+                if (returnCode == 0) {
 
-            returnCode = avformat.avformat_find_stream_info(avFormatContext, (PointerPointer<?>) null);
+                    returnCode = avformat.avformat_find_stream_info(avFormatContext, (PointerPointer<?>) null);
 
-            if (returnCode < 0) {
+                    if (returnCode < 0) {
 
-                logger.error("Failed to find stream info");
+                        logger.error("Failed to find stream info");
 
-            } else {
+                    } else {
 
-                streamOpened = true;
-                logger.debug("Stream opened {}", streamSource);
-            }
-        } else {
+                        streamOpened = true;
+                        logger.debug("Stream opened {}", streamSource);
+                    }
+                } else {
 
-            logger.error("Failed to open stream: {}", streamSource);
+                    logger.error("Failed to open stream: {}", streamSource);
+                }
+            } catch (Exception e) { logger.error("Exception when opening stream", e); }
         }
 
         return streamOpened;
     }
 
-    public AVFormatContext getAvFormatContext() {
-        return this.avFormatContext;
-    }
-
     public void setInjectExtradata(boolean injectExtradata) {this.injectExtradata = injectExtradata;}
 
+    public AVCodecParameters getCodecParams() {
+        synchronized (contextLock) {
+            try {
+                AVCodecParameters src = avFormatContext.streams(videoStreamId).codecpar();
+                AVCodecParameters dst = avcodec.avcodec_parameters_alloc();
+                if (src == null) {
+                    logger.error("Could not allocate AVCodecParameters");
+                    return null;
+                }
+                if (dst == null) {
+                    logger.error("Could not allocate AVCodecParameters");
+                    return null;
+                }
+                int ret = avcodec.avcodec_parameters_copy(dst, src);
+                if (ret < 0) {
+                    avcodec.avcodec_parameters_free(dst);
+                    logger.error("AVCodecParameters failed: {}", ret);
+                }
+                return dst;
+            } catch (Exception e) { return null; }
+        }
+    }
+
     public AVStream getAvStream() {
-        return this.avFormatContext.streams(videoStreamId);
+        synchronized (contextLock) {
+            return avFormatContext.streams(videoStreamId);
+        }
     }
 
     /**
