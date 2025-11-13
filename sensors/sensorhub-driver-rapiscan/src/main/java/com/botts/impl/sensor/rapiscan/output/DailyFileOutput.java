@@ -53,12 +53,12 @@ public class DailyFileOutput extends AbstractSensorOutput<RapiscanSensor> {
         } else {
             dataBlock = latestRecord.renew();
         }
-        long timeStamp = System.currentTimeMillis()/1000;
+        Instant timeStamp = Instant.now();
 
-        dataBlock.setLongValue(0, timeStamp);
+        dataBlock.setTimeStamp(0, timeStamp);
         dataBlock.setStringValue(1, csvString);
 
-        eventHandler.publish(new DataEvent(timeStamp, DailyFileOutput.this, dataBlock));
+        eventHandler.publish(new DataEvent(timeStamp.toEpochMilli(), DailyFileOutput.this, dataBlock));
     }
 
     @Override
