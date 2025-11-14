@@ -154,7 +154,6 @@ public class OccupancyWrapper {
             // Start recording if leaving non-occupancy state
             if (from == StateManager.State.NON_OCCUPANCY) {
                 startTime = Instant.now();
-                wasAlarming = false;
                 int size = cameras.size();
                 fileNames = new ArrayList<>(size);
                 //observationHelper.clear();
@@ -186,6 +185,7 @@ public class OccupancyWrapper {
                 endTime = Instant.now();
                 int size = cameras.size();
                 observationHelper.notifyOccupancyEnd();
+
                 for (int i = 0; i < size; i++) {
                     IStreamingControlInterface commandInterface = cameras.get(i).getCommandInputs().values().stream().findFirst().get();
                     DataComponent command = commandInterface.getCommandDescription().clone();
@@ -200,7 +200,7 @@ public class OccupancyWrapper {
 
                     fileIoItem.getData().setBooleanValue(wasAlarming); // boolean determines whether the video recording is saved
 
-                    commandInterface.submitCommand(new CommandData(++cmdId, command.getData())).whenCompleteAsync((result, error) -> {
+                    commandInterface.submitCommand(new CommandData(++cmdId, command.getData())).whenComplete((result, error) -> {
                         if (this.observationHelper.isAccepting()) {
                             if (result.getStatusCode() != ICommandStatus.CommandStatusCode.ACCEPTED) {
                                 this.observationHelper.reportFfmpegFailure();
@@ -211,44 +211,9 @@ public class OccupancyWrapper {
                             }
                         }
                     });
+
                 }
-
-                //doPublish = true;
-                /*
-                if (wasAlarming) {
-                    StringBuilder csvFileNames = new StringBuilder();
-                    for (int i = 0; i < fileNames.size(); i++) {
-                        // Get the file name from the output component
-                        csvFileNames.append(fileNames.get(i)).append(", ");
-                    }
-                    csvFileNames.replace(csvFileNames.lastIndexOf(", "), csvFileNames.length(), "");
-
-                    if (rpmObs == null) {
-                        logger.warn("Rpm observation store is null; could not write file name to occupancy.");
-                    } else {
-
-
-                        var occObs = rpmObs.select(new ObsFilter.Builder()
-                                .withResultTimeDuring(startTime.minusSeconds(OBS_BUFFER_SECONDS), endTime.plusSeconds(OBS_BUFFER_SECONDS))
-                                .withValuePredicate(obsData -> {
-                                    obsData.getResult().setBooleanValue(););
-                                    return true;
-                                })
-                                .withLimit(1)
-                                .build()).toList();
-
-
-
-                        if (occObs.isEmpty()) {
-                            logger.error("SOMETHING WENT WRONG! OCCUPANCY TRIGGERED WITHOUT A CORRESPONDING OCCUPANCY RECORD!");
-                        } else {
-                            occObs.getFirst().getResult().setStringValue(DATA_FILE_NAME_INDEX, csvFileNames.toString());
-                        }
-
-                    }
-                }
-
-                 */
+                wasAlarming = false;
             }
         });
     }
