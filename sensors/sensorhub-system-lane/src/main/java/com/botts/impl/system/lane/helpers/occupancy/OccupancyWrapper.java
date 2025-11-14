@@ -243,6 +243,8 @@ public class OccupancyWrapper {
         if (setStateManager(sensor)) {
             rpm = sensor;
         }
+        if (observationHelper != null)
+            observationHelper.clear();
     }
 
     private boolean setStateManager(AbstractSensorModule<?> sensor) {
