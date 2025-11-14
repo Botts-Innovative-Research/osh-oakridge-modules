@@ -8,10 +8,8 @@ import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.command.IStreamingControlInterface;
-import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.data.ObsEvent;
 import org.sensorhub.api.datastore.obs.IObsStore;
-import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.event.EventUtils;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
@@ -177,6 +175,7 @@ public class OccupancyWrapper {
                     item.getData().setStringValue(fileName); // TODO Make sure this file name works, maybe add which alarm triggered
                     fileNames.add(fileName);
                     commandInterface.submitCommand(new CommandData(++cmdId, command.getData()));
+
                 }
             }
 
@@ -186,6 +185,7 @@ public class OccupancyWrapper {
             } else if (to == StateManager.State.NON_OCCUPANCY) { // End recording when entering non-occupancy state
                 endTime = Instant.now();
                 int size = cameras.size();
+                observationHelper.notifyOccupancyEnd();
                 for (int i = 0; i < size; i++) {
                     IStreamingControlInterface commandInterface = cameras.get(i).getCommandInputs().values().stream().findFirst().get();
                     DataComponent command = commandInterface.getCommandDescription().clone();
@@ -200,13 +200,15 @@ public class OccupancyWrapper {
 
                     fileIoItem.getData().setBooleanValue(wasAlarming); // boolean determines whether the video recording is saved
 
-                    commandInterface.submitCommand(new CommandData(++cmdId, command.getData())).whenComplete((result, error) -> {
-                        if (result.getStatusCode() != ICommandStatus.CommandStatusCode.ACCEPTED) {
-                            this.observationHelper.reportFfmpegFailure();
-                        } else {
-                        for (var obs : result.getResult().getInlineRecords()) {
-                            this.observationHelper.addFfmpegOut(obs.getStringValue(), size);
-                        }
+                    commandInterface.submitCommand(new CommandData(++cmdId, command.getData())).whenCompleteAsync((result, error) -> {
+                        if (this.observationHelper.isAccepting()) {
+                            if (result.getStatusCode() != ICommandStatus.CommandStatusCode.ACCEPTED) {
+                                this.observationHelper.reportFfmpegFailure();
+                            } else {
+                                for (var obs : result.getResult().getInlineRecords()) {
+                                    this.observationHelper.addFfmpegOut(obs.getStringValue(), size);
+                                }
+                            }
                         }
                     });
                 }
@@ -311,23 +313,39 @@ public class OccupancyWrapper {
         cameras.clear();
     }
 
+
+
     private static class ObservationHelper {
         private final ArrayList<String> ffmpegOuts = new ArrayList<>();
         private OccupancyOutput<?> occupancyOutput;
         private final Object lock = new Object();
         private int totalCams = 2;
         private int missingCams = 0;
-        private final static int FILE_TIMEOUT = 5000;
+        private final static int FILE_TIMEOUT = 2000;
+        private volatile boolean isAccepting = false;
+
+        public void notifyOccupancyEnd() {
+            isAccepting = true;
+        }
+
+        public boolean isAccepting() {
+            return isAccepting;
+        }
 
         public void addFfmpegOut(String videoFile, int totalCams) {
-            synchronized (lock) {
-                this.ffmpegOuts.add(videoFile);
-                this.totalCams = totalCams;
+            if (isAccepting) {
+                synchronized (lock) {
+                    if (this.ffmpegOuts.size() > this.totalCams - this.missingCams) // Might have files from prev occupancy
+                        ffmpegOuts.clear();
+                    this.ffmpegOuts.add(videoFile);
+                    this.totalCams = totalCams;
+                }
             }
         }
 
         public void reportFfmpegFailure() {
-            missingCams++;
+            if (isAccepting)
+                missingCams++;
         }
 
         public void setOccupancyOutput(OccupancyOutput<?> occupancyOutput) {
@@ -341,24 +359,25 @@ public class OccupancyWrapper {
         }
 
         private void occupancyCallback(Occupancy occupancy) {
-            try {
-                Async.waitForCondition(() -> (ffmpegOuts.size() - missingCams) >= totalCams, FILE_TIMEOUT);
-            } catch (TimeoutException e) {
-//                throw new RuntimeException(e);
-                logger.error("Failed to get video files", e);
-            }
+            if (occupancy.hasGammaAlarm() || occupancy.hasNeutronAlarm()) {
+                try {
+                    Async.waitForCondition(() -> (ffmpegOuts.size() - missingCams) >= totalCams, FILE_TIMEOUT);
+                } catch (TimeoutException e) {
+                    logger.error("Failed to get video files", e);
+                }
 
-            for (String path : ffmpegOuts) {
-                occupancy.addVideoPath(path);
+                for (String path : ffmpegOuts) {
+                    occupancy.addVideoPath(path);
+                }
             }
             clear();
         }
 
-        // Called when transitioning to any occupancy state (from non-occupancy)
         private void clear() {
             ffmpegOuts.clear();
             totalCams = 0;
             missingCams = 0;
+            isAccepting = false;
         }
     }
 }
