@@ -341,7 +341,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     private static AVDictionary hlsOptions() {
         AVDictionary options = new AVDictionary();
         avutil.av_dict_set(options, "hls_list_size", "5", 0);
-        avutil.av_dict_set(options, "hls_time", "4", 0);
+        avutil.av_dict_set(options, "hls_time", "2", 0);
         //avutil.av_dict_set(options, "hls_segment_type", "ts", 0);
         //avutil.av_dict_set(options, "movflags", "faststart+default_base_moof", 0);
         avutil.av_dict_set(options, "hls_flags", "delete_segments+append_list", 0);
