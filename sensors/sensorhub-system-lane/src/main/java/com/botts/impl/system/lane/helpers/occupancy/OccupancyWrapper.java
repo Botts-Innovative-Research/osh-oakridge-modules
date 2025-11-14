@@ -6,6 +6,7 @@ import com.botts.impl.system.lane.helpers.occupancy.state.*;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.command.CommandData;
+import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.command.IStreamingControlInterface;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.data.ObsEvent;
@@ -198,9 +199,14 @@ public class OccupancyWrapper {
                     }
 
                     fileIoItem.getData().setBooleanValue(wasAlarming); // boolean determines whether the video recording is saved
+
                     commandInterface.submitCommand(new CommandData(++cmdId, command.getData())).whenComplete((result, error) -> {
+                        if (result.getStatusCode() != ICommandStatus.CommandStatusCode.ACCEPTED) {
+                            this.observationHelper.reportFfmpegFailure();
+                        } else {
                         for (var obs : result.getResult().getInlineRecords()) {
                             this.observationHelper.addFfmpegOut(obs.getStringValue(), size);
+                        }
                         }
                     });
                 }
@@ -310,6 +316,7 @@ public class OccupancyWrapper {
         private OccupancyOutput<?> occupancyOutput;
         private final Object lock = new Object();
         private int totalCams = 2;
+        private int missingCams = 0;
         private final static int FILE_TIMEOUT = 5000;
 
         public void addFfmpegOut(String videoFile, int totalCams) {
@@ -317,6 +324,10 @@ public class OccupancyWrapper {
                 this.ffmpegOuts.add(videoFile);
                 this.totalCams = totalCams;
             }
+        }
+
+        public void reportFfmpegFailure() {
+            missingCams++;
         }
 
         public void setOccupancyOutput(OccupancyOutput<?> occupancyOutput) {
@@ -331,7 +342,7 @@ public class OccupancyWrapper {
 
         private void occupancyCallback(Occupancy occupancy) {
             try {
-                Async.waitForCondition(() -> ffmpegOuts.size() >= totalCams, FILE_TIMEOUT);
+                Async.waitForCondition(() -> (ffmpegOuts.size() - missingCams) >= totalCams, FILE_TIMEOUT);
             } catch (TimeoutException e) {
 //                throw new RuntimeException(e);
                 logger.error("Failed to get video files", e);
@@ -347,6 +358,7 @@ public class OccupancyWrapper {
         private void clear() {
             ffmpegOuts.clear();
             totalCams = 0;
+            missingCams = 0;
         }
     }
 }
