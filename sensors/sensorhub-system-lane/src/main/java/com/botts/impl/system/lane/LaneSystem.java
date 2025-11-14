@@ -340,6 +340,17 @@ public class LaneSystem extends SensorSystem {
                         occupancyWrapper.removeFFmpegSensor(ffmpegDriver);
                     }
                 }
+
+                else if ((event.getModule() instanceof RapiscanSensor || event.getModule() instanceof AspectSensor)
+                && getMembers().containsValue(event.getModule())) {
+                    var state = event.getNewState();
+
+                    if (state == ModuleEvent.ModuleState.STARTED) {
+                        occupancyWrapper.setRpmSensor((AbstractSensorModule<?>) event.getModule());
+                    } else {
+                        occupancyWrapper.removeRpmSensor();
+                    }
+                }
             }
 
             else if (event.getType().equals(ModuleEvent.Type.CONFIG_CHANGED)) {
