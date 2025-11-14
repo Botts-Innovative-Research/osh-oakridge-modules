@@ -50,7 +50,6 @@ public class OccupancyWrapper {
     String inputSystemClass;
     boolean doPublish = false;
     boolean wasAlarming = false;
-    long alarmTime;
     IObsStore rpmObs;
     Flow.Subscription dailyFileSubscription;
     //final Map<FFMPEGSensorBase<?>, Flow.Subscription> cameraSubscriptions = Collections.synchronizedMap(new HashMap<>());
@@ -153,6 +152,7 @@ public class OccupancyWrapper {
         stateManager.addListener((from, to) -> {
             // Start recording if leaving non-occupancy state
             if (from == StateManager.State.NON_OCCUPANCY) {
+                wasAlarming = false;
                 startTime = Instant.now();
                 int size = cameras.size();
                 fileNames = new ArrayList<>(size);
@@ -180,7 +180,6 @@ public class OccupancyWrapper {
 
             if (to == StateManager.State.ALARMING_OCCUPANCY) {
                 wasAlarming = true;
-                alarmTime = System.currentTimeMillis();
             } else if (to == StateManager.State.NON_OCCUPANCY) { // End recording when entering non-occupancy state
                 endTime = Instant.now();
                 int size = cameras.size();
@@ -211,7 +210,6 @@ public class OccupancyWrapper {
                             }
                         }
                     });
-
                 }
                 wasAlarming = false;
             }
