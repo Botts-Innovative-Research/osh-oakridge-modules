@@ -198,18 +198,21 @@ public class OccupancyWrapper {
                     }
 
                     fileIoItem.getData().setBooleanValue(wasAlarming); // boolean determines whether the video recording is saved
-
-                    commandInterface.submitCommand(new CommandData(++cmdId, command.getData())).whenComplete((result, error) -> {
-                        if (this.observationHelper.isAccepting()) {
-                            if (result.getStatusCode() != ICommandStatus.CommandStatusCode.ACCEPTED) {
-                                this.observationHelper.reportFfmpegFailure();
-                            } else {
-                                for (var obs : result.getResult().getInlineRecords()) {
-                                    this.observationHelper.addFfmpegOut(obs.getStringValue(), size);
+                    if (wasAlarming) {
+                        commandInterface.submitCommand(new CommandData(++cmdId, command.getData())).whenComplete((result, error) -> {
+                            if (this.observationHelper.isAccepting()) {
+                                if (result.getStatusCode() != ICommandStatus.CommandStatusCode.ACCEPTED) {
+                                    this.observationHelper.reportFfmpegFailure();
+                                } else {
+                                    for (var obs : result.getResult().getInlineRecords()) {
+                                        this.observationHelper.addFfmpegOut(obs.getStringValue(), size);
+                                    }
                                 }
                             }
-                        }
-                    });
+                        });
+                    } else {
+                        commandInterface.submitCommand(new CommandData(++cmdId, command.getData()));
+                    }
                 }
                 wasAlarming = false;
             }
