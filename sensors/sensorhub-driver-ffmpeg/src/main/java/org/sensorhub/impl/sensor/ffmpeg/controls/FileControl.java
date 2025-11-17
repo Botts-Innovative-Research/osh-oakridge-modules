@@ -50,7 +50,12 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
     }
 
     public String getFileName() {
-        return fileName;
+        try {
+            return bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName);
+        } catch (DataStoreException e) {
+            getLogger().error("Could not get video URI");
+            return "";
+        }
     }
 
     @Override
