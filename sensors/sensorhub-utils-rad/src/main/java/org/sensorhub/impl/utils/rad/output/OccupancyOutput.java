@@ -15,6 +15,10 @@ import org.vast.data.TextEncodingImpl;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRateSensorOutput<SensorType> {
 
@@ -28,6 +32,9 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
     protected DataBlock dataBlock;
 
     protected final List<OccupancyCallback> occupancyCallbacks = new ArrayList<>();
+    ExecutorService executor = Executors.newCachedThreadPool();
+    ScheduledExecutorService scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
+    private static final int TIMEOUT = 10;
 
     public OccupancyOutput(SensorType parentSensor) {
         super(NAME, parentSensor, 4);
@@ -72,7 +79,17 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
     }
 
     public void setData(Occupancy occupancy) {
+        var task = executor.submit(() -> augmentPublish(occupancy));
 
+        scheduledExecutor.schedule(() -> {
+            if (!task.isDone()) {
+                logger.warn("Timeout waiting for occupancy publish task to complete. Canceling task.");
+                task.cancel(true);
+            }
+        }, TIMEOUT, TimeUnit.SECONDS);
+    }
+
+    private void augmentPublish(Occupancy occupancy) {
         augmentOccupancy(occupancy);
 
         dataBlock = Occupancy.fromOccupancy(occupancy);
