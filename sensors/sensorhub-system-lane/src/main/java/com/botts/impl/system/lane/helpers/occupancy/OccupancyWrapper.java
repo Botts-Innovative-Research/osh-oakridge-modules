@@ -198,6 +198,7 @@ public class OccupancyWrapper {
                     }
 
                     fileIoItem.getData().setBooleanValue(wasAlarming); // boolean determines whether the video recording is saved
+                    /*
                     if (wasAlarming) {
                         commandInterface.submitCommand(new CommandData(++cmdId, command.getData())).whenComplete((result, error) -> {
                             if (this.observationHelper.isAccepting()) {
@@ -213,6 +214,10 @@ public class OccupancyWrapper {
                     } else {
                         commandInterface.submitCommand(new CommandData(++cmdId, command.getData()));
                     }
+
+                     */
+                    observationHelper.addFfmpegOut(((FileControl)commandInterface).getFileName(), size);
+                    commandInterface.submitCommand(new CommandData(++cmdId, command.getData()));
                 }
                 wasAlarming = false;
             }

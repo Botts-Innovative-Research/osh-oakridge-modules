@@ -49,6 +49,10 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
         }
     }
 
+    public String getFileName() {
+        return fileName;
+    }
+
     @Override
     public FileOutput<?> getFileOutput() {
         return this.fileOutput;
