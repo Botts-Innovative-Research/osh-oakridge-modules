@@ -12,6 +12,7 @@ import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -75,7 +76,6 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
         } else {
             dataBlock = latestRecord.renew();
         }
-        long timeStamp = System.currentTimeMillis()/1000;
 
 //        System.out.println("Daily File: " + dailyfile);
 
@@ -85,12 +85,14 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
             if(i< dailyfile.size()-1){
                 dailyFileString.append(",");
             }
+
         }
-        dataBlock.setLongValue(0, timeStamp);
+        Instant timeStamp = Instant.now();
+        dataBlock.setTimeStamp(0, timeStamp);
         dataBlock.setStringValue(1, String.valueOf(dailyFileString));
 
 
-        eventHandler.publish(new DataEvent(timeStamp, DailyFileOutput.this, dataBlock));
+        eventHandler.publish(new DataEvent(timeStamp.toEpochMilli(), DailyFileOutput.this, dataBlock));
         dailyFileString.setLength(0);
     }
 

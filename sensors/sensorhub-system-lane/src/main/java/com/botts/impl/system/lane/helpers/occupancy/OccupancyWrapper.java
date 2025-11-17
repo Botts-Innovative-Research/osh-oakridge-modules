@@ -6,11 +6,10 @@ import com.botts.impl.system.lane.helpers.occupancy.state.*;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.command.CommandData;
+import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.command.IStreamingControlInterface;
-import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.data.ObsEvent;
 import org.sensorhub.api.datastore.obs.IObsStore;
-import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.event.EventUtils;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
@@ -51,7 +50,6 @@ public class OccupancyWrapper {
     String inputSystemClass;
     boolean doPublish = false;
     boolean wasAlarming = false;
-    long alarmTime;
     IObsStore rpmObs;
     Flow.Subscription dailyFileSubscription;
     //final Map<FFMPEGSensorBase<?>, Flow.Subscription> cameraSubscriptions = Collections.synchronizedMap(new HashMap<>());
@@ -154,8 +152,8 @@ public class OccupancyWrapper {
         stateManager.addListener((from, to) -> {
             // Start recording if leaving non-occupancy state
             if (from == StateManager.State.NON_OCCUPANCY) {
-                startTime = Instant.now();
                 wasAlarming = false;
+                startTime = Instant.now();
                 int size = cameras.size();
                 fileNames = new ArrayList<>(size);
                 //observationHelper.clear();
@@ -176,15 +174,17 @@ public class OccupancyWrapper {
                     item.getData().setStringValue(fileName); // TODO Make sure this file name works, maybe add which alarm triggered
                     fileNames.add(fileName);
                     commandInterface.submitCommand(new CommandData(++cmdId, command.getData()));
+
                 }
             }
 
             if (to == StateManager.State.ALARMING_OCCUPANCY) {
                 wasAlarming = true;
-                alarmTime = System.currentTimeMillis();
             } else if (to == StateManager.State.NON_OCCUPANCY) { // End recording when entering non-occupancy state
                 endTime = Instant.now();
                 int size = cameras.size();
+                observationHelper.notifyOccupancyEnd();
+
                 for (int i = 0; i < size; i++) {
                     IStreamingControlInterface commandInterface = cameras.get(i).getCommandInputs().values().stream().findFirst().get();
                     DataComponent command = commandInterface.getCommandDescription().clone();
@@ -198,49 +198,28 @@ public class OccupancyWrapper {
                     }
 
                     fileIoItem.getData().setBooleanValue(wasAlarming); // boolean determines whether the video recording is saved
-                    commandInterface.submitCommand(new CommandData(++cmdId, command.getData())).whenComplete((result, error) -> {
-                        for (var obs : result.getResult().getInlineRecords()) {
-                            this.observationHelper.addFfmpegOut(obs.getStringValue(), size);
-                        }
-                    });
-                }
-
-                //doPublish = true;
-                /*
-                if (wasAlarming) {
-                    StringBuilder csvFileNames = new StringBuilder();
-                    for (int i = 0; i < fileNames.size(); i++) {
-                        // Get the file name from the output component
-                        csvFileNames.append(fileNames.get(i)).append(", ");
-                    }
-                    csvFileNames.replace(csvFileNames.lastIndexOf(", "), csvFileNames.length(), "");
-
-                    if (rpmObs == null) {
-                        logger.warn("Rpm observation store is null; could not write file name to occupancy.");
+                    /*
+                    if (wasAlarming) {
+                        commandInterface.submitCommand(new CommandData(++cmdId, command.getData())).whenComplete((result, error) -> {
+                            if (this.observationHelper.isAccepting()) {
+                                if (result.getStatusCode() != ICommandStatus.CommandStatusCode.ACCEPTED) {
+                                    this.observationHelper.reportFfmpegFailure();
+                                } else {
+                                    for (var obs : result.getResult().getInlineRecords()) {
+                                        this.observationHelper.addFfmpegOut(obs.getStringValue(), size);
+                                    }
+                                }
+                            }
+                        });
                     } else {
-
-
-                        var occObs = rpmObs.select(new ObsFilter.Builder()
-                                .withResultTimeDuring(startTime.minusSeconds(OBS_BUFFER_SECONDS), endTime.plusSeconds(OBS_BUFFER_SECONDS))
-                                .withValuePredicate(obsData -> {
-                                    obsData.getResult().setBooleanValue(););
-                                    return true;
-                                })
-                                .withLimit(1)
-                                .build()).toList();
-
-
-
-                        if (occObs.isEmpty()) {
-                            logger.error("SOMETHING WENT WRONG! OCCUPANCY TRIGGERED WITHOUT A CORRESPONDING OCCUPANCY RECORD!");
-                        } else {
-                            occObs.getFirst().getResult().setStringValue(DATA_FILE_NAME_INDEX, csvFileNames.toString());
-                        }
-
+                        commandInterface.submitCommand(new CommandData(++cmdId, command.getData()));
                     }
-                }
 
-                 */
+                     */
+                    observationHelper.addFfmpegOut(((FileControl)commandInterface).getFileName(), size);
+                    commandInterface.submitCommand(new CommandData(++cmdId, command.getData()));
+                }
+                wasAlarming = false;
             }
         });
     }
@@ -269,6 +248,8 @@ public class OccupancyWrapper {
         if (setStateManager(sensor)) {
             rpm = sensor;
         }
+        if (observationHelper != null)
+            observationHelper.clear();
     }
 
     private boolean setStateManager(AbstractSensorModule<?> sensor) {
@@ -305,18 +286,39 @@ public class OccupancyWrapper {
         cameras.clear();
     }
 
+
+
     private static class ObservationHelper {
         private final ArrayList<String> ffmpegOuts = new ArrayList<>();
         private OccupancyOutput<?> occupancyOutput;
         private final Object lock = new Object();
         private int totalCams = 2;
-        private final static int FILE_TIMEOUT = 1000;
+        private int missingCams = 0;
+        private final static int FILE_TIMEOUT = 2000;
+        private volatile boolean isAccepting = false;
+
+        public void notifyOccupancyEnd() {
+            isAccepting = true;
+        }
+
+        public boolean isAccepting() {
+            return isAccepting;
+        }
 
         public void addFfmpegOut(String videoFile, int totalCams) {
-            synchronized (lock) {
-                this.ffmpegOuts.add(videoFile);
-                this.totalCams = totalCams;
+            if (isAccepting) {
+                synchronized (lock) {
+                    if (this.ffmpegOuts.size() > this.totalCams - this.missingCams) // Might have files from prev occupancy
+                        ffmpegOuts.clear();
+                    this.ffmpegOuts.add(videoFile);
+                    this.totalCams = totalCams;
+                }
             }
+        }
+
+        public void reportFfmpegFailure() {
+            if (isAccepting)
+                missingCams++;
         }
 
         public void setOccupancyOutput(OccupancyOutput<?> occupancyOutput) {
@@ -330,23 +332,25 @@ public class OccupancyWrapper {
         }
 
         private void occupancyCallback(Occupancy occupancy) {
-            try {
-                Async.waitForCondition(() -> ffmpegOuts.size() >= totalCams, FILE_TIMEOUT);
-            } catch (TimeoutException e) {
-//                throw new RuntimeException(e);
-                logger.error("Failed to get video files", e);
-            }
+            if (occupancy.hasGammaAlarm() || occupancy.hasNeutronAlarm()) {
+                try {
+                    Async.waitForCondition(() -> (ffmpegOuts.size() - missingCams) >= totalCams, FILE_TIMEOUT);
+                } catch (TimeoutException e) {
+                    logger.error("Failed to get video files", e);
+                }
 
-            for (String path : ffmpegOuts) {
-                occupancy.addVideoPath(path);
+                for (String path : ffmpegOuts) {
+                    occupancy.addVideoPath(path);
+                }
             }
             clear();
         }
 
-        // Called when transitioning to any occupancy state (from non-occupancy)
         private void clear() {
             ffmpegOuts.clear();
             totalCams = 0;
+            missingCams = 0;
+            isAccepting = false;
         }
     }
 }
