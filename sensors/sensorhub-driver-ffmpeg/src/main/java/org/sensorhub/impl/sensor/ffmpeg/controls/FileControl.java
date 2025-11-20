@@ -109,7 +109,7 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                 commandStatus = false;
 
             else if (selected.getName().equals(CMD_OPEN_FILE)) {
-                if (!fileName.isEmpty())
+                if (fileName != null && !fileName.isEmpty())
                     commandStatus = false;
 
                 else {
@@ -127,11 +127,13 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                         this.fileOutput.openFile(bucketStore.getResourceURI(VIDEO_BUCKET, fileName));
                         this.parentSensor.getLogger().debug("Writing to file: {}", fileName);
                     } catch (Exception e) {
+                        getLogger().error("Exception while opening MP4 output", e);
+                        fileName = "";
                         commandStatus = false;
                     }
                 }
             } else if (selected.getName().equals(CMD_CLOSE_FILE)) {
-                if (fileName.isEmpty())
+                if (fileName == null || fileName.isEmpty())
                     commandStatus = false;
                 else {
                     boolean saveFile = ((Boolean) selected).getValue();

@@ -106,7 +106,7 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                 commandStatus = false;
 
             else if (selected.equals(CMD_START_STREAM)) {
-                if (!fileName.isEmpty()) {
+                if (fileName != null && !fileName.isEmpty()) {
                     commandStatus = true;
                     reportFileName = true;
                 }
@@ -124,12 +124,13 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                         reportFileName = true;
                         fileOutput.publish(bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName));
                     } catch (Exception e) {
-                        fileName = null;
+                        getLogger().error("Exception while opening HLS output", e);
+                        fileName = "";
                         commandStatus = false;
                     }
                 }
             } else if (selected.equals(CMD_END_STREAM)) {
-                if (fileName.isEmpty())
+                if (fileName == null || fileName.isEmpty())
                     commandStatus = false;
                 else {
                     try {
