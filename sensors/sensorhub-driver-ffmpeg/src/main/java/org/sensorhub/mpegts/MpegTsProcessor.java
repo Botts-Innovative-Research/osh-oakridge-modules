@@ -544,10 +544,8 @@ public class MpegTsProcessor extends Thread {
     }
 
     protected void notifyVideoDataBufferListeners(DataBufferRecord dataRecord) {
-        synchronized (videoDataBufferListeners) {
-            for (var videoBuffers : videoDataBufferListeners) {
-                videoBuffers.onDataBuffer(dataRecord);
-            }
+        for (var videoBuffers : videoDataBufferListeners) {
+            videoBuffers.onDataBuffer(dataRecord);
         }
     }
 
