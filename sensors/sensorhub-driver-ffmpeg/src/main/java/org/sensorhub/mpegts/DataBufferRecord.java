@@ -19,7 +19,7 @@ package org.sensorhub.mpegts;
  * @author Nick Garay
  * @since Apr. 1, 2020
  */
-public class DataBufferRecord {
+public class DataBufferRecord implements Cloneable {
 
     /**
      * The timestamp associated for the data
@@ -72,4 +72,16 @@ public class DataBufferRecord {
     }
 
     public boolean isKeyFrame() { return keyFrame; }
+
+
+    @Override
+    public DataBufferRecord clone() {
+        try {
+            DataBufferRecord clone = (DataBufferRecord) super.clone();
+            clone.dataBuffer = dataBuffer.clone();
+            return clone;
+        } catch (CloneNotSupportedException e) {
+            throw new AssertionError();
+        }
+    }
 }

@@ -31,6 +31,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.bytedeco.ffmpeg.global.avformat.*;
@@ -143,7 +145,7 @@ public class MpegTsProcessor extends Thread {
     /**
      * Listener for video buffers extracted from the transport stream
      */
-    private final List<DataBufferListener> videoDataBufferListeners = Collections.synchronizedList(new ArrayList<>());
+    private final Map<DataBufferListener, ExecutorService> videoDataBufferListeners = Collections.synchronizedMap(new HashMap<>());
 
     /**
      * Flag indicating if processing of the transport stream should be terminated
@@ -527,7 +529,7 @@ public class MpegTsProcessor extends Thread {
                 throw new NullPointerException("Attempt to set null videoStreamPacketListener");
             }
 
-            this.videoDataBufferListeners.add(videoDataBufferListener);
+            this.videoDataBufferListeners.put(videoDataBufferListener, Executors.newSingleThreadExecutor());
         }
     }
 
@@ -539,22 +541,22 @@ public class MpegTsProcessor extends Thread {
 
     public void removeVideoDataBufferListener(DataBufferListener videoDataBufferListener) throws NullPointerException {
         synchronized (videoDataBufferListeners) {
-            this.videoDataBufferListeners.remove(videoDataBufferListener);
+            var executor = this.videoDataBufferListeners.remove(videoDataBufferListener);
+            executor.shutdownNow();
         }
     }
 
     protected void notifyVideoDataBufferListeners(DataBufferRecord dataRecord) {
-        synchronized (videoDataBufferListeners) {
-            for (var videoBuffers : videoDataBufferListeners) {
-                videoBuffers.onDataBuffer(dataRecord);
-            }
+        var dataClone = dataRecord.clone();
+        for (var entry : videoDataBufferListeners.entrySet()) {
+            entry.getValue().submit(() -> entry.getKey().onDataBuffer(dataClone));
         }
     }
 
     public <T extends DataBufferListener> List<T> getVideoDataBufferListenersByType(Class<T> dataBufferListenerType) {
         List<T> out = new ArrayList<>();
         synchronized (videoDataBufferListeners) {
-            for (var listener : videoDataBufferListeners) {
+            for (var listener : videoDataBufferListeners.keySet()) {
                 if (dataBufferListenerType.isInstance(listener)) {
                     out.add((T) listener);
                 }
@@ -653,7 +655,7 @@ public class MpegTsProcessor extends Thread {
 
             while (!terminateProcessing.get() && (retCode = av_read_frame(avFormatContext, avPacket)) >= 0) {
                 boolean skipProcessing = true;
-                for (DataBufferListener listener : videoDataBufferListeners) {
+                for (DataBufferListener listener : videoDataBufferListeners.keySet()) {
                     if (listener.isWriting()) {
                         skipProcessing = false;
                         break;

@@ -47,10 +47,6 @@ public class FFMPEGConfig extends SensorConfig {
     public Connection connection = new Connection();
 
     @DisplayInfo.Required
-    @DisplayInfo(label = "Files", desc = "Configuration options for saving video files")
-    public FileConfig fileConfig = new FileConfig();
-
-    @DisplayInfo.Required
     @DisplayInfo(label = "Outputs", desc = "Configuration options for FFmpeg driver output")
     public Output output = new Output();
 

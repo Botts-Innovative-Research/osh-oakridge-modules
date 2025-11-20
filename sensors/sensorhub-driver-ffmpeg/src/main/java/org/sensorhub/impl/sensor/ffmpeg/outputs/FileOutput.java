@@ -32,6 +32,8 @@ import org.vast.swe.SWEHelper;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.bytedeco.ffmpeg.global.avcodec.*;
@@ -53,16 +55,24 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     //private String outputFile = "";
     private AVFormatContext outputContext;
     private final Object contextLock = new Object();
+    Thread writerThread;
+
     AVStream outputVideoStream;
     OutputStream outputStream;
     AVRational timeBase = new AVRational();
     AVRational inputTimeBase = new AVRational();
+    AVRational inputFrameRate = new AVRational();
+    final Queue<AVPacket> packetQueue = new ConcurrentLinkedQueue<>();
+
+    final int MAX_PACKET_QUEUE_SIZE = 1000;
     volatile long filePts;
+    volatile long curPts;
     private WriteCallback writeCallback;
     private SeekCallback seekCallback;
     BytePointer buffer;
     ByteArraySeekableBuffer seekableBuffer;
     String fileName;
+    private boolean isLive = false;
 
     public FileOutput(FFMPEGSensorBase<FFMPEGConfigType> parentSensor, String name) throws SensorHubException {
         super(name, parentSensor);
@@ -82,32 +92,46 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         return doFileWrite.get();
     }
 
+    private void startWriterThread() {
+        writerThread = new Thread(() -> {
+            while (isWriting() && !Thread.currentThread().isInterrupted()) {
+
+                if (packetQueue.size() > MAX_PACKET_QUEUE_SIZE) {
+                    logger.warn("Packet queue is full; dropping {} packets", packetQueue.size());
+                    packetQueue.clear();
+                }
+                AVPacket pkt;
+                while ((pkt = packetQueue.poll()) != null) {
+                    packetTiming(pkt);
+                    av_interleaved_write_frame(outputContext, pkt);
+                    av_packet_unref(pkt);
+                    av_packet_free(pkt);
+                }
+
+            }
+        });
+        writerThread.start();
+    }
+
     @Override
     public void onDataBuffer(DataBufferRecord record) {
-        synchronized (contextLock) {
-            var data = record.getDataBuffer();
-            long timestamp = (long)(record.getPresentationTimestamp() * inputTimeBase.den() / inputTimeBase.num());
-
-            AVPacket avPacket = av_packet_alloc();
-            av_new_packet(avPacket, data.length);
-            avPacket.data().put(data);
-            avPacket.pts(timestamp);
-            avPacket.dts(timestamp);
-
-            if (record.isKeyFrame()) {
-                avPacket.flags(avPacket.flags() | avcodec.AV_PKT_FLAG_KEY);
-            }
-
-            if (doFileWrite.get()) {
-                if (outputContext != null) {
-                    packetTiming(avPacket);
-                    av_write_frame(outputContext, avPacket);
-                    av_packet_free(avPacket);
-                } else {
-                    logger.error("Cannot write to file; output context is null");
-                }
-            }
+        if (!isWriting()) {
+            return;
         }
+        var data = record.getDataBuffer();
+
+        long timestamp = (long)(record.getPresentationTimestamp() * inputTimeBase.den() / inputTimeBase.num());
+
+        AVPacket avPacket = av_packet_alloc();
+        av_new_packet(avPacket, data.length);
+        avPacket.data().put(data);
+        avPacket.pts(timestamp);
+        avPacket.dts(timestamp);
+
+        if (record.isKeyFrame())
+            avPacket.flags(avPacket.flags() | AV_PKT_FLAG_KEY);
+
+        packetQueue.add(avPacket);
     }
 
     public void publish() {
@@ -152,10 +176,20 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 }
 
                 var inStream = parentSensor.getProcessor().getAvStream();
-                if (inStream != null)
-                    inputTimeBase = parentSensor.getProcessor().getAvStream().time_base();
-                else
+                if (inStream != null) {
+                    if ((inputTimeBase = inStream.time_base()) == null) {
+                        inputTimeBase = av_make_q(1, 90000);
+                        logger.warn("Could not get input timebase; using default timebase of 1/90k");
+                    }
+                    if ((inputFrameRate = inStream.avg_frame_rate()) == null) {
+                        inputFrameRate = av_make_q(30, 1);
+                        logger.warn("Could not get input framerate; using default framerate of 30fps");
+                    }
+                } else {
                     inputTimeBase = av_make_q(1, 90000);
+                    inputFrameRate = av_make_q(30, 1);
+                    logger.warn("Could not get input stream; using default timebase of 1/90k and framerate of 30fps");
+                }
 
                 initCtx(avCodecParameters);
 
@@ -170,6 +204,11 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 AVDictionary options = null;
                 if (this.fileName.endsWith(".m3u8")) {
                     options = hlsOptions();
+                    isLive = true;
+                    //filePts = System.currentTimeMillis();
+                    //inputTimeBase = av_make_q(1, 1000);
+                } else {
+                    isLive = false;
                 }
 
                 int ret;
@@ -179,7 +218,12 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 }
 
                 timeBase = outputVideoStream.time_base();
+                //avPacket = av_packet_alloc();
+
+                packetQueue.clear();
+                startWriterThread();
                 doFileWrite.set(true);
+                av_log_set_level(AV_LOG_QUIET);
             }
         } catch (Exception e) {
             throw new IOException("Could not open output file " + fileName, e);
@@ -188,6 +232,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
     private void initCtx(AVCodecParameters codecParams) {
         filePts = 0;
+        curPts = 0;
 
         //AVFormatContext inputContext = this.parentSensor.getProcessor().getAvFormatContext();
         outputContext = new AVFormatContext(null);
@@ -207,6 +252,9 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         outputVideoStream.time_base(timeBase);
         outputVideoStream.duration(AV_NOPTS_VALUE);
 
+        //outputContext.flags(outputContext.flags() | AVFormatContext.AVFMT_FLAG_GENPTS);
+        outputContext.flags(outputContext.flags() | AVFormatContext.AVFMT_FLAG_AUTO_BSF);
+
         outputVideoStream.start_time(0);
         outputVideoStream.position(0);
 
@@ -224,28 +272,61 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         if (filePts <= 0) {
             filePts = avPacket.pts();
         }
-        long newPts = avutil.av_rescale_q(avPacket.pts() - filePts, timeBase, inputTimeBase);
+
+        long newPts = avutil.av_rescale_q(avPacket.pts() - filePts, inputTimeBase, timeBase);
+        if (isLive && newPts <= curPts) {
+            newPts = curPts + 1;
+        }
         avPacket.pts(newPts);
         avPacket.dts(newPts);
-        avPacket.time_base(timeBase);
+
+        //avPacket.duration(av_rescale_q(1, inputFrameRate, timeBase));
+        //avPacket.time_base(timeBase);
+        curPts = newPts;
     }
 
     private static AVDictionary hlsOptions() {
         AVDictionary options = new AVDictionary();
-        avutil.av_dict_set(options, "hls_list_size", "5", 0);
-        avutil.av_dict_set(options, "hls_time", "2", 0);
+        av_dict_set(options, "hls_list_size", "2", 0);
+        av_dict_set(options, "hls_time", "1", 0);
         //avutil.av_dict_set(options, "hls_segment_type", "ts", 0);
         //avutil.av_dict_set(options, "movflags", "faststart+default_base_moof", 0);
-        avutil.av_dict_set(options, "hls_flags", "delete_segments+append_list", 0);
+        av_dict_set(options, "hls_flags", "delete_segments+append_list+split_by_time+program_date_time", 0);
+        av_dict_set(options, "hls_segment_type", "mpegts", 0);
+        av_dict_set(options, "use_localtime", "1", 0);
+        av_dict_set(options, "max_delay", "0", 0);
+        av_dict_set(options, "muxdelay", "0", 0);
+        av_dict_set(options, "muxpreload", "0", 0);
         //av_dict_set(options, "hls_fmp4_init_filename", "init.mp4", 0);
         return options;
     }
 
     public void closeFile() throws IOException {
         synchronized (contextLock) {
-            if (doFileWrite.get()) {
+            if (isWriting()) {
                 doFileWrite.set(false);
+                writerThread.interrupt();
                 try {
+                    writerThread.join();
+                } catch (InterruptedException ignored) {}
+
+                for (AVPacket packet : packetQueue) {
+                    av_packet_unref(packet);
+                    av_packet_free(packet);
+                }
+
+                packetQueue.clear();
+
+                try {
+                    /*
+                    if (avPacket != null) {
+                        av_packet_unref(avPacket);
+                        av_packet_free(avPacket);
+                        avPacket = null;
+                    }
+
+                     */
+
                     if (outputContext.pb() != null) {
                         avio_flush(outputContext.pb());
                     }

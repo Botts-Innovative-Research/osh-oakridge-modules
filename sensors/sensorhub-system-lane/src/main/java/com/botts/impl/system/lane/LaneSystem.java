@@ -526,8 +526,6 @@ public class LaneSystem extends SensorSystem {
         config.connectionConfig.reconnectAttempts = 10;
         config.output.useHLS = true;
         config.output.useVideoFrames = false;
-        config.fileConfig.hlsDirectory = VIDEO_STREAMING_DIRECTORY;
-        config.fileConfig.videoClipDirectory = VIDEO_CLIPS_DIRECTORY;
         return config;
     }
 
