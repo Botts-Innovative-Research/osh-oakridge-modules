@@ -253,6 +253,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         outputVideoStream.duration(AV_NOPTS_VALUE);
 
         //outputContext.flags(outputContext.flags() | AVFormatContext.AVFMT_FLAG_GENPTS);
+        outputContext.flags(outputContext.flags() | AVFormatContext.AVFMT_FLAG_AUTO_BSF);
 
         outputVideoStream.start_time(0);
         outputVideoStream.position(0);
@@ -279,7 +280,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         avPacket.pts(newPts);
         avPacket.dts(newPts);
 
-        avPacket.duration(av_rescale_q(1, inputFrameRate, timeBase));
+        //avPacket.duration(av_rescale_q(1, inputFrameRate, timeBase));
         //avPacket.time_base(timeBase);
         curPts = newPts;
     }
@@ -287,7 +288,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     private static AVDictionary hlsOptions() {
         AVDictionary options = new AVDictionary();
         av_dict_set(options, "hls_list_size", "2", 0);
-        av_dict_set(options, "hls_time", "2", 0);
+        av_dict_set(options, "hls_time", "1", 0);
         //avutil.av_dict_set(options, "hls_segment_type", "ts", 0);
         //avutil.av_dict_set(options, "movflags", "faststart+default_base_moof", 0);
         av_dict_set(options, "hls_flags", "delete_segments+append_list+split_by_time+program_date_time", 0);
