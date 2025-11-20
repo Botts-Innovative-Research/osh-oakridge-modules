@@ -53,7 +53,7 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
         try {
             return bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName);
         } catch (DataStoreException e) {
-            getLogger().error("Could not get video URI");
+            getLogger().error("Could not get video URI", e);
             return "";
         }
     }
