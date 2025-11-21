@@ -109,9 +109,10 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                 commandStatus = false;
 
             else if (selected.getName().equals(CMD_OPEN_FILE)) {
-                if (fileName != null && !fileName.isEmpty())
+                if (fileOutput.isWriting()) {
                     commandStatus = false;
-
+                    getLogger().error("Already writing file. Ignoring file write command.");
+                }
                 else {
                     fileName = Paths.get("clips", parentSensor.getUniqueIdentifier().replace(':', '-'),
                             selected.getData().getStringValue()).toString();
@@ -133,8 +134,10 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                     }
                 }
             } else if (selected.getName().equals(CMD_CLOSE_FILE)) {
-                if (fileName == null || fileName.isEmpty())
+                if (!fileOutput.isWriting()) {
                     commandStatus = false;
+                    getLogger().error("Not writing file. Ignoring file close command.");
+                }
                 else {
                     boolean saveFile = ((Boolean) selected).getValue();
                     try {

@@ -106,9 +106,10 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                 commandStatus = false;
 
             else if (selected.equals(CMD_START_STREAM)) {
-                if (fileName != null && !fileName.isEmpty()) {
+                if (fileOutput.isWriting()) {
                     commandStatus = true;
                     reportFileName = true;
+                    getLogger().warn("Stream already started. Ignoring stream start command.");
                 }
                 else {
                     filePath = Paths.get("streams", parentSensor.getUniqueIdentifier().replace(':', '-'), "live.m3u8");
@@ -130,8 +131,10 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                     }
                 }
             } else if (selected.equals(CMD_END_STREAM)) {
-                if (fileName == null || fileName.isEmpty())
+                if (!fileOutput.isWriting()) {
                     commandStatus = false;
+                    getLogger().warn("Stream not started. Ignoring stream end command.");
+                }
                 else {
                     try {
                         this.fileOutput.closeFile();
