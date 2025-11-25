@@ -155,8 +155,6 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                     .withStatusCode(resourceURI == null ? ICommandStatus.CommandStatusCode.FAILED : ICommandStatus.CommandStatusCode.ACCEPTED)
                     .withResult(result)
                     .build();
-
-
         });
     }
 
