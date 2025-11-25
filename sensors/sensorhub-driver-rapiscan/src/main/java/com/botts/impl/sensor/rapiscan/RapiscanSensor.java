@@ -329,9 +329,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
                     long timeDisconnected = System.currentTimeMillis() - waitPeriod;
 
-                    if(timeDisconnected > config.commSettings.connection.connectTimeout){ //config.commSettings.connection.connectTimeout
-//                            connection.cancel();
-                        connection.reconnect();
+                    if(timeDisconnected > config.commSettings.connection.connectTimeout){
+                        getParentHub().getModuleRegistry().restartModuleAsync(this);
                         waitPeriod = -1;
                     }
                 }
