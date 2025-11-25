@@ -12,6 +12,7 @@ import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
+import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import java.io.OutputStream;
 import java.time.Instant;
@@ -105,7 +106,7 @@ public class LaneReport extends Report {
 
         Map<BigId, String> dsIdToLaneUID = new HashMap<>();
         var laneDsIterator = db.getDataStreamStore().selectEntries(new DataStreamFilter.Builder()
-                .withSystems().withUniqueIDs(laneUids).done()
+                .withSystems().withUniqueIDs(laneUids).includeMembers(true).done()
                 .withObservedProperties(RADHelper.DEF_OCCUPANCY)
                 .build())
                 .iterator();
@@ -118,14 +119,14 @@ public class LaneReport extends Report {
         }
 
         var allObsIterator = db.getObservationStore().select(new ObsFilter.Builder()
-                .withSystems().withUniqueIDs(laneUids).done()
+                .withSystems().withUniqueIDs(laneUids).includeMembers(true).done()
                 .withDataStreams().withObservedProperties(RADHelper.DEF_OCCUPANCY).done()
                 .withResultTimeDuring(start, end)
                         .build())
                 .iterator();
 
         Map<String, Map<String, Long>> laneCounts = new LinkedHashMap<>();
-        for (String laneUID : laneUids) {
+        for (String laneUID : dsIdToLaneUID.values()) {
             laneCounts.put(laneUID, new LinkedHashMap<>());
             Map<String, Long> counts = laneCounts.get(laneUID);
             counts.put("Gamma Alarm", 0L);
@@ -138,7 +139,7 @@ public class LaneReport extends Report {
             var obs = allObsIterator.next();
             BigId dsId = obs.getDataStreamID();
             String laneUID = dsIdToLaneUID.get(dsId);
-            if (laneUID == null) continue; // safety check
+            if (laneUID == null) continue;
 
             Map<String, Long> counts = laneCounts.get(laneUID);
 
