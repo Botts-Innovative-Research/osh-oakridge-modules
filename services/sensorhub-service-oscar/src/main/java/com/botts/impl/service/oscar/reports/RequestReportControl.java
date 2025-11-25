@@ -44,6 +44,8 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
     public static final String LABEL = "Request Report";
     public static final String DESCRIPTION = "Control to request operations, performance, and maintenance reports";
 
+    public static final int RETRY_COUNT = 3;
+
     DataRecord commandStructure;
     DataComponent resultStructure;
     SWEHelper fac;
@@ -122,20 +124,33 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
 
             String resourceURI = null;
 
+            String filePath = null;
+            IReportHandler reportHandler = null;
             try {
-                String filePath = buildPath(type, start, end, laneUIDs, eventType);
-                IReportHandler reportHandler = getReportHandler(type, start, end, laneUIDs, eventType);
-                resourceURI = handleReportGeneration(reportHandler, filePath);
-
+                filePath = buildPath(type, start, end, laneUIDs, eventType);
+                reportHandler = getReportHandler(type, start, end, laneUIDs, eventType);
             } catch (DataStoreException e) {
                 module.getLogger().error("Failed to build report " + type, e);
+            }
+
+            for (int retryAttempt = 0; retryAttempt < RETRY_COUNT; retryAttempt++) {
+                try {
+                    resourceURI = handleReportGeneration(reportHandler, filePath);
+
+                    if (resourceURI != null) {
+                        module.getLogger().info("Successfully generated report: " + resourceURI);
+                        break;
+                    }
+                } catch (DataStoreException e) {
+                    module.getLogger().error("Failed to build report " + type, e);
+                }
             }
 
             DataBlock resultData = resultStructure.createDataBlock();
             resultData.setStringValue(resourceURI);
             ICommandResult result = CommandResult.withData(resultData);
 
-            return new CommandStatus.Builder()
+           return new CommandStatus.Builder()
                     .withCommand(command.getID())
                     .withStatusCode(resourceURI == null ? ICommandStatus.CommandStatusCode.FAILED : ICommandStatus.CommandStatusCode.ACCEPTED)
                     .withResult(result)
