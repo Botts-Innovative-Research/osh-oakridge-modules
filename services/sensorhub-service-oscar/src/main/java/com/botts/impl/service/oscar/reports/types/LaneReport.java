@@ -63,14 +63,12 @@ public class LaneReport extends Report {
     private void addAlarmStatistics(){
         document.add(new Paragraph("Alarm Statistics"));
 
-        Map<String, Map<String, String>> countsLane = new LinkedHashMap<>();
+        Map<String, Map<String, String>> countsLane = getLaneCounts(laneUIDs.split(","));
 
-
-
-        for (var laneUID : laneUIDs.split(",")) {
-            var counts = calculateAlarmCounts(laneUID);
-            countsLane.put(laneUID, counts);
-        }
+//        for (var laneUID : laneUIDs.split(",")) {
+//            var counts = calculateAlarmCounts(laneUID);
+//            countsLane.put(laneUID, counts);
+//        }
 
         var table = tableGenerator.addLanesTable(countsLane);
         if (table == null) {
@@ -85,12 +83,12 @@ public class LaneReport extends Report {
     private void addFaultStatistics(){
         document.add(new Paragraph("Fault Statistics"));
 
-        Map<String, Map<String, String>> countsLane = getLaneCounts(laneUIDs.split(","));
+        Map<String, Map<String, String>> countsLane = new LinkedHashMap<>();
 
-//        for (var laneUID : laneUIDs.split(",")){
-//            var counts = calculateFaultCounts(laneUID);
-//            countsLane.put(laneUID, counts);
-//        }
+        for (var laneUID : laneUIDs.split(",")){
+            var counts = calculateFaultCounts(laneUID);
+            countsLane.put(laneUID, counts);
+        }
 
         var table = tableGenerator.addLanesTable(countsLane);
         if (table == null) {
