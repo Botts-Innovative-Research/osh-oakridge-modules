@@ -13,42 +13,35 @@ public class RapiscanThreadPoolManager {
     private static volatile RapiscanThreadPoolManager instance;
     private static final Object lock = new Object();
 
-    // Thread pools
     private final ExecutorService messageReaderPool;
     private final ScheduledExecutorService heartbeatPool;
     private final ExecutorService processingPool;
 
-    // Tracking
     private final AtomicInteger activeSensors = new AtomicInteger(0);
 
     private RapiscanThreadPoolManager() {
         int availableProcessors = Runtime.getRuntime().availableProcessors();
 
-        // Message Reader Pool: One thread per sensor (blocking I/O)
-        // Since these threads block on I/O, we need one per active connection
         messageReaderPool = new ThreadPoolExecutor(
-                0,                              // Core pool size (start with 0)
-                100,                            // Max pool size (enough for 50 sensors)
-                60L, TimeUnit.SECONDS,         // Keep-alive time for idle threads
-                new LinkedBlockingQueue<>(),    // Unbounded queue
+                0,
+                50,
+                60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(),
                 new NamedThreadFactory("Rapiscan-MessageReader")
         );
 
-        // Heartbeat Pool: Scheduled executor for periodic tasks
-        // Can be small since heartbeats are quick and scheduled
         heartbeatPool = Executors.newScheduledThreadPool(
-                Math.min(10, availableProcessors), // Max 10 threads or number of cores
+                Math.min(10, availableProcessors),
                 new NamedThreadFactory("Rapiscan-Heartbeat")
         );
 
-        // Processing Pool: For CPU-intensive tasks (EML processing, etc.)
         processingPool = new ThreadPoolExecutor(
-                availableProcessors,                    // Core = number of processors
-                availableProcessors * 2,                // Max = 2x processors
+                availableProcessors,
+                availableProcessors * 2,
                 60L, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(1000),        // Bounded queue
+                new LinkedBlockingQueue<>(1000),
                 new NamedThreadFactory("Rapiscan-Processing"),
-                new ThreadPoolExecutor.CallerRunsPolicy() // Backpressure: run in caller thread
+                new ThreadPoolExecutor.CallerRunsPolicy()
         );
 
         logger.info("RapiscanThreadPoolManager initialized with {} processors", availableProcessors);
@@ -57,9 +50,6 @@ public class RapiscanThreadPoolManager {
         logger.info("Processing pool: {}-{} threads", availableProcessors, availableProcessors * 2);
     }
 
-    /**
-     * Get singleton instance
-     */
     public static RapiscanThreadPoolManager getInstance() {
         if (instance == null) {
             synchronized (lock) {
@@ -71,67 +61,28 @@ public class RapiscanThreadPoolManager {
         return instance;
     }
 
-    /**
-     * Submit a message reading task (blocking I/O)
-     */
     public Future<?> submitMessageReader(Runnable task) {
         return messageReaderPool.submit(task);
     }
 
-    /**
-     * Schedule a heartbeat task at fixed rate
-     */
     public ScheduledFuture<?> scheduleHeartbeat(Runnable task, long initialDelay, long period, TimeUnit unit) {
         return heartbeatPool.scheduleAtFixedRate(task, initialDelay, period, unit);
     }
 
-    /**
-     * Submit a CPU-intensive processing task
-     */
     public Future<?> submitProcessing(Runnable task) {
         return processingPool.submit(task);
     }
 
-    /**
-     * Register a sensor (for tracking)
-     */
     public void registerSensor() {
         int count = activeSensors.incrementAndGet();
         logger.debug("Registered sensor. Active sensors: {}", count);
     }
 
-    /**
-     * Unregister a sensor (for tracking)
-     */
     public void unregisterSensor() {
         int count = activeSensors.decrementAndGet();
         logger.debug("Unregistered sensor. Active sensors: {}", count);
     }
 
-    /**
-     * Get statistics
-     */
-    public String getStatistics() {
-        ThreadPoolExecutor msgPool = (ThreadPoolExecutor) messageReaderPool;
-        ThreadPoolExecutor procPool = (ThreadPoolExecutor) processingPool;
-
-        return String.format(
-                "Active Sensors: %d\n" +
-                        "Message Reader Pool: active=%d, pool=%d, queue=%d\n" +
-                        "Heartbeat Pool: active=%d, pool=%d, queue=%d\n" +
-                        "Processing Pool: active=%d, pool=%d, queue=%d",
-                activeSensors.get(),
-                msgPool.getActiveCount(), msgPool.getPoolSize(), msgPool.getQueue().size(),
-                ((ThreadPoolExecutor) heartbeatPool).getActiveCount(),
-                ((ThreadPoolExecutor) heartbeatPool).getPoolSize(),
-                ((ThreadPoolExecutor) heartbeatPool).getQueue().size(),
-                procPool.getActiveCount(), procPool.getPoolSize(), procPool.getQueue().size()
-        );
-    }
-
-    /**
-     * Shutdown all pools (should be called on application shutdown)
-     */
     public void shutdown() {
         logger.info("Shutting down RapiscanThreadPoolManager...");
 
