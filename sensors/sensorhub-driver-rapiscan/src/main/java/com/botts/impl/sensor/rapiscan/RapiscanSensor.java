@@ -30,6 +30,8 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Sensor driver for the ... providing sensor description, output registration,
@@ -66,14 +68,17 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     private EMLScanContextualOutput emlScanContextualOutput;
     private EMLContextualOutput emlContextualOutput;
 
+    private ScheduledFuture<?> heartbeatFuture;
     RobustConnection connection;
     private boolean isRunning;
-    private Thread tcpConnectionThread;
+//    private Thread tcpConnectionThread;
     //private static final Object heartbeatLock = new Object();
 
     @Override
     public void doInit() throws SensorHubException {
         super.doInit();
+
+        RapiscanThreadPoolManager.getInstance().registerSensor();
 
         tryConnection();
 
@@ -216,9 +221,15 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     @Override
     protected void afterStart() {
         // Begin heartbeat check
-        tcpConnectionThread = new Thread(this::heartbeat);
         isRunning = true;
-        tcpConnectionThread.start();
+        heartbeatFuture = RapiscanThreadPoolManager.getInstance().scheduleHeartbeat(
+                this::heartbeatCheck,
+                0,
+                1,
+                TimeUnit.SECONDS
+        );
+//        tcpConnectionThread = new Thread(this::heartbeat);
+//        tcpConnectionThread.start();
     }
 
     @Override
@@ -230,22 +241,47 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     @Override
     public void doStop() {
+        logger.info("Stopping RapiscanSensor {}...", getUniqueIdentifier());
+
         isRunning = false;
-        if (tcpConnectionThread != null) tcpConnectionThread = null;
-        if(connection != null) connection.cancel();
+
+        if (heartbeatFuture != null) {
+            heartbeatFuture.cancel(true);
+            heartbeatFuture = null;
+        }
+
+        if (messageHandler != null) {
+            try {
+                messageHandler.stop();
+            } catch (Exception e) {
+                logger.error("Error stopping message handler", e);
+            }
+            messageHandler = null;
+        }
+
+        if (connection != null) {
+            try {
+                connection.cancel();
+            } catch (Exception e) {
+                logger.error("Error canceling connection", e);
+            }
+        }
 
         if (commProviderModule != null) {
             try {
-                commProviderModule.stop();
+                if (commProviderModule.isStarted()) {
+                    commProviderModule.stop();
+                }
             } catch (Exception e) {
-                logger.error("Uncaught exception attempting to stop comm module", e);
+                logger.error("Error stopping comm module", e);
             } finally {
                 commProviderModule = null;
-
             }
         }
-        messageHandler = null;
 
+        RapiscanThreadPoolManager.getInstance().unregisterSensor();
+
+        logger.info("RapiscanSensor {} stopped successfully", getUniqueIdentifier());
     }
 
 
@@ -310,35 +346,39 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     public ConnectionStatusOutput getConnectionStatusOutput() {return connectionStatusOutput;}
 
-    public void heartbeat() {
-        long waitPeriod = -1;
+    public void heartbeatCheck() {
+        if (!isRunning)
+            return;
 
-        while (isRunning) {
-            try{
-                long timeSinceMsg = messageHandler.getTimeSinceLastMessage();
-                boolean isReceivingMsg = timeSinceMsg < config.commSettings.connection.reconnectPeriod;
+        try {
+            if (messageHandler == null)
+                return;
 
-                if(isReceivingMsg) {
-                    this.connectionStatusOutput.onNewMessage(true);
-                    waitPeriod = -1;
-                }
-                else {
-                    this.connectionStatusOutput.onNewMessage(false);
+            long timeSinceMsg = messageHandler.getTimeSinceLastMessage();
+            boolean isReceivingMsg = timeSinceMsg < config.commSettings.connection.reconnectPeriod;
 
-                    if(waitPeriod == -1) waitPeriod = System.currentTimeMillis();
+            if (connectionStatusOutput != null) {
+                connectionStatusOutput.onNewMessage(isReceivingMsg);
+            }
 
-                    long timeDisconnected = System.currentTimeMillis() - waitPeriod;
+            if (!isReceivingMsg) {
+                long reconnectTimeout = config.commSettings.connection.connectTimeout;
+                if (timeSinceMsg > reconnectTimeout) {
+                    logger.warn("Connection timeout after {}ms, attempting reconnect", timeSinceMsg);
 
-                    if(timeDisconnected > config.commSettings.connection.connectTimeout){
-                        connection.reconnect();
-                        waitPeriod = -1;
+                    if (isRunning && connection != null) {
+                        try {
+                            connection.reconnect();
+                        } catch (Exception e) {
+                            logger.error("Reconnect failed", e);
+                        }
                     }
                 }
+            }
 
-                Thread.sleep(1000);
-
-            } catch (Exception e) {
-                logger.debug("Error during connection check, "+ e);
+        } catch (Exception e) {
+            if (isRunning) {
+                logger.error("Error during heartbeat check", e);
             }
         }
     }

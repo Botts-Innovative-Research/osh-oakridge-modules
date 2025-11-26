@@ -11,6 +11,9 @@ import java.io.StringReader;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MessageHandler {
@@ -44,10 +47,13 @@ public class MessageHandler {
     int neutronMax;
     int gammaMax;
 
-    //    FileWriter fw;
-    //    CSVWriter writer;
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
-    private long timeSinceLastMessage;
+    private volatile long timeSinceLastMessage;
+
+    private final InputStream msgIn;
+    private Future<?> messageReaderFuture;
+    private final AtomicBoolean isRunning = new AtomicBoolean(false);
+    private BufferedReader bufferedReader;
 
     public long getTimeSinceLastMessage() {
         long now = System.currentTimeMillis();
@@ -56,6 +62,7 @@ public class MessageHandler {
 
     public MessageHandler(InputStream msgIn, RapiscanSensor parentSensor) {
         this.parentSensor = parentSensor;
+        this.msgIn = msgIn;
 
         gammaScanRunningSumBatch = new LinkedList<>();
         occupancyGammaBatch = new LinkedList<>();
@@ -63,6 +70,7 @@ public class MessageHandler {
 
         timeSinceLastMessage = System.currentTimeMillis();
 
+        start();
         // Setup boolean
         Thread messageReader = new Thread(() -> {
             boolean continueProcessing = true;
@@ -99,9 +107,75 @@ public class MessageHandler {
         messageReader.start();
     }
 
-    public void stopProcessing() {
-        synchronized (isProcessing) {
-            isProcessing.set(false);
+    public synchronized void start() {
+        if (isProcessing.get()) {
+            parentSensor.getLogger().warn("MessageHandler already running");
+            return;
+        }
+
+        isProcessing.set(true);
+
+        // Submit to thread pool instead of creating new thread
+        messageReaderFuture = RapiscanThreadPoolManager.getInstance().submitMessageReader(() -> {
+            parentSensor.getLogger().debug("Message reader started for sensor {}", parentSensor.getUniqueIdentifier());
+
+            try {
+                bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
+
+                String msgLine;
+                while (isRunning.get() && !Thread.currentThread().isInterrupted()) {
+                    try {
+                        msgLine = bufferedReader.readLine();
+
+                        if (msgLine == null) {
+                            parentSensor.getLogger().info("End of stream reached");
+                            break;
+                        }
+
+                        reader = new CSVReader(new StringReader(msgLine));
+                        csvList = reader.readAll();
+
+                        if (!csvList.isEmpty() && csvList.get(0).length > 0) {
+                            parentSensor.getDailyFileOutput().onNewMessage(msgLine);
+                            onNewMainChar(csvList.get(0)[0], csvList.get(0));
+                            timeSinceLastMessage = System.currentTimeMillis();
+                        }
+
+                    } catch (Exception e) {
+                        if (isRunning.get()) {
+                            parentSensor.getLogger().error("Error processing message: {}", e.getMessage(), e);
+                        }
+                    }
+                }
+
+            } catch (Exception e) {
+                if (isRunning.get()) {
+                    parentSensor.getLogger().error("Fatal error in message reader", e);
+                }
+            } finally {
+                parentSensor.getLogger().debug("Message reader exiting for sensor {}", parentSensor.getUniqueIdentifier());
+            }
+        });
+    }
+
+    public synchronized void stop() {
+        if (!isRunning.get()) {
+            return;
+        }
+
+        parentSensor.getLogger().debug("Stopping MessageHandler for sensor {}", parentSensor.getUniqueIdentifier());
+        isRunning.set(false);
+
+        if (messageReaderFuture != null) {
+            messageReaderFuture.cancel(true); // Interrupt the thread
+
+            try {
+                messageReaderFuture.get(5, TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                parentSensor.getLogger().warn("Message reader did not stop within timeout");
+            } catch (Exception e) {
+                // Expected when cancelled
+            }
         }
     }
 
