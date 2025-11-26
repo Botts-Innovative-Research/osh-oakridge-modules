@@ -81,10 +81,7 @@ public class EMLService implements IEventListener {
 
                 Stream<String> stream = Stream.of(streamArray);
                 results = ernieLane.process(stream);
-                System.out.println("ERNIE Results");
-                System.out.println(results.toXMLString());
-
-            } catch (ReaderException | AnalysisException | IOException | JAXBException e) {
+            } catch (ReaderException | AnalysisException | IOException e) {
                 throw new RuntimeException(e);
             }
         }
