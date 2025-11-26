@@ -214,7 +214,6 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         }catch(IOException e){
             throw new SensorHubException("Error initializing message handler ", e);
         }
-
     }
 
 
