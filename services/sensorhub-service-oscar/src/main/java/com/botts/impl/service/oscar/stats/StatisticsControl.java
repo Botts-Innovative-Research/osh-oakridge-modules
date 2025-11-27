@@ -4,13 +4,18 @@ import com.botts.impl.service.oscar.OSCARSystem;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import org.sensorhub.api.command.*;
+import org.sensorhub.api.data.IObsData;
+import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.swe.SWEHelper;
 import org.vast.util.TimeExtent;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Stream;
 
 public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implements IStreamingControlInterfaceWithResult {
 
@@ -61,7 +66,8 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
             if (start != null) {
                 // TODO: Return result of createCountStatistics
                 DataBlock resultData = resultDescription.createDataBlock();
-                statsOutput.populateDataBlock(resultData, 0, start, end);
+                Statistics stats = fetchStatistics(start, end);
+                statsOutput.populateDataBlock(resultData, 0, stats);
                 result = CommandResult.withData(resultData);
             } else {
                 // TODO: Call update for latest site statistics output, and return output observation id
@@ -78,6 +84,20 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
                     .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(execStartTime), Instant.now()))
                     .build();
         });
+    }
+
+    private Statistics fetchStatistics(Instant start, Instant end) {
+        List<IObsData> occupancyObs = statsOutput.fetchObservations(RADHelper.DEF_OCCUPANCY, start, end);
+
+        List<IObsData> gammaObs = statsOutput.fetchObservations(RADHelper.DEF_GAMMA, start, end);
+
+        List<IObsData> neutronObs = statsOutput.fetchObservations(RADHelper.DEF_NEUTRON, start, end);
+
+        List<IObsData> alarmObs = statsOutput.fetchObservations(RADHelper.DEF_ALARM, start, end);
+
+        List<IObsData> tamperObs = statsOutput.fetchObservations(RADHelper.DEF_TAMPER, start, end);
+
+        return statsOutput.computeStatistics(occupancyObs, gammaObs, neutronObs, alarmObs, tamperObs, start, end);
     }
 
     @Override

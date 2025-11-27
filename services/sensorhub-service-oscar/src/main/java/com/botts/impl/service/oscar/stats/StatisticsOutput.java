@@ -18,6 +18,7 @@ import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.utils.Async;
 import org.vast.data.TextEncodingImpl;
+import org.vast.util.TimeExtent;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -26,6 +27,7 @@ import java.util.Calendar;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.function.Predicate;
+import java.util.stream.Stream;
 
 public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
@@ -37,6 +39,38 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
     private ScheduledExecutorService service;
     private final IObsSystemDatabase database;
+
+    private static class TimeRanges {
+        final Instant monthStart, monthEnd;
+        final Instant weekStart, weekEnd;
+        final Instant dayStart, dayEnd;
+
+        TimeRanges(Instant monthStart, Instant monthEnd,
+                   Instant weekStart, Instant weekEnd,
+                   Instant dayStart, Instant dayEnd) {
+            this.monthStart = monthStart;
+            this.monthEnd = monthEnd;
+            this.weekStart = weekStart;
+            this.weekEnd = weekEnd;
+            this.dayStart = dayStart;
+            this.dayEnd = dayEnd;
+        }
+    }
+
+    private static class AllStatistics {
+        final Statistics all;
+        final Statistics monthly;
+        final Statistics weekly;
+        final Statistics daily;
+
+        AllStatistics(Statistics all, Statistics monthly,
+                      Statistics weekly, Statistics daily) {
+            this.all = all;
+            this.monthly = monthly;
+            this.weekly = weekly;
+            this.daily = daily;
+        }
+    }
 
     /*
     Use cases:
@@ -54,56 +88,212 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         recommendedEncoding = new TextEncodingImpl();
     }
 
-    public synchronized void start() {
+    public void start() {
         if (service == null || service.isShutdown())
             service = Executors.newSingleThreadScheduledExecutor();
         service.scheduleAtFixedRate(this::publishLatestStatistics, 0L, SAMPLING_PERIOD, TimeUnit.MINUTES);
     }
 
-    public synchronized void stop() {
+    public void stop() {
         service.shutdown();
         service = null;
     }
 
-    public synchronized void publishLatestStatistics() {
+    public void publishLatestStatistics() {
         long currentTime = System.currentTimeMillis();
 
-        DataBlock dataBlock = latestRecord == null ? recordDescription.createDataBlock() : latestRecord.renew();
+        DataBlock dataBlock = latestRecord == null ?
+                recordDescription.createDataBlock() : latestRecord.renew();
 
         int i = 0;
-        dataBlock.setLongValue(i++, currentTime/1000);
+        dataBlock.setLongValue(i++, currentTime / 1000);
 
-        // Get total counts from DB
-        i = populateDataBlock(dataBlock, i, null, null);
+        // Calculate time ranges
+        TimeRanges timeRanges = calculateTimeRanges();
 
-        // Get monthly counts from DB
-        // Modify start and end time for current month-to-date
-        int currentDayOfMonth = Calendar.getInstance().get(Calendar.DAY_OF_MONTH);
-        var monthStart = Instant.now().minus(currentDayOfMonth-1, TimeUnit.DAYS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
-        var lastDayOfMonth = Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_MONTH);
-        var monthEnd = Instant.now().plus(lastDayOfMonth-currentDayOfMonth+1, TimeUnit.DAYS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
+        // Fetch ALL observations ONCE and compute statistics for all time periods
+        AllStatistics allStats = computeAllStatistics(timeRanges);
 
-        i = populateDataBlock(dataBlock, i, monthStart, monthEnd);
-
-        // Get weekly counts from DB
-        int currentDayOfWeek = Calendar.getInstance().get(Calendar.DAY_OF_WEEK);
-        var weekStart = Instant.now().minus(currentDayOfWeek-1, TimeUnit.DAYS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
-        var lastDayOfWeek = Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_WEEK);
-        var weekEnd = Instant.now().plus(lastDayOfWeek-currentDayOfWeek+1, TimeUnit.DAYS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
-
-        i = populateDataBlock(dataBlock, i, weekStart, weekEnd);
-
-        // Get today's counts from DB
-        int currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
-        var dayStart = Instant.now().minus(currentHour-1, TimeUnit.HOURS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
-        var lastHour = Calendar.getInstance().getActualMaximum(Calendar.HOUR_OF_DAY);
-        var dayEnd = Instant.now().plus(lastHour-currentHour+1, TimeUnit.HOURS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
-
-        populateDataBlock(dataBlock, i, dayStart, dayEnd);
+        // Populate data block with all time periods
+        i = populateDataBlock(dataBlock, i, allStats.all);
+        i = populateDataBlock(dataBlock, i, allStats.monthly);
+        i = populateDataBlock(dataBlock, i, allStats.weekly);
+        populateDataBlock(dataBlock, i, allStats.daily);
 
         latestRecord = dataBlock;
         latestRecordTime = currentTime;
         eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));
+    }
+
+    /**
+     * Calculate all time ranges once
+     */
+    private TimeRanges calculateTimeRanges() {
+        Calendar cal = Calendar.getInstance();
+        Instant now = Instant.now();
+
+        // Monthly range (start of month to end of month)
+        int currentDayOfMonth = cal.get(Calendar.DAY_OF_MONTH);
+        Instant monthStart = now.minus(currentDayOfMonth - 1, ChronoUnit.DAYS)
+                .truncatedTo(ChronoUnit.DAYS);
+        int lastDayOfMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH);
+        Instant monthEnd = now.plus(lastDayOfMonth - currentDayOfMonth + 1, ChronoUnit.DAYS)
+                .truncatedTo(ChronoUnit.DAYS);
+
+        // Weekly range (start of week to end of week)
+        int currentDayOfWeek = cal.get(Calendar.DAY_OF_WEEK);
+        Instant weekStart = now.minus(currentDayOfWeek - 1, ChronoUnit.DAYS)
+                .truncatedTo(ChronoUnit.DAYS);
+        int lastDayOfWeek = cal.getActualMaximum(Calendar.DAY_OF_WEEK);
+        Instant weekEnd = now.plus(lastDayOfWeek - currentDayOfWeek + 1, ChronoUnit.DAYS)
+                .truncatedTo(ChronoUnit.DAYS);
+
+        // Daily range (start of today to end of today)
+        Instant dayStart = now.truncatedTo(ChronoUnit.DAYS);
+        Instant dayEnd = dayStart.plus(1, ChronoUnit.DAYS);
+
+        return new TimeRanges(monthStart, monthEnd, weekStart, weekEnd, dayStart, dayEnd);
+    }
+
+    /**
+     * Fetch all observations once and compute statistics for all time ranges
+     */
+    private AllStatistics computeAllStatistics(TimeRanges timeRanges) {
+        List<IObsData> occupancyObs = fetchObservations(RADHelper.DEF_OCCUPANCY);
+
+        List<IObsData> gammaObs = fetchObservations(RADHelper.DEF_GAMMA);
+
+        List<IObsData> neutronObs = fetchObservations(RADHelper.DEF_NEUTRON);
+
+        List<IObsData> alarmObs = fetchObservations(RADHelper.DEF_ALARM);
+
+        List<IObsData> tamperObs = fetchObservations(RADHelper.DEF_TAMPER);
+
+        // Compute statistics for all time periods
+        Statistics allTime = computeStatistics(
+                occupancyObs, gammaObs, neutronObs, alarmObs, tamperObs,
+                null, null);
+
+        Statistics monthly = computeStatistics(
+                occupancyObs, gammaObs, neutronObs, alarmObs, tamperObs,
+                timeRanges.monthStart, timeRanges.monthEnd);
+
+        Statistics weekly = computeStatistics(
+                occupancyObs, gammaObs, neutronObs, alarmObs, tamperObs,
+                timeRanges.weekStart, timeRanges.weekEnd);
+
+        Statistics daily = computeStatistics(
+                occupancyObs, gammaObs, neutronObs, alarmObs, tamperObs,
+                timeRanges.dayStart, timeRanges.dayEnd);
+
+        return new AllStatistics(allTime, monthly, weekly, daily);
+    }
+
+    protected List<IObsData> fetchObservations(String observedProperty, Instant start, Instant end) {
+        ObsFilter.Builder filterBuilder = new ObsFilter.Builder()
+                .withSystems().withUniqueIDs(parentSensor.getUniqueIdentifier()).done()
+                .withDataStreams().withObservedProperties(observedProperty).done();
+
+        if (start != null && end != null)
+            filterBuilder.withPhenomenonTimeDuring(start, end);
+
+        ObsFilter filter = filterBuilder.build();
+
+        List<IObsData> observations = new ArrayList<>();
+        try (Stream<IObsData> stream = database.getObservationStore().select(filter)) {
+            stream.forEach(observations::add);
+        }
+
+        return observations;
+    }
+
+    private List<IObsData> fetchObservations(String observedProperty) {
+        return fetchObservations(observedProperty, null, null);
+    }
+
+    protected Statistics computeStatistics(
+            List<IObsData> occupancyObs,
+            List<IObsData> gammaObs,
+            List<IObsData> neutronObs,
+            List<IObsData> alarmObs,
+            List<IObsData> tamperObs,
+            Instant start,
+            Instant end) {
+
+        java.util.function.Predicate<Instant> inRange = time -> {
+            if (start == null && end == null) return true;
+            if (start != null && time.isBefore(start)) return false;
+            if (end != null && time.isAfter(end)) return false;
+            return true;
+        };
+
+        // Count occupancies (all within range)
+        long numOccupancies = occupancyObs.stream()
+                .filter(obs -> inRange.test(obs.getPhenomenonTime()))
+                .count();
+
+        // Count alarms by type
+        long numGammaAlarms = occupancyObs.stream()
+                .filter(obs -> inRange.test(obs.getPhenomenonTime()))
+                .filter(obs -> obs.getResult().getBooleanValue(5) && !obs.getResult().getBooleanValue(6))
+                .count();
+
+        long numNeutronAlarms = occupancyObs.stream()
+                .filter(obs -> inRange.test(obs.getPhenomenonTime()))
+                .filter(obs -> !obs.getResult().getBooleanValue(5) && obs.getResult().getBooleanValue(6))
+                .count();
+
+        long numGammaNeutronAlarms = occupancyObs.stream()
+                .filter(obs -> inRange.test(obs.getPhenomenonTime()))
+                .filter(obs -> obs.getResult().getBooleanValue(5) && obs.getResult().getBooleanValue(6))
+                .count();
+
+        // Count faults
+        long numGammaFaults = Stream.concat(gammaObs.stream(), alarmObs.stream())
+                .filter(obs -> inRange.test(obs.getPhenomenonTime()))
+                .filter(obs -> obs.getResult().getStringValue(1).contains("Fault - Gamma"))
+                .count();
+
+        long numNeutronFaults = Stream.concat(neutronObs.stream(), alarmObs.stream())
+                .filter(obs -> inRange.test(obs.getPhenomenonTime()))
+                .filter(obs -> obs.getResult().getStringValue(1).contains("Fault - Neutron"))
+                .count();
+
+        // Count tampers
+        long numTampers = tamperObs.stream()
+                .filter(obs -> inRange.test(obs.getPhenomenonTime()))
+                .filter(obs -> obs.getResult().getBooleanValue(1))
+                .count();
+
+        // Total faults
+        long numFaults = Stream.of(gammaObs.stream(), neutronObs.stream(), alarmObs.stream())
+                .flatMap(s -> s)
+                .filter(obs -> inRange.test(obs.getPhenomenonTime()))
+                .filter(obs -> obs.getResult().getStringValue(1).contains("Fault"))
+                .count() + numTampers;
+
+        return new Statistics.Builder()
+                .numOccupancies(numOccupancies)
+                .numGammaAlarms(numGammaAlarms)
+                .numNeutronAlarms(numNeutronAlarms)
+                .numGammaNeutronAlarms(numGammaNeutronAlarms)
+                .numFaults(numFaults)
+                .numGammaFaults(numGammaFaults)
+                .numNeutronFaults(numNeutronFaults)
+                .numTampers(numTampers)
+                .build();
+    }
+
+    protected int populateDataBlock(DataBlock dataBlock, int i, Statistics stats) {
+        dataBlock.setLongValue(i++, stats.getNumOccupancies());
+        dataBlock.setLongValue(i++, stats.getNumGammaAlarms());
+        dataBlock.setLongValue(i++, stats.getNumNeutronAlarms());
+        dataBlock.setLongValue(i++, stats.getNumGammaNeutronAlarms());
+        dataBlock.setLongValue(i++, stats.getNumFaults());
+        dataBlock.setLongValue(i++, stats.getNumGammaFaults());
+        dataBlock.setLongValue(i++, stats.getNumNeutronFaults());
+        dataBlock.setLongValue(i++, stats.getNumTampers());
+        return i;
     }
 
     protected BigId waitForLatestObservationId() {
@@ -132,72 +322,6 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
             getLogger().error("Could not find latest observation ID");
             return null;
         }
-    }
-
-    protected int populateDataBlock(DataBlock dataBlock, int i, Instant start, Instant end) {
-        Statistics stats = getStats(start, end);
-        dataBlock.setLongValue(i++, stats.getNumOccupancies());
-        dataBlock.setLongValue(i++, stats.getNumGammaAlarms());
-        dataBlock.setLongValue(i++, stats.getNumNeutronAlarms());
-        dataBlock.setLongValue(i++, stats.getNumGammaNeutronAlarms());
-        dataBlock.setLongValue(i++, stats.getNumFaults());
-        dataBlock.setLongValue(i++, stats.getNumGammaFaults());
-        dataBlock.setLongValue(i++, stats.getNumNeutronFaults());
-        dataBlock.setLongValue(i++, stats.getNumTampers());
-        return i;
-    }
-
-    protected Statistics getStats(Instant start, Instant end) {
-        Predicate<IObsData> occupancyPredicate = (obs) -> true;
-        long numOccupancies = countObservations(database, occupancyPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-
-        Predicate<IObsData> gammaAlarmPredicate = (obs) -> obs.getResult().getBooleanValue(5) && !obs.getResult().getBooleanValue(6);
-        long numGammaAlarms = countObservations(database, gammaAlarmPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-
-        Predicate<IObsData> neutronAlarmPredicate = (obs) -> !obs.getResult().getBooleanValue(5) && obs.getResult().getBooleanValue(6);
-        long numNeutronAlarms = countObservations(database, neutronAlarmPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-
-        Predicate<IObsData> gammaNeutronAlarmPredicate = (obs) -> obs.getResult().getBooleanValue(5) && obs.getResult().getBooleanValue(6);
-        long numGammaNeutronAlarms = countObservations(database, gammaNeutronAlarmPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-
-        Predicate<IObsData> gammaFaultPredicate = (obs) -> obs.getResult().getStringValue(1).contains("Fault - Gamma");
-        long numGammaFaults = countObservations(database, gammaFaultPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-
-        Predicate<IObsData> neutronFaultPredicate = (obs) -> obs.getResult().getStringValue(1).contains("Fault - Neutron");
-        long numNeutronFaults = countObservations(database, neutronFaultPredicate, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
-
-        Predicate<IObsData> tamperPredicate = (obs) -> obs.getResult().getBooleanValue(1);
-        long numTampers = countObservations(database, tamperPredicate, start, end, RADHelper.DEF_TAMPER);
-
-        Predicate<IObsData> faultPredicate = (obs) -> obs.getResult().getStringValue(1).contains("Fault");
-        long numFaults = countObservations(database, faultPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
-
-        return new Statistics.Builder()
-                .numOccupancies(numOccupancies)
-                .numGammaAlarms(numGammaAlarms)
-                .numNeutronAlarms(numNeutronAlarms)
-                .numGammaNeutronAlarms(numGammaNeutronAlarms)
-                .numFaults(numFaults)
-                .numGammaFaults(numGammaFaults)
-                .numNeutronFaults(numNeutronFaults)
-                .numTampers(numTampers)
-                .build();
-    }
-
-    private long countObservations(IObsSystemDatabase database, Predicate<IObsData> valuePredicate, Instant begin, Instant end, String... observedProperty){
-        var dsFilterBuilder = new DataStreamFilter.Builder()
-                .withObservedProperties(observedProperty);
-
-        if (begin != null && end != null)
-            dsFilterBuilder = dsFilterBuilder.withValidTimeDuring(begin, end);
-
-        var dsFilter = dsFilterBuilder.build();
-
-        return database.getObservationStore().select(new ObsFilter.Builder()
-                .withDataStreams(dsFilter)
-                .withValuePredicate(valuePredicate)
-                .build())
-                .count();
     }
 
     @Override
