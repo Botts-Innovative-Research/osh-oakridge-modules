@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.bytedeco.ffmpeg.global.avformat.*;
@@ -107,6 +108,22 @@ public class MpegTsProcessor extends Thread {
      * Logging utility
      */
     private static final Logger logger = LoggerFactory.getLogger(MpegTsProcessor.class);
+
+
+    private static class ListenerThreadFactory implements ThreadFactory {
+        public final static String STREAM_LISTENER = "STREAM-LISTENER";
+        public final static String FILE_LISTENER = "FILE-LISTENER";
+        private final String name;
+
+        ListenerThreadFactory(String prefix, String listenerType) {
+            this.name = prefix + "-" + listenerType;
+        }
+
+        @Override
+        public Thread newThread(Runnable r) {
+            return new Thread(r, name);
+        }
+    }
 
     boolean injectExtradata = true;
 
@@ -529,7 +546,9 @@ public class MpegTsProcessor extends Thread {
                 throw new NullPointerException("Attempt to set null videoStreamPacketListener");
             }
 
-            this.videoDataBufferListeners.put(videoDataBufferListener, Executors.newSingleThreadExecutor());
+            this.videoDataBufferListeners.put(videoDataBufferListener, Executors.newSingleThreadExecutor(new ListenerThreadFactory(
+                    WORKER_THREAD_NAME, videoDataBufferListener.getName()
+            )));
         }
     }
 
