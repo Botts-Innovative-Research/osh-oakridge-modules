@@ -25,4 +25,6 @@ public interface DataBufferListener {
     void onDataBuffer(DataBufferRecord record);
 
     public boolean isWriting();
+
+    public String getName();
 }

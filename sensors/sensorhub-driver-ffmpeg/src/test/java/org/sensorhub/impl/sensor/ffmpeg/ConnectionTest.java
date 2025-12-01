@@ -214,6 +214,10 @@ public abstract class ConnectionTest {
                 public boolean isWriting() {
                     return true;
                 }
+
+                @Override public String getName() {
+                    return "testStreamProcessing";
+                }
             };
 
             mpegTsProcessor.setVideoDataBufferListener(dblistener);
@@ -322,6 +326,13 @@ public abstract class ConnectionTest {
                 public boolean isWriting() {
                     return true;
                 }
+
+                @Override
+                public String getName() {
+                    return "testStreamProcessing";
+                }
+
+
             };
 
             driver.mpegTsProcessor.addVideoDataBufferListener(dblistener);
