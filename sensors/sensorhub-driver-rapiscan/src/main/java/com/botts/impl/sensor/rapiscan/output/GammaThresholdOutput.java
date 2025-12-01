@@ -97,12 +97,12 @@ public class GammaThresholdOutput extends AbstractSensorOutput<RapiscanSensor> i
         }
 
         if(latestBackgroundSum == 0) {
-            getLogger().error("No available gamma background to calculate sigma!");
+            getLogger().warn("No available gamma background to calculate sigma!");
             return;
         }
 
         if(nVal == 0) {
-            getLogger().error("No available n sigma value. Please set in module config or wait for RPM to update.");
+            getLogger().warn("No available n sigma value. Please set in module config or wait for RPM to update.");
         }
 
         double latestThreshold = 0;
