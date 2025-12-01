@@ -32,6 +32,8 @@ public class VideoKeyframeDecimator implements DataBufferListener {
     private static final Logger logger = LoggerFactory.getLogger(VideoKeyframeDecimator.class);
     final String outputFileName;
 
+    final static String LISTENER_NAME = "KEYFRAME-DECIMATOR";
+
     boolean isWriting = true;
 
     final int totalKeyframe;
@@ -122,7 +124,7 @@ public class VideoKeyframeDecimator implements DataBufferListener {
 
                 avformat.av_interleaved_write_frame(avFormatContext, avPacket);
 
-                //av_packet_unref(avPacket);
+                av_packet_free(avPacket);
 
                 currentDecFrame++;
                 if (currentDecFrame >= totalKeyframe) {
@@ -149,6 +151,11 @@ public class VideoKeyframeDecimator implements DataBufferListener {
     @Override
     public boolean isWriting() {
         return isWriting;
+    }
+
+    @Override
+    public String getName() {
+        return LISTENER_NAME;
     }
 
     public void setFileCloseCallback(Runnable closeCallback) {
