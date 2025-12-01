@@ -125,7 +125,7 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                         reportFileName = true;
                         fileOutput.publish(bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName));
                     } catch (Exception e) {
-                        getLogger().error("Exception while opening HLS output", e);
+                        getLogger().error("Exception while opening HLS output for {}", fileName, e);
                         fileName = "";
                         commandStatus = false;
                     }

@@ -53,7 +53,7 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
         try {
             return bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName);
         } catch (DataStoreException e) {
-            getLogger().error("Could not get video URI", e);
+            getLogger().error("Could not get video URI {}", fileName, e);
             return "";
         }
     }
@@ -128,7 +128,7 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                         this.fileOutput.openFile(bucketStore.getResourceURI(VIDEO_BUCKET, fileName));
                         this.parentSensor.getLogger().debug("Writing to file: {}", fileName);
                     } catch (Exception e) {
-                        getLogger().error("Exception while opening MP4 output", e);
+                        getLogger().error("Exception while opening MP4 output for {}", fileName, e);
                         fileName = "";
                         commandStatus = false;
                     }
