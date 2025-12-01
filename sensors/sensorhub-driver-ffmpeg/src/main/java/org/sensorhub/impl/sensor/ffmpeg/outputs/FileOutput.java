@@ -104,7 +104,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 while ((pkt = packetQueue.poll()) != null) {
                     packetTiming(pkt);
                     av_interleaved_write_frame(outputContext, pkt);
-                    av_packet_unref(pkt);
+                    //av_packet_unref(pkt);
                     av_packet_free(pkt);
                 }
 
@@ -311,7 +311,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 } catch (InterruptedException ignored) {}
 
                 for (AVPacket packet : packetQueue) {
-                    av_packet_unref(packet);
+                    //av_packet_unref(packet);
                     av_packet_free(packet);
                 }
 
