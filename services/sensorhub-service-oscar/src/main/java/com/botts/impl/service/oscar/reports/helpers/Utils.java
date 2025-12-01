@@ -60,9 +60,9 @@ public class Utils {
         return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
                 .withDataStreams(new DataStreamFilter.Builder()
                         .withObservedProperties(observedProperties)
-                        .withValidTimeDuring(begin, end)
                         .build())
                 .withValuePredicate(valuePredicate)
+                .withResultTimeDuring(begin, end)
                 .build()).count();
     }
 

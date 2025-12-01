@@ -126,7 +126,7 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                         //var outputStream = this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap());
                         this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap()).close();
                         this.fileOutput.openFile(bucketStore.getResourceURI(VIDEO_BUCKET, fileName));
-                        this.parentSensor.getLogger().debug("Writing to file: {}", fileName);
+                        this.parentSensor.getLogger().trace("Writing to file: {}", fileName);
                     } catch (Exception e) {
                         getLogger().error("Exception while opening MP4 output for {}", fileName, e);
                         fileName = "";
@@ -146,9 +146,9 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                         // Delete file if we do not want to save
                         if (!saveFile) {
                             bucketStore.deleteObject(VIDEO_BUCKET, fileName);
-                            this.parentSensor.getLogger().debug("Discarded file: {}", fileName);
+                            this.parentSensor.getLogger().trace("Discarded file: {}", fileName);
                         } else {
-                            this.parentSensor.reportStatus("Saved file: " + fileName);
+                            this.parentSensor.getLogger().trace("Saved file: {}", fileName);
                             fileNameTemp = fileName;
                             reportFileName = true;
                         }
