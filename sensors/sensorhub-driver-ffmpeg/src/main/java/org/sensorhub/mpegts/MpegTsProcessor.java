@@ -111,8 +111,6 @@ public class MpegTsProcessor extends Thread {
 
 
     private static class ListenerThreadFactory implements ThreadFactory {
-        public final static String STREAM_LISTENER = "STREAM-LISTENER";
-        public final static String FILE_LISTENER = "FILE-LISTENER";
         private final String name;
 
         ListenerThreadFactory(String prefix, String listenerType) {
