@@ -18,6 +18,8 @@ import org.sensorhub.api.resource.ResourceKey;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.utils.Async;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
 import java.time.Instant;
@@ -36,6 +38,8 @@ import java.util.stream.Collectors;
 
 public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
+    Logger logger = LoggerFactory.getLogger(StatisticsOutput.class);
+
     public static final String NAME = "siteStatistics";
 
     private final DataComponent recordDescription;
@@ -52,14 +56,14 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         RADHelper fac = new RADHelper();
         recordDescription = fac.createSiteStatistics();
         recommendedEncoding = new TextEncodingImpl();
-        initializeDataStreamMapping();
     }
 
     /**
      * Initializes the mapping between observed properties and their datastream IDs.
      */
     private void initializeDataStreamMapping() {
-        observedPropertyToDataStreamIds = new HashMap<>();
+        if (observedPropertyToDataStreamIds == null)
+            observedPropertyToDataStreamIds = new HashMap<>();
 
         // Query for each observed property type
         String[] observedProperties = {
@@ -82,19 +86,20 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         }
     }
 
-    public synchronized void start() {
+    public void start() {
         if (service == null || service.isShutdown())
             service = Executors.newSingleThreadScheduledExecutor();
         service.scheduleAtFixedRate(this::publishLatestStatistics, 0L, SAMPLING_PERIOD, TimeUnit.MINUTES);
     }
 
-    public synchronized void stop() {
+    public void stop() {
         service.shutdown();
         service = null;
     }
 
-    public synchronized void publishLatestStatistics() {
-        getLogger().info("Starting stats counting...");
+    public void publishLatestStatistics() {
+        initializeDataStreamMapping();
+        logger.info("Starting stats counting...");
         long currentTime = System.currentTimeMillis();
 
         DataBlock dataBlock = latestRecord == null ? recordDescription.createDataBlock() : latestRecord.renew();
@@ -135,7 +140,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         latestRecord = dataBlock;
         latestRecordTime = currentTime;
         eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));
-        getLogger().info("Finished stats counting in {}s", (System.currentTimeMillis() - currentTime) / 1000);
+        logger.info("Finished stats counting in {}s", (System.currentTimeMillis() - currentTime) / 1000);
     }
 
     protected BigId waitForLatestObservationId() {
