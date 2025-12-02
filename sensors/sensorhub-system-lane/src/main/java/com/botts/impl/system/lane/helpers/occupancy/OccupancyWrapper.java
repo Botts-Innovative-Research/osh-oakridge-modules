@@ -117,6 +117,8 @@ public class OccupancyWrapper {
             occupancySubscription.cancel();
         }
         occupancySubscription = null;
+
+        observationHelper.clear();
     }
 
     public void registerDailyFileListener() {
