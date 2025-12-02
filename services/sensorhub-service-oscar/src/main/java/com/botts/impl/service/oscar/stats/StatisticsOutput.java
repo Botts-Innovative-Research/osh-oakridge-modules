@@ -14,6 +14,7 @@ import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.event.EventUtils;
 import org.sensorhub.api.event.IEventBus;
+import org.sensorhub.api.resource.ResourceKey;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.utils.Async;
@@ -24,8 +25,14 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.concurrent.*;
 import java.util.function.Predicate;
+import java.util.stream.Stream;
+import java.util.stream.Collectors;
 
 public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
@@ -37,14 +44,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
     private ScheduledExecutorService service;
     private final IObsSystemDatabase database;
-
-    /*
-    Use cases:
-
-    - Go to national view page, see current total, monthly, weekly, daily
-    - Request for specific time range (control)
-    - Request for fresh data (control)
-     */
+    private Map<String, Set<BigId>> observedPropertyToDataStreamIds;
 
     public StatisticsOutput(OSCARSystem parentSensor, IObsSystemDatabase database) {
         super(NAME, parentSensor);
@@ -52,6 +52,34 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         RADHelper fac = new RADHelper();
         recordDescription = fac.createSiteStatistics();
         recommendedEncoding = new TextEncodingImpl();
+        initializeDataStreamMapping();
+    }
+
+    /**
+     * Initializes the mapping between observed properties and their datastream IDs.
+     */
+    private void initializeDataStreamMapping() {
+        observedPropertyToDataStreamIds = new HashMap<>();
+
+        // Query for each observed property type
+        String[] observedProperties = {
+                RADHelper.DEF_OCCUPANCY,
+                RADHelper.DEF_GAMMA,
+                RADHelper.DEF_NEUTRON,
+                RADHelper.DEF_ALARM,
+                RADHelper.DEF_TAMPER
+        };
+
+        for (String property : observedProperties) {
+            Set<BigId> dataStreamIds = database.getDataStreamStore()
+                    .selectKeys(new DataStreamFilter.Builder()
+                            .withObservedProperties(property)
+                            .build())
+                    .map(ResourceKey::getInternalID)
+                    .collect(Collectors.toSet());
+
+            observedPropertyToDataStreamIds.put(property, dataStreamIds);
+        }
     }
 
     public synchronized void start() {
@@ -66,6 +94,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     }
 
     public synchronized void publishLatestStatistics() {
+        getLogger().info("Starting stats counting...");
         long currentTime = System.currentTimeMillis();
 
         DataBlock dataBlock = latestRecord == null ? recordDescription.createDataBlock() : latestRecord.renew();
@@ -73,37 +102,40 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         int i = 0;
         dataBlock.setLongValue(i++, currentTime/1000);
 
-        // Get total counts from DB
-        i = populateDataBlock(dataBlock, i, null, null);
+        // Fetch all observations once
+        List<IObsData> allObservations = fetchAllObservations();
 
-        // Get monthly counts from DB
-        // Modify start and end time for current month-to-date
+        // Get total counts from all observations
+        i = populateDataBlock(dataBlock, i, null, null, allObservations);
+
+        // Get monthly counts
         int currentDayOfMonth = Calendar.getInstance().get(Calendar.DAY_OF_MONTH);
         var monthStart = Instant.now().minus(currentDayOfMonth-1, TimeUnit.DAYS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
         var lastDayOfMonth = Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_MONTH);
         var monthEnd = Instant.now().plus(lastDayOfMonth-currentDayOfMonth+1, TimeUnit.DAYS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
 
-        i = populateDataBlock(dataBlock, i, monthStart, monthEnd);
+        i = populateDataBlock(dataBlock, i, monthStart, monthEnd, allObservations);
 
-        // Get weekly counts from DB
+        // Get weekly counts
         int currentDayOfWeek = Calendar.getInstance().get(Calendar.DAY_OF_WEEK);
         var weekStart = Instant.now().minus(currentDayOfWeek-1, TimeUnit.DAYS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
         var lastDayOfWeek = Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_WEEK);
         var weekEnd = Instant.now().plus(lastDayOfWeek-currentDayOfWeek+1, TimeUnit.DAYS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
 
-        i = populateDataBlock(dataBlock, i, weekStart, weekEnd);
+        i = populateDataBlock(dataBlock, i, weekStart, weekEnd, allObservations);
 
-        // Get today's counts from DB
+        // Get today's counts
         int currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
         var dayStart = Instant.now().minus(currentHour-1, TimeUnit.HOURS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
         var lastHour = Calendar.getInstance().getActualMaximum(Calendar.HOUR_OF_DAY);
         var dayEnd = Instant.now().plus(lastHour-currentHour+1, TimeUnit.HOURS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
 
-        populateDataBlock(dataBlock, i, dayStart, dayEnd);
+        populateDataBlock(dataBlock, i, dayStart, dayEnd, allObservations);
 
         latestRecord = dataBlock;
         latestRecordTime = currentTime;
         eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));
+        getLogger().info("Finished stats counting in {}s", (System.currentTimeMillis() - currentTime) / 1000);
     }
 
     protected BigId waitForLatestObservationId() {
@@ -134,8 +166,49 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         }
     }
 
-    protected int populateDataBlock(DataBlock dataBlock, int i, Instant start, Instant end) {
+    /**
+     * Fetches all observations from the database for all relevant data streams.
+     * This method is called once to retrieve all observations for statistics calculation.
+     */
+    private List<IObsData> fetchAllObservations() {
+        var dsFilter = new DataStreamFilter.Builder()
+                .withObservedProperties(
+                        RADHelper.DEF_OCCUPANCY,
+                        RADHelper.DEF_GAMMA,
+                        RADHelper.DEF_NEUTRON,
+                        RADHelper.DEF_ALARM,
+                        RADHelper.DEF_TAMPER
+                )
+                .build();
+
+        return database.getObservationStore().select(new ObsFilter.Builder()
+                        .withDataStreams(dsFilter)
+                        .build())
+                .toList();
+    }
+
+    /**
+     * Populates the data block with statistics for the given time range.
+     * Can be called with allObservations for efficient in-memory filtering,
+     * or without it to fetch from database (for backward compatibility).
+     */
+    public int populateDataBlock(DataBlock dataBlock, int i, Instant start, Instant end) {
         Statistics stats = getStats(start, end);
+        return populateDataBlockWithStats(dataBlock, i, stats);
+    }
+
+    /**
+     * Overloaded version that uses pre-fetched observations for efficiency.
+     */
+    protected int populateDataBlock(DataBlock dataBlock, int i, Instant start, Instant end, List<IObsData> allObservations) {
+        Statistics stats = getStats(start, end, allObservations);
+        return populateDataBlockWithStats(dataBlock, i, stats);
+    }
+
+    /**
+     * Common method to populate data block with statistics.
+     */
+    private int populateDataBlockWithStats(DataBlock dataBlock, int i, Statistics stats) {
         dataBlock.setLongValue(i++, stats.getNumOccupancies());
         dataBlock.setLongValue(i++, stats.getNumGammaAlarms());
         dataBlock.setLongValue(i++, stats.getNumNeutronAlarms());
@@ -147,6 +220,9 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         return i;
     }
 
+    /**
+     * Gets statistics by fetching from database (for external use like submitCommand).
+     */
     protected Statistics getStats(Instant start, Instant end) {
         Predicate<IObsData> occupancyPredicate = (obs) -> true;
         long numOccupancies = countObservations(database, occupancyPredicate, start, end, RADHelper.DEF_OCCUPANCY);
@@ -184,7 +260,50 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
                 .build();
     }
 
-    private long countObservations(IObsSystemDatabase database, Predicate<IObsData> valuePredicate, Instant begin, Instant end, String... observedProperty){
+    /**
+     * Gets statistics from pre-fetched observations (for internal use with publishLatestStatistics).
+     */
+    protected Statistics getStats(Instant start, Instant end, List<IObsData> allObservations) {
+        Predicate<IObsData> occupancyPredicate = (obs) -> true;
+        long numOccupancies = countObservationsInMemory(allObservations, occupancyPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+
+        Predicate<IObsData> gammaAlarmPredicate = (obs) -> obs.getResult().getBooleanValue(5) && !obs.getResult().getBooleanValue(6);
+        long numGammaAlarms = countObservationsInMemory(allObservations, gammaAlarmPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+
+        Predicate<IObsData> neutronAlarmPredicate = (obs) -> !obs.getResult().getBooleanValue(5) && obs.getResult().getBooleanValue(6);
+        long numNeutronAlarms = countObservationsInMemory(allObservations, neutronAlarmPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+
+        Predicate<IObsData> gammaNeutronAlarmPredicate = (obs) -> obs.getResult().getBooleanValue(5) && obs.getResult().getBooleanValue(6);
+        long numGammaNeutronAlarms = countObservationsInMemory(allObservations, gammaNeutronAlarmPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+
+        Predicate<IObsData> gammaFaultPredicate = (obs) -> obs.getResult().getStringValue(1).contains("Fault - Gamma");
+        long numGammaFaults = countObservationsInMemory(allObservations, gammaFaultPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+
+        Predicate<IObsData> neutronFaultPredicate = (obs) -> obs.getResult().getStringValue(1).contains("Fault - Neutron");
+        long numNeutronFaults = countObservationsInMemory(allObservations, neutronFaultPredicate, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
+
+        Predicate<IObsData> tamperPredicate = (obs) -> obs.getResult().getBooleanValue(1);
+        long numTampers = countObservationsInMemory(allObservations, tamperPredicate, start, end, RADHelper.DEF_TAMPER);
+
+        Predicate<IObsData> faultPredicate = (obs) -> obs.getResult().getStringValue(1).contains("Fault");
+        long numFaults = countObservationsInMemory(allObservations, faultPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
+
+        return new Statistics.Builder()
+                .numOccupancies(numOccupancies)
+                .numGammaAlarms(numGammaAlarms)
+                .numNeutronAlarms(numNeutronAlarms)
+                .numGammaNeutronAlarms(numGammaNeutronAlarms)
+                .numFaults(numFaults)
+                .numGammaFaults(numGammaFaults)
+                .numNeutronFaults(numNeutronFaults)
+                .numTampers(numTampers)
+                .build();
+    }
+
+    /**
+     * Counts observations from database (used by external callers like submitCommand).
+     */
+    private long countObservations(IObsSystemDatabase database, Predicate<IObsData> valuePredicate, Instant begin, Instant end, String... observedProperty) {
         var dsFilterBuilder = new DataStreamFilter.Builder()
                 .withObservedProperties(observedProperty);
 
@@ -194,10 +313,48 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         var dsFilter = dsFilterBuilder.build();
 
         return database.getObservationStore().select(new ObsFilter.Builder()
-                .withDataStreams(dsFilter)
-                .withValuePredicate(valuePredicate)
-                .build())
+                        .withDataStreams(dsFilter)
+                        .withValuePredicate(valuePredicate)
+                        .build())
                 .count();
+    }
+
+    /**
+     * Counts observations in memory from pre-fetched list (used internally by publishLatestStatistics).
+     */
+    private long countObservationsInMemory(List<IObsData> observations, Predicate<IObsData> valuePredicate,
+                                           Instant begin, Instant end, String... observedProperty) {
+        Stream<IObsData> stream = observations.stream();
+
+        // Filter by observed property using datastream ID mapping
+        if (observedProperty != null && observedProperty.length > 0) {
+            Set<BigId> relevantDataStreamIds = new HashSet<>();
+            for (String property : observedProperty) {
+                Set<BigId> ids = observedPropertyToDataStreamIds.get(property);
+                if (ids != null) {
+                    relevantDataStreamIds.addAll(ids);
+                }
+            }
+
+            stream = stream.filter(obs ->
+                    relevantDataStreamIds.contains(obs.getDataStreamID())
+            );
+        }
+
+        // Filter by time range
+        if (begin != null && end != null) {
+            stream = stream.filter(obs -> {
+                Instant obsTime = obs.getPhenomenonTime();
+                return obsTime != null &&
+                        !obsTime.isBefore(begin) &&
+                        obsTime.isBefore(end);
+            });
+        }
+
+        // Filter by value predicate
+        stream = stream.filter(valuePredicate);
+
+        return stream.count();
     }
 
     @Override
@@ -212,6 +369,6 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
     @Override
     public double getAverageSamplingPeriod() {
-        return SAMPLING_PERIOD*SAMPLING_PERIOD;
+        return SAMPLING_PERIOD * SAMPLING_PERIOD;
     }
 }
