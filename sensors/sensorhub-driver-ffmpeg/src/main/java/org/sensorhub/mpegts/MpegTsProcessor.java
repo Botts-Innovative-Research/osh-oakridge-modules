@@ -20,6 +20,7 @@ import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avformat.AVFormatContext;
 import org.bytedeco.ffmpeg.avformat.AVStream;
 import org.bytedeco.ffmpeg.avutil.AVDictionary;
+import org.bytedeco.ffmpeg.avutil.AVFrame;
 import org.bytedeco.ffmpeg.avutil.AVRational;
 import org.bytedeco.ffmpeg.global.avcodec;
 import org.bytedeco.ffmpeg.global.avformat;
@@ -36,7 +37,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.bytedeco.ffmpeg.global.avcodec.av_packet_free;
+import static org.bytedeco.ffmpeg.global.avcodec.av_packet_unref;
 import static org.bytedeco.ffmpeg.global.avformat.*;
+import static org.bytedeco.ffmpeg.global.avutil.*;
 
 /**
  * The class provides a wrapper to bytedeco.org JavaCpp-Platform.
@@ -252,15 +256,12 @@ public class MpegTsProcessor extends Thread {
      * @return true if the stream is opened succesfully, false otherwise.
      */
     public boolean openStream() {
+        AVDictionary options = new AVDictionary();
         synchronized (contextLock) {
-
             try {
                 logger.debug("openStream");
 
                 avformat.avformat_network_init();
-
-                AVDictionary options = new AVDictionary();
-
 
                 if (useTCP) {
                     avutil.av_dict_set(options, "rtsp_transport", "tcp", 0);
@@ -291,7 +292,11 @@ public class MpegTsProcessor extends Thread {
 
                     logger.error("Failed to open stream: {}", streamSource);
                 }
-            } catch (Exception e) { logger.error("Exception when opening stream", e); }
+            } catch (Exception e) {
+                logger.error("Exception when opening stream", e);
+            } finally {
+                av_dict_free(options);
+            }
         }
 
         return streamOpened;
@@ -679,13 +684,29 @@ public class MpegTsProcessor extends Thread {
                     }
                 }
                 if (skipProcessing) {
+                    av_packet_unref(avPacket);
                     if (decodeQueue != null) {
+                        AVPacket p;
+                        while ((p = decodeQueue.poll()) != null) {
+                            av_packet_unref(p);
+                            av_packet_free(p);
+                        }
                         decodeQueue.clear();
                     }
                     if (decoder != null) {
+                        AVFrame f;
+                        while ((f = decoder.getOutQueue().poll()) != null) {
+                            av_frame_unref(f);
+                            av_frame_free(f);
+                        }
                         decoder.getOutQueue().clear();
                     }
                     if (encoder != null) {
+                        AVPacket p;
+                        while ((p = encoder.getOutQueue().poll()) != null) {
+                            av_packet_unref(p);
+                            av_packet_free(p);
+                        }
                         encoder.getOutQueue().clear();
                     }
                     continue;
@@ -738,14 +759,14 @@ public class MpegTsProcessor extends Thread {
                     }
                 }
                 // clear packet
-                avcodec.av_packet_unref(avPacket);
+                av_packet_unref(avPacket);
             }
         }
         finally {
             // fully deallocate packet
             if (avPacket != null)
             {
-                avcodec.av_packet_unref(avPacket);
+                av_packet_unref(avPacket);
                 avPacket.deallocate();
             }
         }
