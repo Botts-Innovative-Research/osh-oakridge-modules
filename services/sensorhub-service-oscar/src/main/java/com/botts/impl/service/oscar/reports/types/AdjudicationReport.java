@@ -111,7 +111,7 @@ public class AdjudicationReport extends Report {
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
 
-        long totalRecords = Utils.countStatusResults(laneUID, module, cmdData -> true, start, end);
+        long totalRecords = Utils.countStatusResults(laneUID, module, null, start, end);
 
         if (totalRecords == 0) {
             document.add(new Paragraph("No data available for the selected time period and selected lane: "+ laneUID));
@@ -125,9 +125,10 @@ public class AdjudicationReport extends Report {
             String label = (String) item.get("label");
             String group = (String) item.get("group");
 
-            Predicate<ICommandStatus> predicate = (cmdData) -> cmdData.getResult().getInlineRecords().stream().toList().get(0).getIntValue(2) == code;
+//            Predicate<ICommandStatus> predicate = (cmdData) -> cmdData.getResult().getInlineRecords().stream().toList().get(0).getIntValue(2) == code;
 
-            long count = Utils.countStatusResults(laneUID, module, predicate, start, end);
+            String cqlVal =  " = " + code;
+            long count = Utils.countStatusResults(laneUID, module, cqlVal, start, end);
             double percentage = (count / (double) totalRecords) * 100.0;
 
             if (label != null && !label.isEmpty()) {
