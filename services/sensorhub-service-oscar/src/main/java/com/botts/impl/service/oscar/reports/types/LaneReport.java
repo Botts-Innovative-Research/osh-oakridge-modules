@@ -143,18 +143,19 @@ public class LaneReport extends Report {
 
             Map<String, Long> counts = laneCounts.get(laneUID);
 
-            if (Utils.gammaNeutronPredicate.test(obs)) {
-                counts.put("Gamma-Neutron Alarm", counts.get("Gamma-Neutron Alarm") + 1);
-            }
-            if (Utils.gammaPredicate.test(obs)) {
-                counts.put("Gamma Alarm", counts.get("Gamma Alarm") + 1);
-            }
-            if (Utils.neutronPredicate.test(obs)) {
-                counts.put("Neutron Alarm", counts.get("Neutron Alarm") + 1);
-            }
-            if (Utils.occupancyTotalPredicate.test(obs)) {
-                counts.put("Total Occupancies", counts.get("Total Occupancies") + 1);
-            }
+            //TODO FIX THIS WITH CQL
+//            if (Utils.gammaNeutronCql.test(obs)) {
+//                counts.put("Gamma-Neutron Alarm", counts.get("Gamma-Neutron Alarm") + 1);
+//            }
+//            if (Utils.gammaCql.test(obs)) {
+//                counts.put("Gamma Alarm", counts.get("Gamma Alarm") + 1);
+//            }
+//            if (Utils.neutronCql.test(obs)) {
+//                counts.put("Neutron Alarm", counts.get("Neutron Alarm") + 1);
+//            }
+//            if (Utils.occupancyCql.test(obs)) {
+//                counts.put("Total Occupancies", counts.get("Total Occupancies") + 1);
+//            }
         }
 
         Map<String, Map<String, String>> results = new LinkedHashMap<>();
@@ -172,12 +173,12 @@ public class LaneReport extends Report {
     private Map<String, String> calculateAlarmCounts(String laneUID) {
         Map<String, String> alarmOccCounts = new LinkedHashMap<>();
 
-        long gammaNeutronAlarmCount = Utils.countObservationsFromLane(laneUID, module, Utils.gammaNeutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        long gammaAlarmCount = Utils.countObservationsFromLane(laneUID, module, Utils.gammaPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        long neutronAlarmCount = Utils.countObservationsFromLane(laneUID, module, Utils.neutronPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-        long totalOccupancyCount = Utils.countObservationsFromLane(laneUID, module, Utils.occupancyTotalPredicate, start, end, RADHelper.DEF_OCCUPANCY);
+        long gammaNeutronAlarmCount = Utils.countObservationsFromLane(laneUID, module, Utils.gammaNeutronCql, start, end, RADHelper.DEF_OCCUPANCY);
+        long gammaAlarmCount = Utils.countObservationsFromLane(laneUID, module, Utils.gammaCql, start, end, RADHelper.DEF_OCCUPANCY);
+        long neutronAlarmCount = Utils.countObservationsFromLane(laneUID, module, Utils.neutronCql, start, end, RADHelper.DEF_OCCUPANCY);
+        long totalOccupancyCount = Utils.countObservationsFromLane(laneUID, module,null, start, end, RADHelper.DEF_OCCUPANCY);
 
-        long emlSuppressedCount = Utils.countObservationsFromLane(laneUID, module, Utils.emlSuppressedPredicate, start, end, RADHelper.DEF_EML_ANALYSIS);
+        long emlSuppressedCount = Utils.countObservationsFromLane(laneUID, module, Utils.emlSuppressedCql, start, end, RADHelper.DEF_EML_ANALYSIS);
 
 
         long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
@@ -198,10 +199,10 @@ public class LaneReport extends Report {
     private Map<String, String> calculateFaultCounts(String laneUID){
         HashMap<String, String> faultCounts = new LinkedHashMap<>();
 
-        long tamperCount = Utils.countObservationsFromLane(laneUID, module, Utils.tamperPredicate, start, end, RADHelper.DEF_TAMPER);
-        long gammaHighFaultCount = Utils.countObservationsFromLane(laneUID, module, Utils.gammaHighPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-        long gammaLowFaultCount = Utils.countObservationsFromLane(laneUID, module, Utils.gammaLowPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-        long neutronHighFaultCount = Utils.countObservationsFromLane(laneUID, module, Utils.neutronHighPredicate, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
+        long tamperCount = Utils.countObservationsFromLane(laneUID, module, Utils.tamperCql, start, end, RADHelper.DEF_TAMPER);
+        long gammaHighFaultCount = Utils.countObservationsFromLane(laneUID, module, Utils.gammaHighFaultCql, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        long gammaLowFaultCount = Utils.countObservationsFromLane(laneUID, module, Utils.gammaLowFaultCql, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        long neutronHighFaultCount = Utils.countObservationsFromLane(laneUID, module, Utils.neutronFaultCql, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
 //        long extendedOccupancyCount = Utils.countObservationsFromLane(laneUID, module, Utils.extendedOccPredicate, start, end, RADHelper.DEF_OCCUPANCY);
 
         faultCounts.put("Tamper", String.valueOf(tamperCount));

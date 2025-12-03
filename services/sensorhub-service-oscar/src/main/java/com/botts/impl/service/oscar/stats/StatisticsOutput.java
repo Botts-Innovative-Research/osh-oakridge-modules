@@ -42,6 +42,14 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
     public static final String NAME = "siteStatistics";
 
+    public static String gammaCql = "gammaAlarm = true AND neutronAlarm = false";
+    public static String neutronCql = "neutronAlarm = true AND gammaAlarm = false";
+    public static String gammaNeutronCql = "gammaNeutron = true AND neutronAlarm = true";
+    public static String gammaFaultCql = "gammaAlarm = Fault - Gamma High OR gammaAlarm = Fault - Gamma Low";
+    public static String neutronFaultCql = "neutronAlarm = Fault - Neutron High";
+    public static String tamperCql = "tamperStatus = true";
+    public static String faultCql = "neutronAlarm = Fault - Neutron High OR gammaAlarm = Fault - Gamma High OR gammaAlarm = Fault - Gamma Low";
+
     private final DataComponent recordDescription;
     private final DataEncoding recommendedEncoding;
     private static final int SAMPLING_PERIOD = 60;
@@ -229,29 +237,15 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
      * Gets statistics by fetching from database (for external use like submitCommand).
      */
     protected Statistics getStats(Instant start, Instant end) {
-        Predicate<IObsData> occupancyPredicate = (obs) -> true;
-        long numOccupancies = countObservations(database, occupancyPredicate, start, end, RADHelper.DEF_OCCUPANCY);
 
-        Predicate<IObsData> gammaAlarmPredicate = (obs) -> obs.getResult().getBooleanValue(5) && !obs.getResult().getBooleanValue(6);
-        long numGammaAlarms = countObservations(database, gammaAlarmPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-
-        Predicate<IObsData> neutronAlarmPredicate = (obs) -> !obs.getResult().getBooleanValue(5) && obs.getResult().getBooleanValue(6);
-        long numNeutronAlarms = countObservations(database, neutronAlarmPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-
-        Predicate<IObsData> gammaNeutronAlarmPredicate = (obs) -> obs.getResult().getBooleanValue(5) && obs.getResult().getBooleanValue(6);
-        long numGammaNeutronAlarms = countObservations(database, gammaNeutronAlarmPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-
-        Predicate<IObsData> gammaFaultPredicate = (obs) -> obs.getResult().getStringValue(1).contains("Fault - Gamma");
-        long numGammaFaults = countObservations(database, gammaFaultPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-
-        Predicate<IObsData> neutronFaultPredicate = (obs) -> obs.getResult().getStringValue(1).contains("Fault - Neutron");
-        long numNeutronFaults = countObservations(database, neutronFaultPredicate, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
-
-        Predicate<IObsData> tamperPredicate = (obs) -> obs.getResult().getBooleanValue(1);
-        long numTampers = countObservations(database, tamperPredicate, start, end, RADHelper.DEF_TAMPER);
-
-        Predicate<IObsData> faultPredicate = (obs) -> obs.getResult().getStringValue(1).contains("Fault");
-        long numFaults = countObservations(database, faultPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
+        long numOccupancies = countObservations(database, null, start, end, RADHelper.DEF_OCCUPANCY);
+        long numGammaAlarms = countObservations(database, gammaCql, start, end, RADHelper.DEF_OCCUPANCY);
+        long numNeutronAlarms = countObservations(database, neutronCql, start, end, RADHelper.DEF_OCCUPANCY);
+        long numGammaNeutronAlarms = countObservations(database, gammaNeutronCql, start, end, RADHelper.DEF_OCCUPANCY);
+        long numGammaFaults = countObservations(database, gammaFaultCql, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        long numNeutronFaults = countObservations(database, neutronFaultCql, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
+        long numTampers = countObservations(database, tamperCql, start, end, RADHelper.DEF_TAMPER);
+        long numFaults = countObservations(database, faultCql, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
 
         return new Statistics.Builder()
                 .numOccupancies(numOccupancies)
@@ -269,29 +263,15 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
      * Gets statistics from pre-fetched observations (for internal use with publishLatestStatistics).
      */
     protected Statistics getStats(Instant start, Instant end, List<IObsData> allObservations) {
-        Predicate<IObsData> occupancyPredicate = (obs) -> true;
-        long numOccupancies = countObservationsInMemory(allObservations, occupancyPredicate, start, end, RADHelper.DEF_OCCUPANCY);
 
-        Predicate<IObsData> gammaAlarmPredicate = (obs) -> obs.getResult().getBooleanValue(5) && !obs.getResult().getBooleanValue(6);
-        long numGammaAlarms = countObservationsInMemory(allObservations, gammaAlarmPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-
-        Predicate<IObsData> neutronAlarmPredicate = (obs) -> !obs.getResult().getBooleanValue(5) && obs.getResult().getBooleanValue(6);
-        long numNeutronAlarms = countObservationsInMemory(allObservations, neutronAlarmPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-
-        Predicate<IObsData> gammaNeutronAlarmPredicate = (obs) -> obs.getResult().getBooleanValue(5) && obs.getResult().getBooleanValue(6);
-        long numGammaNeutronAlarms = countObservationsInMemory(allObservations, gammaNeutronAlarmPredicate, start, end, RADHelper.DEF_OCCUPANCY);
-
-        Predicate<IObsData> gammaFaultPredicate = (obs) -> obs.getResult().getStringValue(1).contains("Fault - Gamma");
-        long numGammaFaults = countObservationsInMemory(allObservations, gammaFaultPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-
-        Predicate<IObsData> neutronFaultPredicate = (obs) -> obs.getResult().getStringValue(1).contains("Fault - Neutron");
-        long numNeutronFaults = countObservationsInMemory(allObservations, neutronFaultPredicate, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
-
-        Predicate<IObsData> tamperPredicate = (obs) -> obs.getResult().getBooleanValue(1);
-        long numTampers = countObservationsInMemory(allObservations, tamperPredicate, start, end, RADHelper.DEF_TAMPER);
-
-        Predicate<IObsData> faultPredicate = (obs) -> obs.getResult().getStringValue(1).contains("Fault");
-        long numFaults = countObservationsInMemory(allObservations, faultPredicate, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
+        long numOccupancies = countObservationsInMemory(allObservations, null, start, end, RADHelper.DEF_OCCUPANCY);
+        long numGammaAlarms = countObservationsInMemory(allObservations, gammaCql, start, end, RADHelper.DEF_OCCUPANCY);
+        long numNeutronAlarms = countObservationsInMemory(allObservations, neutronCql, start, end, RADHelper.DEF_OCCUPANCY);
+        long numGammaNeutronAlarms = countObservationsInMemory(allObservations, gammaNeutronCql, start, end, RADHelper.DEF_OCCUPANCY);
+        long numGammaFaults = countObservationsInMemory(allObservations, gammaFaultCql, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        long numNeutronFaults = countObservationsInMemory(allObservations, neutronFaultCql, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
+        long numTampers = countObservationsInMemory(allObservations, tamperCql, start, end, RADHelper.DEF_TAMPER);
+        long numFaults = countObservationsInMemory(allObservations, faultCql, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
 
         return new Statistics.Builder()
                 .numOccupancies(numOccupancies)
@@ -308,7 +288,8 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     /**
      * Counts observations from database (used by external callers like submitCommand).
      */
-    private long countObservations(IObsSystemDatabase database, Predicate<IObsData> valuePredicate, Instant begin, Instant end, String... observedProperty) {
+    private long countObservations(IObsSystemDatabase database, String cqlValue, Instant begin, Instant end, String... observedProperty) {
+//    private long countObservations(IObsSystemDatabase database, Predicate<IObsData> valuePredicate, Instant begin, Instant end, String... observedProperty) {
         var dsFilterBuilder = new DataStreamFilter.Builder()
                 .withObservedProperties(observedProperty);
 
@@ -319,7 +300,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
         return database.getObservationStore().select(new ObsFilter.Builder()
                         .withDataStreams(dsFilter)
-                        .withValuePredicate(valuePredicate)
+//                        .withCqlFilter(cqlValue) // uncomment
                         .build())
                 .count();
     }
@@ -327,7 +308,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     /**
      * Counts observations in memory from pre-fetched list (used internally by publishLatestStatistics).
      */
-    private long countObservationsInMemory(List<IObsData> observations, Predicate<IObsData> valuePredicate,
+    private long countObservationsInMemory(List<IObsData> observations, String cqlValue,
                                            Instant begin, Instant end, String... observedProperty) {
         Stream<IObsData> stream = observations.stream();
 
@@ -356,8 +337,9 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
             });
         }
 
-        // Filter by value predicate
-        stream = stream.filter(valuePredicate);
+        // Filter by cql
+        //TODO: fix with cql
+//        stream = stream.filter(cqlValue);
 
         return stream.count();
     }

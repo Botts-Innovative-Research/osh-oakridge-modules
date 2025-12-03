@@ -25,20 +25,32 @@ public class Utils {
 
     // result time  === 0
 
+    public static String gammaNeutronCql = "gammaAlarm = true AND neutronAlarm = true";
+    public static String gammaCql = "gammaAlarm = true AND neutronAlarm = false";
+    public static String neutronCql = "gammaAlarm = false AND neutronAlarm = true";
+    public static String faultCql = "neutronAlarm = Fault - Neutron High OR gammaAlarm = Fault - Gamma Low OR gammaAlarm = Fault - Gamma High";
+    public static String gammaFaultCql = "gammaAlarm = Fault - Gamma Low OR gammaAlarm = Fault - Gamma High";
+    public static String gammaHighFaultCql = "gammaAlarm = Fault - Gamma High";
+    public static String gammaLowFaultCql = "gammaAlarm = Fault - Gamma Low";
+    public static String neutronFaultCql = "neutronAlarm = Fault - Neutron High";
+    public static String tamperCql = "tamperStatus = true";
+
+    public static String emlSuppressedCql = "result = RELEASE";
+
     // ALARMS
-    public static Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
-    public static Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
-    public static Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
-    public static Predicate<IObsData> occupancyTotalPredicate = (obsData) -> true;
+//    public static Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+//    public static Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
+//    public static Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
+//    public static Predicate<IObsData> occupancyTotalPredicate = (obsData) -> true;
 
     // EML
-    public static Predicate<IObsData> emlSuppressedPredicate = (obsData) -> obsData.getResult().getIntValue(1) == 1; // RELEASE
+//    public static Predicate<IObsData> emlSuppressedPredicate = (obsData) -> obsData.getResult().getIntValue(1) == 1; // RELEASE
 
     // FAULTS
-    public static Predicate<IObsData> tamperPredicate = (obsData) -> obsData.getResult().getBooleanValue(1);
-    public static Predicate<IObsData> gammaHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma High");
-    public static Predicate<IObsData> gammaLowPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma Low");
-    public static Predicate<IObsData> neutronHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Neutron High");
+//    public static Predicate<IObsData> tamperPredicate = (obsData) -> obsData.getResult().getBooleanValue(1);
+//    public static Predicate<IObsData> gammaHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma High");
+//    public static Predicate<IObsData> gammaLowPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma Low");
+//    public static Predicate<IObsData> neutronHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Neutron High");
 //    public static Predicate<IObsData> commsPredicate = (obsData) -> obsData.getResult().getBooleanValue(1); //TODO
 //    public static Predicate<IObsData> cameraPredicate = (obsData) -> obsData.getResult().getBooleanValue(1); //TODO
 //    public static Predicate<IObsData> extendedOccPredicate = (obsData) -> obsData.getResult().getBooleanValue(1); //TODO
@@ -56,42 +68,63 @@ public class Utils {
         return alarmCount / occupancyCount;
     }
 
-    public static long countObservations(OSCARServiceModule module, Predicate<IObsData> valuePredicate, Instant begin, Instant end, String... observedProperties){
-        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+    public static long countObservations(OSCARServiceModule module, String cqlValue, Instant begin, Instant end, String... observedProperties){
+
+        ObsFilter.Builder builder = new ObsFilter.Builder()
+                .withResultTimeDuring(begin, end)
                 .withDataStreams(new DataStreamFilter.Builder()
                         .withObservedProperties(observedProperties)
-                        .build())
-                .withValuePredicate(valuePredicate)
-                .withResultTimeDuring(begin, end)
-                .build()).count();
+                        .build()
+                );
+
+        if (cqlValue != null && !cqlValue.isBlank()) {
+            builder.withCqlFilter(cqlValue);
+        }
+
+        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(builder.build()).count();
     }
 
 
-    public static long countStatusResults(String laneUID, OSCARServiceModule module, Predicate<ICommandStatus> valuePredicate, Instant begin, Instant end){
-        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getCommandStatusStore().select(new CommandStatusFilter.Builder()
+    public static long countStatusResults(String laneUID, OSCARServiceModule module, String cqlValue, Instant begin, Instant end){
+        CommandStatusFilter.Builder builder = new CommandStatusFilter.Builder()
                         .withStatus(ICommandStatus.CommandStatusCode.COMPLETED)
                         .withReportTimeDuring(begin, end)
-                        .withValuePredicate(valuePredicate)
-                        .withCommands(new CommandFilter.Builder().withSystems().withUniqueIDs(laneUID).done().build())
-                        .build()).count();
+                        .withCommands(new CommandFilter.Builder()
+                                        .withSystems()
+                                        .withUniqueIDs(laneUID)
+                                        .done()
+                                        .build()
+                        );
+
+        if (cqlValue != null && !cqlValue.isBlank()) {
+            builder.withCqlFilter(cqlValue);
+        }
+
+        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getCommandStatusStore().select(builder.build()).count();
+
     }
 
     //  suppressed : RPM Gamma Alert = true  but the EML Gamma Alert = false (release)
     // so count how many times the RPM had a true alarm but the EML decided it was false
 
-    public static long countObservationsFromLane(String laneUID, OSCARServiceModule module, Predicate<IObsData> valuePredicate, Instant begin, Instant end, String... observedProperties){
-        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
-                        .withSystems().withUniqueIDs(laneUID)
-                        .done()
-                        .withDataStreams(new DataStreamFilter.Builder()
-                                .withObservedProperties(observedProperties)
-                                .build())
-                        .withValuePredicate(valuePredicate)
-                        .withResultTimeDuring(begin, end)
-                        .build()).count();
+    public static long countObservationsFromLane(String laneUID, OSCARServiceModule module, String cqlValue, Instant begin, Instant end, String... observedProperties){
+        ObsFilter.Builder builder = new ObsFilter.Builder()
+                .withSystems().withUniqueIDs(laneUID)
+                .done()
+                .withResultTimeDuring(begin, end)
+                .withDataStreams(new DataStreamFilter.Builder()
+                .withObservedProperties(observedProperties)
+                        .build()
+                );
+
+        if (cqlValue != null && !cqlValue.isBlank()) {
+            builder.withCqlFilter(cqlValue);
+        }
+
+        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(builder.build()).count();
     }
 
-    public static Map<Instant, Long> countObservationsByDay(String laneUIDs, OSCARServiceModule module, Predicate<IObsData> predicate, Instant startDate, Instant endDate, String... observedProperties){
+    public static Map<Instant, Long> countObservationsByDay(String laneUIDs, OSCARServiceModule module,String cqlValue, Instant startDate, Instant endDate, String... observedProperties){
         Map<Instant, Long> result = new LinkedHashMap<>();
 
         var start = startDate;
@@ -105,7 +138,7 @@ public class Utils {
                 endOfCurrentDay = end;
             }
 
-            long count = countObservationsFromLane(laneUIDs, module,  predicate, currentDay, endOfCurrentDay, observedProperties);
+            long count = countObservationsFromLane(laneUIDs, module, cqlValue, currentDay, endOfCurrentDay, observedProperties);
 
             result.put(currentDay, count);
 
