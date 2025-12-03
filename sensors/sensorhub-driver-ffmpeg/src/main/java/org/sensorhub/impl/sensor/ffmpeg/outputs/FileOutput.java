@@ -52,7 +52,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     //private String outputFile = "";
     private AVFormatContext outputContext;
     private final Object contextLock = new Object();
-    Thread writerThread;
 
     AVStream outputVideoStream;
     OutputStream outputStream;
@@ -89,31 +88,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         return doFileWrite.get();
     }
 
-    private void startWriterThread() {
-        writerThread = new Thread(() -> {
-            while (isWriting() || !packetQueue.isEmpty()) {
-
-                if (packetQueue.size() > MAX_PACKET_QUEUE_SIZE) {
-                    logger.warn("Packet queue is full; dropping {} packets", packetQueue.size());
-                    for (AVPacket p : packetQueue) {
-                        av_packet_unref(p);
-                        av_packet_free(p);
-                    }
-                    packetQueue.clear();
-                }
-                AVPacket pkt;
-                while ((pkt = packetQueue.poll()) != null) {
-                    packetTiming(pkt);
-                    av_interleaved_write_frame(outputContext, pkt);
-                    av_packet_unref(pkt);
-                    av_packet_free(pkt);
-                }
-
-            }
-        });
-        writerThread.start();
-    }
-
     @Override
     public void onDataBuffer(DataBufferRecord record) {
         if (!isWriting()) {
@@ -132,7 +106,10 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         if (record.isKeyFrame())
             avPacket.flags(avPacket.flags() | AV_PKT_FLAG_KEY);
 
-        packetQueue.add(avPacket);
+        //packetQueue.add(avPacket);
+        packetTiming(avPacket);
+        av_interleaved_write_frame(outputContext, avPacket);
+        av_packet_free(avPacket);
     }
 
     public void publish() {
@@ -224,7 +201,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 //avPacket = av_packet_alloc();
 
                 packetQueue.clear();
-                startWriterThread();
+                //startWriterThread();
                 doFileWrite.set(true);
                 av_log_set_level(AV_LOG_QUIET);
             }
@@ -317,34 +294,8 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         synchronized (contextLock) {
             if (isWriting()) {
                 doFileWrite.set(false);
-                try {
-                    writerThread.join(10_000);
-                    if (writerThread.isAlive()) {
-                        logger.warn("Writer thread did not terminate within timeout; interrupting.");
-                        writerThread.interrupt();
-                        writerThread.join(2000);
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-
-                for (AVPacket packet : packetQueue) {
-                    av_packet_unref(packet);
-                    av_packet_free(packet);
-                }
-
-                packetQueue.clear();
 
                 try {
-                    /*
-                    if (avPacket != null) {
-                        av_packet_unref(avPacket);
-                        av_packet_free(avPacket);
-                        avPacket = null;
-                    }
-
-                     */
-
                     if (outputContext.pb() != null) {
                         avio_flush(outputContext.pb());
                     }
