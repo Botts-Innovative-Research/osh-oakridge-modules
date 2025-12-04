@@ -58,7 +58,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     AVRational timeBase = new AVRational();
     AVRational inputTimeBase = new AVRational();
     AVRational inputFrameRate = new AVRational();
-    final Queue<AVPacket> packetQueue = new ConcurrentLinkedQueue<>();
 
     final int MAX_PACKET_QUEUE_SIZE = 1000;
     volatile long filePts;
@@ -221,7 +220,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 timeBase = outputVideoStream.time_base();
                 //avPacket = av_packet_alloc();
 
-                packetQueue.clear();
                 //startWriterThread();
                 doFileWrite.set(true);
                 av_log_set_level(AV_LOG_QUIET);
