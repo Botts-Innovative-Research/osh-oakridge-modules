@@ -299,7 +299,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         av_dict_set(options, "hls_time", "1", 0);
         //avutil.av_dict_set(options, "hls_segment_type", "ts", 0);
         //avutil.av_dict_set(options, "movflags", "faststart+default_base_moof", 0);
-        av_dict_set(options, "hls_flags", "delete_segments+append_list+split_by_time+program_date_time", 0);
+        av_dict_set(options, "hls_flags", "delete_segments+append_list", 0);
         av_dict_set(options, "hls_segment_type", "mpegts", 0);
         av_dict_set(options, "use_localtime", "1", 0);
         av_dict_set(options, "max_delay", "0", 0);
