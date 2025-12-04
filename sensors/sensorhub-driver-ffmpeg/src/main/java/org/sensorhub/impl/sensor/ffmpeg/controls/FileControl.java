@@ -109,7 +109,7 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                 commandStatus = false;
 
             else if (selected.getName().equals(CMD_OPEN_FILE)) {
-                if (fileName != null && !fileName.isEmpty())
+                if (fileOutput.isWriting())
                     commandStatus = false;
 
                 else {
@@ -133,7 +133,7 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                     }
                 }
             } else if (selected.getName().equals(CMD_CLOSE_FILE)) {
-                if (fileName == null || fileName.isEmpty())
+                if (!fileOutput.isWriting())
                     commandStatus = false;
                 else {
                     boolean saveFile = ((Boolean) selected).getValue();
