@@ -26,13 +26,13 @@ public class Utils {
     public static String gammaNeutronAlarmCQL = "gammaAlarm = true AND neutronAlarm = true";
     public static String gammaAlarmCQL = "gammaAlarm = true AND neutronAlarm = false";
     public static String neutronAlarmCQL = "gammaAlarm = false AND neutronAlarm = true";
-    public static String faultCQL = "alarmState = \"Fault - Neutron High\" OR alarmState = \"Fault - Gamma Low\" OR alarmState = \"Fault - Gamma High\"";
-    public static String gammaFaultCQL = "alarmState = \"Fault - Gamma Low\" OR alarmState = \"Fault - Gamma High\"";
-    public static String gammaHighFaultCQL = "alarmState = \"Fault - Gamma High\"";
-    public static String gammaLowFaultCQL = "alarmState = \"Fault - Gamma Low\"";
-    public static String neutronFaultCQL = "alarmState = \"Fault - Neutron High\"";
+    public static String faultCQL = "alarmState = 'Fault - Neutron High' OR alarmState = 'Fault - Gamma Low' OR alarmState = 'Fault - Gamma High'";
+    public static String gammaFaultCQL = "alarmState = 'Fault - Gamma Low' OR alarmState = 'Fault - Gamma High'";
+    public static String gammaHighFaultCQL = "alarmState = 'Fault - Gamma High'";
+    public static String gammaLowFaultCQL = "alarmState = 'Fault - Gamma Low'";
+    public static String neutronFaultCQL = "alarmState = 'Fault - Neutron High'";
     public static String tamperCQL = "tamperStatus = true";
-    public static String emlSuppressedCQL = "result = RELEASE";
+    public static String emlSuppressedCQL = "result = 'RELEASE'";
 
 
     public static long calcEMLAlarmRate(long emlSuppCount, long alarmCount){
@@ -60,7 +60,7 @@ public class Utils {
             builder.withCQLFilter(cqlValue);
         }
 
-        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(builder.build()).count();
+        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().countMatchingEntries(builder.build());
     }
 
 
@@ -81,7 +81,7 @@ public class Utils {
 //            builder.withCQLFilter(cqlValue);
         }
 
-        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getCommandStatusStore().select(builder.build()).count();
+        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getCommandStatusStore().countMatchingEntries(builder.build());
 
     }
 
@@ -102,7 +102,7 @@ public class Utils {
             builder.withCQLFilter(cqlValue);
         }
 
-        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(builder.build()).count();
+        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().countMatchingEntries(builder.build());
     }
 
     public static Map<Instant, Long> countObservationsByDay(String laneUIDs, OSCARServiceModule module,String cqlValue, Instant startDate, Instant endDate, String... observedProperties){

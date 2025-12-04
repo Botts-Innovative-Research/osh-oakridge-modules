@@ -127,6 +127,7 @@ public class AdjudicationReport extends Report {
 
 //            Predicate<ICommandStatus> predicate = (cmdData) -> cmdData.getResult().getInlineRecords().stream().toList().get(0).getIntValue(2) == code;
 
+            // TODO: Replace this with legit arg0
             String cqlVal =  " = " + code;
             long count = Utils.countStatusResults(laneUID, module, cqlVal, start, end);
             double percentage = (count / (double) totalRecords) * 100.0;
