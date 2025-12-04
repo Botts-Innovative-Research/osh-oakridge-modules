@@ -23,8 +23,6 @@ import java.util.function.Predicate;
 
 public class Utils {
 
-    // result time  === 0
-
     public static String gammaNeutronCql = "gammaAlarm = true AND neutronAlarm = true";
     public static String gammaCql = "gammaAlarm = true AND neutronAlarm = false";
     public static String neutronCql = "gammaAlarm = false AND neutronAlarm = true";
@@ -36,24 +34,6 @@ public class Utils {
     public static String tamperCql = "tamperStatus = true";
 
     public static String emlSuppressedCql = "result = RELEASE";
-
-    // ALARMS
-//    public static Predicate<IObsData> gammaNeutronPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
-//    public static Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
-//    public static Predicate<IObsData> neutronPredicate = (obsData) -> !obsData.getResult().getBooleanValue(5) && obsData.getResult().getBooleanValue(6);
-//    public static Predicate<IObsData> occupancyTotalPredicate = (obsData) -> true;
-
-    // EML
-//    public static Predicate<IObsData> emlSuppressedPredicate = (obsData) -> obsData.getResult().getIntValue(1) == 1; // RELEASE
-
-    // FAULTS
-//    public static Predicate<IObsData> tamperPredicate = (obsData) -> obsData.getResult().getBooleanValue(1);
-//    public static Predicate<IObsData> gammaHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma High");
-//    public static Predicate<IObsData> gammaLowPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Gamma Low");
-//    public static Predicate<IObsData> neutronHighPredicate = (obsData) -> obsData.getResult().getStringValue(1).equals("Fault - Neutron High");
-//    public static Predicate<IObsData> commsPredicate = (obsData) -> obsData.getResult().getBooleanValue(1); //TODO
-//    public static Predicate<IObsData> cameraPredicate = (obsData) -> obsData.getResult().getBooleanValue(1); //TODO
-//    public static Predicate<IObsData> extendedOccPredicate = (obsData) -> obsData.getResult().getBooleanValue(1); //TODO
 
 
     public static long calcEMLAlarmRate(long emlSuppCount, long alarmCount){
@@ -78,7 +58,7 @@ public class Utils {
                 );
 
         if (cqlValue != null && !cqlValue.isBlank()) {
-            builder.withCqlFilter(cqlValue);
+            builder.withCQLFilter(cqlValue);
         }
 
         return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(builder.build()).count();
@@ -97,7 +77,7 @@ public class Utils {
                         );
 
         if (cqlValue != null && !cqlValue.isBlank()) {
-            builder.withCqlFilter(cqlValue);
+            builder.withCQLFilter(cqlValue);
         }
 
         return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getCommandStatusStore().select(builder.build()).count();
@@ -118,7 +98,7 @@ public class Utils {
                 );
 
         if (cqlValue != null && !cqlValue.isBlank()) {
-            builder.withCqlFilter(cqlValue);
+            builder.withCQLFilter(cqlValue);
         }
 
         return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(builder.build()).count();

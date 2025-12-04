@@ -143,7 +143,7 @@ public class LaneReport extends Report {
 
             Map<String, Long> counts = laneCounts.get(laneUID);
 
-            //TODO FIX THIS WITH CQL
+            //  todo: update because shouldnt use test and cannot.
 //            if (Utils.gammaNeutronCql.test(obs)) {
 //                counts.put("Gamma-Neutron Alarm", counts.get("Gamma-Neutron Alarm") + 1);
 //            }
