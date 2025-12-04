@@ -26,6 +26,7 @@ import com.botts.impl.service.oscar.stats.StatisticsOutput;
 import com.botts.impl.service.oscar.video.VideoRetention;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
+import org.sensorhub.api.module.IModule;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.module.AbstractModule;
 
@@ -68,8 +69,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         if (config.spreadsheetConfigPath != null && !config.spreadsheetConfigPath.isEmpty())
             spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
 
-
-
         system = new OSCARSystem(config.nodeId);
 
         createOutputs();
@@ -96,7 +95,20 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
 
-        statsOutput = new StatisticsOutput(system, getParentHub().getDatabaseRegistry().getFederatedDatabase());
+        IObsSystemDatabase database = null;
+        if (config.databaseID != null && !config.databaseID.isBlank()) {
+            try {
+                database = (IObsSystemDatabase) getParentHub().getModuleRegistry().getModuleById(config.databaseID);
+            } catch (SensorHubException e) {
+                getLogger().warn("No database configured for OSCAR service");
+                database = null;
+            }
+        }
+
+        if (database == null)
+            database = getParentHub().getDatabaseRegistry().getFederatedDatabase();
+
+        statsOutput = new StatisticsOutput(system, database);
         system.addOutput(statsOutput, false);
     }
 
