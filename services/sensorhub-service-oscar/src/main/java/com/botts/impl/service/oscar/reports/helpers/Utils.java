@@ -76,8 +76,10 @@ public class Utils {
                                         .build()
                         );
 
+        //todo : add cql filter to command status filter
+
         if (cqlValue != null && !cqlValue.isBlank()) {
-            builder.withCQLFilter(cqlValue);
+//            builder.withCQLFilter(cqlValue);
         }
 
         return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getCommandStatusStore().select(builder.build()).count();
