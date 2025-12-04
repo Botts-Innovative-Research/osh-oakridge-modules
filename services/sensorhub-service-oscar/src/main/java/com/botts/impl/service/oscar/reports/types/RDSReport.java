@@ -62,12 +62,12 @@ public class RDSReport extends Report {
 
         Map<String, String> alarmOccCounts = new LinkedHashMap<>();
 
-        long gammaNeutronAlarmCount = Utils.countObservations(module, Utils.gammaNeutronCql, start, end, RADHelper.DEF_OCCUPANCY);
-        long gammaAlarmCount = Utils.countObservations(module, Utils.gammaCql, start, end, RADHelper.DEF_OCCUPANCY);
-        long neutronAlarmCount = Utils.countObservations(module, Utils.neutronCql, start, end, RADHelper.DEF_OCCUPANCY);
+        long gammaNeutronAlarmCount = Utils.countObservations(module, Utils.gammaNeutronAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
+        long gammaAlarmCount = Utils.countObservations(module, Utils.gammaAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
+        long neutronAlarmCount = Utils.countObservations(module, Utils.neutronAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
         long totalOccupancyCount = Utils.countObservations(module, null, start, end, RADHelper.DEF_OCCUPANCY);
 
-        long emlSuppressedCount = Utils.countObservations(module, Utils.emlSuppressedCql, start, end, RADHelper.DEF_EML_ANALYSIS);
+        long emlSuppressedCount = Utils.countObservations(module, Utils.emlSuppressedCQL, start, end, RADHelper.DEF_EML_ANALYSIS);
 
         long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
         long alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
@@ -99,10 +99,10 @@ public class RDSReport extends Report {
         HashMap<String, String> faultCounts = new LinkedHashMap<>();
 
 
-        long tamperCount = Utils.countObservations(module, Utils.tamperCql, start, end, RADHelper.DEF_TAMPER);
-        long gammaHighFaultCount = Utils.countObservations(module, Utils.gammaHighFaultCql, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-        long gammaLowFaultCount = Utils.countObservations(module, Utils.gammaLowFaultCql, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-        long neutronHighFaultCount = Utils.countObservations(module, Utils.neutronFaultCql, start, end, RADHelper.DEF_NEUTRON,RADHelper.DEF_ALARM);
+        long tamperCount = Utils.countObservations(module, Utils.tamperCQL, start, end, RADHelper.DEF_TAMPER);
+        long gammaHighFaultCount = Utils.countObservations(module, Utils.gammaHighFaultCQL, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        long gammaLowFaultCount = Utils.countObservations(module, Utils.gammaLowFaultCQL, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        long neutronHighFaultCount = Utils.countObservations(module, Utils.neutronFaultCQL, start, end, RADHelper.DEF_NEUTRON,RADHelper.DEF_ALARM);
 //        long extendedOccupancyCount = Utils.countObservations(module, Utils.extendedOccPredicate, start, end, RADHelper.DEF_OCCUPANCY);
 //        long commsCount = Utils.countObservations(module, Utils.commsPredicate, start, end);
 //        long camCount = Utils.countObservations(module, Utils.cameraPredicate, start, end);
