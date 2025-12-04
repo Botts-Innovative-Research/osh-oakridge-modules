@@ -87,7 +87,7 @@ public class Utils {
 //        //todo : add cql filter to command status filter
 //
 //        if (cqlValue != null && !cqlValue.isBlank()) {
-////            builder.withCQLFilter(cqlValue);
+//            builder.withCQLFilter(cqlValue);
 //        }
 //
 //        return module.getParentHub().getDatabaseRegistry().getFederatedDatabase().getCommandStatusStore().countMatchingEntries(builder.build());
@@ -99,13 +99,9 @@ public class Utils {
 
     public static long countObservationsFromLane(String laneUID, OSCARServiceModule module, String cqlValue, Instant begin, Instant end, String... observedProperties){
         ObsFilter.Builder builder = new ObsFilter.Builder()
-                .withSystems().withUniqueIDs(laneUID)
-                .done()
+
                 .withResultTimeDuring(begin, end)
-                .withDataStreams(new DataStreamFilter.Builder()
-                .withObservedProperties(observedProperties)
-                        .build()
-                );
+                .withDataStreams(new DataStreamFilter.Builder().withSystems().withUniqueIDs(laneUID).includeMembers(true).done().withObservedProperties(observedProperties).build());
 
         if (cqlValue != null && !cqlValue.isBlank()) {
             builder.withCQLFilter(cqlValue);
