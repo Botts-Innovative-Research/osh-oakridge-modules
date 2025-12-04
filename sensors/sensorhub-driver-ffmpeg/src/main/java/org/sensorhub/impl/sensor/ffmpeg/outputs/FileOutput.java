@@ -89,28 +89,49 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     }
 
     @Override
-    public void onDataBuffer(DataBufferRecord record) {
-        if (!isWriting()) {
-            return;
+        public void onDataBuffer(DataBufferRecord record) {
+            if (!isWriting()) {
+                return;
+            }
+            var data = record.getDataBuffer();
+            int ret;
+
+            if (data == null || data.length == 0) {
+                logger.warn("DataBufferRecord has no data; dropping packet");
+                return;
+            }
+
+            long timestamp = (long)(record.getPresentationTimestamp() * inputTimeBase.den() / inputTimeBase.num());
+
+            AVPacket avPacket = av_packet_alloc();
+            if (avPacket == null || avPacket.isNull()) {
+                logger.error("av_packet_alloc() failed; dropping packet");
+                return;
+            }
+
+            ret = av_new_packet(avPacket, data.length);
+            if (ret < 0) {
+                logFFmpeg(ret);
+            }
+
+            avPacket.data().position(0).put(data, 0, data.length);
+            avPacket.pts(timestamp);
+            avPacket.dts(timestamp);
+
+            if (record.isKeyFrame())
+                avPacket.flags(avPacket.flags() | AV_PKT_FLAG_KEY);
+
+            //packetQueue.add(avPacket);
+            packetTiming(avPacket);
+            synchronized (contextLock) {
+                if (isWriting()) {
+                    av_interleaved_write_frame(outputContext, avPacket);
+                } else {
+                    logger.debug("Output closed before packet could be written. Packet dropped.");
+                }
+            }
+            av_packet_free(avPacket);
         }
-        var data = record.getDataBuffer();
-
-        long timestamp = (long)(record.getPresentationTimestamp() * inputTimeBase.den() / inputTimeBase.num());
-
-        AVPacket avPacket = av_packet_alloc();
-        av_new_packet(avPacket, data.length);
-        avPacket.data().put(data);
-        avPacket.pts(timestamp);
-        avPacket.dts(timestamp);
-
-        if (record.isKeyFrame())
-            avPacket.flags(avPacket.flags() | AV_PKT_FLAG_KEY);
-
-        //packetQueue.add(avPacket);
-        packetTiming(avPacket);
-        av_interleaved_write_frame(outputContext, avPacket);
-        av_packet_free(avPacket);
-    }
 
     public void publish() {
         if (this.fileName != null && !this.fileName.isBlank()) {
