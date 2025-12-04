@@ -300,7 +300,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
         return database.getObservationStore().select(new ObsFilter.Builder()
                         .withDataStreams(dsFilter)
-//                        .withCqlFilter(cqlValue) // uncomment
+                        .withCQLFilter(cqlValue) // uncomment
                         .build())
                 .count();
     }
