@@ -42,13 +42,15 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
     public static final String NAME = "siteStatistics";
 
-    public static String gammaCql = "gammaAlarm = true AND neutronAlarm = false";
-    public static String neutronCql = "neutronAlarm = true AND gammaAlarm = false";
-    public static String gammaNeutronCql = "gammaNeutron = true AND neutronAlarm = true";
-    public static String gammaFaultCql = "gammaAlarm = Fault - Gamma High OR gammaAlarm = Fault - Gamma Low";
-    public static String neutronFaultCql = "neutronAlarm = Fault - Neutron High";
-    public static String tamperCql = "tamperStatus = true";
-    public static String faultCql = "neutronAlarm = Fault - Neutron High OR gammaAlarm = Fault - Gamma High OR gammaAlarm = Fault - Gamma Low";
+    public static String gammaNeutronAlarmCQL = "gammaAlarm = true AND neutronAlarm = true";
+    public static String gammaAlarmCQL = "gammaAlarm = true AND neutronAlarm = false";
+    public static String neutronAlarmCQL = "gammaAlarm = false AND neutronAlarm = true";
+    public static String faultCQL = "alarmState = \"Fault - Neutron High\" OR alarmState = \"Fault - Gamma Low\" OR alarmState = \"Fault - Gamma High\"";
+    public static String gammaFaultCQL = "alarmState = \"Fault - Gamma Low\" OR alarmState = \"Fault - Gamma High\"";
+    public static String gammaHighFaultCQL = "alarmState = \"Fault - Gamma High\"";
+    public static String gammaLowFaultCQL = "alarmState = \"Fault - Gamma Low\"";
+    public static String neutronFaultCQL = "alarmState = \"Fault - Neutron High\"";
+    public static String tamperCQL = "tamperStatus = true";
 
     private final DataComponent recordDescription;
     private final DataEncoding recommendedEncoding;
@@ -239,13 +241,13 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     protected Statistics getStats(Instant start, Instant end) {
 
         long numOccupancies = countObservations(database, null, start, end, RADHelper.DEF_OCCUPANCY);
-        long numGammaAlarms = countObservations(database, gammaCql, start, end, RADHelper.DEF_OCCUPANCY);
-        long numNeutronAlarms = countObservations(database, neutronCql, start, end, RADHelper.DEF_OCCUPANCY);
-        long numGammaNeutronAlarms = countObservations(database, gammaNeutronCql, start, end, RADHelper.DEF_OCCUPANCY);
-        long numGammaFaults = countObservations(database, gammaFaultCql, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-        long numNeutronFaults = countObservations(database, neutronFaultCql, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
-        long numTampers = countObservations(database, tamperCql, start, end, RADHelper.DEF_TAMPER);
-        long numFaults = countObservations(database, faultCql, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
+        long numGammaAlarms = countObservations(database, gammaAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
+        long numNeutronAlarms = countObservations(database, neutronAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
+        long numGammaNeutronAlarms = countObservations(database, gammaNeutronAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
+        long numGammaFaults = countObservations(database, gammaFaultCQL, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        long numNeutronFaults = countObservations(database, neutronFaultCQL, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
+        long numTampers = countObservations(database, tamperCQL, start, end, RADHelper.DEF_TAMPER);
+        long numFaults = countObservations(database, faultCQL, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
 
         return new Statistics.Builder()
                 .numOccupancies(numOccupancies)
@@ -265,13 +267,13 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     protected Statistics getStats(Instant start, Instant end, List<IObsData> allObservations) {
 
         long numOccupancies = countObservationsInMemory(allObservations, null, start, end, RADHelper.DEF_OCCUPANCY);
-        long numGammaAlarms = countObservationsInMemory(allObservations, gammaCql, start, end, RADHelper.DEF_OCCUPANCY);
-        long numNeutronAlarms = countObservationsInMemory(allObservations, neutronCql, start, end, RADHelper.DEF_OCCUPANCY);
-        long numGammaNeutronAlarms = countObservationsInMemory(allObservations, gammaNeutronCql, start, end, RADHelper.DEF_OCCUPANCY);
-        long numGammaFaults = countObservationsInMemory(allObservations, gammaFaultCql, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-        long numNeutronFaults = countObservationsInMemory(allObservations, neutronFaultCql, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
-        long numTampers = countObservationsInMemory(allObservations, tamperCql, start, end, RADHelper.DEF_TAMPER);
-        long numFaults = countObservationsInMemory(allObservations, faultCql, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
+        long numGammaAlarms = countObservationsInMemory(allObservations, gammaAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
+        long numNeutronAlarms = countObservationsInMemory(allObservations, neutronAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
+        long numGammaNeutronAlarms = countObservationsInMemory(allObservations, gammaNeutronAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
+        long numGammaFaults = countObservationsInMemory(allObservations, gammaFaultCQL, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        long numNeutronFaults = countObservationsInMemory(allObservations, neutronFaultCQL, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
+        long numTampers = countObservationsInMemory(allObservations, tamperCQL, start, end, RADHelper.DEF_TAMPER);
+        long numFaults = countObservationsInMemory(allObservations, faultCQL, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
 
         return new Statistics.Builder()
                 .numOccupancies(numOccupancies)

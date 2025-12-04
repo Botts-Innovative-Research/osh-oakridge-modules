@@ -23,17 +23,16 @@ import java.util.function.Predicate;
 
 public class Utils {
 
-    public static String gammaNeutronCql = "gammaAlarm = true AND neutronAlarm = true";
-    public static String gammaCql = "gammaAlarm = true AND neutronAlarm = false";
-    public static String neutronCql = "gammaAlarm = false AND neutronAlarm = true";
-    public static String faultCql = "neutronAlarm = Fault - Neutron High OR gammaAlarm = Fault - Gamma Low OR gammaAlarm = Fault - Gamma High";
-    public static String gammaFaultCql = "gammaAlarm = Fault - Gamma Low OR gammaAlarm = Fault - Gamma High";
-    public static String gammaHighFaultCql = "gammaAlarm = Fault - Gamma High";
-    public static String gammaLowFaultCql = "gammaAlarm = Fault - Gamma Low";
-    public static String neutronFaultCql = "neutronAlarm = Fault - Neutron High";
-    public static String tamperCql = "tamperStatus = true";
-
-    public static String emlSuppressedCql = "result = RELEASE";
+    public static String gammaNeutronAlarmCQL = "gammaAlarm = true AND neutronAlarm = true";
+    public static String gammaAlarmCQL = "gammaAlarm = true AND neutronAlarm = false";
+    public static String neutronAlarmCQL = "gammaAlarm = false AND neutronAlarm = true";
+    public static String faultCQL = "alarmState = \"Fault - Neutron High\" OR alarmState = \"Fault - Gamma Low\" OR alarmState = \"Fault - Gamma High\"";
+    public static String gammaFaultCQL = "alarmState = \"Fault - Gamma Low\" OR alarmState = \"Fault - Gamma High\"";
+    public static String gammaHighFaultCQL = "alarmState = \"Fault - Gamma High\"";
+    public static String gammaLowFaultCQL = "alarmState = \"Fault - Gamma Low\"";
+    public static String neutronFaultCQL = "alarmState = \"Fault - Neutron High\"";
+    public static String tamperCQL = "tamperStatus = true";
+    public static String emlSuppressedCQL = "result = RELEASE";
 
 
     public static long calcEMLAlarmRate(long emlSuppCount, long alarmCount){
