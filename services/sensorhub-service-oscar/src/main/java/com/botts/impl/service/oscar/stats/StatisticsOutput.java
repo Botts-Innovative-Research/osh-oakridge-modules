@@ -227,7 +227,6 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
      * Counts observations from database (used by external callers like submitCommand).
      */
     private long countObservations(IObsSystemDatabase database, String cqlValue, Instant begin, Instant end, String... observedProperty) {
-//    private long countObservations(IObsSystemDatabase database, Predicate<IObsData> valuePredicate, Instant begin, Instant end, String... observedProperty) {
         var dsFilterBuilder = new DataStreamFilter.Builder()
                 .withObservedProperties(observedProperty);
 

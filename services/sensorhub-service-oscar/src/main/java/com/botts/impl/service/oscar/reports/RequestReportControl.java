@@ -167,7 +167,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
         if(type == ReportCmdType.LANE) {
             return out -> new LaneReport(out, start, end, laneUIDs, module);
         } else if (type == ReportCmdType.EVENT) {
-            return out -> new EventReport(out, start, end, eventType, laneUIDs, module);
+            return out -> new EventReport(out, start, end, eventType, module);
         } else if (type == ReportCmdType.ADJUDICATION) {
             return out -> new AdjudicationReport(out, start, end, laneUIDs, module);
         } else if (type == ReportCmdType.RDS_SITE) {

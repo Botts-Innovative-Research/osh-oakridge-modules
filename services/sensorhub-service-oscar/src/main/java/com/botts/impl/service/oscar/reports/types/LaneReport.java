@@ -64,12 +64,12 @@ public class LaneReport extends Report {
     private void addAlarmStatistics(){
         document.add(new Paragraph("Alarm Statistics"));
 
-        Map<String, Map<String, String>> countsLane = getLaneCounts(laneUIDs.split(","));
+        Map<String, Map<String, String>> countsLane = new LinkedHashMap<>();
 
-//        for (var laneUID : laneUIDs.split(",")) {
-//            var counts = calculateAlarmCounts(laneUID);
-//            countsLane.put(laneUID, counts);
-//        }
+        for (var laneUID : laneUIDs.split(",")) {
+            var counts = calculateAlarmCounts(laneUID);
+            countsLane.put(laneUID, counts);
+        }
 
         var table = tableGenerator.addLanesTable(countsLane);
         if (table == null) {
@@ -99,75 +99,6 @@ public class LaneReport extends Report {
 
         document.add(table);
         document.add(new Paragraph("\n"));
-    }
-
-    private Map<String, Map<String, String>> getLaneCounts(String... laneUids) {
-        var db = module.getParentHub().getDatabaseRegistry().getFederatedDatabase();
-
-        Map<BigId, String> dsIdToLaneUID = new HashMap<>();
-        var laneDsIterator = db.getDataStreamStore().selectEntries(new DataStreamFilter.Builder()
-                .withSystems().withUniqueIDs(laneUids).includeMembers(true).done()
-                .withObservedProperties(RADHelper.DEF_OCCUPANCY)
-                .build())
-                .iterator();
-
-        while (laneDsIterator.hasNext()) {
-            var entry = laneDsIterator.next();
-            var dsId = entry.getKey();
-            var ds = entry.getValue();
-            dsIdToLaneUID.put(dsId.getInternalID(), ds.getSystemID().getUniqueID());
-        }
-
-        var allObsIterator = db.getObservationStore().select(new ObsFilter.Builder()
-                .withSystems().withUniqueIDs(laneUids).includeMembers(true).done()
-                .withDataStreams().withObservedProperties(RADHelper.DEF_OCCUPANCY).done()
-                .withResultTimeDuring(start, end)
-                        .build())
-                .iterator();
-
-        Map<String, Map<String, Long>> laneCounts = new LinkedHashMap<>();
-        for (String laneUID : dsIdToLaneUID.values()) {
-            laneCounts.put(laneUID, new LinkedHashMap<>());
-            Map<String, Long> counts = laneCounts.get(laneUID);
-            counts.put("Gamma Alarm", 0L);
-            counts.put("Neutron Alarm", 0L);
-            counts.put("Gamma-Neutron Alarm", 0L);
-            counts.put("Total Occupancies", 0L);
-        }
-
-        while (allObsIterator.hasNext()) {
-            var obs = allObsIterator.next();
-            BigId dsId = obs.getDataStreamID();
-            String laneUID = dsIdToLaneUID.get(dsId);
-            if (laneUID == null) continue;
-
-            Map<String, Long> counts = laneCounts.get(laneUID);
-
-            //  todo: update because shouldnt use test and cannot.
-//            if (Utils.gammaNeutronCql.test(obs)) {
-//                counts.put("Gamma-Neutron Alarm", counts.get("Gamma-Neutron Alarm") + 1);
-//            }
-//            if (Utils.gammaCql.test(obs)) {
-//                counts.put("Gamma Alarm", counts.get("Gamma Alarm") + 1);
-//            }
-//            if (Utils.neutronCql.test(obs)) {
-//                counts.put("Neutron Alarm", counts.get("Neutron Alarm") + 1);
-//            }
-//            if (Utils.occupancyCql.test(obs)) {
-//                counts.put("Total Occupancies", counts.get("Total Occupancies") + 1);
-//            }
-        }
-
-        Map<String, Map<String, String>> results = new LinkedHashMap<>();
-        for (var entry : laneCounts.entrySet()) {
-            String laneUID = entry.getKey();
-            Map<String, Long> counts = entry.getValue();
-            Map<String, String> stringCounts = new LinkedHashMap<>();
-            counts.forEach((k, v) -> stringCounts.put(k, String.valueOf(v)));
-            results.put(laneUID, stringCounts);
-        }
-
-        return results;
     }
 
     private Map<String, String> calculateAlarmCounts(String laneUID) {

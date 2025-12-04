@@ -315,8 +315,7 @@ public class ReportTests {
     }
 
     public long predicateCount(){
-        Predicate<IObsData> gammaPredicate = (obsData) -> obsData.getResult().getBooleanValue(5) && !obsData.getResult().getBooleanValue(6);
-        return Utils.countObservations(oscarServiceModule, gammaPredicate, begin, end, RADHelper.DEF_OCCUPANCY);
+        return Utils.countObservations(oscarServiceModule, Utils.gammaAlarmCQL, begin, end, RADHelper.DEF_OCCUPANCY);
     }
 
 
