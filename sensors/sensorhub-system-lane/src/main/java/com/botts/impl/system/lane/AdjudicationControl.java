@@ -134,6 +134,7 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
                        .withExecutionTime(TimeExtent.endNow(start))
                        .build();
            } catch (Exception e) {
+               getLogger().error("Adjudication command failed", e);
                return CommandStatus.failed(command.getID(), "Failed to accept command: " + e.getMessage());
            }
         });
