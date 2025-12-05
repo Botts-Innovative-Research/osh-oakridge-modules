@@ -89,31 +89,35 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     }
 
     @Override
-        public void onDataBuffer(DataBufferRecord record) {
-            if (!isWriting()) {
-                return;
-            }
-            var data = record.getDataBuffer();
-            int ret;
+    public void onDataBuffer(DataBufferRecord record) {
+        if (!isWriting()) {
+            return;
+        }
+        var data = record.getDataBuffer();
+        int ret;
 
-            if (data == null || data.length == 0) {
-                logger.warn("DataBufferRecord has no data; dropping packet");
-                return;
-            }
+        if (data == null || data.length == 0) {
+            logger.warn("DataBufferRecord has no data; dropping packet");
+            return;
+        }
 
-            long timestamp = (long)(record.getPresentationTimestamp() * inputTimeBase.den() / inputTimeBase.num());
+        long timestamp = (long)(record.getPresentationTimestamp() * inputTimeBase.den() / inputTimeBase.num());
 
-            AVPacket avPacket = av_packet_alloc();
-            if (avPacket == null || avPacket.isNull()) {
-                logger.error("av_packet_alloc() failed; dropping packet");
-                return;
-            }
+        AVPacket avPacket = av_packet_alloc();
+        if (avPacket == null || avPacket.isNull()) {
+            logger.error("av_packet_alloc() failed; dropping packet");
+            return;
+        }
 
-            ret = av_new_packet(avPacket, data.length);
-            if (ret < 0) {
-                logFFmpeg(ret);
-            }
+        ret = av_new_packet(avPacket, data.length);
+        if (ret < 0) {
+            logFFmpeg(ret);
+            av_packet_free(avPacket);
+            return;
+        }
 
+        try {
+            // copy data
             avPacket.data().position(0).put(data, 0, data.length);
             avPacket.pts(timestamp);
             avPacket.dts(timestamp);
@@ -121,17 +125,23 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
             if (record.isKeyFrame())
                 avPacket.flags(avPacket.flags() | AV_PKT_FLAG_KEY);
 
-            //packetQueue.add(avPacket);
             packetTiming(avPacket);
+
             synchronized (contextLock) {
                 if (isWriting()) {
-                    av_interleaved_write_frame(outputContext, avPacket);
+                    int writeRet = av_interleaved_write_frame(outputContext, avPacket);
+                    if (writeRet < 0) {
+                        logFFmpeg(writeRet);
+                    }
                 } else {
                     logger.debug("Output closed before packet could be written. Packet dropped.");
                 }
             }
+        } finally {
+            // always free the packet
             av_packet_free(avPacket);
         }
+    }
 
     public void publish() {
         if (this.fileName != null && !this.fileName.isBlank()) {
@@ -156,6 +166,8 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
      */
     public void openFile(String fileName) throws IOException {
         AVDictionary options = null;
+        // keep references local for safe cleanup on exception
+        AVIOContext avioContext = null;
         try {
             synchronized (contextLock) {
                 if (doFileWrite.get()) {
@@ -193,12 +205,21 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
                 initCtx(avCodecParameters);
 
+                // confirm outputContext and oformat are valid
+                if (outputContext == null || outputContext.oformat() == null) {
+                    throw new IOException("avformat_alloc_output_context2 failed to create an output context.");
+                }
+
                 avcodec_parameters_free(avCodecParameters);
 
                 if ((outputContext.oformat().flags() & AVFMT_NOFILE) == 0) { // IMPORTANT! HLS does not have a pb!
-                    AVIOContext avioContext = new AVIOContext(null);
-                    if (avio_open(avioContext, this.fileName, AVIO_FLAG_WRITE) < 0) {
-                        throw new IOException("Could not open file.");
+                    avioContext = new AVIOContext(null);
+                    int openRet = avio_open(avioContext, this.fileName, AVIO_FLAG_WRITE);
+                    if (openRet < 0) {
+                        // cleanup output context created by initCtx
+                        avformat_free_context(outputContext);
+                        outputContext = null;
+                        throw new IOException("Could not open file for writing: " + this.fileName);
                     }
                     outputContext.pb(avioContext);
                 }
@@ -206,8 +227,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 if (this.fileName.endsWith(".m3u8")) {
                     options = hlsOptions();
                     isLive = true;
-                    //filePts = System.currentTimeMillis();
-                    //inputTimeBase = av_make_q(1, 1000);
                 } else {
                     isLive = false;
                 }
@@ -215,25 +234,54 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 int ret;
                 if ((ret = avformat.avformat_write_header(outputContext, options)) < 0) {
                     logFFmpeg(ret);
+                    // cleanup: close pb if opened
+                    if (outputContext.pb() != null) {
+                        avio_flush(outputContext.pb());
+                        avio_closep(outputContext.pb());
+                        outputContext.pb(null);
+                    }
+                    avformat_free_context(outputContext);
+                    outputContext = null;
                     throw new IOException("Could not write header to file.");
                 }
 
                 timeBase = outputVideoStream.time_base();
-                //avPacket = av_packet_alloc();
 
+                cleanupQueuedPackets();
                 packetQueue.clear();
-                //startWriterThread();
+
                 doFileWrite.set(true);
                 av_log_set_level(AV_LOG_QUIET);
             }
         } catch (Exception e) {
+            // If any resource partially allocated, free here
+            // close avio if assigned and not already closed
+            try {
+                if (outputContext != null) {
+                    if (outputContext.pb() != null) {
+                        avio_flush(outputContext.pb());
+                        avio_closep(outputContext.pb());
+                        outputContext.pb(null);
+                    }
+                    avformat_free_context(outputContext);
+                    outputContext = null;
+                }
+            } catch (Exception ignored) {}
+
+            // free options if present
+            if (options != null) {
+                av_dict_free(options);
+            }
+
             throw new IOException("Could not open output file " + fileName, e);
         } finally {
             if (options != null) {
                 av_dict_free(options);
+                options = null;
             }
         }
     }
+
 
     private void initCtx(AVCodecParameters codecParams) {
         filePts = 0;
@@ -268,13 +316,9 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     }
 
     private void logFFmpeg(int retCode) {
-        BytePointer buf = new BytePointer(AV_ERROR_MAX_STRING_SIZE);
-        try {
+        try (BytePointer buf = new BytePointer(AV_ERROR_MAX_STRING_SIZE)) {
             av_strerror(retCode, buf, buf.capacity());
             logger.error("FFmpeg returned error code {}: {}", retCode, buf.getString());
-        } finally {
-            buf.deallocate();
-            buf.close();
         }
     }
 
@@ -317,19 +361,22 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 doFileWrite.set(false);
 
                 try {
-                    if (outputContext.pb() != null) {
+                    if (outputContext != null && outputContext.pb() != null) {
                         avio_flush(outputContext.pb());
                     }
 
-                    avformat.av_write_trailer(outputContext);
+                    if (outputContext != null) {
+                        avformat.av_write_trailer(outputContext);
+                    }
 
-                    if (outputContext.pb() != null) {
+                    if (outputContext != null && outputContext.pb() != null) {
                         avio_flush(outputContext.pb());
                         avio_closep(outputContext.pb());
                         outputContext.pb(null);
                     }
 
-                    if (outputStream != null) {
+                    // flush to stream if using seekableBuffer
+                    if (outputStream != null && seekableBuffer != null) {
                         outputStream.write(seekableBuffer.getData());
                         outputStream.flush();
                         outputStream.close();
@@ -337,27 +384,41 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                     }
 
                     if (writeCallback != null) {
-                        writeCallback.free();
+                        try { writeCallback.close(); } catch (Exception ignored) {}
                         writeCallback = null;
                     }
                     if (seekCallback != null) {
-                        seekCallback.free();
+                        try { seekCallback.close(); } catch (Exception ignored) {}
                         seekCallback = null;
                     }
 
+                    cleanupQueuedPackets();
+
                     if (outputVideoStream != null) {
-                        outputVideoStream.close();
+                        try { outputVideoStream.close(); } catch (Exception ignored) {}
                         outputVideoStream = null;
                     }
 
-                    avformat_free_context(outputContext);
-                    outputContext = null;
+                    if (outputContext != null) {
+                        avformat_free_context(outputContext);
+                        outputContext = null;
+                    }
                 } catch (Exception e) {
                     throw new IOException("Could not close output file " + this.fileName + ".", e);
                 }
             }
         }
     }
+
+    private void cleanupQueuedPackets() {
+        AVPacket pkt;
+        while ((pkt = packetQueue.poll()) != null) {
+            try {
+                av_packet_free(pkt);
+            } catch (Exception ignored) {}
+        }
+    }
+
 
     @Override
     public DataComponent getRecordDescription() {
@@ -389,8 +450,9 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
             return buffer.write(b, 0, buf_size);
         }
 
-        public void free() {
+        public void close() {
             buffer = null;
+            super.close();
         }
     }
 
@@ -401,8 +463,9 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
             this.buffer = buffer;
         }
 
-        public void free() {
+        public void close() {
             buffer = null;
+            super.close();
         }
 
         @Override
