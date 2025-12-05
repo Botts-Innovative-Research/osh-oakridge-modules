@@ -139,11 +139,11 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                     resourceURI = handleReportGeneration(reportHandler, filePath);
 
                     if (resourceURI != null) {
-                        module.getLogger().info("Successfully generated report: " + resourceURI);
+                        module.getLogger().info("Successfully generated report {}", resourceURI);
                         break;
                     }
                 } catch (DataStoreException e) {
-                    module.getLogger().error("Failed to build report " + type, e);
+                    module.getLogger().error("Failed to build report {}", type, e);
                 }
             }
 
@@ -184,7 +184,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             Report report = reportHandler.createReport(out);
             report.generate();
         }
-        return bucketService.getBucketStore().getRelativeResourceURI(REPORT_BUCKET, filePath); // the command result is "reports/filePath.png"
+        return bucketService.getBucketStore().getRelativeResourceURI(REPORT_BUCKET, filePath);
     }
 
     private String buildPath(ReportCmdType type, Instant start, Instant end) {
