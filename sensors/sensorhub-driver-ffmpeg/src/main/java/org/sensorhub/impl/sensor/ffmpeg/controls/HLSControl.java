@@ -106,7 +106,7 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                 commandStatus = false;
 
             else if (selected.equals(CMD_START_STREAM)) {
-                if (fileName != null && !fileName.isEmpty()) {
+                if (fileOutput.isWriting()) {
                     commandStatus = true;
                     reportFileName = true;
                 }
@@ -117,12 +117,12 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                         //this.parentSensor.getProcessor().openFile(fileName);
                         this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap()).close();
                         String uri = bucketStore.getResourceURI(VIDEO_BUCKET, fileName);
-                        //bucketStore.deleteObject(VIDEO_BUCKET, fileName);
+                        bucketStore.deleteObject(VIDEO_BUCKET, fileName);
                         this.fileOutput.openFile(uri);
                         hlsHandler.get().addControl(fileName, this);
                         this.parentSensor.reportStatus("Writing video stream: " + fileName);
                         reportFileName = true;
-                        fileOutput.publish(bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName));
+                        fileOutput.publish(uri);
                     } catch (Exception e) {
                         getLogger().error("Exception while opening HLS output", e);
                         fileName = "";
@@ -130,7 +130,7 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                     }
                 }
             } else if (selected.equals(CMD_END_STREAM)) {
-                if (fileName == null || fileName.isEmpty())
+                if (!fileOutput.isWriting())
                     commandStatus = false;
                 else {
                     try {
