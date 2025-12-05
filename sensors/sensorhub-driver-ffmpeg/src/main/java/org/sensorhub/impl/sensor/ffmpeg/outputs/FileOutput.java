@@ -58,7 +58,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     AVRational timeBase = new AVRational();
     AVRational inputTimeBase = new AVRational();
     AVRational inputFrameRate = new AVRational();
-    final Queue<AVPacket> packetQueue = new ConcurrentLinkedQueue<>();
 
     final int MAX_PACKET_QUEUE_SIZE = 1000;
     volatile long filePts;
@@ -117,7 +116,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         }
 
         try {
-            // copy data
             avPacket.data().position(0).put(data, 0, data.length);
             avPacket.pts(timestamp);
             avPacket.dts(timestamp);
@@ -138,7 +136,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 }
             }
         } finally {
-            // always free the packet
             av_packet_free(avPacket);
         }
     }
@@ -166,7 +163,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
      */
     public void openFile(String fileName) throws IOException {
         AVDictionary options = null;
-        // keep references local for safe cleanup on exception
         AVIOContext avioContext = null;
         try {
             synchronized (contextLock) {
@@ -234,7 +230,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 int ret;
                 if ((ret = avformat.avformat_write_header(outputContext, options)) < 0) {
                     logFFmpeg(ret);
-                    // cleanup: close pb if opened
                     if (outputContext.pb() != null) {
                         avio_flush(outputContext.pb());
                         avio_closep(outputContext.pb());
@@ -247,15 +242,10 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
                 timeBase = outputVideoStream.time_base();
 
-                cleanupQueuedPackets();
-                packetQueue.clear();
-
                 doFileWrite.set(true);
                 av_log_set_level(AV_LOG_QUIET);
             }
         } catch (Exception e) {
-            // If any resource partially allocated, free here
-            // close avio if assigned and not already closed
             try {
                 if (outputContext != null) {
                     if (outputContext.pb() != null) {
@@ -281,7 +271,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
             }
         }
     }
-
 
     private void initCtx(AVCodecParameters codecParams) {
         filePts = 0;
@@ -392,8 +381,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                         seekCallback = null;
                     }
 
-                    cleanupQueuedPackets();
-
                     if (outputVideoStream != null) {
                         try { outputVideoStream.close(); } catch (Exception ignored) {}
                         outputVideoStream = null;
@@ -409,16 +396,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
             }
         }
     }
-
-    private void cleanupQueuedPackets() {
-        AVPacket pkt;
-        while ((pkt = packetQueue.poll()) != null) {
-            try {
-                av_packet_free(pkt);
-            } catch (Exception ignored) {}
-        }
-    }
-
 
     @Override
     public DataComponent getRecordDescription() {
