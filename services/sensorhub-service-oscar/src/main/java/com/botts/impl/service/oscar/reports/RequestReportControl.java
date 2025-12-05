@@ -28,6 +28,7 @@ import org.sensorhub.api.command.*;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.command.AbstractControlInterface;
 import org.vast.swe.SWEHelper;
+import org.vast.util.DateTime;
 
 import java.io.OutputStream;
 import java.time.Instant;
@@ -127,7 +128,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             String filePath = null;
             IReportHandler reportHandler = null;
             try {
-                filePath = buildPath(type, start, end, laneUIDs, eventType);
+                filePath = buildPath(type, start, end);
                 reportHandler = getReportHandler(type, start, end, laneUIDs, eventType);
             } catch (DataStoreException e) {
                 module.getLogger().error("Failed to build report " + type, e);
@@ -186,18 +187,18 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
         return bucketService.getBucketStore().getRelativeResourceURI(REPORT_BUCKET, filePath); // the command result is "reports/filePath.png"
     }
 
-    // create file path here rather than repeating code at the top todo: possible add endtime to filepath
-    private String buildPath(ReportCmdType type, Instant start, Instant end, String laneUIDs, EventReportType eventType) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(module.getOSCARSystem().getNodeId()).append("_").append(type);
+    private String buildPath(ReportCmdType type, Instant start, Instant end) {
 
-        if (type.equals(ReportCmdType.LANE) || type.equals(ReportCmdType.ADJUDICATION))
-            sb.append("_").append(laneUIDs);
-        else if (type.equals(ReportCmdType.EVENT))
-            sb.append("_").append(eventType);
+        String startTime = DateTimeFormatter.ISO_INSTANT.format(start).replace(":", "-");
+        String endTime = DateTimeFormatter.ISO_INSTANT.format(end).replace(":", "-");
 
-        sb.append("_").append(formatter.format(start)).append("_").append(".pdf");
-        return sb.toString().toLowerCase().replace(":", "-");
+        return String.format(
+                "%s_%s_%s_%s.pdf",
+                module.getOSCARSystem().getNodeId(),
+                type.name().toLowerCase(),
+                startTime,
+                endTime
+        ).toLowerCase();
     }
 
     // checks if a report file already exists in object store and only creates a new output if it doesnt exist
