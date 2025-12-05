@@ -15,6 +15,8 @@ import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.ffmpeg.controls.hls.HlsStreamHandler;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
 import org.sensorhub.impl.service.HttpServer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.vast.swe.SWEHelper;
 
 import java.nio.file.Path;
@@ -41,6 +43,8 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
     String fileName = "";
     Path filePath = Paths.get(VIDEO_BUCKET);
     private final FileOutput fileOutput;
+
+    private static final Logger logger = LoggerFactory.getLogger(HLSControl.class);
 
     public HLSControl(FFMPEGSensorBase<FFmpegConfigType> sensor, FileOutput fileOutput) throws DataStoreException {
         super(SENSOR_CONTROL_NAME, sensor);
@@ -117,14 +121,15 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                         //this.parentSensor.getProcessor().openFile(fileName);
                         this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap()).close();
                         String uri = bucketStore.getResourceURI(VIDEO_BUCKET, fileName);
-                        bucketStore.deleteObject(VIDEO_BUCKET, fileName);
+                        //bucketStore.deleteObject(VIDEO_BUCKET, fileName);
                         this.fileOutput.openFile(uri);
                         hlsHandler.get().addControl(fileName, this);
                         this.parentSensor.reportStatus("Writing video stream: " + fileName);
                         reportFileName = true;
-                        fileOutput.publish(uri);
+                        commandStatus = true;
+                        //fileOutput.publish(uri);
                     } catch (Exception e) {
-                        getLogger().error("Exception while opening HLS output", e);
+                        logger.error("Exception while opening HLS output", e);
                         fileName = "";
                         commandStatus = false;
                     }
@@ -137,16 +142,21 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                         this.fileOutput.closeFile();
                         this.parentSensor.reportStatus("Closing video stream: " + fileName);
                         hlsHandler.get().removeControl(fileName, this);
+                        commandStatus = true;
+                        reportFileName = false;
 
                         // File cleanup
-                        var fileNameNoExt = fileName.substring(0, fileName.lastIndexOf('.'));
-                        var filteredNames = bucketStore.listObjects(VIDEO_BUCKET).stream().filter(name -> {
-                            return name.contains(fileNameNoExt);
-                        }).toList();
-                        for (String hlsFile : filteredNames) {
-                            bucketStore.deleteObject(VIDEO_BUCKET, hlsFile);
+                        try {
+                            var fileNameNoExt = fileName.substring(0, fileName.lastIndexOf('.'));
+                            var filteredNames = bucketStore.listObjects(VIDEO_BUCKET).stream().filter(name -> {
+                                return name.contains(fileNameNoExt);
+                            }).toList();
+                            for (String hlsFile : filteredNames) {
+                                bucketStore.deleteObject(VIDEO_BUCKET, hlsFile);
+                            }
+                        } catch (Exception de) {
+                            logger.warn("Exception during HLS cleanup: ", de);
                         }
-
                         fileName = "";
                     } catch (Exception e) {
                         commandStatus = false;
@@ -165,7 +175,9 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                     resultData.getData().setStringValue(bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName));
                     ICommandResult result = CommandResult.withData(resultData.getData());
                     status.withResult(result);
-                } catch (Exception ignored) {}
+                } catch (DataStoreException e) {
+                    logger.error("Exception while getting stream URI", e);
+                }
             }
             return status.build();
         });
