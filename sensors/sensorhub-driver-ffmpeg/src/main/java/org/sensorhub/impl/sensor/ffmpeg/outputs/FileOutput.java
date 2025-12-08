@@ -164,8 +164,10 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     public void openFile(String fileName) throws IOException {
         AVDictionary options = null;
         AVIOContext avioContext = null;
-        try {
-            synchronized (contextLock) {
+        AVCodecParameters avCodecParameters = null;
+
+        synchronized (contextLock) {
+            try {
                 if (doFileWrite.get()) {
                     throw new IOException("Already writing to file " + this.fileName);
                 }
@@ -177,7 +179,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 writeCallback = null;
                 seekCallback = null;
 
-                AVCodecParameters avCodecParameters = this.parentSensor.getProcessor().getCodecParams();
+                avCodecParameters = this.parentSensor.getProcessor().getCodecParams();
                 if (avCodecParameters == null) {
                     logger.error("Could not open file output; this stream's codec parameters are null");
                     return;
@@ -205,8 +207,6 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 if (outputContext == null || outputContext.oformat() == null) {
                     throw new IOException("avformat_alloc_output_context2 failed to create an output context.");
                 }
-
-                avcodec_parameters_free(avCodecParameters);
 
                 if ((outputContext.oformat().flags() & AVFMT_NOFILE) == 0) { // IMPORTANT! HLS does not have a pb!
                     avioContext = new AVIOContext(null);
@@ -244,30 +244,28 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
                 doFileWrite.set(true);
                 av_log_set_level(AV_LOG_QUIET);
-            }
-        } catch (Exception e) {
-            try {
-                if (outputContext != null) {
-                    if (outputContext.pb() != null) {
-                        avio_flush(outputContext.pb());
-                        avio_closep(outputContext.pb());
-                        outputContext.pb(null);
+
+            } catch (Exception e) {
+                try {
+                    doFileWrite.set(true);
+                    closeFile();
+                    // free options if present
+                    if (options != null) {
+                        av_dict_free(options);
                     }
-                    avformat_free_context(outputContext);
-                    outputContext = null;
+                } catch (Exception ignored) {
+                    logger.warn("Exception when opening " + fileName + ", failed to clean up.", e);
                 }
-            } catch (Exception ignored) {}
+                throw new IOException("Could not open output file " + fileName, e);
+            } finally {
+                if (options != null) {
+                    av_dict_free(options);
+                    options = null;
+                }
 
-            // free options if present
-            if (options != null) {
-                av_dict_free(options);
-            }
-
-            throw new IOException("Could not open output file " + fileName, e);
-        } finally {
-            if (options != null) {
-                av_dict_free(options);
-                options = null;
+                if (avCodecParameters != null) {
+                    avcodec_parameters_free(avCodecParameters);
+                }
             }
         }
     }
