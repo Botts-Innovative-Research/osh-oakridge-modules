@@ -38,4 +38,7 @@ public class OSCARServiceConfig extends ServiceConfig {
     @DisplayInfo(desc = "Database connected to this OSCAR service")
     public String databaseID;
 
+    @DisplayInfo(label = "Stats Frequency (min)", desc = "Frequency at which statistics will be published")
+    public int statsFrequencyMinutes = 60;
+
 }

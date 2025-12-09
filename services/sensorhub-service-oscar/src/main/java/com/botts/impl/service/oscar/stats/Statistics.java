@@ -98,4 +98,21 @@ public class Statistics {
 
     }
 
+    public Statistics add(Statistics other) {
+        return new Statistics.Builder()
+                .numOccupancies(this.numOccupancies + other.numOccupancies)
+                .numGammaAlarms(this.numGammaAlarms + other.numGammaAlarms)
+                .numNeutronAlarms(this.numNeutronAlarms + other.numNeutronAlarms)
+                .numGammaNeutronAlarms(this.numGammaNeutronAlarms + other.numGammaNeutronAlarms)
+                .numFaults(this.numFaults + other.numFaults)
+                .numGammaFaults(this.numGammaFaults + other.numGammaFaults)
+                .numNeutronFaults(this.numNeutronFaults + other.numNeutronFaults)
+                .numTampers(this.numTampers + other.numTampers)
+                .build();
+    }
+
+    public static Statistics zero() {
+        return new Statistics.Builder().build(); // all zeros
+    }
+
 }

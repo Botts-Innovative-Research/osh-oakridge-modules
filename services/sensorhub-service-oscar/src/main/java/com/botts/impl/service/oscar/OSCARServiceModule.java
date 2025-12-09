@@ -108,7 +108,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
         if (database == null)
             database = getParentHub().getDatabaseRegistry().getFederatedDatabase();
 
-        statsOutput = new StatisticsOutput(system, database);
+        statsOutput = new StatisticsOutput(system, database, config.statsFrequencyMinutes);
         system.addOutput(statsOutput, false);
     }
 

@@ -6,20 +6,13 @@ import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.data.DataEvent;
-import org.sensorhub.api.data.IObsData;
-import org.sensorhub.api.data.ObsEvent;
 import org.sensorhub.api.database.IObsSystemDatabase;
-import org.sensorhub.api.datastore.TemporalFilter;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
-import org.sensorhub.api.event.EventUtils;
-import org.sensorhub.api.event.IEventBus;
 import org.sensorhub.api.resource.ResourceKey;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.utils.Async;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.vast.data.TextEncodingImpl;
 
 import java.time.Instant;
@@ -30,15 +23,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.Set;
-import java.util.HashSet;
 import java.util.concurrent.*;
-import java.util.function.Predicate;
-import java.util.stream.Stream;
 import java.util.stream.Collectors;
 
 public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
-
-    Logger logger = LoggerFactory.getLogger(StatisticsOutput.class);
 
     public static final String NAME = "siteStatistics";
 
@@ -54,18 +42,19 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
     private final DataComponent recordDescription;
     private final DataEncoding recommendedEncoding;
-    private static final int SAMPLING_PERIOD = 60;
+    private final int samplingPeriod;
 
     private ScheduledExecutorService service;
     private final IObsSystemDatabase database;
     private Map<String, Set<BigId>> observedPropertyToDataStreamIds;
 
-    public StatisticsOutput(OSCARSystem parentSensor, IObsSystemDatabase database) {
+    public StatisticsOutput(OSCARSystem parentSensor, IObsSystemDatabase database, int samplingPeriod) {
         super(NAME, parentSensor);
         this.database = database;
         RADHelper fac = new RADHelper();
         recordDescription = fac.createSiteStatistics();
         recommendedEncoding = new TextEncodingImpl();
+        this.samplingPeriod = samplingPeriod;
     }
 
     /**
@@ -99,7 +88,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     public void start() {
         if (service == null || service.isShutdown())
             service = Executors.newSingleThreadScheduledExecutor();
-        service.scheduleAtFixedRate(this::publishLatestStatistics, 0L, SAMPLING_PERIOD, TimeUnit.MINUTES);
+        service.scheduleAtFixedRate(this::publishLatestStatistics, 0L, samplingPeriod, TimeUnit.MINUTES);
     }
 
     public void stop() {
@@ -109,7 +98,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
     public void publishLatestStatistics() {
         initializeDataStreamMapping();
-        logger.info("Starting stats counting...");
+        getLogger().info("Starting stats counting...");
         long currentTime = System.currentTimeMillis();
 
         DataBlock dataBlock = latestRecord == null ? recordDescription.createDataBlock() : latestRecord.renew();
@@ -147,7 +136,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         latestRecord = dataBlock;
         latestRecordTime = currentTime;
         eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));
-        logger.info("Finished stats counting in {}s", (System.currentTimeMillis() - currentTime) / 1000);
+        getLogger().info("Finished stats counting in {}s", (System.currentTimeMillis() - currentTime) / 1000);
     }
 
     protected BigId waitForLatestObservationId() {
@@ -256,6 +245,6 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
     @Override
     public double getAverageSamplingPeriod() {
-        return SAMPLING_PERIOD * SAMPLING_PERIOD;
+        return samplingPeriod * 60;
     }
 }
