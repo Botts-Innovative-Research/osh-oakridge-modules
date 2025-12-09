@@ -130,6 +130,7 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                         //fileOutput.publish(uri);
                     } catch (Exception e) {
                         logger.error("Exception while opening HLS output", e);
+                        hlsHandler.get().removeControl(fileName, this);
                         fileName = "";
                         commandStatus = false;
                     }
