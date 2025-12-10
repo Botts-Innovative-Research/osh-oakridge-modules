@@ -181,8 +181,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
                 avCodecParameters = this.parentSensor.getProcessor().getCodecParams();
                 if (avCodecParameters == null) {
-                    logger.error("Could not open file output; this stream's codec parameters are null");
-                    return;
+                    throw new IOException("Already writing to file " + this.fileName);
                 }
 
                 var inStream = parentSensor.getProcessor().getAvStream();
@@ -270,17 +269,25 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         }
     }
 
-    private void initCtx(AVCodecParameters codecParams) {
+    private void initCtx(AVCodecParameters codecParams) throws IOException {
         filePts = 0;
         curPts = 0;
+        int ret;
 
         //AVFormatContext inputContext = this.parentSensor.getProcessor().getAvFormatContext();
         outputContext = new AVFormatContext(null);
-        avformat_alloc_output_context2(outputContext, null, null, this.fileName);
+
+        if ((ret = avformat_alloc_output_context2(outputContext, null, null, this.fileName)) < 0) {
+            logFFmpeg(ret);
+            throw new IOException("Could not open output context for file " + this.fileName);
+        }
 
         outputVideoStream = avformat.avformat_new_stream(outputContext, null);
 
-        avcodec.avcodec_parameters_copy(outputVideoStream.codecpar(), codecParams);
+        if ((ret = avcodec.avcodec_parameters_copy(outputVideoStream.codecpar(), codecParams)) < 0) {
+            logFFmpeg(ret);
+            throw new IOException("Could not copy codec parameters for file " + this.fileName);
+        }
         //FFmpegUtils.cleanCodecParameters(outputVideoStream.codecpar());
 
         timeBase = av_make_q(1, 90000);
@@ -346,19 +353,23 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         synchronized (contextLock) {
             if (isWriting()) {
                 doFileWrite.set(false);
-
+                int ret;
                 try {
                     if (outputContext != null && outputContext.pb() != null) {
                         avio_flush(outputContext.pb());
                     }
 
                     if (outputContext != null) {
-                        avformat.av_write_trailer(outputContext);
+                        if ((ret = avformat.av_write_trailer(outputContext)) < 0) {
+                            logFFmpeg(ret);
+                        }
                     }
 
                     if (outputContext != null && outputContext.pb() != null) {
                         avio_flush(outputContext.pb());
-                        avio_closep(outputContext.pb());
+                        if ((ret = avio_closep(outputContext.pb())) < 0) {
+                            logFFmpeg(ret);
+                        }
                         outputContext.pb(null);
                     }
 
@@ -371,16 +382,22 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                     }
 
                     if (writeCallback != null) {
-                        try { writeCallback.close(); } catch (Exception ignored) {}
+                        try { writeCallback.close(); } catch (Exception e) {
+                            logger.error("Error closing write callback.", e);
+                        }
                         writeCallback = null;
                     }
                     if (seekCallback != null) {
-                        try { seekCallback.close(); } catch (Exception ignored) {}
+                        try { seekCallback.close(); } catch (Exception e) {
+                            logger.error("Error closing seek callback.", e);
+                        }
                         seekCallback = null;
                     }
 
                     if (outputVideoStream != null) {
-                        try { outputVideoStream.close(); } catch (Exception ignored) {}
+                        try { outputVideoStream.close(); } catch (Exception e) {
+                            logger.error("Error closing output video stream.", e);
+                        }
                         outputVideoStream = null;
                     }
 
