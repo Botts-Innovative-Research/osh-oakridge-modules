@@ -97,15 +97,43 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         	} finally {
         		// Regardless of exceptions, go ahead and set it to null. If there were severe problems we can hope
         		// that garbage collection will take care of it eventually.
-                mpegTsProcessor.clearVideoDataBufferListeners();
+                //mpegTsProcessor.clearVideoDataBufferListeners();
         		mpegTsProcessor = null;
         	}
         }
         // We also have to clear out the video output since its settings may have changed (based on having a new input
         // video, for example).
-        videoOutput = null;
-        fileControl = null;
-        hlsControl = null;
+        removeAllOutputs();
+        removeAllControlInputs();
+
+        openStream();
+        if (mpegTsProcessor == null) {
+            logger.error("Could not open stream from data source");
+            return;
+        }
+
+        if (config.output.useVideoFrames) {
+            if (videoOutput == null)
+                createVideoOutput(mpegTsProcessor.getVideoStreamFrameDimensions(), "h264");
+            addOutput(videoOutput, false);
+        } else {
+            videoOutput = null;
+        }
+
+        if (fileControl == null)
+            createFileControl();
+        addControlInput(fileControl);
+        addOutput(fileControl.getFileOutput(), false);
+
+        if (config.output.useHLS) {
+            if (hlsControl == null)
+                createHLSControl();
+            addControlInput(hlsControl);
+            addOutput(hlsControl.getFileOutput(), false);
+        } else {
+            hlsControl = null;
+        }
+
 
         // The non-on-demand subclass will override this method to also open up the stream to get video frame size.
 
@@ -144,6 +172,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
                 cat.setValue(HLSControl.CMD_END_STREAM);
                 hlsControl.submitCommand(new CommandData.Builder().withCommandStream(BigId.NONE).withId(BigId.NONE).withParams(command.getData()).build()).join();
             }
+
         } catch (Exception e) { logger.error("Error stopping video output", e); }
     }
 
@@ -165,6 +194,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 		if (videoOutput != null) {
 			videoOutput.setExecutor(executor);
 		}
+
     }
 
     /**
@@ -195,7 +225,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
     	if (executor != null) {
     		videoOutput.setExecutor(executor);
     	}
-        addOutput(videoOutput, false);
+
         try {
             videoOutput.init();
         } catch (SensorException e) {
@@ -209,10 +239,9 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         try {
             var fileOutput = new FileOutput<>(this, "HLSControlOutput");
             hlsControl = new HLSControl<>(this, fileOutput);
+            //mpegTsProcessor.addVideoDataBufferListener(hlsControl.getFileOutput());
+
             hlsControl.init();
-            addOutput(fileOutput, false);
-            addControlInput(hlsControl);
-            mpegTsProcessor.addVideoDataBufferListener(fileOutput);
         } catch (Exception e) {
             logger.error("Could not initialize HLS stream.", e);
         }
@@ -224,11 +253,9 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         try {
             var fileOutput = new FileOutput<>(this, "FileControlOutput");
             fileControl = new FileControl<>(this, fileOutput);
-            mpegTsProcessor.addVideoDataBufferListener(fileOutput);
+            //mpegTsProcessor.addVideoDataBufferListener(fileControl.getFileOutput());
 
             fileControl.init();
-            addControlInput(fileControl);
-            addOutput(fileOutput, false);
         } catch (Exception e) {
             logger.error("Could not initialize file control.", e);
         }
@@ -268,8 +295,10 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	        	throw new SensorHubException("Either the input file path or the connection string must be set");
 	        }
             mpegTsProcessor.setTimeout(config.connectionConfig.connectTimeout * 1000L);
-
             mpegTsProcessor.clearVideoDataBufferListeners();
+
+            //removeAllControlInputs();
+            //removeAllOutputs();
 	        
 	        if (mpegTsProcessor.openStream()) {
 	        	logger.info("Stream opened for {}", getUniqueIdentifier());
@@ -279,18 +308,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 
 	            	// In case we were waiting until we got video data to make the video frame output, we go ahead and do
 	            	// that now.
-	            	if (videoOutput == null && config.output.useVideoFrames) {
-	            		int[] videoDimensions = mpegTsProcessor.getVideoStreamFrameDimensions();
-	            		String codecFormat = mpegTsProcessor.getCodecName();
-	            		//createVideoOutput(videoDimensions, codecFormat);
-                        createVideoOutput(videoDimensions, "h264");
-                        mpegTsProcessor.addVideoDataBufferListener(videoOutput);
-	            	}
 
-                    createFileControl();
-
-                    if (config.output.useHLS)
-                        createHLSControl();
 	            }
 	        } else {
 	        	throw new SensorHubException("Unable to open stream from data source");
@@ -309,6 +327,16 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
     protected void startStream() throws SensorHubException {
         try {
         	if (mpegTsProcessor != null) {
+                mpegTsProcessor.clearVideoDataBufferListeners();
+
+                if (videoOutput != null)
+                    mpegTsProcessor.addVideoDataBufferListener(videoOutput);
+
+                if (fileControl != null)
+                    mpegTsProcessor.addVideoDataBufferListener(fileControl.getFileOutput());
+
+                if (hlsControl != null)
+                    mpegTsProcessor.addVideoDataBufferListener(hlsControl.getFileOutput());
         		mpegTsProcessor.processStream();
         	}
         } catch (IllegalStateException e) {
