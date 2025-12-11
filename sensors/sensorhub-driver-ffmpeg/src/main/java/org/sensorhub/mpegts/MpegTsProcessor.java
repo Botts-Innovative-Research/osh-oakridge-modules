@@ -555,6 +555,10 @@ public class MpegTsProcessor extends Thread {
         }
     }
 
+    public Set<DataBufferListener> getVideoDataBufferListeners() {
+        return videoDataBufferListeners.keySet();
+    }
+
     public void clearVideoDataBufferListeners() {
         synchronized (videoDataBufferListeners) {
             this.videoDataBufferListeners.clear();

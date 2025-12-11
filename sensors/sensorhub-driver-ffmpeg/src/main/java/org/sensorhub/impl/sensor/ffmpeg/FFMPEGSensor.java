@@ -45,9 +45,6 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
         // the video size.
         setupExecutor();
 
-        // Open up the stream so that we can get the video output.
-        openStream();
-
     }
     
     @Override
@@ -60,6 +57,7 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
 
         // Make sure the stream is already open. (If the sensor has been previously started, then stopped, then the
         // stream won't be open.)
+
         try {
             openStream();
         } catch (SensorHubException e) {
