@@ -112,20 +112,28 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
             return;
         }
 
-        if (config.output.useVideoFrames && videoOutput == null) {
-            createVideoOutput(mpegTsProcessor.getVideoStreamFrameDimensions(), "h264");
+        if (config.output.useVideoFrames) {
+            if (videoOutput == null)
+                createVideoOutput(mpegTsProcessor.getVideoStreamFrameDimensions(), "h264");
+            addOutput(videoOutput, false);
         } else {
             videoOutput = null;
         }
 
         if (fileControl == null)
             createFileControl();
+        addControlInput(fileControl);
+        addOutput(fileControl.getFileOutput(), false);
 
-        if (config.output.useHLS && hlsControl == null) {
-            createHLSControl();
+        if (config.output.useHLS) {
+            if (hlsControl == null)
+                createHLSControl();
+            addControlInput(hlsControl);
+            addOutput(hlsControl.getFileOutput(), false);
         } else {
             hlsControl = null;
         }
+
 
         // The non-on-demand subclass will override this method to also open up the stream to get video frame size.
 
@@ -217,7 +225,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
     	if (executor != null) {
     		videoOutput.setExecutor(executor);
     	}
-        addOutput(videoOutput, false);
+
         try {
             videoOutput.init();
         } catch (SensorException e) {
@@ -232,8 +240,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
             var fileOutput = new FileOutput<>(this, "HLSControlOutput");
             hlsControl = new HLSControl<>(this, fileOutput);
             //mpegTsProcessor.addVideoDataBufferListener(hlsControl.getFileOutput());
-            addControlInput(hlsControl);
-            addOutput(hlsControl.getFileOutput(), false);
+
             hlsControl.init();
         } catch (Exception e) {
             logger.error("Could not initialize HLS stream.", e);
@@ -247,8 +254,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
             var fileOutput = new FileOutput<>(this, "FileControlOutput");
             fileControl = new FileControl<>(this, fileOutput);
             //mpegTsProcessor.addVideoDataBufferListener(fileControl.getFileOutput());
-            addControlInput(fileControl);
-            addOutput(fileControl.getFileOutput(), false);
+
             fileControl.init();
         } catch (Exception e) {
             logger.error("Could not initialize file control.", e);
