@@ -1,9 +1,7 @@
 package com.botts.impl.sensor.aspect;
 
-import com.botts.impl.sensor.aspect.output.*;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
-import com.ghgande.j2mod.modbus.net.TCPMasterConnection;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,11 +35,14 @@ public class MessageHandler {
     int maxGamma = 0;
     int deviceAddress = -1;
 
+    private static final int BACKGROUND_INTERVAL_MS = 5000;
+    private static final int SCAN_INTERVAL_MS = 200;
     private long timeSinceLastMessage;
+    private long timeOfLastMessage;
+    private long timer = 0;
 
     public long getTimeSinceLastMessage() {
-        long now = System.currentTimeMillis();
-        return (now - timeSinceLastMessage);
+        return timeSinceLastMessage;
     }
 
     public MessageHandler(AspectSensor parentSensor, int deviceAddress) {
@@ -60,22 +61,45 @@ public class MessageHandler {
             try {
                 DeviceDescriptionRegisters deviceDescriptionRegisters = new DeviceDescriptionRegisters(parentSensor.commProviderModule.getConnection());
                 deviceDescriptionRegisters.readRegisters(deviceAddress);
-
+                timeOfLastMessage = System.currentTimeMillis();
+                timeSinceLastMessage = 0;
+                timer = 0;
 
                 MonitorRegisters monitorRegisters = new MonitorRegisters(parentSensor.commProviderModule.getConnection(), 100, 21);
                 while (!Thread.currentThread().isInterrupted()) {
-                    timeSinceLastMessage = System.currentTimeMillis();
+                    timer += (int) timeSinceLastMessage;
+                    timeSinceLastMessage = System.currentTimeMillis() - timeOfLastMessage;
+                    timeOfLastMessage = System.currentTimeMillis();
 
                     monitorRegisters.readRegisters(deviceAddress);
 
                     double timestamp = System.currentTimeMillis() / 1000d;
 
-                    parentSensor.dailyFileOutput.getDailyFile(monitorRegisters);
-                    parentSensor.dailyFileOutput.onNewMessage();
+                    if (checkScan(monitorRegisters)) {
+                        if (timer >= SCAN_INTERVAL_MS) {
+                            timer = 0;
 
-                    parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
-                    parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
-                    parentSensor.speedOutput.setData(monitorRegisters, timestamp);
+                            parentSensor.dailyFileOutput.getDailyFile(monitorRegisters);
+                            parentSensor.dailyFileOutput.onNewMessage();
+
+                            parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
+                            parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
+                            parentSensor.speedOutput.setData(monitorRegisters, timestamp);
+                        }
+
+                    } else {
+                        if (timer >= BACKGROUND_INTERVAL_MS) {
+                            timer = 0;
+
+                            parentSensor.dailyFileOutput.getDailyFile(monitorRegisters);
+                            parentSensor.dailyFileOutput.onNewMessage();
+
+                            parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
+                            parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
+                        }
+                    }
+
+
 
                     if (checkOccupancyRecord(monitorRegisters, timestamp)) {
                         Occupancy occupancy = new Occupancy.Builder()
@@ -104,8 +128,9 @@ public class MessageHandler {
         msgReader.start();
     }
 
-
-
+    private boolean checkScan(MonitorRegisters monitorRegisters) {
+        return monitorRegisters.isOccupied() || monitorRegisters.isGammaAlarm() || monitorRegisters.isNeutronAlarm();
+    }
 
     /**
      * Checks whether to write the occupancy record and sets the start time, end time, and alarm flags
