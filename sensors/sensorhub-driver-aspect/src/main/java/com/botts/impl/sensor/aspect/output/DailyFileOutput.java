@@ -6,16 +6,12 @@ import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
-import org.checkerframework.checker.units.qual.A;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
 
 public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
 
@@ -25,8 +21,7 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
 
-    List<String> dailyfile = new ArrayList<>();
-    StringBuilder dailyFileString = new StringBuilder();
+    String dailyFile;
 
     public DailyFileOutput(AspectSensor parentSensor){
         super(SENSOR_OUTPUT_NAME, parentSensor);
@@ -51,22 +46,22 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
     }
 
     public void getDailyFile(MonitorRegisters monitorRegisters){
-        dailyfile.clear();
-
-        dailyfile.add(String.valueOf(monitorRegisters.getTimeElapsed()));
-        dailyfile.add(String.valueOf(monitorRegisters.getInputSignals()));
-        dailyfile.add(String.valueOf(monitorRegisters.getGammaChannelStatus()));
-        dailyfile.add(String.valueOf(monitorRegisters.getGammaChannelCount()));
-        dailyfile.add(String.valueOf(monitorRegisters.getGammaChannelBackground()));
-        dailyfile.add(String.valueOf(monitorRegisters.getGammaChannelVariance()));
-        dailyfile.add(String.valueOf(monitorRegisters.getNeutronChannelStatus()));
-        dailyfile.add(String.valueOf(monitorRegisters.getNeutronChannelCount()));
-        dailyfile.add(String.valueOf(monitorRegisters.getNeutronChannelBackground()));
-        dailyfile.add(String.valueOf(monitorRegisters.getNeutronChannelVariance()));
-        dailyfile.add(String.valueOf(monitorRegisters.getObjectCounter()));
-        dailyfile.add(String.valueOf(monitorRegisters.getObjectMark()));
-        dailyfile.add(String.valueOf(monitorRegisters.getObjectSpeed()));
-        dailyfile.add(String.valueOf(monitorRegisters.getOutputSignals()));
+        dailyFile = String.join(",",
+                String.valueOf(monitorRegisters.getTimeElapsed()),
+                String.valueOf(monitorRegisters.getInputSignals()),
+                String.valueOf(monitorRegisters.getGammaChannelStatus()),
+                String.valueOf(monitorRegisters.getGammaChannelCount()),
+                String.valueOf(monitorRegisters.getGammaChannelBackground()),
+                String.valueOf(monitorRegisters.getGammaChannelVariance()),
+                String.valueOf(monitorRegisters.getNeutronChannelStatus()),
+                String.valueOf(monitorRegisters.getNeutronChannelCount()),
+                String.valueOf(monitorRegisters.getNeutronChannelBackground()),
+                String.valueOf(monitorRegisters.getNeutronChannelVariance()),
+                String.valueOf(monitorRegisters.getObjectCounter()),
+                String.valueOf(monitorRegisters.getObjectMark()),
+                String.valueOf(monitorRegisters.getObjectSpeed()),
+                String.valueOf(monitorRegisters.getOutputSignals())
+        );
     }
     public void onNewMessage() {
         DataBlock dataBlock;
@@ -79,21 +74,12 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
 
 //        System.out.println("Daily File: " + dailyfile);
 
-        for(int i=0; i < dailyfile.size(); i++){
-
-            dailyFileString.append(dailyfile.get(i));
-            if(i< dailyfile.size()-1){
-                dailyFileString.append(",");
-            }
-
-        }
         Instant timeStamp = Instant.now();
         dataBlock.setTimeStamp(0, timeStamp);
-        dataBlock.setStringValue(1, String.valueOf(dailyFileString));
+        dataBlock.setStringValue(1, dailyFile);
 
 
         eventHandler.publish(new DataEvent(timeStamp.toEpochMilli(), DailyFileOutput.this, dataBlock));
-        dailyFileString.setLength(0);
     }
 
     @Override
