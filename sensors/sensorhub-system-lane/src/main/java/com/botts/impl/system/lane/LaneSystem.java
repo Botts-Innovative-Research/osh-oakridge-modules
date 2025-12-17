@@ -56,7 +56,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 /**
- * Extended functionality of the SensorSystem class unique for Open Source Central Alarm (OSCAR)
+ * Extended functionality of the SensorSystem class unique for Open Source Central Alarm Response (OSCAR)
  *
  * @author Alex Almanza
  * @author Kyle Fitzpatrick
@@ -69,9 +69,7 @@ public class LaneSystem extends SensorSystem {
     private static final String LANE_SYSTEM_PREFIX = URN_PREFIX + "osh:system:lane:";
     private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
-    private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
-    private static final String VIDEO_CLIPS_DIRECTORY = "clips/";
-    private static final String VIDEO_STREAMING_DIRECTORY = "streaming/";
+    private static final String RS350_URI = URN_PREFIX + "osh:sensor:rsi:rs350";
 
     AbstractSensorModule<?> existingRPMModule = null;
     Flow.Subscription subscription = null;

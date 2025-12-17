@@ -45,10 +45,8 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
     protected void doInit() throws SensorHubException {
         super.doInit();
 
-
-
         // generate identifiers: use serial number from config or first characters of local ID
-        generateUniqueID("urn:rsi:rs350:", config.serialNumber);
+        generateUniqueID("urn:osh:sensor:rsi:rs350:", config.serialNumber);
         generateXmlID("rsi_rs350_", config.serialNumber);
 
         if (config.outputs.enableLocationOutput) {
