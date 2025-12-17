@@ -67,7 +67,7 @@ public class MessageHandler {
 
                 MonitorRegisters monitorRegisters = new MonitorRegisters(parentSensor.commProviderModule.getConnection(), 100, 21);
                 while (!Thread.currentThread().isInterrupted()) {
-                    timer += (int) timeSinceLastMessage;
+                    timer += timeSinceLastMessage;
                     timeSinceLastMessage = System.currentTimeMillis() - timeOfLastMessage;
                     timeOfLastMessage = System.currentTimeMillis();
 
