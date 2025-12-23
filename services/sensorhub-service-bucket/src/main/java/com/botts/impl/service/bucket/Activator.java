@@ -13,7 +13,7 @@
 
  ******************************************************************************/
 
-package com.botts.impl.service.oscar;
+package com.botts.impl.service.bucket;
 
 import org.osgi.framework.BundleActivator;
 import org.sensorhub.utils.OshBundleActivator;
