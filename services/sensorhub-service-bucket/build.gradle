@@ -4,6 +4,8 @@ version = '1.1.0'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation 'commons-fileupload:commons-fileupload:1.5'
+    implementation 'commons-io:commons-io:2.15.1'
 }
   
 // add info to OSGi manifest

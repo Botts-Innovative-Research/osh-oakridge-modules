@@ -14,9 +14,11 @@ import java.util.regex.Pattern;
 public class DefaultObjectHandler implements IObjectHandler {
 
     protected final IBucketStore bucketStore;
+    private final MultipartObjectHandler multipartHandler;
 
     public DefaultObjectHandler(IBucketStore bucketStore) {
         this.bucketStore = bucketStore;
+        this.multipartHandler = new MultipartObjectHandler(bucketStore);
     }
 
     @Override
@@ -60,6 +62,11 @@ public class DefaultObjectHandler implements IObjectHandler {
         if (ctx.hasObjectKey())
             throw ServiceErrors.unsupportedOperation("You can only create an object from the root of a bucket");
 
+        if (ctx.isMultipartRequest()) {
+            multipartHandler.handleMultipartPost(ctx);
+            return;
+        }
+
         if (ctx.getHeaders().get("Content-Type") == null)
             throw ServiceErrors.badRequest("Content-Type header is required");
 
@@ -85,6 +92,12 @@ public class DefaultObjectHandler implements IObjectHandler {
         var sec = ctx.getSecurityHandler();
         sec.checkPermission(sec.getBucketPermission(bucketName).put);
 
+        if (ctx.isMultipartRequest()) {
+            multipartHandler.handleMultipartPut(ctx);
+            return;
+        }
+
+        // Original raw stream upload behavior
         int successStatus = bucketStore.objectExists(bucketName, objectKey) ?
                 HttpServletResponse.SC_OK : HttpServletResponse.SC_CREATED;
 
