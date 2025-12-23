@@ -95,6 +95,7 @@ public class DefaultObjectHandler implements IObjectHandler {
         }
 
         ctx.getResponse().setStatus(successStatus);
+        ctx.getResponse().setHeader("Location", ctx.getResourceURL(objectKey));
     }
 
     // /buckets/{bucketName}/{objectKey}
