@@ -27,4 +27,9 @@ public class WebIdTests {
             System.out.println(drf);
     }
 
+    @Test
+    public void testAnalysis() {
+
+    }
+
 }
