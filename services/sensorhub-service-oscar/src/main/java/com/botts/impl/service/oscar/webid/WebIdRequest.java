@@ -54,6 +54,22 @@ public class WebIdRequest extends HttpRequest {
         return null;
     }
 
+    public InputStream getForeground() {
+        return foreground;
+    }
+
+    public InputStream getBackground() {
+        return background;
+    }
+
+    public String getDrf() {
+        return drf;
+    }
+
+    public boolean synthesizeBackground() {
+        return synthesizeBackground;
+    }
+
     public static class Builder {
 
         private final WebIdRequest instance;
@@ -83,6 +99,12 @@ public class WebIdRequest extends HttpRequest {
         }
 
         public WebIdRequest build() {
+            if (this.instance.foreground == null) {
+                throw new IllegalStateException("Foreground spectrum is required");
+            }
+            if (this.instance.synthesizeBackground && this.instance.background != null) {
+                throw new IllegalStateException("Cannot specify both synthesizeBackground=true and a background file");
+            }
             return this.instance;
         }
     }

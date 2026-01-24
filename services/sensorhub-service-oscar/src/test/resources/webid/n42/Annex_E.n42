@@ -1,6 +1,5 @@
 <?xml version="1.0"?>
-<?xml-model href="http://physics.nist.gov/N42/2011/N42/schematron/n42.sch" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
-<RadInstrumentData xmlns="http://physics.nist.gov/N42/2011/N42" 
+<RadInstrumentData xmlns="http://physics.nist.gov/N42/2011/N42"
                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
                    xsi:schemaLocation="http://physics.nist.gov/N42/2011/N42 http://physics.nist.gov/N42/2011/n42.xsd"
                    n42DocUUID="3efc2d27-ce4a-41e3-8745-deb5417841de">
