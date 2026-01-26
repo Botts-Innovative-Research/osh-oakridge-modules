@@ -3,7 +3,8 @@ package com.botts.ui.oscar.forms;
 
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
-import com.botts.impl.service.bucket.BucketService;
+import com.botts.impl.service.oscar.OSCARServiceModule;
+import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
 import com.vaadin.event.MouseEvents;
 import com.vaadin.server.FileResource;
 import com.vaadin.ui.*;
@@ -13,13 +14,7 @@ import com.vaadin.v7.data.Property;
 import com.vaadin.v7.ui.Field;
 import com.vaadin.v7.ui.TextField;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.datastore.DataStoreException;
-import org.sensorhub.api.datastore.obs.DataStreamFilter;
-import org.sensorhub.api.datastore.obs.ObsFilter;
-import org.sensorhub.api.sensor.PositionConfig;
-import org.sensorhub.ui.DisplayUtils;
 import org.sensorhub.ui.GenericConfigForm;
-import org.sensorhub.ui.data.ComplexProperty;
 import org.vast.util.Asserts;
 
 import java.io.File;
@@ -42,15 +37,17 @@ public class SiteDiagramForm extends GenericConfigForm {
 
     IBucketService bucketService;
     IBucketStore bucketStore;
-
+    SiteInfoOutput siteInfoOutput;
 
     @Override
     protected Field<?> buildAndBindField(String label, String propId, Property<?> prop) {
         Field<?> field = super.buildAndBindField(label, propId, prop);
 
         bucketService = Asserts.checkNotNull(getParentHub().getModuleRegistry().getModuleByType(IBucketService.class));
-
         bucketStore = Asserts.checkNotNull(bucketService.getBucketStore());
+        OSCARServiceModule oscarService = Asserts.checkNotNull(getParentHub().getModuleRegistry().getModuleByType(OSCARServiceModule.class));
+        siteInfoOutput = (SiteInfoOutput) oscarService.getOSCARSystem().getOutputs().values().stream().filter(output -> output instanceof SiteInfoOutput).findFirst().get();
+        Asserts.checkNotNull(siteInfoOutput);
 
         try {
             String imagePath = getSiteImagePath();
@@ -84,12 +81,9 @@ public class SiteDiagramForm extends GenericConfigForm {
             double[] lowerLeftBound = {bounds[0], bounds[1]};
             double[] upperRightBound = {bounds[2], bounds[3]};
 
-
             VerticalLayout layout = createSiteMapLayout(imagePath, lowerLeftBound, upperRightBound);
 
-            if(layout != null)
-                addComponent(layout);
-
+            addComponent(layout);
         } catch (SensorHubException e){
             getOshLogger().error("Error building SiteMap Diagram field", e);
         }
@@ -116,7 +110,7 @@ public class SiteDiagramForm extends GenericConfigForm {
         File imageFile = new File(imagePath);
 
         if (!imageFile.exists()) {
-            getOshLogger().error("Error building SiteMap Diagram image", imageFile);
+            getOshLogger().error("Error building SiteMap Diagram image");
             layout.addComponent(new Label("No SiteMap Image Found"));
         } else {
             siteMap.setSource(new FileResource(imageFile));
@@ -150,7 +144,7 @@ public class SiteDiagramForm extends GenericConfigForm {
         double imgHeight = siteMap.getHeight();
 
         double longitude = calculateLongitude(pixelX, lowerLeftBound, upperRightBound, imgWidth);
-        double latitude = calcLatitude(pixelY, lowerLeftBound, upperRightBound, imgHeight);
+        double latitude = calculateLatitude(pixelY, lowerLeftBound, upperRightBound, imgHeight);
 
         if (lonField != null)
             lonField.setValue(String.valueOf(longitude));
@@ -161,43 +155,18 @@ public class SiteDiagramForm extends GenericConfigForm {
 
 
     public String getSiteImagePath() throws SensorHubException {
-        var query = getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
-                .withDataStreams(new DataStreamFilter.Builder()
-                        .withObservedProperties(DEF_SITE_PATH)
-                        .build())
-                .withLatestResult()
-                .build());
-
-
-        var result = query.findFirst();
-
-        if(result.isEmpty())
-            return null;
-
-        var obs = result.get();
-
-        return obs.getResult().getStringValue(1);
+        return siteInfoOutput.getLatestRecord() != null ? siteInfoOutput.getLatestRecord().getStringValue(1) : null;
     }
 
     public double[] getBoundingBoxCoordinates() throws SensorHubException {
-        var query = getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
-                .withDataStreams(new DataStreamFilter.Builder()
-                        .withObservedProperties(DEF_LL_BOUND, DEF_UR_BOUND)
-                        .build())
-                .withLatestResult()
-                .build());
-
-        var result = query.findFirst();
-
-        if(result.isEmpty())
+        var siteInfo  = siteInfoOutput.getLatestRecord();
+        if (siteInfo == null)
             return null;
 
-        var obs = result.get();
-
-        var lowerLeftLon = obs.getResult().getDoubleValue(2);
-        var lowerLeftLat = obs.getResult().getDoubleValue(3);
-        var upperRightLon = obs.getResult().getDoubleValue(4);
-        var upperRightLat = obs.getResult().getDoubleValue(5);
+        var lowerLeftLon = siteInfo.getDoubleValue(2);
+        var lowerLeftLat = siteInfo.getDoubleValue(3);
+        var upperRightLon = siteInfo.getDoubleValue(4);
+        var upperRightLat = siteInfo.getDoubleValue(5);
 
         return new double[]{lowerLeftLon, lowerLeftLat, upperRightLon, upperRightLat};
     }
@@ -209,7 +178,7 @@ public class SiteDiagramForm extends GenericConfigForm {
         return lowerLeftBound[0] + (pixelX / imageWidth) * (upperRightBound[0] - lowerLeftBound[0]);
     }
 
-    private double calcLatitude (int pixelY, double[] lowerLeftBound, double[] upperRightBound, double imageHeight) {
+    private double calculateLatitude(int pixelY, double[] lowerLeftBound, double[] upperRightBound, double imageHeight) {
         if (imageHeight == 0) return 0;
 
         return upperRightBound[1] - (pixelY / imageHeight) * (upperRightBound[1] - lowerLeftBound[1]);

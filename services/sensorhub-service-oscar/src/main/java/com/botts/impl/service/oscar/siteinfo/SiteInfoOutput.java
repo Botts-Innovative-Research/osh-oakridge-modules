@@ -116,6 +116,12 @@ public class SiteInfoOutput extends AbstractSensorOutput<OSCARSystem> {
         eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));
     }
 
+    public void setData(DataBlock dataBlock) {
+        this.latestRecord = dataBlock;
+        this.latestRecordTime = System.currentTimeMillis();
+        eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));
+    }
+
     @Override
     public DataComponent getRecordDescription() {
         return recordStructure;
