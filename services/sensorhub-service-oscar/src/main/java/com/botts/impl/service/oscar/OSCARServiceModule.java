@@ -17,6 +17,7 @@ package com.botts.impl.service.oscar;
 
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
+import com.botts.impl.service.oscar.purge.DatabasePurger;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
 import com.botts.impl.service.oscar.siteinfo.SitemapDiagramHandler;
@@ -36,19 +37,20 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
+
     SiteInfoOutput siteInfoOutput;
     RequestReportControl reportControl;
     StatisticsOutput statsOutput;
     StatisticsControl statsControl;
+    OSCARSystem system;
 
     SitemapDiagramHandler sitemapDiagramHandler;
     IBucketService bucketService;
-
-    SpreadsheetHandler spreadsheetHandler;
-    OSCARSystem system;
     IBucketStore bucketStore;
 
+    SpreadsheetHandler spreadsheetHandler;
     VideoRetention videoRetention;
+    DatabasePurger databasePurger;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -130,13 +132,18 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
             var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
             if (getParentHub().getSystemDriverRegistry().getDatabase(system.getUniqueIdentifier()) == null)
                 getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
+
+
+            if (databasePurger == null)
+                databasePurger = new DatabasePurger((IObsSystemDatabase) module, bucketStore, 5);
+
+            databasePurger.start();
         }
 
         statsOutput.start();
 
         if (videoRetention != null)
             videoRetention.start();
-        //videoRetention.decimate(bucketStore.getResourceURI(Constants.VIDEO_BUCKET, "test.mp4"));
     }
 
     @Override
