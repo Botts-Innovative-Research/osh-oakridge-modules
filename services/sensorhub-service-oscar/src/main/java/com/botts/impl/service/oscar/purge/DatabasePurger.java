@@ -24,14 +24,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -51,7 +46,7 @@ public class DatabasePurger {
 
     private static final String DAILY_FILES_BUCKET = "dailyfiles";
 
-    private static final int CONNECTION_STATUS_RETENTION_HOURS = 12;
+    private static final int CONNECTION_STATUS_RETENTION_HOURS = 1;
 
     // Data stream output names
     private static final String OUTPUT_DAILY_FILE = "dailyFile";
@@ -203,7 +198,7 @@ public class DatabasePurger {
                     return null;
                 }
             })
-            .filter(window -> window != null)
+            .filter(Objects::nonNull)
             .sorted(Comparator.comparing(TimeExtent::begin))
             .toList();
     }
@@ -240,7 +235,6 @@ public class DatabasePurger {
     }
 
     public void purgeOldConnectionStatus() {
-        log.info("Purging Connection Status data older than {} hours...", CONNECTION_STATUS_RETENTION_HOURS);
         Set<BigId> ids = getDataStreamIdsByOutputNames(OUTPUT_CONNECTION_STATUS);
 
         if (ids.isEmpty()) {
@@ -265,10 +259,9 @@ public class DatabasePurger {
             return;
         }
 
-        // Purge data that was exported (yesterday and before)
-        ZoneId localZone = ZoneId.systemDefault();
-        LocalDate today = LocalDate.now(localZone);
-        Instant cutoff = today.atStartOfDay(localZone).toInstant();
+        // Purge data that was exported (yesterday and before) - using UTC
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        Instant cutoff = today.atStartOfDay(ZoneOffset.UTC).toInstant();
 
         long deleted = deleteObservationsBeforeTime(ids, cutoff);
         log.info("Purged {} Daily File observations", deleted);
@@ -384,12 +377,12 @@ public class DatabasePurger {
     }
 
     private void exportDailyFileOutputToCSV() {
-        ZoneId localZone = ZoneId.systemDefault();
-        LocalDate yesterday = LocalDate.now(localZone).minusDays(1);
+        // Use UTC for consistent daily file exports
+        LocalDate yesterday = LocalDate.now(ZoneOffset.UTC).minusDays(1);
         String dateStr = yesterday.format(DateTimeFormatter.ISO_LOCAL_DATE);
 
-        Instant startOfYesterday = yesterday.atStartOfDay(localZone).toInstant();
-        Instant endOfYesterday = yesterday.plusDays(1).atStartOfDay(localZone).toInstant();
+        Instant startOfYesterday = yesterday.atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant endOfYesterday = yesterday.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
 
         // Get daily file dataStream info for name lookup
         Map<BigId, IDataStreamInfo> dataStreamInfo = getDataStreamEntriesByOutputNames(OUTPUT_DAILY_FILE);
@@ -412,12 +405,12 @@ public class DatabasePurger {
             String laneId = systemId.contains(":") ? systemId.substring(systemId.lastIndexOf(':') + 1) : systemId;
             String objectKey = String.format("%s_%s.csv", laneId, dateStr);
 
-            exportDataStreamToCSV(dataStreamId, objectKey, startOfYesterday, endOfYesterday, dateStr);
+            exportDataStreamToCSV(dataStreamId, objectKey, startOfYesterday, endOfYesterday);
         }
     }
 
     private void exportDataStreamToCSV(BigId dataStreamId, String objectKey,
-                                       Instant startTime, Instant endTime, String dateStr) {
+                                       Instant startTime, Instant endTime) {
         var filter = new ObsFilter.Builder()
             .withDataStreams(Set.of(dataStreamId))
             .withPhenomenonTimeDuring(startTime, endTime)
@@ -425,7 +418,6 @@ public class DatabasePurger {
 
         Map<String, String> metadata = new HashMap<>();
         metadata.put("Content-Type", "text/csv");
-        metadata.put("export-date", dateStr);
 
         try (OutputStream outputStream = bucketStore.putObject(DAILY_FILES_BUCKET, objectKey, metadata);
              OutputStreamWriter writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8)) {
@@ -461,8 +453,8 @@ public class DatabasePurger {
     }
 
     private long calculateDelayUntilMidnight() {
-        ZoneId localZone = ZoneId.systemDefault();
-        LocalDateTime now = LocalDateTime.now(localZone);
+        // Schedule based on UTC midnight for consistent behavior
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         LocalDateTime nextMidnight = now.toLocalDate().plusDays(1).atStartOfDay();
         Duration duration = Duration.between(now, nextMidnight);
         return duration.toMinutes();

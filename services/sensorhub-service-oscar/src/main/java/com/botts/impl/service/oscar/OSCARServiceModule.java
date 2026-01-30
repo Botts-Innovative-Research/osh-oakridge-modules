@@ -155,6 +155,9 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
             getLogger().error("Could not stop stats output", ex);
         }
 
+        if (databasePurger != null)
+            databasePurger.stop();
+
         if (videoRetention != null)
             videoRetention.stop();
     }
