@@ -26,6 +26,8 @@ import com.botts.impl.service.oscar.stats.StatisticsOutput;
 import com.botts.impl.service.oscar.video.VideoRetention;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
+import org.sensorhub.api.datastore.obs.DataStreamFilter;
+import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.module.IModule;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.module.AbstractModule;
@@ -134,9 +136,10 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         statsOutput.start();
 
+        refreshSiteDiagram();
+
         if (videoRetention != null)
             videoRetention.start();
-        //videoRetention.decimate(bucketStore.getResourceURI(Constants.VIDEO_BUCKET, "test.mp4"));
     }
 
     @Override
@@ -150,6 +153,25 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
 
         if (videoRetention != null)
             videoRetention.stop();
+    }
+
+    private void refreshSiteDiagram() {
+        long currTime = System.currentTimeMillis();
+        var query = getParentHub().getDatabaseRegistry().getFederatedDatabase().getObservationStore().select(new ObsFilter.Builder()
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withOutputNames(SiteInfoOutput.NAME)
+                        .build())
+                .withLatestResult()
+                .build());
+
+        var obsList = query.toList();
+        if (obsList.isEmpty())
+            return;
+
+        var res = obsList.get(0).getResult();
+
+        siteInfoOutput.setData(res);
+        System.out.println("Site diagram refreshed in " +  (System.currentTimeMillis() - currTime) + "ms");
     }
 
     public SitemapDiagramHandler getSitemapDiagramHandler() {
