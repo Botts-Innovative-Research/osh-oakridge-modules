@@ -17,7 +17,7 @@ public class WebIdOutput extends VarRateSensorOutput<LaneSystem> {
     DataEncoding recordEncoding;
 
     public WebIdOutput(LaneSystem parentSensor) {
-        super(parentSensor, 0);
+        super(NAME, parentSensor, 0);
 
         recordStruct = new RADHelper().createWebIdRecord();
         recordEncoding = new TextEncodingImpl();
