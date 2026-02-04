@@ -1,14 +1,24 @@
 package com.botts.impl.service.oscar;
 
-import com.botts.impl.service.oscar.webid.IsotopeAnalysis;
-import com.botts.impl.service.oscar.webid.WebIdAnalysis;
+import net.opengis.swe.v20.DataBlock;
+import org.sensorhub.impl.utils.rad.RADHelper;
+import org.sensorhub.impl.utils.rad.model.IsotopeAnalysis;
+import org.sensorhub.impl.utils.rad.model.WebIdAnalysis;
 import com.botts.impl.service.oscar.webid.WebIdClient;
 import com.botts.impl.service.oscar.webid.WebIdRequest;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.vast.swe.fast.JsonDataParserGson;
+import org.vast.swe.fast.JsonDataWriter;
+import org.vast.swe.fast.JsonDataWriterGson;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.sql.Date;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  *
@@ -121,5 +131,74 @@ public class WebIdTests {
             System.out.println("Note: Auto-detection returned error code " + response.getAnalysisError() +
                     ". This may occur when the N42 file lacks detector information for auto-detection.");
         }
+    }
+
+    @Test
+    public void testSerializeDeserialize() throws IOException {
+        List<IsotopeAnalysis> isotopes = new ArrayList<>();
+        isotopes.add(new IsotopeAnalysis.Builder()
+                .name("test1")
+                .type("testType1")
+                .confidence(92.99f)
+                .confidenceStr("High")
+                .countRate(20000)
+                .build());
+
+        isotopes.add(new IsotopeAnalysis.Builder()
+                .name("test2")
+                .type("testType2")
+                .confidence(12.99f)
+                .confidenceStr("Low")
+                .countRate(5000)
+                .build());
+
+        var timestamp = Instant.parse("2026-02-03T23:42:18.327Z");
+        var isotopeStr = "2 Weird Isotopes";
+        var drf = "Detector 3000";
+        var estimatedDose = 222f;
+        var chi2 = 5.2f;
+        var errorMessage = "No errors!";
+        var warnings = List.of("Isotopes not real", "Dosage not real", "Nothing is real");
+        var occupancyObsId = "abc123";
+
+        var testAnalysis = new WebIdAnalysis.Builder()
+                .isotopes(isotopes)
+                .sampleTime(timestamp)
+                .isotopeString(isotopeStr)
+                .drf(drf)
+                .estimatedDose(estimatedDose)
+                .chi2(chi2)
+                .errorMessage(errorMessage)
+                .analysisWarnings(warnings)
+                .occupancyObsId(occupancyObsId)
+                .build();
+
+        DataBlock dataBlock = WebIdAnalysis.fromWebIdAnalysis(testAnalysis);
+        WebIdAnalysis webIdAnalysis = WebIdAnalysis.toWebIdAnalysis(dataBlock);
+        DataBlock dataBlock2 = WebIdAnalysis.fromWebIdAnalysis(webIdAnalysis);
+
+        ByteArrayOutputStream baos1 = new ByteArrayOutputStream();
+
+        // print json
+        JsonDataWriterGson jsonWriter = new JsonDataWriterGson();
+        jsonWriter.setOutput(baos1);
+        jsonWriter.setDataComponents(new RADHelper().createWebIdRecord());
+        jsonWriter.write(dataBlock);
+        jsonWriter.flush();
+
+        String json1 = baos1.toString();
+
+        ByteArrayOutputStream baos2 = new ByteArrayOutputStream();
+        jsonWriter.setOutput(baos2);
+        jsonWriter.write(dataBlock2);
+        jsonWriter.flush();
+
+        String json2 = baos2.toString();
+
+        Assert.assertEquals(json1, json2);
+
+        System.out.println(json1);
+        System.out.println();
+        System.out.println(json2);
     }
 }

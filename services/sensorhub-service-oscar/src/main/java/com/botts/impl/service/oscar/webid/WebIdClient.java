@@ -57,7 +57,7 @@ public class WebIdClient {
         return new HashSet<>(possibleValues.asList().stream().map(JsonElement::getAsString).toList());
     }
 
-    public WebIdAnalysis analyze(WebIdRequest webIdRequest) throws IOException, InterruptedException {
+    public org.sensorhub.impl.utils.rad.model.WebIdAnalysis analyze(WebIdRequest webIdRequest) throws IOException, InterruptedException {
         if (webIdRequest == null) {
             throw new IllegalArgumentException("WebIdRequest cannot be null");
         }
@@ -135,15 +135,15 @@ public class WebIdClient {
         baos.write("\r\n".getBytes(StandardCharsets.UTF_8));
     }
 
-    private WebIdAnalysis parseAnalysisResponse(String responseBody) {
+    private org.sensorhub.impl.utils.rad.model.WebIdAnalysis parseAnalysisResponse(String responseBody) {
         JsonObject json = JsonParser.parseString(responseBody).getAsJsonObject();
 
-        List<IsotopeAnalysis> isotopes = new ArrayList<>();
+        List<org.sensorhub.impl.utils.rad.model.IsotopeAnalysis> isotopes = new ArrayList<>();
         if (json.has("isotopes") && json.get("isotopes").isJsonArray()) {
             JsonArray isotopesArray = json.getAsJsonArray("isotopes");
             for (JsonElement element : isotopesArray) {
                 JsonObject isotopeObj = element.getAsJsonObject();
-                IsotopeAnalysis isotope = new IsotopeAnalysis.Builder()
+                org.sensorhub.impl.utils.rad.model.IsotopeAnalysis isotope = new org.sensorhub.impl.utils.rad.model.IsotopeAnalysis.Builder()
                         .name(getStringOrNull(isotopeObj, "name"))
                         .type(getStringOrNull(isotopeObj, "type"))
                         .confidence(getFloatOrZero(isotopeObj, "confidence"))
@@ -167,7 +167,7 @@ public class WebIdClient {
             errorMessage = getStringOrNull(json, "error");
         }
 
-        return new WebIdAnalysis.Builder()
+        return new org.sensorhub.impl.utils.rad.model.WebIdAnalysis.Builder()
                 .isotopes(isotopes)
                 .estimatedDose(getDoubleOrZero(json, "estimatedDose"))
                 .chi2(getDoubleOrZero(json, "chi2"))
@@ -176,8 +176,6 @@ public class WebIdClient {
                 .analysisWarnings(warnings)
                 .drf(getStringOrNull(json, "drf"))
                 .isotopeString(getStringOrNull(json, "isotopeString"))
-                .foregroundDescription(getStringOrNull(json, "foregroundDescription"))
-                .backgroundDescription(getStringOrNull(json, "backgroundDescription"))
                 .build();
     }
 

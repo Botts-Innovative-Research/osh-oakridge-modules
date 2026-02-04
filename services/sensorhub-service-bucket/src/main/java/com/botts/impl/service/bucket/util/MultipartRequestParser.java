@@ -19,6 +19,16 @@ public class MultipartRequestParser {
     private static final long MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
     private static final long MAX_REQUEST_SIZE = 200 * 1024 * 1024; // 200MB
     private static final int FILE_SIZE_THRESHOLD = 1024 * 1024; // 1MB
+    private static final String MULTIPART = "multipart/";
+
+    /**
+     * Check if request has multipart content type.
+     * Unlike ServletFileUpload.isMultipartContent(), this supports PUT requests as well.
+     */
+    private static boolean isMultipartContent(HttpServletRequest request) {
+        String contentType = request.getContentType();
+        return contentType != null && contentType.toLowerCase().startsWith(MULTIPART);
+    }
 
     public record MultipartFile(String fieldName, String fileName, String contentType, InputStream inputStream,
                                 long size) {
@@ -40,7 +50,9 @@ public class MultipartRequestParser {
     public static MultipartParseResult parse(HttpServletRequest request)
             throws InvalidRequestException {
 
-        if (!ServletFileUpload.isMultipartContent(request))
+        // Check content type directly to support both POST and PUT requests
+        // (ServletFileUpload.isMultipartContent only allows POST)
+        if (!isMultipartContent(request))
             throw ServiceErrors.badRequest("Not a multipart request");
 
         DiskFileItemFactory factory = new DiskFileItemFactory();

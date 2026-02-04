@@ -1,4 +1,4 @@
-package com.botts.impl.service.oscar.webid;
+package org.sensorhub.impl.utils.rad.model;
 
 public class IsotopeAnalysis {
 
