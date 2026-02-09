@@ -13,6 +13,7 @@ public class CambioConverter {
 
     public Set<String> getSupportedInputFormats() {
         Set<String> formats = new LinkedHashSet<>();
+        formats.add("n42");
         formats.add("N42_2006");
         formats.add("N42_2012");
         formats.add("Spc");
@@ -45,6 +46,7 @@ public class CambioConverter {
         formats.add("Txt");
         formats.add("Csv");
         formats.add("Pcf");
+        formats.add("n42");
         formats.add("N42_2006");
         formats.add("N42_2012");
         formats.add("Chn");

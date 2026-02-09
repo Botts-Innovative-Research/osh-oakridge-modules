@@ -71,6 +71,14 @@ public class WebIdAnalysis {
         return sampleTime;
     }
 
+    public void setSampleTime(Instant sampleTime) {
+        this.sampleTime = sampleTime;
+    }
+
+    public void setOccupancyObsId(String occupancyObsId) {
+        this.occupancyObsId = occupancyObsId;
+    }
+
     public static class Builder {
 
         private final WebIdAnalysis instance;
