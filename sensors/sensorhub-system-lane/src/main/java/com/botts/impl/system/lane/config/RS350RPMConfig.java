@@ -14,30 +14,13 @@
 
 package com.botts.impl.system.lane.config;
 
-import org.sensorhub.api.config.DisplayInfo;
-
 
 /**
- * Configuration for automatic setup of Rapiscan RPM
+ * Configuration for automatic setup of RPM submodule
  *
  * @author Kalyn Stricklin
- * @since May 2025
+ * @since Jan 2026
  */
-public class RapiscanRPMConfig extends RPMConfig {
-    @DisplayInfo(desc = "EML Lane Settings")
-    public EMLConfig emlConfig = new EMLConfig();
-
-    public static class EMLConfig {
-
-        @DisplayInfo(label="Enable EML Analysis", desc="Check if the lane is VM250. For all lanes not designated to be EML lanes do NOT check this box.")
-        public boolean emlEnabled = false;
-
-        @DisplayInfo(label = "Is Collimated", desc = "Collimation status")
-        public boolean isCollimated = false;
-
-        @DisplayInfo(label = "Lane Width (m)", desc = "Width of the lane in meters")
-        public double laneWidth = 4.82f;
-
-    }
+public class RS350RPMConfig extends RPMConfig{
 
 }

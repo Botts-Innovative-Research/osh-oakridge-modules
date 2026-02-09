@@ -50,7 +50,7 @@ public class RS350Message {
         CharacteristicType scanTimeoutNumber = (CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(2);
         CharacteristicType analysisEnabled = (CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(3);
 
-        rs350Item = new RS350Item(scanMode.getCharacteristicValue(), Double.parseDouble(scanNumber.getCharacteristicValue()), Double.parseDouble(scanTimeoutNumber.getCharacteristicValue()), analysisEnabled.getCharacteristicValue());
+        rs350Item = new RS350Item(scanMode.getCharacteristicValue(), Double.parseDouble(scanNumber.getCharacteristicValue()), Double.parseDouble(scanTimeoutNumber.getCharacteristicValue()), Boolean.parseBoolean(analysisEnabled.getCharacteristicValue()));
 
         radAlarmRecieved = false;
 

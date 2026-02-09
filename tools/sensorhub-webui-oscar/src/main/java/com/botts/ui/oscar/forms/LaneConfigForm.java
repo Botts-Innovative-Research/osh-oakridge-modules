@@ -44,6 +44,7 @@ public class LaneConfigForm extends GenericConfigForm {
                 // TODO: Make sure AspectRPMConfig is implemented/handled on main branch oakridge modules
                 classList.put("Aspect", Class.forName(LANE_CONFIG_PACKAGE + "AspectRPMConfig"));
                 classList.put("Rapiscan", Class.forName(LANE_CONFIG_PACKAGE + "RapiscanRPMConfig"));
+                classList.put("RS350", Class.forName(LANE_CONFIG_PACKAGE + "RS350RPMConfig"));
             }
             catch (ClassNotFoundException e)
             {

@@ -23,6 +23,8 @@ import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProviderConfig;
 import com.botts.impl.sensor.rapiscan.EMLConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
+import com.botts.impl.sensor.rs350.RS350Config;
+import com.botts.impl.sensor.rs350.RS350Sensor;
 import com.botts.impl.system.lane.config.*;
 import com.botts.impl.system.lane.helpers.occupancy.OccupancyWrapper;
 import org.sensorhub.api.common.SensorHubException;
@@ -41,7 +43,6 @@ import org.sensorhub.api.system.SystemRemovedEvent;
 import org.sensorhub.impl.comm.TCPCommProviderConfig;
 import org.sensorhub.impl.module.AbstractModule;
 import org.sensorhub.impl.module.ModuleRegistry;
-import org.sensorhub.impl.module.ModuleSecurity;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
@@ -68,6 +69,7 @@ public class LaneSystem extends SensorSystem {
     private static final String URN_PREFIX = "urn:";
     private static final String LANE_SYSTEM_PREFIX = URN_PREFIX + "osh:system:lane:";
     private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
+    private static final String RS350_URI = URN_PREFIX + "osh:sensor:rs350";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
     private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
     private static final String VIDEO_CLIPS_DIRECTORY = "clips/";
@@ -106,7 +108,7 @@ public class LaneSystem extends SensorSystem {
 
         // Check state members too in case config hasn't been updated
         for (var member : getMembers().values()) {
-            if (member instanceof RapiscanSensor || member instanceof AspectSensor) {
+            if (member instanceof RapiscanSensor || member instanceof AspectSensor || member instanceof RS350Sensor) {
                 existingRPMModule = (AbstractSensorModule<?>) member;
             }else if (member instanceof FFMPEGSensor) {
                 ffmpegConfigs.put(member.getLocalID(), ((FFMPEGSensor) member).getConfiguration());
@@ -171,8 +173,8 @@ public class LaneSystem extends SensorSystem {
                     module.init();
                 }
                 catch (Exception e) {
-                    // If rapiscan fails to initialize, then don't load process module
-                    if (module instanceof RapiscanSensor || module instanceof AspectSensor)
+                    // If RPM fails to initialize, then don't load process module
+                    if (module instanceof RapiscanSensor || module instanceof AspectSensor || module instanceof RS350Sensor)
                         rpmFailedToInit = true;
                     getLogger().error("Cannot initialize system component {}", MsgUtils.moduleString(module), e);
                 }
@@ -311,7 +313,7 @@ public class LaneSystem extends SensorSystem {
             if (event.getParentGroupUID() != null && event.getParentGroupUID().equals(getUniqueIdentifier())) {
 
                 // If RPM is removed, nullify local object
-                if (event.getSystemUID().contains(RAPISCAN_URI) || event.getSystemUID().contains(ASPECT_URI)) {
+                if (event.getSystemUID().contains(RAPISCAN_URI) || event.getSystemUID().contains(ASPECT_URI) || event.getSystemUID().contains(RS350_URI)) {
                     occupancyWrapper.removeRpmSensor();
                     existingRPMModule = null;
                 }
@@ -345,7 +347,7 @@ public class LaneSystem extends SensorSystem {
                     }
                 }
 
-                else if ((event.getModule() instanceof RapiscanSensor || event.getModule() instanceof AspectSensor)
+                else if ((event.getModule() instanceof RapiscanSensor || event.getModule() instanceof AspectSensor || event.getModule() instanceof RS350Sensor)
                 && getMembers().containsValue(event.getModule())) {
                     var state = event.getNewState();
 
@@ -456,7 +458,7 @@ public class LaneSystem extends SensorSystem {
             comm.connection.reconnectAttempts = 10;
             comm.moduleClass = ModbusTCPCommProvider.class.getCanonicalName();
             config = aspectConfig;
-        }else if(rpmConfig instanceof RapiscanRPMConfig rapiscanRPMConfig){
+        } else if(rpmConfig instanceof RapiscanRPMConfig rapiscanRPMConfig){
             RapiscanConfig rapiscanConfig = new RapiscanConfig();
             rapiscanConfig.serialNumber = getConfiguration().uniqueID;
             rapiscanConfig.moduleClass = RapiscanSensor.class.getCanonicalName();
@@ -478,8 +480,21 @@ public class LaneSystem extends SensorSystem {
             comm.connection.reconnectAttempts = 10;
 
             config = rapiscanConfig;
-        }else{
-            reportError("RPM Config specified is invalid, config must be of type AspectRPMConfig or RapiscanRPMConfig", new IllegalArgumentException());
+        } else if (rpmConfig instanceof RS350RPMConfig rS350RPMConfig){
+            RS350Config rs350Config = new RS350Config();
+            rs350Config.serialNumber = getConfiguration().uniqueID;
+            rs350Config.moduleClass = RS350Sensor.class.getCanonicalName();
+
+            var comm = rs350Config.commSettings = new TCPCommProviderConfig();
+
+            comm.protocol.remoteHost = rS350RPMConfig.remoteHost;
+            comm.protocol.remotePort = rS350RPMConfig.remotePort;
+            comm.connection.connectTimeout = 5000;
+            comm.connection.reconnectAttempts = 10;
+
+            config = rs350Config;
+        } else{
+            reportError("RPM Config specified is invalid, config must be of type AspectRPMConfig, RapiscanRPMConfig or RS350RPMConfig", new IllegalArgumentException());
         }
 
         config.name = getConfiguration().name + " - RPM";
