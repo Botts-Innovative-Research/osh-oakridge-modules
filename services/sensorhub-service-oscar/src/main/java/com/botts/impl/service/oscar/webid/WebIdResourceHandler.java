@@ -184,6 +184,9 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
 
                     // Find the WebId datastream
                     var dsKeys = obsStore.getDataStreams().selectKeys(new DataStreamFilter.Builder()
+                            .withSystems()
+                            .withUniqueIDs(laneUid)
+                            .done()
                             .withOutputNames("webIdAnalysis")
                             .build()).toList();
 
