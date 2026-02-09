@@ -5,7 +5,6 @@ import com.botts.impl.service.bucket.handler.DefaultObjectHandler;
 import com.botts.impl.service.bucket.util.MultipartRequestParser;
 import com.botts.impl.service.bucket.util.RequestContext;
 import com.botts.impl.service.oscar.cambio.CambioConverter;
-import com.google.gson.Gson;
 import net.opengis.swe.v20.DataBlock;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.IdEncoder;
@@ -77,6 +76,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
                 var file = parseResult.files().get(0);
                 filename = file.fileName();
                 fileBytes = file.inputStream().readAllBytes();
+                System.out.println(new String(fileBytes));
             }
         } else {
             fileBytes = ctx.getRequest().getInputStream().readAllBytes();
@@ -148,7 +148,11 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
     private void processWebIdAnalysis(byte[] fileBytes, String filename, String laneUid, String occupancyObsId, String bucketName) {
         try {
             // Convert to N42
-            byte[] n42Bytes = new CambioConverter().convertToN42(new ByteArrayInputStream(fileBytes), filename);
+            byte[] n42Bytes;
+            if (filename.endsWith(".n42") || filename.endsWith(".xml"))
+                n42Bytes = fileBytes;
+            else
+                n42Bytes = new CambioConverter().convertToN42(new ByteArrayInputStream(fileBytes), filename);
 
             // Call WebId API
             WebIdRequest webIdRequest = new WebIdRequest.Builder()
@@ -162,7 +166,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
 
             // Save analysis JSON to bucket store
             try {
-                String analysisJson = new Gson().toJson(analysis);
+                String analysisJson = analysis.toString();
                 Map<String, String> jsonMetadata = new HashMap<>();
                 jsonMetadata.put("Content-Type", "application/json");
                 bucketStore.createObject(bucketName, new ByteArrayInputStream(analysisJson.getBytes()), jsonMetadata);

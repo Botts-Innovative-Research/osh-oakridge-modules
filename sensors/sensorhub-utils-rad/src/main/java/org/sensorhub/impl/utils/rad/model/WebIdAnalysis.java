@@ -21,6 +21,8 @@ public class WebIdAnalysis {
 
     private String occupancyObsId;
 
+    private String rawJson;
+
     private WebIdAnalysis() {}
 
     public boolean isSuccessful() {
@@ -77,6 +79,15 @@ public class WebIdAnalysis {
 
     public void setOccupancyObsId(String occupancyObsId) {
         this.occupancyObsId = occupancyObsId;
+    }
+
+    public void setRawJson(String rawJson) {
+        this.rawJson = rawJson;
+    }
+
+    @Override
+    public String toString() {
+        return this.rawJson;
     }
 
     public static class Builder {
@@ -172,11 +183,11 @@ public class WebIdAnalysis {
         }
 
         // populate other fields
-        dataBlock.setStringValue(index++, analysis.getIsotopeString().isBlank() ? "" : analysis.getIsotopeString());
-        dataBlock.setStringValue(index++, analysis.getDrf());
+        dataBlock.setStringValue(index++, analysis.getIsotopeString() == null || analysis.getIsotopeString().isBlank() ? "" : analysis.getIsotopeString());
+        dataBlock.setStringValue(index++, analysis.getDrf() == null || analysis.getDrf().isBlank() ? "" : analysis.getDrf());
         dataBlock.setDoubleValue(index++, analysis.getEstimatedDose());
         dataBlock.setDoubleValue(index++, analysis.getChi2());
-        dataBlock.setStringValue(index++, analysis.getErrorMessage().isBlank() ? "" : analysis.getErrorMessage());
+        dataBlock.setStringValue(index++, analysis.getErrorMessage() == null || analysis.getErrorMessage().isBlank() ? "" : analysis.getErrorMessage());
 
         // analysis warnings
         int numWarnings = analysis.getAnalysisWarnings().size();

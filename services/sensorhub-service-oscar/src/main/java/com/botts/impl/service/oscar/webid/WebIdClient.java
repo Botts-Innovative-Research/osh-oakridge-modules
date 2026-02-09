@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.sensorhub.impl.utils.rad.model.WebIdAnalysis;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -167,7 +168,7 @@ public class WebIdClient {
             errorMessage = getStringOrNull(json, "error");
         }
 
-        return new org.sensorhub.impl.utils.rad.model.WebIdAnalysis.Builder()
+        WebIdAnalysis result = new org.sensorhub.impl.utils.rad.model.WebIdAnalysis.Builder()
                 .isotopes(isotopes)
                 .estimatedDose(getDoubleOrZero(json, "estimatedDose"))
                 .chi2(getDoubleOrZero(json, "chi2"))
@@ -177,6 +178,10 @@ public class WebIdClient {
                 .drf(getStringOrNull(json, "drf"))
                 .isotopeString(getStringOrNull(json, "isotopeString"))
                 .build();
+
+        result.setRawJson(responseBody);
+
+        return result;
     }
 
     private String getStringOrNull(JsonObject obj, String key) {
