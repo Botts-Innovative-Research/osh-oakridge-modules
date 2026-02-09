@@ -32,6 +32,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -130,6 +131,12 @@ public class MpegTsProcessor extends Thread {
     boolean injectExtradata = true;
 
     public final Object contextLock = new Object();
+
+    private Queue<AVPacket> fileFrameQueue = null;
+
+    private int fileFrameQueueMax;
+
+    private final AtomicBoolean isSubmittingFrameQueue = new AtomicBoolean(false);
 
     /**
      * Name of thread
@@ -246,6 +253,24 @@ public class MpegTsProcessor extends Thread {
         this.fps = fps;
         this.loop = loop;
         this.useTCP = useTCP;
+    }
+
+    // TODO: Convert from number of frames to seconds, convert to queue size using fps
+    public void setFrameBuffer(int frameCount) {
+        if (frameCount < 0) {
+            frameCount = 0;
+        }
+
+        fileFrameQueueMax = frameCount;
+        if (fileFrameQueue != null) {
+            fileFrameQueue.clear();
+        }
+
+        if (frameCount > 0) {
+            fileFrameQueue = new ArrayBlockingQueue<>(frameCount);
+        } else {
+            fileFrameQueue = null;
+        }
     }
 
     /**
@@ -635,6 +660,20 @@ public class MpegTsProcessor extends Thread {
         }
     }
 
+    public boolean hasWritingListener() {
+        return hasWritingListener(DataBufferListener.class);
+    }
+
+    public boolean hasWritingListener(Class listenerType) {
+        List<DataBufferListener> listeners = getVideoDataBufferListenersByType(listenerType);
+        for (DataBufferListener listener : listeners) {
+            if (listener.isWriting()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public void run() {
 
@@ -661,6 +700,56 @@ public class MpegTsProcessor extends Thread {
         }
     }
 
+    private void submitPacketToListeners(AVPacket avPacket) {
+        boolean isKeyFrame = (avPacket.flags() & avcodec.AV_PKT_FLAG_KEY) != 0;
+
+        // Process video packet
+        byte[] dataBuffer = new byte[avPacket.size()];
+        avPacket.data().get(dataBuffer);
+
+        // Pass data buffer to interested listeners
+        if (isKeyFrame && spsPpsHeader != null) {
+            byte[] combined = new byte[spsPpsHeader.length + dataBuffer.length];
+            System.arraycopy(spsPpsHeader, 0, combined, 0, spsPpsHeader.length);
+            System.arraycopy(dataBuffer, 0, combined, spsPpsHeader.length, dataBuffer.length);
+
+            notifyVideoDataBufferListeners(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, combined, isKeyFrame));
+        } else {
+            notifyVideoDataBufferListeners(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer, isKeyFrame));
+        }
+    }
+
+    private void submitFrameQueueToListenersAsync() {
+        if (isSubmittingFrameQueue.get()) {
+            logger.warn("Already submitting frame queue to listeners");
+            return;
+        }
+
+        isSubmittingFrameQueue.set(true);
+        ExecutorService executor = Executors.newSingleThreadExecutor(new ListenerThreadFactory(WORKER_THREAD_NAME, "FrameQueueSubmit"));
+
+        for (AVPacket avPacket : fileFrameQueue) {
+            executor.submit(() -> submitPacketToListeners(avPacket));
+        }
+        executor.submit(() -> isSubmittingFrameQueue.set(false));
+    }
+
+    private void submitPacketToFrameQueue(AVPacket avPacket) {
+        if (fileFrameQueue == null) {
+            logger.error("No frame queue to submit packet to");
+            return;
+        }
+
+        if (fileFrameQueue.size() >= fileFrameQueueMax) {
+            while (fileFrameQueue.size() >= fileFrameQueueMax) {
+                AVPacket p = fileFrameQueue.poll();
+                av_packet_unref(p);
+                av_packet_free(p);
+            }
+        }
+        fileFrameQueue.add(avPacket);
+    }
+
     /**
      * Stream processing, where the demuxing is invoked on underlying ffmpeg libraries
      * and callbacks, if registered, are invoked for appropriate buffers.
@@ -680,13 +769,10 @@ public class MpegTsProcessor extends Thread {
             boolean doProcessing = true;
 
             while (!terminateProcessing.get() && (retCode = av_read_frame(avFormatContext, avPacket)) >= 0) {
-                boolean skipProcessing = true;
-                for (DataBufferListener listener : videoDataBufferListeners.keySet()) {
-                    if (listener.isWriting()) {
-                        skipProcessing = false;
-                        break;
-                    }
-                }
+                // Discard the frame if no listeners are writing and we're not writing to a frame buffer
+                boolean isWriting = hasWritingListener();
+                boolean skipProcessing = !isWriting && fileFrameQueue == null;
+
                 if (skipProcessing) {
                     av_packet_unref(avPacket);
                     if (decodeQueue != null) {
@@ -743,24 +829,19 @@ public class MpegTsProcessor extends Thread {
                             avPacket = outQueue.poll();
                     }
 
-                    boolean isKeyFrame = (avPacket.flags() & avcodec.AV_PKT_FLAG_KEY) != 0;
-
-                    // Process video packet
-                    byte[] dataBuffer = new byte[avPacket.size()];
-                    avPacket.data().get(dataBuffer);
-
-                    // Pass data buffer to interested listeners
                     frameCount++;
 
-                    if (isKeyFrame && spsPpsHeader != null) {
-                        byte[] combined = new byte[spsPpsHeader.length + dataBuffer.length];
-                        System.arraycopy(spsPpsHeader, 0, combined, 0, spsPpsHeader.length);
-                        System.arraycopy(dataBuffer, 0, combined, spsPpsHeader.length, dataBuffer.length);
-
-                        notifyVideoDataBufferListeners(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, combined, isKeyFrame));
+                    if (isWriting) {
+                        if (fileFrameQueue == null || fileFrameQueue.isEmpty()) {
+                            submitPacketToListeners(avPacket);
+                        } else {
+                            submitPacketToFrameQueue(avPacket);
+                            submitFrameQueueToListenersAsync();
+                        }
                     } else {
-                        notifyVideoDataBufferListeners(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer, isKeyFrame));
+                        fileFrameQueue.add(avPacket);
                     }
+
                 }
                 // clear packet
                 av_packet_unref(avPacket);

@@ -295,6 +295,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	        	throw new SensorHubException("Either the input file path or the connection string must be set");
 	        }
             mpegTsProcessor.setTimeout(config.connectionConfig.connectTimeout * 1000L);
+            mpegTsProcessor.setFrameBuffer(config.connection.bufferSeconds);
             mpegTsProcessor.clearVideoDataBufferListeners();
 
             //removeAllControlInputs();
