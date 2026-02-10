@@ -17,15 +17,15 @@ import org.sensorhub.impl.utils.rad.model.WebIdAnalysis;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 
 public class WebIdResourceHandler extends DefaultObjectHandler {
@@ -33,18 +33,18 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
     private static final Logger logger = LoggerFactory.getLogger(WebIdResourceHandler.class);
     private static final Set<String> WEB_ID_FILE_EXTENSIONS = new CambioConverter().getSupportedInputFormats();
 
+    private static final String RADDATA_PREFIX = "RADDATA://";
+
     private final Pattern pattern;
     private final ISensorHub hub;
     private final WebIdClient webIdClient;
     private final IdEncoder obsIdEncoder;
-    private final ExecutorService executor;
 
     public WebIdResourceHandler(IBucketStore bucketStore, ISensorHub hub, WebIdClient webIdClient) {
         super(bucketStore);
         this.hub = hub;
         this.webIdClient = webIdClient;
         this.obsIdEncoder = hub.getIdEncoders().getObsIdEncoder();
-        this.executor = Executors.newCachedThreadPool();
 
         String joinedExtensions = String.join("|", WEB_ID_FILE_EXTENSIONS);
         String regex = new StringBuilder(".*\\.(")
@@ -66,6 +66,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         String laneUid = ctx.getRequest().getParameter("laneUid");
         String webIdEnabledParam = ctx.getRequest().getParameter("webIdEnabled");
         boolean webIdEnabled = Boolean.parseBoolean(webIdEnabledParam);
+        String drf = ctx.getRequest().getParameter("drf");
 
         // Buffer the file bytes for both storage and analysis
         byte[] fileBytes;
@@ -76,7 +77,6 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
                 var file = parseResult.files().get(0);
                 filename = file.fileName();
                 fileBytes = file.inputStream().readAllBytes();
-                System.out.println(new String(fileBytes));
             }
         } else {
             fileBytes = ctx.getRequest().getInputStream().readAllBytes();
@@ -91,10 +91,9 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
 
         ctx.getResponse().setStatus(HttpServletResponse.SC_OK);
 
-        // If WebId is enabled and client is available, process asynchronously
+        // If WebId is enabled and client is available, process synchronously
         if (webIdEnabled && webIdClient != null) {
-            final String finalFilename = filename;
-            executor.submit(() -> processWebIdAnalysis(fileBytes, finalFilename, laneUid, occupancyObsId, bucketName));
+            processWebIdAnalysis(fileBytes, filename, laneUid, occupancyObsId, bucketName, drf);
         }
     }
 
@@ -109,6 +108,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         String laneUid = ctx.getRequest().getParameter("laneUid");
         String webIdEnabledParam = ctx.getRequest().getParameter("webIdEnabled");
         boolean webIdEnabled = Boolean.parseBoolean(webIdEnabledParam);
+        String drf = ctx.getRequest().getParameter("drf");
 
         // Buffer the file bytes for both storage and analysis
         byte[] fileBytes;
@@ -138,29 +138,59 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         ctx.getResponse().setStatus(HttpServletResponse.SC_CREATED);
         ctx.getResponse().setHeader("Location", ctx.getResourceURL(newObjectKey));
 
-        // If WebID is enabled and client is available, process asynchronously
+        // If WebID is enabled and client is available, process synchronously
         if (webIdEnabled && webIdClient != null) {
-            final String finalFilename = filename;
-            executor.submit(() -> processWebIdAnalysis(fileBytes, finalFilename, laneUid, occupancyObsId, bucketName));
+            processWebIdAnalysis(fileBytes, filename, laneUid, occupancyObsId, bucketName, drf);
         }
     }
 
-    private void processWebIdAnalysis(byte[] fileBytes, String filename, String laneUid, String occupancyObsId, String bucketName) {
+    private void processWebIdAnalysis(byte[] fileBytes, String filename, String laneUid, String occupancyObsId, String bucketName, String drf) {
         try {
-            // Convert to N42
-            byte[] n42Bytes;
-            if (filename.endsWith(".n42") || filename.endsWith(".xml"))
-                n42Bytes = fileBytes;
-            else
-                n42Bytes = new CambioConverter().convertToN42(new ByteArrayInputStream(fileBytes), filename);
+            // Check if this is QR code data (RADDATA:// format)
+            boolean isQrCodeData = isRadDataQrCode(fileBytes);
 
-            // Call WebId API
-            WebIdRequest webIdRequest = new WebIdRequest.Builder()
-                    .foreground(new ByteArrayInputStream(n42Bytes))
-                    .synthesizeBackground(true)
-                    .build();
+            WebIdAnalysis analysis = null;
 
-            WebIdAnalysis analysis = webIdClient.analyze(webIdRequest);
+            // Try sending to WebID first with raw data
+            try {
+                WebIdRequest.Builder requestBuilder = new WebIdRequest.Builder()
+                        .foreground(new ByteArrayInputStream(fileBytes))
+                        .synthesizeBackground(true);
+
+                if (drf != null && !drf.isBlank()) {
+                    requestBuilder.drf(drf);
+                }
+
+                analysis = webIdClient.analyze(requestBuilder.build());
+                logger.info("WebID analysis succeeded with raw data");
+            } catch (Exception e) {
+                // If QR code data failed, don't try Cambio conversion - just rethrow
+                if (isQrCodeData) {
+                    throw new IOException("WebID analysis failed for QR code data", e);
+                }
+
+                // For other formats, try converting to N42 via Cambio and retry
+                logger.info("WebID analysis failed with raw data, attempting Cambio conversion: {}", e.getMessage());
+
+                byte[] n42Bytes;
+                if (filename != null && (filename.endsWith(".n42") || filename.endsWith(".xml"))) {
+                    n42Bytes = fileBytes;
+                } else {
+                    n42Bytes = new CambioConverter().convertToN42(new ByteArrayInputStream(fileBytes), filename);
+                }
+
+                WebIdRequest.Builder requestBuilder = new WebIdRequest.Builder()
+                        .foreground(new ByteArrayInputStream(n42Bytes))
+                        .synthesizeBackground(true);
+
+                if (drf != null && !drf.isBlank()) {
+                    requestBuilder.drf(drf);
+                }
+
+                analysis = webIdClient.analyze(requestBuilder.build());
+                logger.info("WebID analysis succeeded after Cambio conversion");
+            }
+
             analysis.setSampleTime(Instant.now());
             analysis.setOccupancyObsId(occupancyObsId != null ? occupancyObsId : "");
 
@@ -252,6 +282,27 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         } catch (Exception e) {
             logger.error("WebId analysis processing failed", e);
         }
+    }
+
+    /**
+     * Checks if the data is QR code data in RADDATA:// format.
+     */
+    private boolean isRadDataQrCode(byte[] data) {
+        if (data == null || data.length < RADDATA_PREFIX.length()) {
+            return false;
+        }
+        String prefix = new String(data, 0, RADDATA_PREFIX.length(), StandardCharsets.UTF_8);
+        return RADDATA_PREFIX.equals(prefix);
+    }
+
+    /**
+     * Returns true if this handler should handle the request based on the webIdEnabled query parameter.
+     * This allows QR code data to be POSTed directly to the bucket root without specifying a filename.
+     */
+    @Override
+    public boolean canHandleRequest(HttpServletRequest request) {
+        String webIdEnabledParam = request.getParameter("webIdEnabled");
+        return Boolean.parseBoolean(webIdEnabledParam);
     }
 
     @Override
