@@ -1,17 +1,17 @@
 package com.botts.impl.system.lane.helpers.occupancy;
 
+import com.botts.impl.process.rs350.occupancy.Rs350OccupancyProcessModule;
 import com.botts.impl.sensor.aspect.AspectSensor;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.system.lane.helpers.occupancy.state.*;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.command.CommandData;
-import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.command.IStreamingControlInterface;
+import org.sensorhub.api.data.IDataProducerModule;
 import org.sensorhub.api.data.ObsEvent;
 import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.api.event.EventUtils;
-import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.controls.FileControl;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
@@ -29,30 +29,19 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.TimeoutException;
 
 public class OccupancyWrapper {
-    public static final String OCCUPANCY = "occupancy";
-    //public static final String VIDEO_FILE_OUTPUT = FileOutput.outputName;
     public static final String DAILYFILE_NAME = "dailyFile";
 
     private static final Logger logger = LoggerFactory.getLogger(OccupancyWrapper.class);
     private final List<FFMPEGSensorBase<?>> cameras = new ArrayList<>();
-    private AbstractSensorModule<?> rpm;
+    private IDataProducerModule<?> rpm;
     private volatile StateManager stateManager;
     private final ObservationHelper observationHelper = new ObservationHelper();
-    static final int OBS_BUFFER_SECONDS = 1;
-    static final int DATA_FILE_COUNT_INDEX = 11;
-    static final int DATA_FILE_NAME_INDEX = 12;
-    static final int GAMMA_INDEX = 5;
-    static final int NEUTRON_INDEX = 6;
     Instant startTime = Instant.now();
     Instant endTime = Instant.now();
     ISensorHub hub;
-    Text systemInputParam, videoPrefixParam;
-    String inputSystemClass;
-    boolean doPublish = false;
     boolean wasAlarming = false;
     IObsStore rpmObs;
     Flow.Subscription dailyFileSubscription;
-    //final Map<FFMPEGSensorBase<?>, Flow.Subscription> cameraSubscriptions = Collections.synchronizedMap(new HashMap<>());
     Flow.Subscription occupancySubscription;
     List<String> fileNames = new ArrayList<>();
     private long cmdId = 0;
@@ -61,28 +50,28 @@ public class OccupancyWrapper {
         this.hub = hub;
     }
 
-    public OccupancyWrapper(ISensorHub hub, AbstractSensorModule<?> rpm) {
+    public OccupancyWrapper(ISensorHub hub, IDataProducerModule<?> rpm) {
         this(hub);
         setRpmSensor(rpm);
     }
 
-    public OccupancyWrapper(ISensorHub hub, AbstractSensorModule<?> rpm, FFMPEGSensorBase<?>... cameras) {
+    public OccupancyWrapper(ISensorHub hub, IDataProducerModule<?> rpm, FFMPEGSensorBase<?>... cameras) {
         this(hub);
         init(rpm, cameras);
     }
 
-    public OccupancyWrapper(ISensorHub hub, AbstractSensorModule<?> rpm, List<FFMPEGSensorBase<?>> cameras) {
+    public OccupancyWrapper(ISensorHub hub, IDataProducerModule<?> rpm, List<FFMPEGSensorBase<?>> cameras) {
         this(hub);
         init(rpm, cameras);
     }
 
-    public void init(AbstractSensorModule<?> rpm, FFMPEGSensorBase<?>... cameras) {
+    public void init(IDataProducerModule<?> rpm, FFMPEGSensorBase<?>... cameras) {
         setRpmSensor(rpm);
         setFFmpegSensors(cameras);
         //registerStateListener();
     }
 
-    public void init(AbstractSensorModule<?> rpm, List<FFMPEGSensorBase<?>> cameras) {
+    public void init(IDataProducerModule<?> rpm, List<FFMPEGSensorBase<?>> cameras) {
         setRpmSensor(rpm);
         setFFmpegSensors(cameras);
     }
@@ -244,7 +233,7 @@ public class OccupancyWrapper {
         }
     }
 
-    public void setRpmSensor(AbstractSensorModule<?> sensor) {
+    public void setRpmSensor(IDataProducerModule<?> sensor) {
         Asserts.checkNotNull(sensor);
         // TODO For now, assuming the added sensor is an rpm. Need to figure out the correct way to check.
         if (setStateManager(sensor)) {
@@ -254,11 +243,13 @@ public class OccupancyWrapper {
             observationHelper.clear();
     }
 
-    private boolean setStateManager(AbstractSensorModule<?> sensor) {
+    private boolean setStateManager(IDataProducerModule<?> sensor) {
         if (sensor instanceof AspectSensor) {
             stateManager = new AspectStateManager();
         } else if (sensor instanceof RapiscanSensor) {
             stateManager = new RapiscanStateManager();
+        } else if (sensor instanceof Rs350OccupancyProcessModule){
+            stateManager = new Rs350StateManager();
         } else {
             logger.error("Could not determine RPM type from provided module.");
             return false;

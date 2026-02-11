@@ -18,7 +18,7 @@ package com.botts.impl.process.rs350.occupancy;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.processing.ProcessConfig;
 
-public class OccupancyProcessConfig extends ProcessConfig {
+public class Rs350OccupancyProcessConfig extends ProcessConfig {
 
     @DisplayInfo.Required
     @DisplayInfo(desc = "Serial number or unique identifier")

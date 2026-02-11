@@ -10,8 +10,10 @@ public class DailyFileStruct {
     final static RADHelper radHelper = new RADHelper();
     public static final String DAILY_FILE_NAME = "dailyFile";
     public static final String DAILY_FILE_LABEL = "Daily File";
+    public static final String ALARM_NAME = "isAlarming";
+    public static final String ALARM_LABEL = "Is Alarming";
     static Time samplingTime = radHelper.createPrecisionTimeStamp();
-    static Boolean rpmMsg = radHelper.createBoolean().name("isAlarming").label("Is Alarming").value(false).build();
+    static Boolean rpmMsg = radHelper.createBoolean().name(ALARM_NAME).label(ALARM_LABEL).value(false).build();
 
     final static DataRecord dataStruct = radHelper.createRecord()
             .name(DAILY_FILE_NAME)

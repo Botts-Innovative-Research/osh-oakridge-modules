@@ -49,7 +49,7 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.TimeoutException;
 
 // Based on SMLProcessImpl
-public class OccupancyProcessModule extends AbstractProcessModule<OccupancyProcessConfig> {
+public class Rs350OccupancyProcessModule extends AbstractProcessModule<Rs350OccupancyProcessConfig> {
 
     protected SMLUtils smlUtils;
     public AggregateProcessImpl wrapperProcess;
@@ -63,7 +63,7 @@ public class OccupancyProcessModule extends AbstractProcessModule<OccupancyProce
     /**
      * Standalone processing module to be recognized by OSH module provider, accessible in the OSH Admin UI.
      */
-    public OccupancyProcessModule()
+    public Rs350OccupancyProcessModule()
     {
         wrapperProcess = new AggregateProcessImpl();
         wrapperProcess.setUniqueIdentifier(UUID.randomUUID().toString());

@@ -15,6 +15,7 @@
 
 package com.botts.impl.process.rs350.occupancy.helpers;
 
+import com.botts.impl.process.rs350.occupancy.Rs350OccupancyProcessModule;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.api.data.IDataProducer;
@@ -24,7 +25,6 @@ import org.sensorhub.api.event.IEventListener;
 import org.sensorhub.api.processing.IProcessModule;
 import org.sensorhub.api.processing.ProcessingException;
 import org.sensorhub.impl.event.BasicEventHandler;
-import com.botts.impl.process.rs350.occupancy.OccupancyProcessModule;
 import org.vast.process.DataQueue;
 import org.vast.process.ProcessException;
 import org.vast.sensorML.SMLHelper;
@@ -80,7 +80,7 @@ public class DataOutputInterface implements IStreamingDataInterface {
      * @param encoding data encoding retrieved from data stream info
      * @throws ProcessingException if unable to connect output and process
      */
-    public DataOutputInterface(OccupancyProcessModule parentProcess, AbstractSWEIdentifiable outputDescriptor, DataEncoding encoding) throws ProcessingException
+    public DataOutputInterface(Rs350OccupancyProcessModule parentProcess, AbstractSWEIdentifiable outputDescriptor, DataEncoding encoding) throws ProcessingException
     {
         this.parentProcess = parentProcess;
         this.outputDef = SMLHelper.getIOComponent(outputDescriptor);

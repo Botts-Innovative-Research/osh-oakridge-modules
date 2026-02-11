@@ -15,4 +15,7 @@ public class FFMpegConfig extends ConnectionConfig {
     @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.PASSWORD)
     @DisplayInfo(label = "Password")
     public String password;
+
+    @DisplayInfo(label = "Camera Video Buffer Length")
+    public int bufferSeconds = 0;
 }

@@ -48,17 +48,24 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     ISensorHub hub;
     Text systemInputParam;
     String inputSystemID;
+    private static final RADHelper fac = new RADHelper();
     public static final double DAILYFILE_INTERVAL_MS = 500;
     public static final String SYSTEM_INPUT_PARAM = "systemInput";
     public static final OccupancyOutput occupancyOutput = new OccupancyOutput(new SensorSystem());
+
     public static final String OCCUPANCY_NAME = occupancyOutput.getName();
-    public static final String ALARM_NAME = "RS350 Alarm";
-    public static final String BACKGROUND_NAME = "RS350 Background Report";
-    public static final String FOREGROUND_NAME = "RS350 Foreground Report";
+    public static final String ALARM_NAME = "alarm";
+    public static final String BACKGROUND_NAME = "backgroundReport";
+    public static final String FOREGROUND_NAME = "foregroundReport";
+    private static final String DURATION_NAME = fac.createDuration().getName();
+    private static final String ALARM_DESCRIPTION_NAME = fac.createAlarmDescription().getName();
+    private static final String GAMMA_GROSS_COUNT_NAME = fac.createGammaGrossCount().getName();
+    private static final String NEUTRON_GROSS_COUNT_NAME = fac.createNeutronGrossCount().getName();
+
     public static final List<String> RS350_OUTPUTS = List.of(ALARM_NAME, BACKGROUND_NAME, FOREGROUND_NAME);
     public final List<CompletableFuture<?>> completableFutures = new ArrayList<>(RS350_OUTPUTS.size());
     private Occupancy.Builder occupancyBuilder;
-    private static final RADHelper fac = new RADHelper();
+
 
     private volatile boolean isAlarming = false;
     private int occupancyCount = 0;
@@ -206,8 +213,8 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
             alarmComponent.setData(eventRecord);
 
             double startTime = ((Time) alarmComponent.getComponent("Sampling Time")).getValue().getAsDouble();
-            double endTime = startTime + ((Quantity) alarmComponent.getComponent("Duration")).getValue();
-            String alarmDesc = alarmComponent.getComponent("AlarmDescription").getData().getStringValue().toLowerCase();
+            double endTime = startTime + ((Quantity) alarmComponent.getComponent(DURATION_NAME)).getValue();
+            String alarmDesc = alarmComponent.getComponent(ALARM_DESCRIPTION_NAME).getData().getStringValue().toLowerCase();
             boolean hasGammaAlarm = alarmDesc.contains("gamma");
             boolean hasNeutronAlarm = alarmDesc.contains("neutron");
             occupancyCount++;
@@ -237,8 +244,8 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
                 isAlarming = true;
             }
 
-            int newGrossGamma = ((Count)foregroundComponent.getComponent("GammaGrossCount")).getValue();
-            int newGrossNeutron = ((Count)foregroundComponent.getComponent("NeutronGrossCount")).getValue();
+            int newGrossGamma = ((Count)foregroundComponent.getComponent(GAMMA_GROSS_COUNT_NAME)).getValue();
+            int newGrossNeutron = ((Count)foregroundComponent.getComponent(NEUTRON_GROSS_COUNT_NAME)).getValue();
 
             if (newGrossGamma > maxGammaCount) {
                 maxGammaCount = newGrossGamma;
@@ -259,8 +266,8 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
             }
             backgroundComponent.setData(eventRecord);
 
-            Count grossCount = (Count) backgroundComponent.getComponent("Neutron Gross Count");
-            Quantity liveTime = (Quantity) backgroundComponent.getComponent("Duration");
+            Count grossCount = (Count) backgroundComponent.getComponent(NEUTRON_GROSS_COUNT_NAME);
+            Quantity liveTime = (Quantity) backgroundComponent.getComponent(DURATION_NAME);
             latestNeutronBackground = grossCount.getValue() / liveTime.getValue();
         }
     }
@@ -274,9 +281,18 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
 
         double currentTime = System.currentTimeMillis();
         if (currentTime - lastDailyfileTime > DAILYFILE_INTERVAL_MS) {
+            updateDailyFile(isAlarming);
             publishData(DailyFileStruct.DAILY_FILE_NAME);
             lastDailyfileTime = currentTime;
         }
+    }
+
+    private void updateDailyFile(boolean isAlarming) {
+        DataComponent dailyFile = outputData.getComponent(DailyFileStruct.DAILY_FILE_NAME);
+        if (!dailyFile.hasData()) {
+            dailyFile.renewDataBlock();
+        }
+        dailyFile.getComponent(DailyFileStruct.ALARM_NAME).getData().setBooleanValue(isAlarming);
     }
 
     /**

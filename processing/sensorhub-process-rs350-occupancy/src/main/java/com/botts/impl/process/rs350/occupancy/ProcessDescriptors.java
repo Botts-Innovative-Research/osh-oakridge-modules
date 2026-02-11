@@ -43,14 +43,14 @@ public class ProcessDescriptors extends AbstractProcessProvider
     @Override
     public Class<? extends IModule<?>> getModuleClass()
     {
-        return OccupancyProcessModule.class;
+        return Rs350OccupancyProcessModule.class;
     }
 
 
     @Override
     public Class<? extends ModuleConfig> getModuleConfigClass()
     {
-        return OccupancyProcessConfig.class;
+        return Rs350OccupancyProcessConfig.class;
     }
 
 }
