@@ -23,6 +23,9 @@ public class MessageHandler {
 
     private final String messageDelimiter;
 
+    private long timeSinceLastMessage;
+
+
     public interface MessageListener {
 
         void onNewMessage(RS350Message message);
@@ -41,6 +44,7 @@ public class MessageHandler {
             try {
 
                 ArrayList<Character> buffer = new ArrayList<>();
+                timeSinceLastMessage = 0;
 
                 while (continueProcessing) {
 
@@ -149,5 +153,9 @@ public class MessageHandler {
 
             isProcessing.set(false);
         }
+    }
+
+    public long getTimeSinceLastMessage() {
+        return timeSinceLastMessage;
     }
 }

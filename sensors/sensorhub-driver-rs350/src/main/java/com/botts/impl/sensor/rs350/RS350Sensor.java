@@ -3,10 +3,7 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.rs350;
 
-import com.botts.impl.sensor.rs350.output.AlarmOutput;
-import com.botts.impl.sensor.rs350.output.BackgroundOutput;
-import com.botts.impl.sensor.rs350.output.ForegroundOutput;
-import com.botts.impl.sensor.rs350.output.StatusOutput;
+import com.botts.impl.sensor.rs350.output.*;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.sensor.SensorException;
@@ -29,9 +26,13 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
     BackgroundOutput backgroundOutput;
     ForegroundOutput foregroundOutput;
     AlarmOutput alarmOutput;
+    ConnectionStatusOutput connectionStatusOutput;
+
     RobustConnection connection;
     MessageHandler messageHandler;
     InputStream msgIn;
+    private boolean isRunning;
+    private Thread tcpConnectionThread;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -68,6 +69,10 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
             addOutput(alarmOutput, false);
             alarmOutput.init();
         }
+
+        connectionStatusOutput = new ConnectionStatusOutput(this);
+        addOutput(connectionStatusOutput, false);
+        connectionStatusOutput.init();
     }
 
     private void tryConnection() throws SensorHubException {
@@ -126,7 +131,18 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
     }
 
     @Override
+    protected void afterStart() {
+        // Begin heartbeat check
+        tcpConnectionThread = new Thread(this::heartbeat);
+        isRunning = true;
+        tcpConnectionThread.start();
+    }
+
+    @Override
     protected void doStop() throws SensorHubException {
+        isRunning = false;
+        if(tcpConnectionThread != null)
+            tcpConnectionThread = null;
 
         if (connection != null) {
             try {
@@ -152,10 +168,45 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
         messageHandler.stopProcessing();
     }
 
+    public ConnectionStatusOutput getConnectionStatusOutput() {
+        return connectionStatusOutput;
+    }
+
+
+
     @Override
     public boolean isConnected() {
         if(connection == null) return false;
 
         return connection.isConnected();
+    }
+
+    public void checkConnection(){
+        // if connection is lost then reconnect in here !!!
+        if(!isConnected()){
+            reportStatus("RS350 connection lost. Trying to reconnect...");
+            connection.reconnect();
+        }
+    }
+
+
+    public void heartbeat() {
+
+        while (isRunning) {
+            if(messageHandler.getTimeSinceLastMessage() < config.commSettings.connection.reconnectPeriod) {
+
+                this.connectionStatusOutput.onNewMessage(true);
+            }
+            else {
+                this.connectionStatusOutput.onNewMessage(false);
+
+                checkConnection();
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (Exception e) {
+                logger.debug("Couldn't sleep");
+            }
+        }
     }
 }
