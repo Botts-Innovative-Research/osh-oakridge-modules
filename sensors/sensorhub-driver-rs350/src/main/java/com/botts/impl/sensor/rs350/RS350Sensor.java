@@ -114,19 +114,19 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
         messageHandler = new MessageHandler(msgIn, "</RadInstrumentData>");
 
         if (config.outputs.enableStatusOutput) {
-            messageHandler.addMessageListener(statusOutput);
+            messageHandler.addStatusListener(statusOutput);
         }
 
         if (config.outputs.enableBackgroundOutput) {
-            messageHandler.addMessageListener(backgroundOutput);
+            messageHandler.addBackgroundListener(backgroundOutput);
         }
 
         if (config.outputs.enableForegroundOutput) {
-            messageHandler.addMessageListener(foregroundOutput);
+            messageHandler.addForegroundListener(foregroundOutput);
         }
 
         if (config.outputs.enableAlarmOutput) {
-            messageHandler.addMessageListener(alarmOutput);
+            messageHandler.addAlarmListener(alarmOutput);
         }
     }
 

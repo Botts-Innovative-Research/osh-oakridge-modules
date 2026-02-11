@@ -13,7 +13,7 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.DataArrayImpl;
 import org.vast.data.TextEncodingImpl;
 
-public class BackgroundOutput extends AbstractSensorOutput<RS350Sensor> implements MessageHandler.MessageListener {
+public class BackgroundOutput extends AbstractSensorOutput<RS350Sensor> implements MessageHandler.BackgroundListener {
 
     private static final String SENSOR_OUTPUT_NAME = "backgroundReport";
     private static final String SENSOR_OUTPUT_LABEL = "Background Report";
@@ -56,13 +56,13 @@ public class BackgroundOutput extends AbstractSensorOutput<RS350Sensor> implemen
     }
 
     public void onNewMessage(RS350Message message) {
-        if (message.getRs350BackgroundMeasurement() == null) {
-            return;
-        }
+        dataStruct.clearData();
         DataBlock dataBlock;
 
         if (latestRecord == null) {
             dataBlock = dataStruct.createDataBlock();
+            dataBlock.updateAtomCount();
+            dataStruct.setData(dataBlock);
         } else {
             dataBlock = latestRecord.renew();
         }
@@ -73,24 +73,24 @@ public class BackgroundOutput extends AbstractSensorOutput<RS350Sensor> implemen
         dataBlock.setLongValue(index++, message.getRs350BackgroundMeasurement().getStartDateTime() / 1000);
         dataBlock.setDoubleValue(index++, message.getRs350BackgroundMeasurement().getRealTimeDuration());
 
-        int linearSpectrumSize = message.getRs350BackgroundMeasurement().getLinEnCalSpectrum().length;
+        int linearSpectrumSize = message.getRs350BackgroundMeasurement().getLinEnCalSpectrum().size();
 
         dataBlock.setIntValue(index++, linearSpectrumSize);
         var linearSpectrumArray = ((DataArrayImpl)dataStruct.getComponent("linearSpectrum"));
         linearSpectrumArray.updateSize();
         dataBlock.updateAtomCount();
         for (int i = 0; i < linearSpectrumSize; i++) {
-            dataBlock.setDoubleValue(index++, message.getRs350BackgroundMeasurement().getLinEnCalSpectrum()[i]);
+            dataBlock.setDoubleValue(index++, message.getRs350BackgroundMeasurement().getLinEnCalSpectrum().get(i));
         }
 
-        int compressedSpectrumSize = message.getRs350BackgroundMeasurement().getCmpEnCalSpectrum().length;
+        int compressedSpectrumSize = message.getRs350BackgroundMeasurement().getCmpEnCalSpectrum().size();
 
         dataBlock.setIntValue(index++, compressedSpectrumSize);
         var compressedSpectrumArray = ((DataArrayImpl)dataStruct.getComponent("compressedSpectrum"));
         compressedSpectrumArray.updateSize();
         dataBlock.updateAtomCount();
         for (int i = 0; i < compressedSpectrumSize; i++) {
-            dataBlock.setDoubleValue(index++, message.getRs350BackgroundMeasurement().getCmpEnCalSpectrum()[i]);
+            dataBlock.setDoubleValue(index++, message.getRs350BackgroundMeasurement().getCmpEnCalSpectrum().get(i));
         }
 
         dataBlock.setDoubleValue(index++, message.getRs350BackgroundMeasurement().getGammaGrossCount());

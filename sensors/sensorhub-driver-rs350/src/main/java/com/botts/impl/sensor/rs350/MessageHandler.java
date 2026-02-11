@@ -26,12 +26,26 @@ public class MessageHandler {
     private long timeSinceLastMessage;
 
 
-    public interface MessageListener {
-
+    public interface StatusListener {
         void onNewMessage(RS350Message message);
     }
 
-    private final ArrayList<MessageListener> listeners = new ArrayList<>();
+    public interface BackgroundListener {
+        void onNewMessage(RS350Message message);
+    }
+
+    public interface ForegroundListener {
+        void onNewMessage(RS350Message message);
+    }
+
+    public interface AlarmListener {
+        void onNewMessage(RS350Message message);
+    }
+
+    private final ArrayList<StatusListener> statusListeners = new ArrayList<>();
+    private final ArrayList<BackgroundListener> backgroundListeners = new ArrayList<>();
+    private final ArrayList<ForegroundListener> foregroundListeners = new ArrayList<>();
+    private final ArrayList<AlarmListener> alarmListeners = new ArrayList<>();
 
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
 
@@ -120,7 +134,23 @@ public class MessageHandler {
 
                 try {
                     RadInstrumentDataType radInstrumentDataType = radHelper.getRadInstrumentData(currentMessage);
-                    listeners.forEach(messageListener -> messageListener.onNewMessage(new RS350Message(radInstrumentDataType)));
+                    RS350Message message = new RS350Message(radInstrumentDataType);
+
+                    if (message.getRs350InstrumentCharacteristics() != null && message.getRs350Item() != null && message.getRs350LinEnergyCalibration() != null && message.getRs350CmpEnergyCalibration() != null) {
+                        statusListeners.forEach(listener -> listener.onNewMessage(message));
+                    }
+
+                    if (message.getRs350BackgroundMeasurement() != null) {
+                        backgroundListeners.forEach(listener -> listener.onNewMessage(message));
+                    }
+
+                    if (message.getRs350ForegroundMeasurement() != null) {
+                        foregroundListeners.forEach(listener -> listener.onNewMessage(message));
+                    }
+
+                    if (message.getRs350RadAlarm() != null && message.getRs350DerivedData() != null) {
+                        alarmListeners.forEach(listener -> listener.onNewMessage(message));
+                    }
                 }
                 catch (Exception e){
                     log.error("Error reading message: " + e);
@@ -142,9 +172,20 @@ public class MessageHandler {
         this.messageNotifier.start();
     }
 
-    public void addMessageListener(MessageListener listener) {
+    public void addStatusListener(StatusListener listener) {
+        statusListeners.add(listener);
+    }
 
-        listeners.add(listener);
+    public void addBackgroundListener(BackgroundListener listener) {
+        backgroundListeners.add(listener);
+    }
+
+    public void addForegroundListener(ForegroundListener listener) {
+        foregroundListeners.add(listener);
+    }
+
+    public void addAlarmListener(AlarmListener listener) {
+        alarmListeners.add(listener);
     }
 
     public void stopProcessing() {

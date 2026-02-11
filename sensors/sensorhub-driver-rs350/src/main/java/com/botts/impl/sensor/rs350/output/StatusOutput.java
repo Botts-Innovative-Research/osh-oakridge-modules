@@ -15,7 +15,7 @@ import org.vast.data.DataBlockMixed;
 import org.vast.data.DataValue;
 import org.vast.data.TextEncodingImpl;
 
-public class StatusOutput extends AbstractSensorOutput<RS350Sensor>implements MessageHandler.MessageListener {
+public class StatusOutput extends AbstractSensorOutput<RS350Sensor> implements MessageHandler.StatusListener {
 
     private static final String SENSOR_OUTPUT_NAME = "status";
     private static final String SENSOR_OUTPUT_LABEL = "Status";
@@ -55,10 +55,6 @@ public class StatusOutput extends AbstractSensorOutput<RS350Sensor>implements Me
 
 
     public void onNewMessage(RS350Message message) {
-        if (message.getRs350InstrumentCharacteristics() == null || message.getRs350Item() == null) {
-            return;
-        }
-
         DataBlock dataBlock;
 
         if (latestRecord == null) {

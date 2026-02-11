@@ -15,7 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.vast.data.DataArrayImpl;
 import org.vast.data.TextEncodingImpl;
 
-public class ForegroundOutput extends AbstractSensorOutput<RS350Sensor> implements MessageHandler.MessageListener {
+public class ForegroundOutput extends AbstractSensorOutput<RS350Sensor> implements MessageHandler.ForegroundListener {
 
     private static final String SENSOR_OUTPUT_NAME = "foregroundReport";
 
@@ -63,13 +63,13 @@ public class ForegroundOutput extends AbstractSensorOutput<RS350Sensor> implemen
 
 
     public void onNewMessage(RS350Message message) {
-        if (message.getRs350ForegroundMeasurement() == null) {
-            return;
-        }
+        dataStruct.clearData();
         DataBlock dataBlock;
 
         if (latestRecord == null) {
             dataBlock = dataStruct.createDataBlock();
+            dataBlock.updateAtomCount();
+            dataStruct.setData(dataBlock);
         } else {
             dataBlock = latestRecord.renew();
         }
@@ -80,24 +80,24 @@ public class ForegroundOutput extends AbstractSensorOutput<RS350Sensor> implemen
         dataBlock.setLongValue(index++, message.getRs350ForegroundMeasurement().getStartDateTime() / 1000);
         dataBlock.setDoubleValue(index++, message.getRs350ForegroundMeasurement().getRealTimeDuration());
 
-        int linearSpectrumSize = message.getRs350ForegroundMeasurement().getLinEnCalSpectrum().length;
+        int linearSpectrumSize = message.getRs350ForegroundMeasurement().getLinEnCalSpectrum().size();
 
         dataBlock.setIntValue(index++, linearSpectrumSize);
         var linearSpectrumArray = ((DataArrayImpl)dataStruct.getComponent("linearSpectrum"));
         linearSpectrumArray.updateSize();
         dataBlock.updateAtomCount();
         for (int i = 0; i < linearSpectrumSize; i++) {
-            dataBlock.setDoubleValue(index++, message.getRs350ForegroundMeasurement().getLinEnCalSpectrum()[i]);
+            dataBlock.setDoubleValue(index++, message.getRs350ForegroundMeasurement().getLinEnCalSpectrum().get(i));
         }
 
-        int compressedSpectrumSize = message.getRs350ForegroundMeasurement().getCmpEnCalSpectrum().length;
+        int compressedSpectrumSize = message.getRs350ForegroundMeasurement().getCmpEnCalSpectrum().size();
 
         dataBlock.setIntValue(index++, compressedSpectrumSize);
         var compressedSpectrumArray = ((DataArrayImpl)dataStruct.getComponent("compressedSpectrum"));
         compressedSpectrumArray.updateSize();
         dataBlock.updateAtomCount();
         for (int i = 0; i < compressedSpectrumSize; i++) {
-            dataBlock.setDoubleValue(index++, message.getRs350ForegroundMeasurement().getCmpEnCalSpectrum()[i]);
+            dataBlock.setDoubleValue(index++, message.getRs350ForegroundMeasurement().getCmpEnCalSpectrum().get(i));
         }
 
         dataBlock.setDoubleValue(index++, message.getRs350ForegroundMeasurement().getGammaGrossCount());

@@ -7,14 +7,8 @@ public class RS350ForegroundMeasurement {
         this.classCode = classCode;
         this.startDateTime = startDateTime;
         this.realTimeDuration = realTimeDuration;
-        int linNumEl = linEnCalSpectrum.size();
-        this.linEnCalSpectrum = new double[linNumEl];
-        for (int idx = 0; idx < linNumEl; ++idx) {
-            this.linEnCalSpectrum[idx]= linEnCalSpectrum.get(idx);}
-        int cmpNumEl = cmpEnCalSpectrum.size();
-        this.cmpEnCalSpectrum = new double[cmpNumEl];
-        for (int idx = 0; idx < cmpNumEl; ++idx) {
-            this.cmpEnCalSpectrum[idx]= cmpEnCalSpectrum.get(idx);}
+        this.linEnCalSpectrum = linEnCalSpectrum;
+        this.cmpEnCalSpectrum = cmpEnCalSpectrum;
         this.gammaGrossCount = gammaGrossCount;
         this.neutronGrossCount = neutronGrossCount;
         this.doseRate = doseRate;
@@ -26,8 +20,8 @@ public class RS350ForegroundMeasurement {
     String classCode;
     Long startDateTime;
     Double realTimeDuration;
-    double[] linEnCalSpectrum;
-    double[] cmpEnCalSpectrum;
+    List<Double> linEnCalSpectrum;
+    List<Double> cmpEnCalSpectrum;
     Double gammaGrossCount;
     Double neutronGrossCount;
     Double doseRate;
@@ -47,11 +41,11 @@ public class RS350ForegroundMeasurement {
         return realTimeDuration;
     }
 
-    public double[] getLinEnCalSpectrum(){
+    public List<Double> getLinEnCalSpectrum(){
         return linEnCalSpectrum;
     }
 
-    public double[] getCmpEnCalSpectrum(){
+    public List<Double> getCmpEnCalSpectrum(){
         return cmpEnCalSpectrum;
     }
 

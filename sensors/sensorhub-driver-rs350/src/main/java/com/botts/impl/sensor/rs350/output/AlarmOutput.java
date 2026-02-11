@@ -12,7 +12,7 @@ import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
-public class AlarmOutput extends AbstractSensorOutput<RS350Sensor> implements MessageHandler.MessageListener {
+public class AlarmOutput extends AbstractSensorOutput<RS350Sensor> implements MessageHandler.AlarmListener {
 
     private static final String SENSOR_OUTPUT_NAME = "alarm";
     private static final String SENSOR_OUTPUT_LABEL = "Alarm Output";
@@ -49,9 +49,6 @@ public class AlarmOutput extends AbstractSensorOutput<RS350Sensor> implements Me
     }
 
     public void onNewMessage(RS350Message message) {
-        if (message.getRs350RadAlarm() == null || message.getRs350DerivedData() == null) {
-            return;
-        }
 
         DataBlock dataBlock;
 
