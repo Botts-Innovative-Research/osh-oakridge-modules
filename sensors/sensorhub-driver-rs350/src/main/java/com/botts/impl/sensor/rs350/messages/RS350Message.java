@@ -127,7 +127,7 @@ public class RS350Message {
     }
 
     private static double durationToDouble(Duration duration) {
-        return duration.multiply(1000).getSeconds() / 1000.0 % 60;
+        return duration.multiply(1000).getSeconds() / 1000.0;
     }
 
     public RS350InstrumentInformation getRs350InstrumentInformation(){
