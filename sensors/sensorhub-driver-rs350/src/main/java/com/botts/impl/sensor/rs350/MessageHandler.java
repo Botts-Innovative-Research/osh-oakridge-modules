@@ -1,6 +1,7 @@
 package com.botts.impl.sensor.rs350;
 
 import com.botts.impl.sensor.rs350.messages.RS350Message;
+import com.botts.impl.sensor.rs350.output.N42Output;
 import com.botts.impl.utils.n42.RadInstrumentDataType;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
@@ -46,6 +47,7 @@ public class MessageHandler {
     private final ArrayList<BackgroundListener> backgroundListeners = new ArrayList<>();
     private final ArrayList<ForegroundListener> foregroundListeners = new ArrayList<>();
     private final ArrayList<AlarmListener> alarmListeners = new ArrayList<>();
+    private final ArrayList<N42Output> n42Listeners = new ArrayList<>();
 
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
 
@@ -110,7 +112,7 @@ public class MessageHandler {
 
         while (continueProcessing) {
 
-            String currentMessage = null;
+            final String currentMessage;
 
             synchronized (messageQueue) {
 
@@ -123,6 +125,8 @@ public class MessageHandler {
                     }
 
                     currentMessage = messageQueue.removeFirst();
+
+                    n42Listeners.forEach(listener -> listener.onNewMessage(currentMessage));
 
                 } catch (InterruptedException e) {
 
@@ -153,7 +157,7 @@ public class MessageHandler {
                     }
                 }
                 catch (Exception e){
-                    log.error("Error reading message: " + e);
+                    log.error("Error reading message: " + e, e);
                 }
             }
 
@@ -174,6 +178,10 @@ public class MessageHandler {
 
     public void addStatusListener(StatusListener listener) {
         statusListeners.add(listener);
+    }
+
+    public void addN42Listener(N42Output listener) {
+        n42Listeners.add(listener);
     }
 
     public void addBackgroundListener(BackgroundListener listener) {

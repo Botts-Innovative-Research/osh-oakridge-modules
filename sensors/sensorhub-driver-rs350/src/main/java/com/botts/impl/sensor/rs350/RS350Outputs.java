@@ -6,6 +6,9 @@ package com.botts.impl.sensor.rs350;
 import org.sensorhub.api.config.DisplayInfo;
 
 public class RS350Outputs {
+    @DisplayInfo(label = "N42", desc = "Full N42 file output")
+    public boolean enableN42Output = true;
+
     @DisplayInfo(label = "Status", desc = "Information on the status of the RS350 (Battery %, Scan Mode, etc)")
     public boolean enableStatusOutput = true;
 

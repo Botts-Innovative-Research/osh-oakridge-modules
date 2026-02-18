@@ -83,7 +83,7 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     private int occupancyCount; keep a running counter here
     private double startTime; AlarmOutput.getStartDateTime
     private double endTime; AlarmOutput.samplingTime + AlarmOutput.duration
-    private double neutronBackground; // Gross background neutron counts / live time. Use the last background output before start of foreground
+    private double neutronBackground; // Gross background neutron counts / live time.
     private boolean hasGammaAlarm; // Check the alarm desc for "Gamma"
     private boolean hasNeutronAlarm; // Check alarm desc for "Neturon"
     private int maxGammaCount; // Grab the foreground counts with time between start and end time and find the max
