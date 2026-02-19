@@ -30,6 +30,15 @@ public class WebIdClient {
         this.httpClient = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
     }
 
+    public boolean isReachable() {
+        try {
+            getPossibleDRFs();
+        } catch (Exception ignored) {
+            return false;
+        }
+        return true;
+    }
+
     public Set<String> getPossibleDRFs() throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(apiRoot + "info"))

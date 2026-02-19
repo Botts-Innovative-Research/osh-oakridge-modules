@@ -5,6 +5,7 @@ import com.botts.impl.service.bucket.handler.DefaultObjectHandler;
 import com.botts.impl.service.bucket.util.MultipartRequestParser;
 import com.botts.impl.service.bucket.util.RequestContext;
 import com.botts.impl.service.oscar.cambio.CambioConverter;
+import com.google.gson.JsonArray;
 import net.opengis.swe.v20.DataBlock;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.IdEncoder;
@@ -12,6 +13,7 @@ import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.data.ObsData;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
+import org.sensorhub.api.utils.OshAsserts;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.impl.utils.rad.model.WebIdAnalysis;
 import org.slf4j.Logger;
@@ -20,12 +22,12 @@ import org.slf4j.LoggerFactory;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Pattern;
 
 public class WebIdResourceHandler extends DefaultObjectHandler {
@@ -54,6 +56,69 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         pattern = Pattern.compile(regex);
     }
 
+    private static class WebIdRequestContext {
+        RequestContext parentContext;
+        String occupancyObsId;
+        String laneUid;
+        String drf;
+        boolean webIdEnabled;
+
+        String foregroundFileName = null;
+        byte[] foregroundData = null;
+        String backgroundFileName = null;
+        byte[] backgroundData = null;
+
+        public WebIdRequestContext(RequestContext ctx) {
+            parentContext = ctx;
+            occupancyObsId = ctx.getRequest().getParameter("occupancyObsId");
+            laneUid = ctx.getRequest().getParameter("laneUid");
+            String webIdEnabledParam = ctx.getRequest().getParameter("webIdEnabled");
+            webIdEnabled = Boolean.parseBoolean(webIdEnabledParam);
+            drf = ctx.getRequest().getParameter("drf");
+
+            if (ctx.isMultipartRequest()) {
+                // TODO: parse foreground and background and add to web id client builder
+                try (var parseResult = MultipartRequestParser.parse(ctx.getRequest())) {
+
+                    for (var file : parseResult.files()) {
+                        String fileName = file.fileName();
+                        String fieldName = file.fieldName();
+
+                        if ("foreground".equals(fieldName)) {
+                            foregroundFileName = fileName;
+                            try (var fileStream = file.inputStream()) {
+                                foregroundData = fileStream.readAllBytes();
+                            }
+                        } else if ("background".equals(fieldName)) {
+                            backgroundFileName = fileName;
+                            try (var fileStream = file.inputStream()) {
+                                backgroundData = fileStream.readAllBytes();
+                            }
+                        }
+                    }
+                } catch (IOException e) {
+                    logger.error("Unable to parse multipart data", e);
+                }
+            } else {
+                try (var contextInputStream = ctx.getRequest().getInputStream()) {
+                    foregroundData = contextInputStream.readAllBytes();
+                    if (ctx.hasObjectKey())
+                        foregroundFileName = ctx.getObjectKey();
+                } catch (IOException e) {
+                    logger.error("Unable to retrieve request context input stream", e);
+                }
+            }
+        }
+
+        public boolean hasForegroundFileName() {
+            return foregroundFileName != null && !foregroundFileName.isBlank();
+        }
+
+        public boolean hasBackgroundFileName() {
+            return backgroundFileName != null && !backgroundFileName.isBlank();
+        }
+    }
+
     @Override
     public void doPut(RequestContext ctx) throws IOException, SecurityException {
         var bucketName = ctx.getBucketName();
@@ -62,38 +127,29 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         sec.checkPermission(sec.getBucketPermission(bucketName).put);
 
         // Extract query parameters
-        String occupancyObsId = ctx.getRequest().getParameter("occupancyObsId");
-        String laneUid = ctx.getRequest().getParameter("laneUid");
-        String webIdEnabledParam = ctx.getRequest().getParameter("webIdEnabled");
-        boolean webIdEnabled = Boolean.parseBoolean(webIdEnabledParam);
-        String drf = ctx.getRequest().getParameter("drf");
+        var webIdContext = new WebIdRequestContext(ctx);
 
-        // Buffer the file bytes for both storage and analysis
-        byte[] fileBytes;
-        String filename = null;
+        if (!webIdContext.webIdEnabled)
+            return;
 
-        if (ctx.isMultipartRequest()) {
-            try (var parseResult = MultipartRequestParser.parse(ctx.getRequest())) {
-                var file = parseResult.files().get(0);
-                filename = file.fileName();
-                fileBytes = file.inputStream().readAllBytes();
+        // PUT should only update one resource, so prioritize POST for FG + BG
+        if (webIdContext.foregroundData != null && webIdContext.hasForegroundFileName()) {
+            // Update the object in the bucket
+            try {
+                bucketStore.putObject(bucketName, objectKey, new ByteArrayInputStream(webIdContext.foregroundData), ctx.getHeaders());
+            } catch (DataStoreException e) {
+                throw new IOException(IBucketStore.FAILED_PUT_OBJECT + bucketName, e);
             }
-        } else {
-            fileBytes = ctx.getRequest().getInputStream().readAllBytes();
-        }
-
-        // Update the object in the bucket
-        try {
-            bucketStore.putObject(bucketName, objectKey, new ByteArrayInputStream(fileBytes), ctx.getHeaders());
-        } catch (DataStoreException e) {
-            throw new IOException(IBucketStore.FAILED_PUT_OBJECT + bucketName, e);
         }
 
         ctx.getResponse().setStatus(HttpServletResponse.SC_OK);
 
-        // If WebId is enabled and client is available, process synchronously
-        if (webIdEnabled && webIdClient != null) {
-            processWebIdAnalysis(fileBytes, filename, laneUid, occupancyObsId, bucketName, drf);
+        // Check if web ID is reachable
+        if (webIdClient != null && webIdClient.isReachable()) {
+            processWebIdAnalysis(webIdContext);
+        } else {
+            // offline conversion to N42 only
+//            processCambioConversion(webIdContext);
         }
     }
 
@@ -104,113 +160,142 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         sec.checkPermission(sec.getBucketPermission(bucketName).create);
 
         // Extract query parameters
-        String occupancyObsId = ctx.getRequest().getParameter("occupancyObsId");
-        String laneUid = ctx.getRequest().getParameter("laneUid");
-        String webIdEnabledParam = ctx.getRequest().getParameter("webIdEnabled");
-        boolean webIdEnabled = Boolean.parseBoolean(webIdEnabledParam);
-        String drf = ctx.getRequest().getParameter("drf");
+        var webIdContext = new WebIdRequestContext(ctx);
 
-        // Buffer the file bytes for both storage and analysis
-        byte[] fileBytes;
-        String filename = null;
+        if (!webIdContext.webIdEnabled)
+            return;
 
-        if (ctx.isMultipartRequest()) {
-            try (var parseResult = MultipartRequestParser.parse(ctx.getRequest())) {
-                var file = parseResult.files().get(0);
-                filename = file.fileName();
-                fileBytes = file.inputStream().readAllBytes();
+        List<String> resourceURIs = new ArrayList<>();
+
+        // Save background data in bucket
+        if (webIdContext.backgroundData != null
+                // ensure we have a filename for put requests
+                && webIdContext.backgroundFileName != null
+                && !webIdContext.backgroundFileName.isBlank()) {
+            try {
+                bucketStore.putObject(bucketName, webIdContext.backgroundFileName,
+                        new ByteArrayInputStream(webIdContext.backgroundData), ctx.getHeaders());
+                // add to generated resource URI list
+                resourceURIs.add(bucketStore.getRelativeResourceURI(bucketName, webIdContext.backgroundFileName));
+            } catch (DataStoreException e) {
+                logger.error("Failed to put background data from {} in bucket store", webIdContext.backgroundFileName, e);
             }
+        }
+
+        // For POST, we can have foreground data with no filename (i.e. QR code)
+        if (webIdContext.foregroundData != null) {
+            try {
+                // put if foreground + background
+                if (webIdContext.hasForegroundFileName()) {
+                    bucketStore.putObject(bucketName, webIdContext.foregroundFileName,
+                            new ByteArrayInputStream(webIdContext.foregroundData), ctx.getHeaders());
+                    // add to generated resource URI list
+                    resourceURIs.add(bucketStore.getRelativeResourceURI(bucketName, webIdContext.foregroundFileName));
+                } else {
+                    // create object with random UUID if just foreground data
+                    String newObjectKey = bucketStore.createObject(bucketName,
+                            new ByteArrayInputStream(webIdContext.foregroundData), ctx.getHeaders());
+                    if (newObjectKey == null || newObjectKey.isBlank())
+                        throw new IOException(IBucketStore.FAILED_CREATE_OBJECT + bucketName);
+
+                    // set location header for single resource
+                    ctx.getResponse().setHeader("Location", bucketStore.getRelativeResourceURI(bucketName, newObjectKey));
+                }
+                ctx.getResponse().setStatus(HttpServletResponse.SC_CREATED);
+            } catch (Exception e) {
+                throw new IOException("Failed to put foreground data in bucket store", e);
+            }
+        }
+
+        if (!resourceURIs.isEmpty()) {
+            JsonArray jsonArray = new JsonArray();
+            for (var resourceURI : resourceURIs)
+                jsonArray.add(resourceURI);
+            ctx.getResponse().getWriter().write(jsonArray.getAsString());
+        }
+
+        // Check if web ID is reachable
+        if (webIdClient != null && webIdClient.isReachable()) {
+            processWebIdAnalysis(webIdContext);
         } else {
-            fileBytes = ctx.getRequest().getInputStream().readAllBytes();
-        }
-
-        // Store the file in the bucket
-        String newObjectKey;
-        try {
-            newObjectKey = bucketStore.createObject(bucketName, new ByteArrayInputStream(fileBytes), ctx.getHeaders());
-        } catch (DataStoreException e) {
-            throw new IOException(IBucketStore.FAILED_CREATE_OBJECT + bucketName, e);
-        }
-
-        if (newObjectKey == null)
-            throw new IOException(IBucketStore.FAILED_CREATE_OBJECT + bucketName);
-
-        ctx.getResponse().setStatus(HttpServletResponse.SC_CREATED);
-        ctx.getResponse().setHeader("Location", ctx.getResourceURL(newObjectKey));
-
-        // If WebID is enabled and client is available, process synchronously
-        if (webIdEnabled && webIdClient != null) {
-            processWebIdAnalysis(fileBytes, filename, laneUid, occupancyObsId, bucketName, drf);
+            // offline conversion to N42 only
+//            processCambioConversion(webIdContext);
         }
     }
 
-    private void processWebIdAnalysis(byte[] fileBytes, String filename, String laneUid, String occupancyObsId, String bucketName, String drf) {
+    private void processCambioConversion(WebIdRequestContext webIdContext) {
+        // TODO make sure nothing special required for cambio conversion
+    }
+
+    private void processWebIdAnalysis(WebIdRequestContext webIdContext) {
         try {
+            if (webIdContext.foregroundData == null)
+                throw new IllegalArgumentException("Foreground data is null");
+
             // Check if this is QR code data (RADDATA:// format)
-            boolean isQrCodeData = isRadDataQrCode(fileBytes);
+            boolean isQrCodeData = isRadDataQrCode(webIdContext.foregroundData);
 
-            WebIdAnalysis analysis = null;
-
+            WebIdAnalysis analysis;
             // Try sending to WebID first with raw data
             try {
-                WebIdRequest.Builder requestBuilder = new WebIdRequest.Builder()
-                        .foreground(new ByteArrayInputStream(fileBytes))
-                        .synthesizeBackground(true);
-
-                if (drf != null && !drf.isBlank()) {
-                    requestBuilder.drf(drf);
-                }
-
-                analysis = webIdClient.analyze(requestBuilder.build());
+                var request = createWebIdRequest(webIdContext);
+                analysis = webIdClient.analyze(request);
                 logger.info("WebID analysis succeeded with raw data");
             } catch (Exception e) {
                 // If QR code data failed, don't try Cambio conversion - just rethrow
-                if (isQrCodeData) {
+                if (isQrCodeData)
                     throw new IOException("WebID analysis failed for QR code data", e);
-                }
 
                 // For other formats, try converting to N42 via Cambio and retry
                 logger.info("WebID analysis failed with raw data, attempting Cambio conversion: {}", e.getMessage());
 
                 byte[] n42Bytes;
-                if (filename != null && (filename.endsWith(".n42") || filename.endsWith(".xml"))) {
-                    n42Bytes = fileBytes;
+                if (webIdContext.hasForegroundFileName() && (webIdContext.foregroundFileName.endsWith(".n42")
+                        || webIdContext.foregroundFileName.endsWith(".xml"))) {
+                    n42Bytes = webIdContext.foregroundData;
                 } else {
-                    n42Bytes = new CambioConverter().convertToN42(new ByteArrayInputStream(fileBytes), filename);
+                    String fileName;
+                    if (webIdContext.foregroundFileName != null && !webIdContext.foregroundFileName.isBlank()) {
+                        fileName = webIdContext.foregroundFileName;
+                    } else {
+                        fileName = UUID.randomUUID() + ".n42";
+                    }
+                    n42Bytes = new CambioConverter().convertToN42(new ByteArrayInputStream(webIdContext.foregroundData), fileName);
                 }
 
                 WebIdRequest.Builder requestBuilder = new WebIdRequest.Builder()
                         .foreground(new ByteArrayInputStream(n42Bytes))
-                        .synthesizeBackground(true);
+                        .drf(webIdContext.drf);
 
-                if (drf != null && !drf.isBlank()) {
-                    requestBuilder.drf(drf);
-                }
+                if (webIdContext.backgroundData != null)
+                    requestBuilder.background(new ByteArrayInputStream(webIdContext.backgroundData));
+                else
+                    requestBuilder.synthesizeBackground(true);
 
                 analysis = webIdClient.analyze(requestBuilder.build());
                 logger.info("WebID analysis succeeded after Cambio conversion");
             }
 
             analysis.setSampleTime(Instant.now());
-            analysis.setOccupancyObsId(occupancyObsId != null ? occupancyObsId : "");
+            analysis.setOccupancyObsId(webIdContext.occupancyObsId != null ? webIdContext.occupancyObsId : "");
 
             // Save analysis JSON to bucket store
             try {
                 String analysisJson = analysis.toString();
                 Map<String, String> jsonMetadata = new HashMap<>();
                 jsonMetadata.put("Content-Type", "application/json");
-                bucketStore.createObject(bucketName, new ByteArrayInputStream(analysisJson.getBytes()), jsonMetadata);
+                bucketStore.createObject(webIdContext.parentContext.getBucketName(), new ByteArrayInputStream(analysisJson.getBytes()), jsonMetadata);
             } catch (DataStoreException e) {
                 logger.error("Failed to store WebId analysis JSON in bucket", e);
             }
 
             // Insert WebId observation into lane database
             String encodedWebIdObsId = null;
-            if (laneUid != null && !laneUid.isBlank()) {
+            if (webIdContext.laneUid != null && !webIdContext.laneUid.isBlank()) {
                 try {
-                    var laneDb = hub.getSystemDriverRegistry().getDatabase(laneUid);
+                    var laneDb = hub.getSystemDriverRegistry().getDatabase(webIdContext.laneUid);
                     if (laneDb == null) {
-                        logger.error("No database found for lane UID: {}", laneUid);
+                        logger.error("No database found for lane UID: {}", webIdContext.laneUid);
                         return;
                     }
 
@@ -219,13 +304,13 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
                     // Find the WebId datastream
                     var dsKeys = obsStore.getDataStreams().selectKeys(new DataStreamFilter.Builder()
                             .withSystems()
-                            .withUniqueIDs(laneUid)
+                            .withUniqueIDs(webIdContext.laneUid)
                             .done()
                             .withOutputNames("webIdAnalysis")
                             .build()).toList();
 
                     if (dsKeys.isEmpty()) {
-                        logger.error("No webIdAnalysis datastream found for lane: {}", laneUid);
+                        logger.error("No webIdAnalysis datastream found for lane: {}", webIdContext.laneUid);
                         return;
                     }
 
@@ -250,19 +335,19 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
             }
 
             // Attach WebId obs ID to occupancy observation
-            if (encodedWebIdObsId != null && occupancyObsId != null && !occupancyObsId.isBlank() && laneUid != null) {
+            if (encodedWebIdObsId != null && webIdContext.occupancyObsId != null && !webIdContext.occupancyObsId.isBlank() && webIdContext.laneUid != null) {
                 try {
-                    BigId decodedOccObsId = obsIdEncoder.decodeID(occupancyObsId);
-                    var laneDb = hub.getSystemDriverRegistry().getDatabase(laneUid);
+                    BigId decodedOccObsId = obsIdEncoder.decodeID(webIdContext.occupancyObsId);
+                    var laneDb = hub.getSystemDriverRegistry().getDatabase(webIdContext.laneUid);
                     if (laneDb == null) {
-                        logger.error("No database found for lane UID when updating occupancy: {}", laneUid);
+                        logger.error("No database found for lane UID when updating occupancy: {}", webIdContext.laneUid);
                         return;
                     }
 
                     var obsStore = laneDb.getObservationStore();
                     var obs = obsStore.get(decodedOccObsId);
                     if (obs == null) {
-                        logger.error("Occupancy observation not found for ID: {}", occupancyObsId);
+                        logger.error("Occupancy observation not found for ID: {}", webIdContext.occupancyObsId);
                         return;
                     }
 
@@ -274,7 +359,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
                     obs.getResult().updateAtomCount();
 
                     obsStore.put(decodedOccObsId, obs);
-                    logger.info("Occupancy observation {} updated with WebId obs ID: {}", occupancyObsId, encodedWebIdObsId);
+                    logger.info("Occupancy observation {} updated with WebId obs ID: {}", webIdContext.occupancyObsId, encodedWebIdObsId);
                 } catch (Exception e) {
                     logger.error("Failed to update occupancy observation with WebId obs ID", e);
                 }
@@ -282,6 +367,22 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         } catch (Exception e) {
             logger.error("WebId analysis processing failed", e);
         }
+    }
+
+    private WebIdRequest createWebIdRequest(WebIdRequestContext webIdContext) {
+        WebIdRequest.Builder requestBuilder = new WebIdRequest.Builder()
+                .foreground(new ByteArrayInputStream(webIdContext.foregroundData));
+
+        // include background but if no background data then we need to synthesize it
+        if (webIdContext.backgroundData != null)
+            requestBuilder.background(new ByteArrayInputStream(webIdContext.backgroundData));
+        else
+            requestBuilder.synthesizeBackground(true);
+
+        if (webIdContext.drf != null && !webIdContext.drf.isBlank())
+            requestBuilder.drf(webIdContext.drf);
+
+        return requestBuilder.build();
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.botts.impl.service.oscar;
 
+import com.google.gson.JsonArray;
 import net.opengis.swe.v20.DataBlock;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.IsotopeAnalysis;
@@ -19,6 +20,9 @@ import java.sql.Date;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 /**
  *
@@ -144,7 +148,7 @@ public class WebIdTests {
 
         // Verify the data starts with RADDATA:// prefix
         String dataPrefix = new String(qrCodeData, 0, Math.min(10, qrCodeData.length));
-        Assert.assertTrue("QR code data should start with RADDATA://", dataPrefix.startsWith("RADDATA://"));
+        assertTrue("QR code data should start with RADDATA://", dataPrefix.startsWith("RADDATA://"));
 
         System.out.println("QR code data length: " + qrCodeData.length + " bytes");
         System.out.println("QR code data prefix: " + dataPrefix);
@@ -262,5 +266,20 @@ public class WebIdTests {
         System.out.println(json1);
         System.out.println();
         System.out.println(json2);
+    }
+
+    @Test
+    public void testReachable() {
+        assertTrue(webIdClient.isReachable());
+        WebIdClient fakeClient = new WebIdClient("https://fritter.net/api");
+        assertFalse(fakeClient.isReachable());
+    }
+
+    @Test
+    public void testArrayResponse() {
+        JsonArray jsonArray = new JsonArray();
+        for (var resourceURI : List.of("hello, test"))
+            jsonArray.add(resourceURI);
+        System.out.println(jsonArray);
     }
 }

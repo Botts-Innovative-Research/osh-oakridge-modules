@@ -303,8 +303,9 @@ public class WebIdIntegrationTests {
                 .anyMatch(isotope -> isotope.getName().contains("I131") || isotope.getName().contains("I-131"));
         assertTrue("Should detect I-131 isotope", foundI131);
 
-        log.info("WebID Analysis Result: DRF={}, Isotopes={}, Dose={}",
-                response.getDrf(), response.getIsotopeString(), response.getEstimatedDose());
+        System.out.println(response.getDrf());
+        System.out.println(response.getIsotopeString());
+        System.out.println(response.getEstimatedDose());
     }
 
     // ==================== Serialization Tests ====================
@@ -486,6 +487,8 @@ public class WebIdIntegrationTests {
         // Get occupancy obs ID
         var obsIdEncoder = hub.getIdEncoders().getObsIdEncoder();
         var obsStore = hub.getDatabaseRegistry().getFederatedDatabase().getObservationStore();
+        database.getObservationStore().removeEntries(obsStore.selectAllFilter());
+        generateOccupancy(lane);
         var occupancyObsId = obsStore.selectKeys(obsStore.selectAllFilter()).toList().get(0);
         var encodedOccupancyObsId = obsIdEncoder.encodeID(occupancyObsId);
 
