@@ -3,10 +3,7 @@ package com.botts.impl.sensor.rs350.output;
 import com.botts.impl.sensor.rs350.MessageHandler;
 import com.botts.impl.sensor.rs350.RS350Sensor;
 import com.botts.impl.sensor.rs350.messages.RS350Message;
-import net.opengis.swe.v20.DataBlock;
-import net.opengis.swe.v20.DataComponent;
-import net.opengis.swe.v20.DataEncoding;
-import net.opengis.swe.v20.DataRecord;
+import net.opengis.swe.v20.*;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
@@ -14,8 +11,11 @@ import org.vast.data.TextEncodingImpl;
 
 public class N42Output extends AbstractSensorOutput<RS350Sensor> {
 
-    private static final String SENSOR_OUTPUT_NAME = "n42Report";
-    private static final String SENSOR_OUTPUT_LABEL = "N42 Report";
+    private static final RADHelper radHelper = new RADHelper();
+    private static final Text n42Report = radHelper.createN42Report();
+
+    private static final String SENSOR_OUTPUT_NAME = n42Report.getName();
+    private static final String SENSOR_OUTPUT_LABEL = n42Report.getLabel();
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
@@ -25,14 +25,13 @@ public class N42Output extends AbstractSensorOutput<RS350Sensor> {
     }
 
     public void init() {
-        RADHelper radHelper = new RADHelper();
         var samplingTime = radHelper.createPrecisionTimeStamp();
-        var n42Output = radHelper.createText().name("n42").label("N42").build();
+        var n42Output = n42Report.copy();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
                 .label(SENSOR_OUTPUT_LABEL)
-                .definition(radHelper.getRadUri("N42"))
+                .definition(n42Output.getDefinition())
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(n42Output.getName(), n42Output)
                 .build();
