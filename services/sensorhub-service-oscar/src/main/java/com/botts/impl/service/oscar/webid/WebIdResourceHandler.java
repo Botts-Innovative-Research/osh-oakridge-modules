@@ -211,7 +211,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
             JsonArray jsonArray = new JsonArray();
             for (var resourceURI : resourceURIs)
                 jsonArray.add(resourceURI);
-            ctx.getResponse().getWriter().write(jsonArray.getAsString());
+            ctx.getResponse().getWriter().write(jsonArray.toString());
         }
 
         // Check if web ID is reachable
