@@ -49,7 +49,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     private final IObsSystemDatabase database;
     private Map<String, Set<BigId>> observedPropertyToDataStreamIds;
 
-    private record LastStatisticObservationData(Instant timestamp, Statistics total, Statistics monthly, Statistics weekly, Statistics daily) {
+    private record LastStatisticObservationData(Instant timestamp, Statistics total) {
 
     }
 
@@ -107,6 +107,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         long currentTime = System.currentTimeMillis();
 
         DataBlock dataBlock = latestRecord == null ? recordDescription.createDataBlock() : latestRecord.renew();
+        Instant now = Instant.now();
 
         int i = 0;
         dataBlock.setLongValue(i++, currentTime/1000);
@@ -116,16 +117,17 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
         if (lastStatisticObservationData != null) {
             Instant lastTimestamp = lastStatisticObservationData.timestamp();
-            Instant now = Instant.now();
+            Statistics previousTotal = lastStatisticObservationData.total();
+            Instant exclusiveStart = lastTimestamp.plusNanos(1);
+            Statistics incrementalStats = getStats(exclusiveStart, now);
 
-            Statistics incrementalStats = getStats(lastTimestamp, now);
+            Statistics newTotal = previousTotal.add(incrementalStats);
 
-            Statistics newTotal = lastStatisticObservationData.total().add(incrementalStats);
             i = populateDataBlockWithStats(dataBlock, i, newTotal);
         } else {
-            i = populateDataBlock(dataBlock, i, null, null);
+            getLogger().debug("No previous stats observation found, calculating from epoch to {}", now);
+            i = populateDataBlock(dataBlock, i, Instant.EPOCH, now);
         }
-        Instant now = Instant.now();
 
         // last 30 days
         Instant monthStart = now.minus(30, ChronoUnit.DAYS);
@@ -225,12 +227,13 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         var dsFilterBuilder = new DataStreamFilter.Builder()
                 .withObservedProperties(observedProperty);
 
-        if (begin != null && end != null)
-            dsFilterBuilder = dsFilterBuilder.withValidTimeDuring(begin, end);
-
         var dsFilter = dsFilterBuilder.build();
 
         var obsBuilder = new ObsFilter.Builder().withDataStreams(dsFilter);
+
+        if (begin != null && end != null) {
+            obsBuilder.withPhenomenonTime().withRange(begin, end).done();
+        }
 
         if (cqlValue != null &&  !cqlValue.isBlank()) {
             obsBuilder.withCQLFilter(cqlValue);
@@ -244,6 +247,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
      */
     private LastStatisticObservationData getLastObservation() {
         var query = database.getObservationStore().select(new ObsFilter.Builder()
+                .withSystems().withUniqueIDs(parentSensor.getUniqueIdentifier()).done()
                 .withDataStreams(new DataStreamFilter.Builder()
                         .withOutputNames(NAME)
                         .build())
@@ -255,17 +259,14 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         if (observations.isEmpty())
             return null;
 
-        var result =  observations.get(0).getResult();
+        var result = observations.get(0).getResult();
 
-        long timestamp = observations.get(0).getPhenomenonTime().toEpochMilli();
-        Instant time = Instant.ofEpochMilli(timestamp);
+        long storedTimestampSeconds = result.getLongValue(0);
+        Instant timestamp = Instant.ofEpochSecond(storedTimestampSeconds);
 
         Statistics allTime = getLastObservationCount(result, 0);
-        Statistics monthly = getLastObservationCount(result, 8);
-        Statistics weekly = getLastObservationCount(result, 16);
-        Statistics daily = getLastObservationCount(result, 24);
 
-        return new LastStatisticObservationData(time, allTime, monthly, weekly, daily);
+        return new LastStatisticObservationData(timestamp, allTime);
     }
 
     private Statistics getLastObservationCount(DataBlock dataBlock, int index) {
