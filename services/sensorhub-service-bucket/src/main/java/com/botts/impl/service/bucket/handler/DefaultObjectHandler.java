@@ -63,6 +63,7 @@ public class DefaultObjectHandler implements IObjectHandler {
             throw ServiceErrors.unsupportedOperation("You can only create an object from the root of a bucket");
 
         if (ctx.isMultipartRequest()) {
+            // TODO DONT RENAME FILES, USE THEIR MULTIPART FORM FILENAME
             multipartHandler.handleMultipartPost(ctx);
             return;
         }
