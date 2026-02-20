@@ -16,6 +16,7 @@
 package com.botts.impl.process.rs350.occupancy;
 
 import net.opengis.OgcPropertyList;
+import net.opengis.sensorml.v20.AggregateProcess;
 import net.opengis.swe.v20.AbstractSWEIdentifiable;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -37,11 +38,9 @@ import org.sensorhub.impl.processing.AbstractProcessModule;
 import com.botts.impl.process.rs350.occupancy.helpers.ProcessHelper;
 import com.botts.impl.process.rs350.occupancy.helpers.DataOutputInterface;
 import org.sensorhub.utils.Async;
+import org.vast.process.ExecutableProcessImpl;
 import org.vast.process.ProcessException;
-import org.vast.sensorML.AggregateProcessImpl;
-import org.vast.sensorML.SMLException;
-import org.vast.sensorML.SMLHelper;
-import org.vast.sensorML.SMLUtils;
+import org.vast.sensorML.*;
 
 import java.io.*;
 import java.util.*;
@@ -246,6 +245,7 @@ public class Rs350OccupancyProcessModule extends AbstractProcessModule<Rs350Occu
         try {
             //smlUtils.makeProcessExecutable(wrapperProcess, true);
             wrapperProcess = (AggregateProcessImpl)smlUtils.getExecutableInstance((AggregateProcessImpl)processDescription, useThreads);
+            processDescription = wrapperProcess;
             wrapperProcess.setInstanceName("chain");
             wrapperProcess.setParentLogger(getLogger());
             wrapperProcess.init();

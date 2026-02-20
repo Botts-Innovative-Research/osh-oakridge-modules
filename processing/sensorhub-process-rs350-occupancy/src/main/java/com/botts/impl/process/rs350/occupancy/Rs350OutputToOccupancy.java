@@ -15,9 +15,11 @@
 
 package com.botts.impl.process.rs350.occupancy;
 
+import com.botts.impl.utils.n42.RadAlarmCategoryCodeSimpleType;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
-import org.sensorhub.api.data.DataEvent;
+import org.sensorhub.api.data.IObsData;
+import org.sensorhub.api.data.ObsEvent;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.api.event.EventUtils;
@@ -29,13 +31,11 @@ import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.sensorhub.utils.Async;
 import org.slf4j.Logger;
-import org.vast.process.DataConnection;
 import org.vast.process.ExecutableProcessImpl;
 import org.vast.swe.SWEHelper;
 
-import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
@@ -58,23 +58,29 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     public static final String BACKGROUND_NAME = "backgroundReport";
     public static final String FOREGROUND_NAME = "foregroundReport";
     private static final String DURATION_NAME = fac.createDuration().getName();
-    private static final String ALARM_DESCRIPTION_NAME = fac.createAlarmDescription().getName();
+    private static final String ALARM_CAT_NAME = fac.createAlarmCatCode().getName();
     private static final String GAMMA_GROSS_COUNT_NAME = fac.createGammaGrossCount().getName();
     private static final String NEUTRON_GROSS_COUNT_NAME = fac.createNeutronGrossCount().getName();
 
-    public static final List<String> RS350_OUTPUTS = List.of(ALARM_NAME, BACKGROUND_NAME, FOREGROUND_NAME);
-    public final List<CompletableFuture<?>> completableFutures = new ArrayList<>(RS350_OUTPUTS.size());
+    // All RS350 outputs. Some arrive less regularly, so we don't want to connect as input and block while waiting
+    public static final List<String> ALL_OUTPUTS = List.of(ALARM_NAME, BACKGROUND_NAME, FOREGROUND_NAME);
+    // Subset of RS350 outputs we want to connect to process input
+    public static final List<String> RS350_OUTPUTS = List.of(FOREGROUND_NAME);
+    public final List<Flow.Subscription> subscriptions = new ArrayList<>(ALL_OUTPUTS.size());
     private Occupancy.Builder occupancyBuilder;
 
-
-    private volatile boolean isAlarming = false;
     private int occupancyCount = 0;
     private double latestNeutronBackground = 0;
     private int maxGammaCount = 0;
     private int maxNeutronCount = 0;
 
     private volatile boolean doPublishOccupancy = false;
-    private double lastDailyfileTime = 0;
+    private double lastAlarmTime = 0;
+    private double lastDailyFileTime = 0;
+    private double alarmDuration;
+    private boolean reportingDailyFile = false;
+
+    private boolean hasStarted = false;
 
     // Will be "cheating" a bit: subscribing to datastreams here instead of using data queues and sml process
     // TODO: When creating an occupancy based on an alarm, make SURE that the category is Radiological.
@@ -130,7 +136,7 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
 
         if(!Objects.equals(inputSystemID, "")) {
             try {
-                Async.waitForCondition(() -> checkDataStreamInput(RS350_OUTPUTS.toArray(new String[0])), 500, 10000);
+                Async.waitForCondition(() -> checkDataStreamInput(ALL_OUTPUTS.toArray(new String[0])), 500, 10000);
             } catch (TimeoutException e) {
                 if(processInfo == null)
                     throw new IllegalStateException("RPM data stream " + inputSystemID + " not found", e);
@@ -156,6 +162,11 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
         // Clear old inputs
         inputData.clear();
 
+        for (var subscription : subscriptions) {
+            subscription.cancel();
+        }
+        subscriptions.clear();
+
         // Get systems with input UID
         var sysFilter = new SystemFilter.Builder()
                 .withUniqueIDs(inputSystemID)
@@ -175,13 +186,18 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
 
             var occupancyDataStreams = occupancyDataStreamQuery.collect(Collectors.toList());
             if (!occupancyDataStreams.isEmpty()) {
-                inputData.add(dataStreamName, occupancyDataStreams.get(0).getRecordStructure().copy());
+                if (RS350_OUTPUTS.contains(dataStreamName))
+                    inputData.add(dataStreamName, occupancyDataStreams.get(0).getRecordStructure().copy());
 
-                var future = hub.getEventBus().newSubscription(DataEvent.class)
+                hub.getEventBus().newSubscription(ObsEvent.class)
                         .withTopicID(EventUtils.getDataStreamDataTopicID(inputSystemID, dataStreamName))
-                        .subscribe(this::processDataEvent);
+                        .subscribe(this::processDataEvent)
+                        .thenAccept(subscription -> {
+                            subscriptions.add(subscription);
+                            subscription.request(Long.MAX_VALUE);
+                            logger.info("Started subscription to " + dataStreamName);
+                        });
 
-                completableFutures.add(future);
             }
         }
 
@@ -191,15 +207,20 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
         return !inputData.isEmpty();
     }
 
-    private void processDataEvent(DataEvent event) {
+    private void processDataEvent(ObsEvent event) {
         String outputName = event.getOutputName();
-        if (!RS350_OUTPUTS.contains(outputName))
+        if (!ALL_OUTPUTS.contains(outputName)) {
+            logger.warn("Received data event for unknown output: {}", outputName);
             return;
+        }
+
+        DataBlock[] obsResults = Arrays.stream(event.getObservations()).map(IObsData::getResult).toArray(DataBlock[]::new);
 
         switch (outputName) {
-            case ALARM_NAME -> processAlarm(event.getRecords());
-            case BACKGROUND_NAME -> processBackground(event.getRecords());
-            case FOREGROUND_NAME -> processForeground(event.getRecords());
+            case ALARM_NAME -> processAlarm(obsResults);
+            case BACKGROUND_NAME -> processBackground(obsResults);
+            case FOREGROUND_NAME -> processForeground(obsResults);
+            default -> logger.debug("(Default) Received data event for unknown output: {}", outputName);
         }
     }
 
@@ -207,16 +228,17 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
         DataComponent alarmComponent = ((DataComponent) inputData.get(ALARM_NAME)).copy();
 
         for (DataBlock eventRecord : eventRecords) {
-            if (!isAlarming) {
-                logger.warn("Alarm before foreground!");
-            }
             alarmComponent.setData(eventRecord);
 
             double startTime = ((Time) alarmComponent.getComponent("Sampling Time")).getValue().getAsDouble();
             double endTime = startTime + ((Quantity) alarmComponent.getComponent(DURATION_NAME)).getValue();
-            String alarmDesc = alarmComponent.getComponent(ALARM_DESCRIPTION_NAME).getData().getStringValue().toLowerCase();
-            boolean hasGammaAlarm = alarmDesc.contains("gamma");
-            boolean hasNeutronAlarm = alarmDesc.contains("neutron");
+            alarmDuration = endTime - startTime;
+            lastAlarmTime = System.currentTimeMillis();
+
+            // TODO This needs to be tested
+            String alarmCat = alarmComponent.getComponent(ALARM_CAT_NAME).getData().getStringValue().toLowerCase();
+            boolean hasGammaAlarm = alarmCat.contains(RadAlarmCategoryCodeSimpleType.GAMMA.value());
+            boolean hasNeutronAlarm = alarmCat.contains(RadAlarmCategoryCodeSimpleType.NEUTRON.value());
             occupancyCount++;
 
             occupancyBuilder = new Occupancy.Builder();
@@ -228,7 +250,6 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
 
             setOccupancyOutput(occupancyBuilder.build());
 
-            isAlarming = false;
             doPublishOccupancy = true;
         }
     }
@@ -239,10 +260,6 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
 
         for (DataBlock eventRecord : eventRecords) {
             foregroundComponent.setData(eventRecord);
-
-            if (!isAlarming) {
-                isAlarming = true;
-            }
 
             int newGrossGamma = ((Count)foregroundComponent.getComponent(GAMMA_GROSS_COUNT_NAME)).getValue();
             int newGrossNeutron = ((Count)foregroundComponent.getComponent(NEUTRON_GROSS_COUNT_NAME)).getValue();
@@ -261,9 +278,6 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
         DataComponent backgroundComponent = ((DataComponent) inputData.get(BACKGROUND_NAME)).copy();
 
         for (DataBlock eventRecord : eventRecords) {
-            if (isAlarming) {
-                logger.warn("Background during foreground!");
-            }
             backgroundComponent.setData(eventRecord);
 
             Count grossCount = (Count) backgroundComponent.getComponent(NEUTRON_GROSS_COUNT_NAME);
@@ -274,42 +288,48 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
 
     @Override
     protected void publishData() throws InterruptedException {
-        if (doPublishOccupancy) {
-            publishData(OCCUPANCY_NAME);
-            doPublishOccupancy = false;
-        }
+        publishData(OCCUPANCY_NAME);
 
-        double currentTime = System.currentTimeMillis();
-        if (currentTime - lastDailyfileTime > DAILYFILE_INTERVAL_MS) {
-            updateDailyFile(isAlarming);
-            publishData(DailyFileStruct.DAILY_FILE_NAME);
-            lastDailyfileTime = currentTime;
-        }
+        updateDailyFile();
     }
 
-    private void updateDailyFile(boolean isAlarming) {
+    private void updateDailyFile() {
+        boolean isAlarming = System.currentTimeMillis() - alarmDuration < lastAlarmTime;
+        boolean isDailyFileIntervalElapsed = System.currentTimeMillis() - lastDailyFileTime > DAILYFILE_INTERVAL_MS;
+        // Don't need to publish dailyfile again if we have already published during this alarm (or non-alarm)
+        if (isAlarming == reportingDailyFile && !isDailyFileIntervalElapsed) {
+            return;
+        }
+        reportingDailyFile = isAlarming;
+
         DataComponent dailyFile = outputData.getComponent(DailyFileStruct.DAILY_FILE_NAME);
         if (!dailyFile.hasData()) {
             dailyFile.renewDataBlock();
         }
         dailyFile.getComponent(DailyFileStruct.ALARM_NAME).getData().setBooleanValue(isAlarming);
+        dailyFile.getComponent(DailyFileStruct.samplingTime.getName()).getData().setDoubleValue(System.currentTimeMillis() / 1000.0);
+        try {
+            publishData(DailyFileStruct.DAILY_FILE_NAME);
+        } catch (InterruptedException e) {
+            logger.error("Error publishing daily file", e);
+        }
     }
 
-    /**
-     * Executes whenever we receive a new occupancy.
-     * If occupancy has alarm, we retrieve historical records and publish those as process outputs.
-     */
     @Override
     public void execute() {
         if(inputSystemID == null) {
             inputSystemID = systemInputParam.getData().getStringValue();
         }
-
+        if (!hasStarted) {
+            hasStarted = true;
+            notifyParamChange();
+        }
     }
 
     @Override
     public void dispose() {
-        completableFutures.forEach(future -> future.cancel(true));
+        subscriptions.forEach(Flow.Subscription::cancel);
+        hasStarted = false;
     }
 
     /**
