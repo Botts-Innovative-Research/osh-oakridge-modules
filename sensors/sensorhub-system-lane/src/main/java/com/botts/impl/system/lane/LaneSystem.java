@@ -54,6 +54,7 @@ import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensor;
 import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
+import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.utils.Async;
 import org.sensorhub.utils.MsgUtils;
 import org.vast.util.Asserts;
@@ -202,6 +203,11 @@ public class LaneSystem extends SensorSystem {
                 subscription.request(Long.MAX_VALUE);
                 getLogger().info("Started module subscription to {}", getLocalID());
             });
+
+        var n42 = new RADHelper().createN42Report();
+        if (existingRPMModule.getOutputs().containsKey(n42.getName())) {
+            addOutput(existingRPMModule.getOutputs().get(n42.getName()), false);
+        }
     }
 
     private FFMPEGSensorBase<?> createFFmpegModule(FFMPEGConfig ffmpegConfig) throws SensorHubException {
