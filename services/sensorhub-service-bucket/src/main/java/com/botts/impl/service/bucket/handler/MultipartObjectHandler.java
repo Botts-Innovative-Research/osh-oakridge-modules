@@ -5,7 +5,7 @@ import com.botts.impl.service.bucket.util.InvalidRequestException;
 import com.botts.impl.service.bucket.util.MultipartRequestParser;
 import com.botts.impl.service.bucket.util.RequestContext;
 import com.botts.impl.service.bucket.util.ServiceErrors;
-import com.google.gson.stream.JsonWriter;
+import com.google.gson.JsonArray;
 import org.sensorhub.api.datastore.DataStoreException;
 
 import javax.servlet.http.HttpServletResponse;
@@ -25,7 +25,8 @@ public class MultipartObjectHandler {
 
     /**
      * Handle POST with multipart/form-data
-     * Creates multiple objects (one per file) with auto-generated UUIDs
+     * Stores each file using its multipart filename as the key, falling back to a
+     * UUID when no filename is provided. Returns a JSON array of relative resource URIs.
      *
      * @param ctx Request context
      * @throws IOException on I/O errors
@@ -50,8 +51,7 @@ public class MultipartObjectHandler {
             String tags = result.formFields().get("tags");
             String description = result.formFields().get("description");
 
-            // Create objects for each file
-            List<String> createdObjects = new ArrayList<>();
+            List<String> resourceURIs = new ArrayList<>();
             for (MultipartRequestParser.MultipartFile file : result.files()) {
 
                 // Build metadata for this file
@@ -74,37 +74,27 @@ public class MultipartObjectHandler {
                     fileMetadata.put("X-Original-Filename", file.fileName());
                 }
 
-                // Create object
-                String objectKey = bucketStore.createObject(
-                    bucketName,
-                    file.inputStream(),
-                    fileMetadata
-                );
-
-                if (objectKey == null) {
-                    throw ServiceErrors.internalError(IBucketStore.FAILED_CREATE_OBJECT + bucketName);
+                // Use filename as key if available, otherwise fall back to UUID
+                String objectKey;
+                if (file.fileName() != null && !file.fileName().isBlank()) {
+                    bucketStore.putObject(bucketName, file.fileName(), file.inputStream(), fileMetadata);
+                    objectKey = file.fileName();
+                } else {
+                    objectKey = bucketStore.createObject(bucketName, file.inputStream(), fileMetadata);
+                    if (objectKey == null) {
+                        throw ServiceErrors.internalError(IBucketStore.FAILED_CREATE_OBJECT + bucketName);
+                    }
                 }
 
-                createdObjects.add(objectKey);
+                resourceURIs.add(bucketStore.getRelativeResourceURI(bucketName, objectKey));
             }
 
-            // Return JSON response with created object URLs
             ctx.getResponse().setStatus(HttpServletResponse.SC_CREATED);
 
-            JsonWriter json = ctx.getJsonWriter();
-            json.beginObject();
-            json.name("count").value(createdObjects.size());
-            json.name("objects");
-            json.beginArray();
-            for (String key : createdObjects) {
-                json.beginObject();
-                json.name("key").value(key);
-                json.name("url").value(ctx.getResourceURL(key));
-                json.endObject();
-            }
-            json.endArray();
-            json.endObject();
-            json.flush();
+            JsonArray jsonArray = new JsonArray();
+            for (var resourceURI : resourceURIs)
+                jsonArray.add(resourceURI);
+            ctx.getResponse().getWriter().write(jsonArray.toString());
 
         } catch (InvalidRequestException e) {
             throw e;

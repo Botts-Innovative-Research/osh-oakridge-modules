@@ -77,7 +77,6 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
             drf = ctx.getRequest().getParameter("drf");
 
             if (ctx.isMultipartRequest()) {
-                // TODO: parse foreground and background and add to web id client builder
                 try (var parseResult = MultipartRequestParser.parse(ctx.getRequest())) {
 
                     for (var file : parseResult.files()) {
