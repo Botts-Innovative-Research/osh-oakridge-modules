@@ -48,7 +48,9 @@ public class DataOutputInterface implements IStreamingDataInterface {
         @Override
         public synchronized void publishData()
         {
-            Asserts.checkState(sourceComponent.hasData(), "Source component has no data");
+            if (!sourceComponent.hasData()) {
+                return;
+            }
             DataBlock data = sourceComponent.getData();
 
             long now = System.currentTimeMillis();
