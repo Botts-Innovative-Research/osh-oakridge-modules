@@ -15,8 +15,8 @@
 
 package com.botts.impl.process.rs350.occupancy;
 
+import com.botts.impl.process.rs350.occupancy.helpers.OccupancyProcessInterface;
 import net.opengis.OgcPropertyList;
-import net.opengis.sensorml.v20.AggregateProcess;
 import net.opengis.swe.v20.AbstractSWEIdentifiable;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -37,8 +37,8 @@ import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.processing.AbstractProcessModule;
 import com.botts.impl.process.rs350.occupancy.helpers.ProcessHelper;
 import com.botts.impl.process.rs350.occupancy.helpers.DataOutputInterface;
+import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.sensorhub.utils.Async;
-import org.vast.process.ExecutableProcessImpl;
 import org.vast.process.ProcessException;
 import org.vast.sensorML.*;
 
@@ -291,7 +291,11 @@ public class Rs350OccupancyProcessModule extends AbstractProcessModule<Rs350Occu
             } else if(ioMap == parameters) {
                 // TODO set control interfaces
             } else if(ioMap == outputs) {
-                outputInterfaces.put(ioName, new DataOutputInterface(this, ioDesc, ioEncoding));
+                if (ioName.equals(OccupancyOutput.NAME)) {
+                    outputInterfaces.put(ioName, new OccupancyProcessInterface(this, ioDesc, ioEncoding));
+                } else {
+                    outputInterfaces.put(ioName, new DataOutputInterface(this, ioDesc, ioEncoding));
+                }
             }
         }
     }
