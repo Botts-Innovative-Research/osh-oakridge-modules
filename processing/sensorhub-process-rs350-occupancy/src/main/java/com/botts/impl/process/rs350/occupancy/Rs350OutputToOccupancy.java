@@ -16,6 +16,8 @@
 package com.botts.impl.process.rs350.occupancy;
 
 import com.botts.impl.utils.n42.RadAlarmCategoryCodeSimpleType;
+import com.google.common.util.concurrent.AtomicDouble;
+import net.opengis.sensorml.v20.IOPropertyList;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.data.IObsData;
@@ -48,8 +50,9 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     ISensorHub hub;
     Text systemInputParam;
     String inputSystemID;
-    private static final RADHelper fac = new RADHelper();
+    private static final RADHelper radHelper = new RADHelper();
     public static final double DAILYFILE_INTERVAL_MS = 500;
+    public static final double OCCUPANCY_INTERVAL_MS = 5000;
     public static final String SYSTEM_INPUT_PARAM = "systemInput";
     public static final OccupancyOutput occupancyOutput = new OccupancyOutput(new SensorSystem());
 
@@ -57,10 +60,11 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     public static final String ALARM_NAME = "alarm";
     public static final String BACKGROUND_NAME = "backgroundReport";
     public static final String FOREGROUND_NAME = "foregroundReport";
-    private static final String DURATION_NAME = fac.createDuration().getName();
-    private static final String ALARM_CAT_NAME = fac.createAlarmCatCode().getName();
-    private static final String GAMMA_GROSS_COUNT_NAME = fac.createGammaGrossCount().getName();
-    private static final String NEUTRON_GROSS_COUNT_NAME = fac.createNeutronGrossCount().getName();
+    private static final String SAMPLING_TIME_NAME = radHelper.createPrecisionTimeStamp().getName();
+    private static final String DURATION_NAME = radHelper.createDuration().getName();
+    private static final String ALARM_CAT_NAME = radHelper.createAlarmCatCode().getName();
+    private static final String GAMMA_GROSS_COUNT_NAME = radHelper.createGammaGrossCount().getName();
+    private static final String NEUTRON_GROSS_COUNT_NAME = radHelper.createNeutronGrossCount().getName();
 
     // All RS350 outputs. Some arrive less regularly, so we don't want to connect as input and block while waiting
     public static final List<String> ALL_OUTPUTS = List.of(ALARM_NAME, BACKGROUND_NAME, FOREGROUND_NAME);
@@ -68,6 +72,7 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     public static final List<String> RS350_OUTPUTS = List.of(FOREGROUND_NAME);
     public final List<Flow.Subscription> subscriptions = new ArrayList<>(ALL_OUTPUTS.size());
     private Occupancy.Builder occupancyBuilder;
+    private IOPropertyList allInputs = new IOPropertyList();
 
     private int occupancyCount = 0;
     private double latestNeutronBackground = 0;
@@ -75,7 +80,7 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     private int maxNeutronCount = 0;
 
     private volatile boolean doPublishOccupancy = false;
-    private double lastAlarmTime = 0;
+    private AtomicDouble lastAlarmTime = new AtomicDouble(0);
     private double lastDailyFileTime = 0;
     private double alarmDuration;
     private boolean reportingDailyFile = false;
@@ -115,7 +120,7 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     public Rs350OutputToOccupancy() {
         super(INFO);
 
-        paramData.add(SYSTEM_INPUT_PARAM, systemInputParam = fac.createText()
+        paramData.add(SYSTEM_INPUT_PARAM, systemInputParam = radHelper.createText()
                 .label("Parent System Input")
                 .description("Parent system (Lane) that contains one RPM datastream, typically Rapiscan or Aspect.")
                 .definition(SWEHelper.getPropertyUri("System"))
@@ -161,6 +166,7 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     private boolean checkDataStreamInput(String... dataStreamNames) {
         // Clear old inputs
         inputData.clear();
+        allInputs.clear();
 
         for (var subscription : subscriptions) {
             subscription.cancel();
@@ -189,6 +195,9 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
                 if (RS350_OUTPUTS.contains(dataStreamName))
                     inputData.add(dataStreamName, occupancyDataStreams.get(0).getRecordStructure().copy());
 
+                // Separate list of all data we actually care about
+                allInputs.add(dataStreamName, occupancyDataStreams.get(0).getRecordStructure().copy());
+
                 hub.getEventBus().newSubscription(ObsEvent.class)
                         .withTopicID(EventUtils.getDataStreamDataTopicID(inputSystemID, dataStreamName))
                         .subscribe(this::processDataEvent)
@@ -202,6 +211,9 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
         }
 
         for (var input : inputData) {
+            ((DataComponent) input).renewDataBlock();
+        }
+        for (var input : allInputs) {
             ((DataComponent) input).renewDataBlock();
         }
         return !inputData.isEmpty();
@@ -225,38 +237,44 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     }
 
     private synchronized void processAlarm(DataBlock... eventRecords) {
-        DataComponent alarmComponent = ((DataComponent) inputData.get(ALARM_NAME)).copy();
-
-        for (DataBlock eventRecord : eventRecords) {
-            alarmComponent.setData(eventRecord);
-
-            double startTime = ((Time) alarmComponent.getComponent("Sampling Time")).getValue().getAsDouble();
-            double endTime = startTime + ((Quantity) alarmComponent.getComponent(DURATION_NAME)).getValue();
-            alarmDuration = endTime - startTime;
-            lastAlarmTime = System.currentTimeMillis();
-
-            // TODO This needs to be tested
-            String alarmCat = alarmComponent.getComponent(ALARM_CAT_NAME).getData().getStringValue().toLowerCase();
-            boolean hasGammaAlarm = alarmCat.contains(RadAlarmCategoryCodeSimpleType.GAMMA.value());
-            boolean hasNeutronAlarm = alarmCat.contains(RadAlarmCategoryCodeSimpleType.NEUTRON.value());
-            occupancyCount++;
-
-            occupancyBuilder = new Occupancy.Builder();
-            occupancyBuilder.startTime(startTime).endTime(endTime).samplingTime(startTime);
-            occupancyBuilder.gammaAlarm(hasGammaAlarm).neutronAlarm(hasNeutronAlarm);
-            occupancyBuilder.maxGammaCount(maxGammaCount).maxNeutronCount(maxNeutronCount);
-            occupancyBuilder.neutronBackground(latestNeutronBackground);
-            occupancyBuilder.occupancyCount(occupancyCount);
-
-            setOccupancyOutput(occupancyBuilder.build());
-
-            doPublishOccupancy = true;
+        if (System.currentTimeMillis() - lastAlarmTime.get() < OCCUPANCY_INTERVAL_MS) {
+            return;
         }
+        lastAlarmTime.set(System.currentTimeMillis());
+
+        DataComponent alarmComponent = ((DataComponent) allInputs.get(ALARM_NAME)).copy();
+
+        var eventRecord = eventRecords[0];
+        alarmComponent.setData(eventRecord);
+
+        double startTime = ((Time) alarmComponent.getComponent(SAMPLING_TIME_NAME)).getValue().getAsDouble();
+        double endTime = startTime + ((Quantity) alarmComponent.getComponent(DURATION_NAME)).getValue();
+        alarmDuration = endTime - startTime;
+
+
+        // TODO This needs to be tested
+        //String alarmCat = alarmComponent.getComponent(ALARM_CAT_NAME).getData().getStringValue().toLowerCase();
+        String alarmCat = RadAlarmCategoryCodeSimpleType.GAMMA.value();
+        boolean hasGammaAlarm = alarmCat.contains(RadAlarmCategoryCodeSimpleType.GAMMA.value());
+        boolean hasNeutronAlarm = alarmCat.contains(RadAlarmCategoryCodeSimpleType.NEUTRON.value());
+        occupancyCount++;
+
+        occupancyBuilder = new Occupancy.Builder();
+        occupancyBuilder.startTime(startTime).endTime(endTime).samplingTime(startTime);
+        occupancyBuilder.gammaAlarm(hasGammaAlarm).neutronAlarm(hasNeutronAlarm);
+        occupancyBuilder.maxGammaCount(maxGammaCount).maxNeutronCount(maxNeutronCount);
+        occupancyBuilder.neutronBackground(latestNeutronBackground);
+        occupancyBuilder.occupancyCount(occupancyCount);
+
+        setOccupancyOutput(occupancyBuilder.build());
+
+        doPublishOccupancy = true;
+
     }
 
     // Concerned w/ max gamma and neutron counts
     private synchronized void processForeground(DataBlock... eventRecords) {
-        DataComponent foregroundComponent = ((DataComponent) inputData.get(FOREGROUND_NAME)).copy();
+        DataComponent foregroundComponent = ((DataComponent) allInputs.get(FOREGROUND_NAME)).copy();
 
         for (DataBlock eventRecord : eventRecords) {
             foregroundComponent.setData(eventRecord);
@@ -275,7 +293,7 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
 
     // Concerned with background neutron counts
     private synchronized void processBackground(DataBlock... eventRecords) {
-        DataComponent backgroundComponent = ((DataComponent) inputData.get(BACKGROUND_NAME)).copy();
+        DataComponent backgroundComponent = ((DataComponent) allInputs.get(BACKGROUND_NAME)).copy();
 
         for (DataBlock eventRecord : eventRecords) {
             backgroundComponent.setData(eventRecord);
@@ -294,7 +312,7 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     }
 
     private void updateDailyFile() {
-        boolean isAlarming = System.currentTimeMillis() - alarmDuration < lastAlarmTime;
+        boolean isAlarming = System.currentTimeMillis() - (alarmDuration * 1000) < lastAlarmTime.get();
         boolean isDailyFileIntervalElapsed = System.currentTimeMillis() - lastDailyFileTime > DAILYFILE_INTERVAL_MS;
         // Don't need to publish dailyfile again if we have already published during this alarm (or non-alarm)
         if (isAlarming == reportingDailyFile && !isDailyFileIntervalElapsed) {
