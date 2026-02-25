@@ -17,5 +17,5 @@ public class FFMpegConfig extends ConnectionConfig {
     public String password;
 
     @DisplayInfo(label = "Camera Video Buffer Length")
-    public int bufferSeconds = 0;
+    public int bufferSize = 0;
 }
