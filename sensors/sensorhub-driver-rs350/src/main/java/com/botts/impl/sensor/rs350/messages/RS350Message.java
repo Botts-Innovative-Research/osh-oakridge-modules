@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
 
+import javax.validation.constraints.Null;
 import javax.xml.datatype.Duration;
 
 
@@ -39,20 +40,30 @@ public class RS350Message {
         rs350InstrumentInformation = new RS350InstrumentInformation(instrumentInfo.getRadInstrumentManufacturerName(), instrumentInfo.getRadInstrumentIdentifier(), instrumentInfo.getRadInstrumentModelName(), instrumentInfo.getRadInstrumentClassCode().name() );
 
         // create Instrument Characteristics
-        CharacteristicsType InstrumentInfoChars = msg.getRadInstrumentInformation().getRadInstrumentCharacteristics().get(0);
-        CharacteristicType deviceName = (CharacteristicType) InstrumentInfoChars.getCharacteristicOrCharacteristicGroup().get(0);
-        CharacteristicType batteryCharge = (CharacteristicType) InstrumentInfoChars.getCharacteristicOrCharacteristicGroup().get(1);
+        CharacteristicsType InstrumentInfoChars, ItemInfoChars;
+        String deviceName, batteryCharge, scanMode, scanNumber, scanTimeoutNumber, analysisEnabled;
 
-        rs350InstrumentCharacteristics = new RS350InstrumentCharacteristics(deviceName.getCharacteristicValue(), Double.parseDouble(batteryCharge.getCharacteristicValue()));
+        InstrumentInfoChars = msg.getRadInstrumentInformation().getRadInstrumentCharacteristics().get(0);
+
+        try {
+            deviceName = ((CharacteristicType) InstrumentInfoChars.getCharacteristicOrCharacteristicGroup().get(0)).getCharacteristicValue();
+            batteryCharge = ((CharacteristicType) InstrumentInfoChars.getCharacteristicOrCharacteristicGroup().get(1)).getCharacteristicValue();
+            rs350InstrumentCharacteristics = new RS350InstrumentCharacteristics(deviceName, Double.parseDouble(batteryCharge));
+        } catch (IndexOutOfBoundsException e) {
+            rs350InstrumentCharacteristics = null;
+        }
 
         // create Item
-        CharacteristicsType ItemInfoChars = msg.getRadItemInformation().get(0).getRadItemCharacteristics().get(0);
-        CharacteristicType scanMode = (CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(0);
-        CharacteristicType scanNumber = (CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(1);
-        CharacteristicType scanTimeoutNumber = (CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(2);
-        CharacteristicType analysisEnabled = (CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(3);
-
-        rs350Item = new RS350Item(scanMode.getCharacteristicValue(), Double.parseDouble(scanNumber.getCharacteristicValue()), Double.parseDouble(scanTimeoutNumber.getCharacteristicValue()), (Integer.parseInt(analysisEnabled.getCharacteristicValue())) != 0);
+        ItemInfoChars = msg.getRadItemInformation().get(0).getRadItemCharacteristics().get(0);
+        try {
+            scanMode = ((CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(0)).getCharacteristicValue();
+            scanNumber = ((CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(1)).getCharacteristicValue();
+            scanTimeoutNumber = ((CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(2)).getCharacteristicValue();
+            analysisEnabled = ((CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(3)).getCharacteristicValue();
+            rs350Item = new RS350Item(scanMode, Double.parseDouble(scanNumber), Double.parseDouble(scanTimeoutNumber), (Integer.parseInt(analysisEnabled)) != 0);
+        } catch (IndexOutOfBoundsException e) {
+            rs350Item = null;
+        }
 
         radAlarmRecieved = false;
 
