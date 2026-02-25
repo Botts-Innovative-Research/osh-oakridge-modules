@@ -24,6 +24,7 @@ import org.sensorhub.api.event.IEventListener;
 import org.sensorhub.api.processing.IProcessModule;
 import org.sensorhub.api.processing.ProcessingException;
 import org.sensorhub.impl.event.BasicEventHandler;
+import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.vast.process.DataQueue;
@@ -34,6 +35,8 @@ import org.vast.util.Asserts;
 public class OccupancyProcessInterface extends OccupancyOutput {
     final IProcessModule<?> parentProcess;
     final IEventHandler eventHandler;
+    static RADHelper radHelper = new RADHelper();
+    static String OUTPUT_NAME = OccupancyOutput.NAME;
     DataComponent outputDef;
     DataEncoding outputEncoding;
     DataBlock lastRecord;
@@ -60,6 +63,7 @@ public class OccupancyProcessInterface extends OccupancyOutput {
                 lastOccupancy = occupancy;
                 // This handles publishing too
                 setData(occupancy);
+                eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyProcessInterface.this, dataBlock));
             }
         }
     };
@@ -104,7 +108,7 @@ public class OccupancyProcessInterface extends OccupancyOutput {
     @Override
     public String getName()
     {
-        return outputDef.getName();
+        return OUTPUT_NAME;
     }
 
 
