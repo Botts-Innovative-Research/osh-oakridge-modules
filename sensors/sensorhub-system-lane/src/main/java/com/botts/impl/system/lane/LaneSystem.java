@@ -46,7 +46,6 @@ import org.sensorhub.api.system.SystemRemovedEvent;
 import org.sensorhub.impl.comm.TCPCommProviderConfig;
 import org.sensorhub.impl.module.AbstractModule;
 import org.sensorhub.impl.module.ModuleRegistry;
-import org.sensorhub.impl.processing.AbstractProcessModule;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
@@ -55,7 +54,6 @@ import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensor;
 import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
 import org.sensorhub.impl.utils.rad.RADHelper;
-import org.sensorhub.utils.Async;
 import org.sensorhub.utils.MsgUtils;
 import org.vast.util.Asserts;
 
@@ -262,7 +260,9 @@ public class LaneSystem extends SensorSystem {
         if (occupancyProducer != existingRPMModule) {
             removeSubSystem(occupancyProducer.getConfiguration().id);
         }
-        occupancyWrapper.removeRpmSensor();
+        if (occupancyWrapper != null) {
+            occupancyWrapper.removeRpmSensor();
+        }
     }
 
     @Override
@@ -611,7 +611,7 @@ public class LaneSystem extends SensorSystem {
         config.connectionConfig.reconnectAttempts = 10;
         config.output.useHLS = true;
         config.output.useVideoFrames = false;
-        config.connection.bufferSeconds = ffmpegConfig.bufferSeconds;
+        config.connection.bufferSize = ffmpegConfig.bufferSize;
         return config;
     }
 
