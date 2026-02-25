@@ -33,9 +33,9 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
     DataRecord commandData;
     DataRecord resultData;
     String fileName = "";
-    private final FileOutput fileOutput;
+    private final FileOutput.MP4Output<?> fileOutput;
 
-    public FileControl(FFMPEGSensorBase<FFmpegConfigType> sensor, FileOutput fileOutput) throws DataStoreException {
+    public FileControl(FFMPEGSensorBase<FFmpegConfigType> sensor, FileOutput.MP4Output<?> fileOutput) throws DataStoreException {
         super(SENSOR_CONTROL_NAME, sensor);
 
         this.fileOutput = fileOutput;

@@ -237,7 +237,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 
     protected void createHLSControl() {
         try {
-            var fileOutput = new FileOutput<>(this, "HLSControlOutput");
+            var fileOutput = new FileOutput.LiveOutput<>(this, "HLSControlOutput");
             hlsControl = new HLSControl<>(this, fileOutput);
             //mpegTsProcessor.addVideoDataBufferListener(hlsControl.getFileOutput());
 
@@ -251,7 +251,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 
     protected void createFileControl() {
         try {
-            var fileOutput = new FileOutput<>(this, "FileControlOutput");
+            var fileOutput = new FileOutput.MP4Output<>(this, "FileControlOutput");
             fileControl = new FileControl<>(this, fileOutput);
             //mpegTsProcessor.addVideoDataBufferListener(fileControl.getFileOutput());
 
@@ -295,7 +295,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	        	throw new SensorHubException("Either the input file path or the connection string must be set");
 	        }
             mpegTsProcessor.setTimeout(config.connectionConfig.connectTimeout * 1000L);
-            mpegTsProcessor.setFrameBuffer(config.connection.bufferSeconds);
+            mpegTsProcessor.setFrameBuffer(config.connection.bufferSize);
             mpegTsProcessor.clearVideoDataBufferListeners();
 
             //removeAllControlInputs();

@@ -30,8 +30,6 @@ import org.slf4j.LoggerFactory;
 import org.vast.swe.SWEHelper;
 
 import java.io.*;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.bytedeco.ffmpeg.global.avcodec.*;
@@ -40,6 +38,18 @@ import static org.bytedeco.ffmpeg.global.avutil.*;
 
 
 public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSensorOutput<FFMPEGSensorBase<FFMPEGConfigType>> implements DataBufferListener {
+
+    public static class MP4Output<FFMPEGConfigType extends FFMPEGConfig> extends FileOutput<FFMPEGConfigType> {
+        public MP4Output(FFMPEGSensorBase<FFMPEGConfigType> parentSensor, String name) throws SensorHubException {
+            super(parentSensor, name);
+        }
+    }
+
+    public static class LiveOutput<FFMPEGConfigType extends FFMPEGConfig> extends FileOutput<FFMPEGConfigType> {
+        public LiveOutput(FFMPEGSensorBase<FFMPEGConfigType> parentSensor, String name) throws SensorHubException {
+            super(parentSensor, name);
+        }
+    }
 
     public String outputName = "FileNameOutput";
     final DataComponent outputStruct;
@@ -127,7 +137,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
             synchronized (contextLock) {
                 if (isWriting()) {
-                    int writeRet = av_interleaved_write_frame(outputContext, avPacket);
+                    int writeRet = av_write_frame(outputContext, avPacket);
                     if (writeRet < 0) {
                         logFFmpeg(writeRet);
                     }
