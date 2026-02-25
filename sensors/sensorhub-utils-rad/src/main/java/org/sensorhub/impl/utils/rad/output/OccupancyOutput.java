@@ -111,7 +111,7 @@ public class OccupancyOutput<SensorType extends IDataProducer> extends AbstractD
         updateSamplingPeriod(now);
         latestRecordTime = now;
 
-        eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));
+        eventHandler.publish(new DataEvent(System.currentTimeMillis(), this, dataBlock));
     }
 
     /**
