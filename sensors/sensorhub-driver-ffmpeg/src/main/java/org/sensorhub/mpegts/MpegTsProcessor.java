@@ -689,18 +689,7 @@ public class MpegTsProcessor extends Thread {
         }
         while (loop);
 
-        if (encoder != null) {
-            encoder.doRun.set(false);
-            try {
-                encoder.join();
-            } catch (Exception ignored) {}
-        }
-        if (decoder != null) {
-            decoder.doRun.set(false);
-            try {
-                decoder.join();
-            } catch (Exception ignored) {}
-        }
+        shutdownExecutors();
     }
 
     private void submitPacketToListeners(AVPacket avPacket, Class<? extends DataBufferListener> listenerType) {
@@ -752,6 +741,25 @@ public class MpegTsProcessor extends Thread {
     }
 
     private void shutdownExecutors() {
+        if (encoder != null) {
+            encoder.doRun.set(false);
+            try {
+                encoder.join();
+                for (AVPacket avPacket : encoder.getOutQueue()) {
+                    av_packet_free(avPacket);
+                }
+            } catch (Exception ignored) {}
+        }
+        if (decoder != null) {
+            decoder.doRun.set(false);
+            try {
+                decoder.join();
+                for (AVFrame avFrame : decoder.getOutQueue()) {
+                    av_frame_free(avFrame);
+                }
+            } catch (Exception ignored) {}
+        }
+
         isSubmittingFrameQueue.set(false);
         if (frameQueueSubmitter != null) {
             frameQueueSubmitter.shutdownNow();
