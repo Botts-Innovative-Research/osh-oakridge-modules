@@ -487,8 +487,6 @@ public class WebIdIntegrationTests {
         // Get occupancy obs ID
         var obsIdEncoder = hub.getIdEncoders().getObsIdEncoder();
         var obsStore = hub.getDatabaseRegistry().getFederatedDatabase().getObservationStore();
-        database.getObservationStore().removeEntries(obsStore.selectAllFilter());
-        generateOccupancy(lane);
         var occupancyObsId = obsStore.selectKeys(obsStore.selectAllFilter()).toList().get(0);
         var encodedOccupancyObsId = obsIdEncoder.encodeID(occupancyObsId);
 

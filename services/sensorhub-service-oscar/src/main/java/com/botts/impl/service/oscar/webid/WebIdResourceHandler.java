@@ -62,6 +62,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         String laneUid;
         String drf;
         boolean webIdEnabled;
+        boolean synthesizeBackground;
 
         String foregroundFileName = null;
         byte[] foregroundData = null;
@@ -75,6 +76,8 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
             String webIdEnabledParam = ctx.getRequest().getParameter("webIdEnabled");
             webIdEnabled = Boolean.parseBoolean(webIdEnabledParam);
             drf = ctx.getRequest().getParameter("drf");
+            String synthesizeBackgroundParam = ctx.getRequest().getParameter("synthesizeBackground");
+            synthesizeBackground = Boolean.parseBoolean(synthesizeBackgroundParam);
 
             if (ctx.isMultipartRequest()) {
                 try (var parseResult = MultipartRequestParser.parse(ctx.getRequest())) {
@@ -268,8 +271,9 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
 
                 if (webIdContext.backgroundData != null)
                     requestBuilder.background(new ByteArrayInputStream(webIdContext.backgroundData));
-                else
-                    requestBuilder.synthesizeBackground(true);
+
+                // client chooses whether to synthesize background data
+                requestBuilder.synthesizeBackground(webIdContext.synthesizeBackground);
 
                 analysis = webIdClient.analyze(requestBuilder.build());
                 logger.info("WebID analysis succeeded after Cambio conversion");
@@ -375,8 +379,9 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         // include background but if no background data then we need to synthesize it
         if (webIdContext.backgroundData != null)
             requestBuilder.background(new ByteArrayInputStream(webIdContext.backgroundData));
-        else
-            requestBuilder.synthesizeBackground(true);
+
+        // client chooses whether to synthesize background data
+        requestBuilder.synthesizeBackground(webIdContext.synthesizeBackground);
 
         if (webIdContext.drf != null && !webIdContext.drf.isBlank())
             requestBuilder.drf(webIdContext.drf);

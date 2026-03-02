@@ -8,6 +8,10 @@ import java.util.*;
 
 public class CambioConverter {
 
+    static {
+        SpecUtilsNativeLoader.load();
+    }
+
     public CambioConverter() {
     }
 

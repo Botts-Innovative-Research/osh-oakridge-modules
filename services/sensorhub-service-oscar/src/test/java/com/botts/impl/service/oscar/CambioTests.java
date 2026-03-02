@@ -3,6 +3,8 @@ package com.botts.impl.service.oscar;
 import com.botts.impl.service.oscar.cambio.*;
 import gov.sandia.specutils.ParserType;
 import gov.sandia.specutils.SaveSpectrumAsType;
+import gov.sandia.specutils.SpecUtilsNativeLoader;
+import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -18,7 +20,10 @@ public class CambioTests {
 
     @Before
     public void setup() {
-        // You can set -Djava.library.path when running tests
+        boolean nativeAvailable = SpecUtilsNativeLoader.load();
+        Assume.assumeTrue(
+            "Skipping: SpecUtils native library not available on this platform",
+            nativeAvailable);
         converter = new CambioConverter();
     }
 
