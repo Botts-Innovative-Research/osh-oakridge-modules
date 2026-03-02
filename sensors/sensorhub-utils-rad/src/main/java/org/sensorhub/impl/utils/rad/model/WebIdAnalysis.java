@@ -1,8 +1,13 @@
 package org.sensorhub.impl.utils.rad.model;
 
-import net.opengis.swe.v20.DataArray;import net.opengis.swe.v20.DataBlock;import net.opengis.swe.v20.DataComponent;import org.sensorhub.impl.utils.rad.RADHelper;
+import net.opengis.swe.v20.DataArray;
+import net.opengis.swe.v20.DataBlock;
+import net.opengis.swe.v20.DataComponent;
+import org.sensorhub.impl.utils.rad.RADHelper;
 
-import java.time.Instant;import java.util.ArrayList;import java.util.List;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 public class WebIdAnalysis {
 
