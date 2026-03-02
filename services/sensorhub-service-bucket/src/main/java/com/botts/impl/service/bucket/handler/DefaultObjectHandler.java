@@ -14,11 +14,11 @@ import java.util.regex.Pattern;
 public class DefaultObjectHandler implements IObjectHandler {
 
     protected final IBucketStore bucketStore;
-    private final MultipartObjectHandler multipartHandler;
+    private final MultipartHandler multipartHandler;
 
     public DefaultObjectHandler(IBucketStore bucketStore) {
         this.bucketStore = bucketStore;
-        this.multipartHandler = new MultipartObjectHandler(bucketStore);
+        this.multipartHandler = new MultipartHandler(bucketStore);
     }
 
     @Override

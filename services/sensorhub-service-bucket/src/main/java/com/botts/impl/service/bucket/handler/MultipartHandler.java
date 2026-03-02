@@ -15,13 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class MultipartObjectHandler {
-
-    private final IBucketStore bucketStore;
-
-    public MultipartObjectHandler(IBucketStore bucketStore) {
-        this.bucketStore = bucketStore;
-    }
+public record MultipartHandler(IBucketStore bucketStore) {
 
     /**
      * Handle POST with multipart/form-data
@@ -29,7 +23,7 @@ public class MultipartObjectHandler {
      * UUID when no filename is provided. Returns a JSON array of relative resource URIs.
      *
      * @param ctx Request context
-     * @throws IOException on I/O errors
+     * @throws IOException       on I/O errors
      * @throws SecurityException on permission errors
      */
     public void handleMultipartPost(RequestContext ctx)
@@ -113,8 +107,8 @@ public class MultipartObjectHandler {
      *
      * @param ctx Request context
      * @throws InvalidRequestException if multiple files provided
-     * @throws IOException on I/O errors
-     * @throws SecurityException on permission errors
+     * @throws IOException             on I/O errors
+     * @throws SecurityException       on permission errors
      */
     public void handleMultipartPut(RequestContext ctx)
             throws IOException, SecurityException {
@@ -131,7 +125,7 @@ public class MultipartObjectHandler {
             // PUT only accepts single file
             if (result.files().size() > 1) {
                 throw ServiceErrors.badRequest(
-                    "PUT only accepts single file. Use POST for multiple files."
+                        "PUT only accepts single file. Use POST for multiple files."
                 );
             }
 
@@ -157,7 +151,7 @@ public class MultipartObjectHandler {
 
             // Determine status code
             int successStatus = bucketStore.objectExists(bucketName, objectKey) ?
-                HttpServletResponse.SC_OK : HttpServletResponse.SC_CREATED;
+                    HttpServletResponse.SC_OK : HttpServletResponse.SC_CREATED;
 
             // Put object
             bucketStore.putObject(bucketName, objectKey, file.inputStream(), metadata);
