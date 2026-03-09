@@ -1,18 +1,12 @@
 package org.sensorhub.impl.utils.rad.model;
 
-import net.opengis.swe.v20.DataArray;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
-import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.DataArrayImpl;
-import org.vast.swe.SWEHelper;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
-import java.util.function.IntUnaryOperator;
 
 public class Adjudication {
 

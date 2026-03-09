@@ -27,6 +27,7 @@ import org.sensorhub.impl.service.AbstractHttpServiceModule;
 import org.sensorhub.utils.NamedThreadFactory;
 import org.vast.util.Asserts;
 
+import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -150,6 +151,16 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
                 .filter(handler -> objectKey.matches(handler.getObjectPattern()))
                 .findFirst()
                 .orElse(defaultObjectHandler);
+    }
+
+    @Override
+    public IObjectHandler getObjectHandler(String bucketName, String objectKey, HttpServletRequest request) {
+        // check if any handler explicitly wants to handle this request
+        var requestHandler = objectHandlers.stream()
+                .filter(handler -> handler.canHandleRequest(request))
+                .findFirst();
+
+        return requestHandler.orElseGet(() -> getObjectHandler(bucketName, objectKey));
     }
 
     @Override

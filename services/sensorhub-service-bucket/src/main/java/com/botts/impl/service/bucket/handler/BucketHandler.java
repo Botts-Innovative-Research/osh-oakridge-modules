@@ -41,7 +41,7 @@ public class BucketHandler implements IResourceHandler {
             var bucketPerms = sec.getBucketPermissions().get(bucketName);
             if (ctx.hasObjectKey()) {
                 sec.checkPermission(bucketPerms.get);
-                var objectHandler = service.getObjectHandler(bucketName, ctx.getObjectKey());
+                var objectHandler = service.getObjectHandler(bucketName, ctx.getObjectKey(), ctx.getRequest());
                 objectHandler.doGet(ctx);
             } else {
                 sec.checkPermission(bucketPerms.list);
@@ -90,7 +90,8 @@ public class BucketHandler implements IResourceHandler {
         if (ctx.hasBucketName()) {
             if (!bucketStore.bucketExists(bucketName))
                 throw ServiceErrors.notFound(bucketName);
-            var objectHandler = service.getObjectHandler(bucketName, ctx.getObjectKey());
+            // Use overloaded method that considers request parameters for handler selection
+            var objectHandler = service.getObjectHandler(bucketName, ctx.getObjectKey(), ctx.getRequest());
             objectHandler.doPost(ctx);
         } else
             throw ServiceErrors.unsupportedOperation("Creating bucket via POST is not currently supported");
@@ -127,7 +128,7 @@ public class BucketHandler implements IResourceHandler {
             if (!sec.getBucketPermissions().containsKey(bucketName))
                 throw ServiceErrors.forbidden(bucketName);
 
-            var objectHandler = service.getObjectHandler(bucketName, ctx.getObjectKey());
+            var objectHandler = service.getObjectHandler(bucketName, ctx.getObjectKey(), ctx.getRequest());
             objectHandler.doPut(ctx);
         }
     }
@@ -154,7 +155,7 @@ public class BucketHandler implements IResourceHandler {
                 throw ServiceErrors.internalError(IBucketStore.FAILED_DELETE_BUCKET + bucketName);
             }
         } else {
-            var objectHandler = service.getObjectHandler(bucketName, ctx.getObjectKey());
+            var objectHandler = service.getObjectHandler(bucketName, ctx.getObjectKey(), ctx.getRequest());
             objectHandler.doDelete(ctx);
         }
     }

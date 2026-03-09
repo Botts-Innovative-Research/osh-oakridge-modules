@@ -23,8 +23,8 @@ public class RADHelper extends GeoPosHelper {
     public static final String DEF_TAMPER = getRadUri("TamperStatus");
     public static final String DEF_THRESHOLD = getRadUri("Threshold");
     public static final String DEF_ADJUDICATION = getRadUri("AdjudicationCode");
-    public static final String DEF_EML_ANALYSIS = SWEHelper.getPropertyUri("EMLGammaAlert");
-    public static final String DEF_EML_SCAN = SWEHelper.getPropertyUri("EMLRPMGammaAlert");
+    public static final String DEF_EML_ANALYSIS = getRadUri("EMLGammaAlert");
+    public static final String DEF_EML_SCAN = getRadUri("EMLRPMGammaAlert");
     public static final String DEF_VIDEO = getRadUri("");
     public static final String DEF_COMM = getRadUri("");
 
@@ -380,6 +380,37 @@ public class RADHelper extends GeoPosHelper {
                 .label("Video Paths")
                 .description("Comma separated video file paths")
                 .definition(getRadUri("VideoPaths"))
+                .build();
+    }
+
+    public Count createWebIdObsIdCount() {
+        return createCount()
+                .name("webIdObsIdsCount")
+                .id("webIdObsIdsCount")
+                .label("Web ID Obs IDs Count")
+                .description("The number of Web ID analysis observation ids for the occupancy event record")
+                .definition(getRadUri("WebIdObsIdsCount"))
+                .build();
+    }
+
+    public DataArray createWebIdObsIdsArray() {
+        var webIdObsId = createWebIdObsId();
+        return createArray()
+                .name("webIdObsIds")
+                .label("Web ID Obs IDs")
+                .description("List of Web ID Analysis Observation IDs")
+                .definition(getRadUri("WebIdObsIdsArray"))
+                .withVariableSize("webIdObsIdsCount")
+                .withElement(webIdObsId.getName(), webIdObsId)
+                .build();
+    }
+
+    private Text createWebIdObsId() {
+        return createText()
+                .label("Web ID Obs ID")
+                .name("webIdObsId")
+                .description("ID of the Web ID Analysis observation")
+                .definition(getRadUri("WebIdObsId"))
                 .build();
     }
 
@@ -1050,57 +1081,57 @@ public class RADHelper extends GeoPosHelper {
                 .description("Adjudication data associated to an lane occupancy")
                 .addField("feedback", createText()
                         .label("Feedback")
-                        .definition(SWEHelper.getPropertyUri("Feedback"))
+                        .definition(getRadUri("Feedback"))
                         .optional(true)
                         .build())
                 .addField("adjudicationCode", createCount()
                         .label("Adjudication Code")
-                        .definition(SWEHelper.getPropertyUri("AdjudicationCode"))
+                        .definition(getRadUri("AdjudicationCode"))
                         .addAllowedInterval(0,11)
                         .optional(false)
                         .build())
                 .addField("isotopesCount", createCount()
                         .label("Isotopes Count")
                         .id("isotopesCount")
-                        .definition(SWEHelper.getPropertyUri("IsotopesCount"))
+                        .definition(getRadUri("IsotopesCount"))
                         .build())
                 .addField("isotopes", createArray()
                         .withVariableSize("isotopesCount")
-                        .definition(SWEHelper.getPropertyUri("Isotopes"))
+                        .definition(getRadUri("Isotopes"))
                         .withElement("isotope", createText()
                                 .label("Isotope")
-                                .definition(SWEHelper.getPropertyUri("Isotope"))
+                                .definition(getRadUri("Isotope"))
                                 .optional(true)
                                 .build())
                         .build())
                 .addField("secondaryInspectionStatus", createText()
                         .label("Secondary Inspection Status")
-                        .definition(SWEHelper.getPropertyUri("SecondaryInspectionStatus"))
+                        .definition(getRadUri("SecondaryInspectionStatus"))
                         .optional(false)
                         .addAllowedValues(Adjudication.SecondaryInspectionStatus.class)
                         .build())
                 .addField("filePathCount", createCount()
                         .label("File Path Count")
                         .id("filePathCount")
-                        .definition(SWEHelper.getPropertyUri("FilePathCount"))
+                        .definition(getRadUri("FilePathCount"))
                         .build())
                 .addField("filePaths", createArray()
                         .withVariableSize("filePathCount")
-                        .definition(SWEHelper.getPropertyUri("FilePaths"))
+                        .definition(getRadUri("FilePaths"))
                         .withElement("filePath", createText()
                                 .label("File Path")
-                                .definition(SWEHelper.getPropertyUri("FilePath"))
+                                .definition(getRadUri("FilePath"))
                                 .optional(true)
                                 .build())
                         .build())
                 .addField("occupancyObsId", createText()
                         .label("Occupancy Observation ID")
-                        .definition(SWEHelper.getPropertyUri("OccupancyObsID"))
+                        .definition(getRadUri("OccupancyObsID"))
                         .optional(false)
                         .build())
                 .addField("vehicleId", createText()
                         .label("Vehicle ID")
-                        .definition(SWEHelper.getPropertyUri("VehicleID"))
+                        .definition(getRadUri("VehicleID"))
                         .optional(true)
                         .build())
                 .build();
@@ -1171,6 +1202,65 @@ public class RADHelper extends GeoPosHelper {
                         .dataType(DataType.LONG)
                         .label("Total Number of Tampers")
                         .definition(getRadUri("NumTampers")))
+                .build();
+    }
+
+    // Web ID
+
+    public DataRecord createWebIdRecord() {
+        return createRecord()
+                .name("webIdAnalysis")
+                .label("Web ID Analysis")
+                .definition(getRadUri("WebIDAnalysis"))
+                .addField("sampleTime", createTime()
+                        .asSamplingTimeIsoUTC())
+                .addField("numIsotopes", createCount()
+                        .label("Number of Isotopes")
+                        .id("numIsotopes")
+                        .definition(getRadUri("NumberOfIsotopes"))
+                        .build())
+                .addField("isotopes", createArray()
+                        .withVariableSize("numIsotopes")
+                        .definition(getRadUri("Isotopes"))
+                        .withElement("isotopeAnalysis", createRecord()
+                                .label("Isotope Analysis")
+                                .definition(getRadUri("IsotopeAnalysis"))
+                                .addField("name", createText()
+                                        .definition(getRadUri("IsotopeName")))
+                                .addField("type", createText()
+                                        .definition(getRadUri("IsotopeType")))
+                                .addField("confidence", createQuantity()
+                                        .dataType(DataType.FLOAT)
+                                        .definition(getRadUri("ConfidenceLevel")))
+                                .addField("confidenceString", createText()
+                                        .definition(getRadUri("Confidence")))
+                                .addField("countRate", createQuantity()
+                                        .dataType(DataType.FLOAT)
+                                        .definition(getRadUri("CountRate"))))
+                        .build())
+                .addField("isotopeString", createText()
+                        .definition(getRadUri("IsotopeString")))
+                .addField("detectorResponseFunction", createText()
+                        .label("Detector Response Function (DRF)")
+                        .definition(getRadUri("DetectorResponseFunction")))
+                .addField("estimatedDose", createQuantity()
+                        .dataType(DataType.DOUBLE)
+                        .definition(getRadUri("EstimatedDose")))
+                .addField("chiSquare", createQuantity()
+                        .dataType(DataType.DOUBLE)
+                        .definition(getRadUri("ChiSquare")))
+                .addField("errorMessage", createText()
+                        .definition(getRadUri("ErrorMessage")))
+                .addField("numAnalysisWarnings", createCount()
+                        .definition("NumAnalysisWarnings")
+                        .id("numAnalysisWarnings"))
+                .addField("analysisWarnings", createArray()
+                        .withVariableSize("numAnalysisWarnings")
+                        .definition(getRadUri("AnalysisWarnings"))
+                        .withElement("analysisWarning", createText()
+                                .definition(getRadUri("AnalysisWarning"))))
+                .addField("occupancyObsId", createText()
+                        .definition(getRadUri("OccupancyObsID")))
                 .build();
     }
 

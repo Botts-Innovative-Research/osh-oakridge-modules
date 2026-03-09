@@ -119,8 +119,10 @@ public class FileSystemBucketStore implements IBucketStore {
             if (!Files.exists(path))
                 throw new DataStoreException(BUCKET_NOT_FOUND, new IllegalArgumentException());
             Path resolved = path.resolve(key);
-            if (!Files.exists(resolved))
-                Files.createDirectories(resolved);
+            // Create parent directories if they don't exist (for nested keys like "subdir/file.txt")
+            Path parent = resolved.getParent();
+            if (parent != null && !Files.exists(parent))
+                Files.createDirectories(parent);
             Files.copy(data, resolved, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new DataStoreException(FAILED_PUT_OBJECT + bucketName, e);

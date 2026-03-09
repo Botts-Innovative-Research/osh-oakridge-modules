@@ -80,6 +80,7 @@ public class LaneSystem extends SensorSystem {
     OccupancyWrapper occupancyWrapper;
 
     AdjudicationControl adjudicationControl;
+    WebIdOutput webIdOutput;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -137,6 +138,9 @@ public class LaneSystem extends SensorSystem {
                 }
             }
         }
+
+        webIdOutput = new WebIdOutput(this);
+        addOutput(webIdOutput, false);
 
         adjudicationControl = new AdjudicationControl(this);
         addControlInput(adjudicationControl);
