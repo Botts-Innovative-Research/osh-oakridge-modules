@@ -3,6 +3,7 @@ package org.sensorhub.impl.utils.rad.output;
 import com.botts.impl.utils.n42.AnalysisResultsType;
 import com.botts.impl.utils.n42.RadAlarmCategoryCodeSimpleType;
 import com.botts.impl.utils.n42.RadMeasurementType;
+import com.botts.impl.utils.n42.SpectrumType;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.api.data.IDataProducerModule;
@@ -194,6 +195,10 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                         //reportComponent.assignNewDataBlock();
                         reportComponent.getData().updateAtomCount();
 
+                        // If compressed spectrum is missing, add blank spectrum
+                        while (radMeasurementType.getSpectrum().size() < 2) {
+                            radMeasurementType.getSpectrum().add(new SpectrumType());
+                        }
                         populateBackgroundReport(reportComponent, radMeasurementType.getMeasurementClassCode().name(),
                                 radMeasurementType.getStartDateTime().toGregorianCalendar().getTimeInMillis(),
                                 durationToDouble(radMeasurementType.getRealTimeDuration()),
@@ -228,6 +233,10 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                             lon = 0.0;
                             elv = 0.0;
                         }
+                        // If compressed spectrum is missing, add blank spectrum
+                        while (radMeasurementType.getSpectrum().size() < 2) {
+                            radMeasurementType.getSpectrum().add(new SpectrumType());
+                        }
                         populateForegroundReport(reportComponent, radMeasurementType.getMeasurementClassCode().name(),
                                 radMeasurementType.getStartDateTime().toGregorianCalendar().getTimeInMillis(),
                                 durationToDouble(radMeasurementType.getRealTimeDuration()),
@@ -236,7 +245,6 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                                 radMeasurementType.getGrossCounts().get(0).getCountData().get(0),
                                 radMeasurementType.getGrossCounts().get(1).getCountData().get(0),
                                 radMeasurementType.getDoseRate().get(0).getDoseRateValue().getValue(), lat, lon, elv);
-                        getLogger().info("here");
                     }
                     break;
                     default:
