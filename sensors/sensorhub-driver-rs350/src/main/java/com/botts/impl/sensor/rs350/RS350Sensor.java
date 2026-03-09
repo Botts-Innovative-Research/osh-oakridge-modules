@@ -10,6 +10,7 @@ import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.comm.RobustIPConnection;
 import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.utils.rad.output.N42Output;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -175,8 +176,8 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
             }
         }
 
-
-        messageHandler.stopProcessing();
+        if (messageHandler != null)
+            messageHandler.stopProcessing();
     }
 
     public ConnectionStatusOutput getConnectionStatusOutput() {

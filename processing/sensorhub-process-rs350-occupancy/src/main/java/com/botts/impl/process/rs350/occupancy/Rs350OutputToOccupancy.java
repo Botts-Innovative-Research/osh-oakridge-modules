@@ -15,8 +15,8 @@
 
 package com.botts.impl.process.rs350.occupancy;
 
+import com.botts.impl.process.rs350.occupancy.helpers.OccupancyProcessInterface;
 import com.botts.impl.utils.n42.RadAlarmCategoryCodeSimpleType;
-import com.google.common.util.concurrent.AtomicDouble;
 import net.opengis.sensorml.v20.IOPropertyList;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
@@ -52,7 +52,7 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     String inputSystemID;
     private static final RADHelper radHelper = new RADHelper();
     public static final double DAILYFILE_INTERVAL_MS = 500;
-    public static final double OCCUPANCY_INTERVAL_MS = 5000;
+    public static final double OCCUPANCY_INTERVAL_MS = 10000;
     public static final String SYSTEM_INPUT_PARAM = "systemInput";
     public static final OccupancyOutput occupancyOutput = new OccupancyOutput(new SensorSystem());
 
@@ -71,7 +71,7 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     // Subset of RS350 outputs we want to connect to process input
     public static final List<String> RS350_OUTPUTS = List.of(FOREGROUND_NAME);
     public final List<Flow.Subscription> subscriptions = new ArrayList<>(ALL_OUTPUTS.size());
-    private Occupancy.Builder occupancyBuilder;
+    private OccupancyProcessInterface.OccupancyExtended.Builder occupancyBuilder;
     private IOPropertyList allInputs = new IOPropertyList();
 
     private int occupancyCount = 0;
@@ -79,9 +79,13 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     private int maxGammaCount = 0;
     private int maxNeutronCount = 0;
 
+    private Occupancy occupancy;
+
     private volatile boolean doPublishOccupancy = false;
-    private AtomicDouble lastAlarmTime = new AtomicDouble(0);
-    private double lastDailyFileTime = 0;
+    private volatile long lastAlarmTime = 0;
+    private volatile long lastOccupancyPublish = 0;
+    private long lastDailyFileTime = 0;
+    private final Object lock = new Object();
     private double alarmDuration;
     private boolean reportingDailyFile = false;
 
@@ -237,39 +241,43 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     }
 
     private synchronized void processAlarm(DataBlock... eventRecords) {
-        if (System.currentTimeMillis() - lastAlarmTime.get() < OCCUPANCY_INTERVAL_MS) {
-            return;
+        synchronized (lock) {
+            if (doPublishOccupancy || System.currentTimeMillis() - lastOccupancyPublish < OCCUPANCY_INTERVAL_MS) {
+                return;
+            }
+            lastAlarmTime = System.currentTimeMillis();
+
+            DataComponent alarmComponent = ((DataComponent) allInputs.get(ALARM_NAME)).copy();
+
+            var eventRecord = eventRecords[0];
+            alarmComponent.setData(eventRecord);
+
+            double startTime = ((Time) alarmComponent.getComponent(SAMPLING_TIME_NAME)).getValue().getAsDouble();
+            double endTime = startTime + ((Quantity) alarmComponent.getComponent(DURATION_NAME)).getValue();
+            alarmDuration = endTime - startTime;
+
+
+            // TODO This needs to be tested
+            String alarmCat = alarmComponent.getComponent(ALARM_CAT_NAME).getData().getStringValue();
+            //String alarmCat = RadAlarmCategoryCodeSimpleType.GAMMA.value();
+            boolean hasGammaAlarm = alarmCat.toLowerCase().contains(RadAlarmCategoryCodeSimpleType.GAMMA.value().toLowerCase());
+            boolean hasNeutronAlarm = alarmCat.toLowerCase().contains(RadAlarmCategoryCodeSimpleType.NEUTRON.value().toLowerCase());
+            if (!hasGammaAlarm && !hasNeutronAlarm) {
+                hasGammaAlarm = true;
+                hasNeutronAlarm = true;
+            }
+
+            occupancyBuilder = new OccupancyProcessInterface.OccupancyExtended.Builder();
+            occupancyBuilder.startTime(startTime).endTime(endTime).samplingTime(startTime);
+            occupancyBuilder.gammaAlarm(hasGammaAlarm).neutronAlarm(hasNeutronAlarm);
+            occupancyBuilder.maxGammaCount(maxGammaCount).maxNeutronCount(maxNeutronCount);
+            occupancyBuilder.neutronBackground(latestNeutronBackground);
+            occupancyBuilder.occupancyCount(++occupancyCount);
+            occupancyBuilder.alarmCategory(RadAlarmCategoryCodeSimpleType.fromValue(alarmCat));
+
+            occupancy = occupancyBuilder.build();
+            doPublishOccupancy = true;
         }
-        lastAlarmTime.set(System.currentTimeMillis());
-
-        DataComponent alarmComponent = ((DataComponent) allInputs.get(ALARM_NAME)).copy();
-
-        var eventRecord = eventRecords[0];
-        alarmComponent.setData(eventRecord);
-
-        double startTime = ((Time) alarmComponent.getComponent(SAMPLING_TIME_NAME)).getValue().getAsDouble();
-        double endTime = startTime + ((Quantity) alarmComponent.getComponent(DURATION_NAME)).getValue();
-        alarmDuration = endTime - startTime;
-
-
-        // TODO This needs to be tested
-        //String alarmCat = alarmComponent.getComponent(ALARM_CAT_NAME).getData().getStringValue().toLowerCase();
-        String alarmCat = RadAlarmCategoryCodeSimpleType.GAMMA.value();
-        boolean hasGammaAlarm = alarmCat.contains(RadAlarmCategoryCodeSimpleType.GAMMA.value());
-        boolean hasNeutronAlarm = alarmCat.contains(RadAlarmCategoryCodeSimpleType.NEUTRON.value());
-        occupancyCount++;
-
-        occupancyBuilder = new Occupancy.Builder();
-        occupancyBuilder.startTime(startTime).endTime(endTime).samplingTime(startTime);
-        occupancyBuilder.gammaAlarm(hasGammaAlarm).neutronAlarm(hasNeutronAlarm);
-        occupancyBuilder.maxGammaCount(maxGammaCount).maxNeutronCount(maxNeutronCount);
-        occupancyBuilder.neutronBackground(latestNeutronBackground);
-        occupancyBuilder.occupancyCount(occupancyCount);
-
-        setOccupancyOutput(occupancyBuilder.build());
-
-        doPublishOccupancy = true;
-
     }
 
     // Concerned w/ max gamma and neutron counts
@@ -306,30 +314,38 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
 
     @Override
     protected void publishData() throws InterruptedException {
-        publishData(OCCUPANCY_NAME);
+        synchronized (lock) {
+            long now = System.currentTimeMillis();
+            boolean isAlarmingInterval = now - OCCUPANCY_INTERVAL_MS < lastAlarmTime;
+            boolean isDailyFileIntervalElapsed = now - DAILYFILE_INTERVAL_MS > lastDailyFileTime;
 
-        updateDailyFile();
-    }
+            // Don't need to publish dailyfile again if we have already published during this alarm (or non-alarm)
+            if (!isDailyFileIntervalElapsed) {
+                return;
+            }
 
-    private void updateDailyFile() {
-        boolean isAlarming = System.currentTimeMillis() - (alarmDuration * 1000) < lastAlarmTime.get();
-        boolean isDailyFileIntervalElapsed = System.currentTimeMillis() - lastDailyFileTime > DAILYFILE_INTERVAL_MS;
-        // Don't need to publish dailyfile again if we have already published during this alarm (or non-alarm)
-        if (isAlarming == reportingDailyFile && !isDailyFileIntervalElapsed) {
-            return;
-        }
-        reportingDailyFile = isAlarming;
+            // Want to publish occupancy only after the duration
+            if (doPublishOccupancy && !isAlarmingInterval) {
+                //isAlarming = true;
+                setOccupancyOutput(occupancy);
+                doPublishOccupancy = false;
+                lastOccupancyPublish = now;
+                logger.info("Publishing occupancy output");
+            }
 
-        DataComponent dailyFile = outputData.getComponent(DailyFileStruct.DAILY_FILE_NAME);
-        if (!dailyFile.hasData()) {
-            dailyFile.renewDataBlock();
-        }
-        dailyFile.getComponent(DailyFileStruct.ALARM_NAME).getData().setBooleanValue(isAlarming);
-        dailyFile.getComponent(DailyFileStruct.samplingTime.getName()).getData().setDoubleValue(System.currentTimeMillis() / 1000.0);
-        try {
-            publishData(DailyFileStruct.DAILY_FILE_NAME);
-        } catch (InterruptedException e) {
-            logger.error("Error publishing daily file", e);
+            lastDailyFileTime = now;
+
+            DataComponent dailyFile = outputData.getComponent(DailyFileStruct.DAILY_FILE_NAME);
+            if (!dailyFile.hasData()) {
+                dailyFile.renewDataBlock();
+            }
+            dailyFile.getComponent(DailyFileStruct.ALARM_NAME).getData().setBooleanValue(doPublishOccupancy);
+            dailyFile.getComponent(DailyFileStruct.samplingTime.getName()).getData().setDoubleValue(now / 1000.0);
+            try {
+                super.publishData();
+            } catch (InterruptedException e) {
+                logger.error("Error publishing daily file", e);
+            }
         }
     }
 

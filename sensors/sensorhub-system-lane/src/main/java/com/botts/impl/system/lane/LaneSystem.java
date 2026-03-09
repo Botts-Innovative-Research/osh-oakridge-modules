@@ -27,6 +27,7 @@ import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.sensor.rs350.RS350Config;
 import com.botts.impl.sensor.rs350.RS350Sensor;
+import org.sensorhub.impl.utils.rad.output.N42Output;
 import com.botts.impl.system.lane.config.*;
 import com.botts.impl.system.lane.helpers.occupancy.OccupancyWrapper;
 import org.sensorhub.api.common.SensorHubException;
@@ -53,7 +54,6 @@ import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensor;
 import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
-import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.utils.MsgUtils;
 import org.vast.util.Asserts;
 
@@ -202,9 +202,9 @@ public class LaneSystem extends SensorSystem {
                 getLogger().info("Started module subscription to {}", getLocalID());
             });
 
-        var n42 = new RADHelper().createN42Report();
-        if (existingRPMModule.getOutputs().containsKey(n42.getName())) {
-            addOutput(existingRPMModule.getOutputs().get(n42.getName()), false);
+        String n42Name = N42Output.SENSOR_OUTPUT_NAME;
+        if (existingRPMModule.getOutputs().containsKey(n42Name)) {
+            addOutput(existingRPMModule.getOutputs().get(n42Name), false);
         }
     }
 

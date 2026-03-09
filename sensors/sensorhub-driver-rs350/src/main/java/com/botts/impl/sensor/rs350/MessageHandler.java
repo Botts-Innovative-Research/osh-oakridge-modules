@@ -1,7 +1,7 @@
 package com.botts.impl.sensor.rs350;
 
 import com.botts.impl.sensor.rs350.messages.RS350Message;
-import com.botts.impl.sensor.rs350.output.N42Output;
+import org.sensorhub.impl.utils.rad.output.N42Output;
 import com.botts.impl.utils.n42.RadInstrumentDataType;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;

@@ -75,7 +75,7 @@ public class Occupancy {
 
     public static class Builder {
 
-        Occupancy instance;
+        protected Occupancy instance;
 
         public Builder() {
             this.instance = new Occupancy();

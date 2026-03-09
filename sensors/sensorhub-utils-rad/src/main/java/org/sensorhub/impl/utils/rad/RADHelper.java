@@ -106,14 +106,6 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-    public Text createN42Report() {
-        return createText()
-                .name("n42Report")
-                .label("N42 Report")
-                .definition(getRadUri("N42Report"))
-                .build();
-    }
-
     public Time createBackgroundTime() {
         return createTime()
                 .name("backgroundTime")
