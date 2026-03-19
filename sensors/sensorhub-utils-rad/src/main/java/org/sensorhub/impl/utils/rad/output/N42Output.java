@@ -1,15 +1,14 @@
 package org.sensorhub.impl.utils.rad.output;
 
-import com.botts.impl.utils.n42.AnalysisResultsType;
-import com.botts.impl.utils.n42.RadAlarmCategoryCodeSimpleType;
-import com.botts.impl.utils.n42.RadMeasurementType;
-import com.botts.impl.utils.n42.SpectrumType;
+import com.botts.impl.utils.n42.*;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.api.data.IDataProducerModule;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
+import org.vast.data.AbstractDataBlock;
 import org.vast.data.DataArrayImpl;
+import org.vast.data.DataBlockMixed;
 import org.vast.data.TextEncodingImpl;
 
 import javax.xml.datatype.Duration;
@@ -34,6 +33,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
 
     public N42Output(T parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
+        init();
     }
 
     public void init() {
@@ -59,7 +59,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                 .name("Foreground Report")
                 .label("Foreground Report")
                 .definition(RADHelper.getRadUri("ForegroundReport"))
-                .addField(samplingTime.getName(), samplingTime)
+                .addField(samplingTime.getName(), samplingTime.copy())
                 .addField(duration.getName(), duration)
                 .addField(linearSpectrumCount.getName(), linearSpectrumCount)
                 .addField(linearSpectrumArray.getName(), linearSpectrumArray)
@@ -88,7 +88,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                 .name("Alarm Report")
                 .label("Alarm Report")
                 .definition(RADHelper.getRadUri("AlarmOutput"))
-                .addField(samplingTime.getName(), samplingTime)
+                .addField(samplingTime.getName(), samplingTime.copy())
                 //.addField(duration.getName(), duration)
                 //.addField(remark.getName(), remark)
                 //.addField(measurementClass.getName(), measurementClass)
@@ -154,31 +154,56 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
     }
 
     protected void parseN42Message(String n42Message) {
-        dataStruct.clearData();
-        foregroundReports.clearData();
-        backgroundReports.clearData();
-        alarmReports.clearData();
-        foregroundCount.setValue(0);
-        backgroundCount.setValue(0);
-        alarmCount.setValue(0);
-        foregroundReports.updateSize();
-        backgroundReports.updateSize();
-        alarmReports.updateSize();
-        dataStruct.assignNewDataBlock();
-
-        var dataBlock = dataStruct.getData();
-        dataBlock.updateAtomCount();
-
-        latestRecordTime = System.currentTimeMillis() / 1000;
-
-        dataBlock.setLongValue(0, latestRecordTime);
-
+        // Determine counts
         var message = radHelper.getRadInstrumentData(n42Message);
+        int foregroundElementCount = 0;
+        int backgroundElementCount = 0;
+        int alarmElementCount = 0;
 
         for (var jaxbElement : message.getRadMeasurementOrRadMeasurementGroupOrEnergyCalibration()) {
-        //message.getRadMeasurementOrRadMeasurementGroupOrEnergyCalibration().forEach(jaxbElement -> {
             Class<?> jaxbType = jaxbElement.getDeclaredType();
-            //logger.debug(jaxbType.toString());
+
+            if (jaxbType == RadMeasurementType.class) {
+                RadMeasurementType radMeasurementType = (RadMeasurementType) jaxbElement.getValue();
+                String measurementClass = radMeasurementType.getMeasurementClassCode().value();
+
+                switch (measurementClass) {
+                    case "Background":
+                        backgroundElementCount++;
+                        break;
+                    case "Foreground":
+                        foregroundElementCount++;
+                        break;
+                    default:
+                }
+            } else if (jaxbType == AnalysisResultsType.class) {
+                AnalysisResultsType analysisResultsType = (AnalysisResultsType) jaxbElement.getValue();
+                alarmElementCount += analysisResultsType.getRadAlarm().size();
+            }
+        }
+
+        foregroundCount.setValue(foregroundElementCount);
+        foregroundReports.updateSize();
+        foregroundReports.getData().updateAtomCount();
+        foregroundReports.assignNewDataBlock();
+
+        backgroundCount.setValue(backgroundElementCount);
+        backgroundReports.updateSize();
+        backgroundReports.getData().updateAtomCount();
+        backgroundReports.assignNewDataBlock();
+
+        alarmCount.setValue(alarmElementCount);
+        alarmReports.updateSize();
+        alarmReports.getData().updateAtomCount();
+        alarmReports.assignNewDataBlock();
+
+        // Populate components with corresponding data
+        int foregroundIndex = 0;
+        int backgroundIndex = 0;
+        int alarmIndex = 0;
+
+        for (var jaxbElement : message.getRadMeasurementOrRadMeasurementGroupOrEnergyCalibration()) {
+            Class<?> jaxbType = jaxbElement.getDeclaredType();
 
             if (jaxbType == RadMeasurementType.class) {
                 RadMeasurementType radMeasurementType = (RadMeasurementType) jaxbElement.getValue();
@@ -186,19 +211,9 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
 
                 switch (measurementClass) {
                     case "Background": {
-                        int index = backgroundCount.getValue();
-                        backgroundCount.setValue(index + 1);
-                        backgroundReports.updateSize();
-                        //backgroundReports.renewDataBlock();
-
-                        var reportComponent = backgroundReports.getComponent(index);
-                        //reportComponent.assignNewDataBlock();
-                        reportComponent.getData().updateAtomCount();
-
-                        // If compressed spectrum is missing, add blank spectrum
-                        while (radMeasurementType.getSpectrum().size() < 2) {
-                            radMeasurementType.getSpectrum().add(new SpectrumType());
-                        }
+                        var reportComponent = backgroundReports.getComponent(backgroundIndex++);
+                        //reportComponent.getData().updateAtomCount();
+                        cleanRadMeasurement(radMeasurementType);
                         populateBackgroundReport(reportComponent, radMeasurementType.getMeasurementClassCode().name(),
                                 radMeasurementType.getStartDateTime().toGregorianCalendar().getTimeInMillis(),
                                 durationToDouble(radMeasurementType.getRealTimeDuration()),
@@ -209,34 +224,21 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                     }
                     break;
                     case "Foreground": {
-                        int index = foregroundCount.getValue();
-                        foregroundCount.setValue(index + 1);
-                        foregroundReports.updateSize();
-                        //foregroundReports.renewDataBlock();
-
-                        var reportComponent = foregroundReports.getComponent(index);
-                        //reportComponent.assignNewDataBlock();
-                        reportComponent.getData().updateAtomCount();
+                        var reportComponent = foregroundReports.getComponent(foregroundIndex++);
+                        //reportComponent.getData().updateAtomCount();
 
                         Double lat = 0.0;
                         Double lon = 0.0;
                         Double elv = 0.0;
-                        // TODO Add location to foreground output
                         try {
                             if (radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLongitudeValue() != null) {
                                 lat = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLatitudeValue().getValue().doubleValue();
                                 lon = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLongitudeValue().getValue().doubleValue();
                                 elv = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getElevationValue().doubleValue();
                             }
-                        } catch (NullPointerException e) {
-                            lat = 0.0;
-                            lon = 0.0;
-                            elv = 0.0;
+                        } catch (NullPointerException ignored) {
                         }
-                        // If compressed spectrum is missing, add blank spectrum
-                        while (radMeasurementType.getSpectrum().size() < 2) {
-                            radMeasurementType.getSpectrum().add(new SpectrumType());
-                        }
+                        cleanRadMeasurement(radMeasurementType);
                         populateForegroundReport(reportComponent, radMeasurementType.getMeasurementClassCode().name(),
                                 radMeasurementType.getStartDateTime().toGregorianCalendar().getTimeInMillis(),
                                 durationToDouble(radMeasurementType.getRealTimeDuration()),
@@ -247,40 +249,72 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                                 radMeasurementType.getDoseRate().get(0).getDoseRateValue().getValue(), lat, lon, elv);
                     }
                     break;
-                    default:
-                        //logger.debug("Measurement Class Code: " + radMeasurementType.getMeasurementClassCode().value());
-
                 }
-
-            }
-            else if (jaxbType == AnalysisResultsType.class){
+            } else if (jaxbType == AnalysisResultsType.class) {
                 AnalysisResultsType analysisResultsType = (AnalysisResultsType) jaxbElement.getValue();
-//                    RadAlarmType radAlarmType = (RadAlarmType) jaxbElement.getValue();
-                var radAlarms = analysisResultsType.getRadAlarm();
-                int index = alarmCount.getValue();
-                alarmCount.setValue(index + radAlarms.size());
-                alarmReports.updateSize();
-                //alarmReports.renewDataBlock();
-
-                radAlarms.forEach(radAlarmType -> {
-                    var reportComponent = alarmReports.getComponent(index);
-                    //reportComponent.assignNewDataBlock();
-
+                for (var radAlarmType : analysisResultsType.getRadAlarm()) {
+                    var reportComponent = alarmReports.getComponent(alarmIndex++);
                     populateAlarmReport(reportComponent,
                             radAlarmType.getRadAlarmDateTime().toGregorianCalendar().getTimeInMillis(),
                             radAlarmType.getRadAlarmCategoryCode().value(),
                             radAlarmType.getRadAlarmDescription());
-                   // rs350RadAlarm = new RS350RadAlarm(radAlarmType.getRadAlarmCategoryCode().value(), radAlarmType.getRadAlarmDescription());
-                });
+                }
             }
-        };
-        alarmReports.getData().updateAtomCount();
-        backgroundReports.getData().updateAtomCount();
-        foregroundReports.getData().updateAtomCount();
+        }
+
+        // 0 double
+        // 1 int
+        // 2 list mixed
+        // 3 int
+        // 4 list mixed
+        // 5 int
+        // 6 parallel
+
+        DataBlockMixed dataBlock = (DataBlockMixed) dataStruct.getData();
+        //dataStruct.toString();
+
+        int index = 0;
+        latestRecordTime = System.currentTimeMillis() / 1000;
+        dataBlock.setLongValue(index++, latestRecordTime);
+        dataBlock.setIntValue(index++, foregroundCount.getValue());
+        dataBlock.setBlock(index++, (AbstractDataBlock) foregroundReports.getData());
+        dataBlock.setIntValue(index++, backgroundCount.getValue());
+        dataBlock.setBlock(index++, (AbstractDataBlock) backgroundReports.getData());
+        dataBlock.setIntValue(index++, alarmCount.getValue());
+        dataBlock.setBlock(index++, (AbstractDataBlock) alarmReports.getData());
+
         dataBlock.updateAtomCount();
-        //dataStruct.getComponent(foregroundReports.getName()).setData(foregroundReports.getData());
-        //dataStruct.getComponent(backgroundReports.getName()).setData(backgroundReports.getData());
-        //dataStruct.getComponent(alarmReports.getName()).setData(alarmReports.getData());
+
+        /*
+        dataStruct.getComponent(index++).setData(foregroundCount.getData());
+        dataStruct.getComponent(index++).setData(foregroundReports.getData());
+        dataStruct.getComponent(index++).setData(backgroundCount.getData());
+        dataStruct.getComponent(index++).setData(backgroundReports.getData());
+        dataStruct.getComponent(index++).setData(alarmCount.getData());
+        dataStruct.getComponent(index++).setData(alarmReports.getData());
+
+         */
+    }
+
+    private static void cleanRadMeasurement(RadMeasurementType radMeasurementType) {
+        while (radMeasurementType.getSpectrum().size() < 2) {
+            var spectrum = new SpectrumType();
+            var channelData = new ChannelDataType();
+            spectrum.setChannelData(channelData);
+            radMeasurementType.getSpectrum().add(spectrum);
+        }
+        while (radMeasurementType.getGrossCounts().size() < 2) {
+            var counts = new GrossCountsType();
+            counts.getCountData().add(Double.NaN);
+            radMeasurementType.getGrossCounts().add(counts);
+        }
+        while (radMeasurementType.getDoseRate().size() < 1) {
+            var doseRate = new DoseRateType();
+            var drValue = new DoseRateuSvhType();
+            drValue.setValue(Double.NaN);
+            doseRate.setDoseRateValue(drValue);
+            radMeasurementType.getDoseRate().add(doseRate);
+        }
     }
 
     private void populateBackgroundReport(DataComponent backgroundComponent, String classCode, Long startDateTime, Double realTimeDuration, List<Double> linEnCalSpectrum, List<Double> cmpEnCalSpectrum, Double gammaGrossCount, Double neutronGrossCount) {

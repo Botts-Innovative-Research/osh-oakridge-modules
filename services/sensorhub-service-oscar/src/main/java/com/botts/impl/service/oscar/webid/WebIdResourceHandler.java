@@ -2,9 +2,11 @@ package com.botts.impl.service.oscar.webid;
 
 import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.service.bucket.handler.DefaultObjectHandler;
+import com.botts.impl.service.bucket.util.InvalidRequestException;
 import com.botts.impl.service.bucket.util.MultipartRequestParser;
 import com.botts.impl.service.bucket.util.RequestContext;
 import com.botts.impl.service.oscar.cambio.CambioConverter;
+import com.botts.impl.system.lane.LaneSystem;
 import com.google.gson.JsonArray;
 import net.opengis.swe.v20.DataBlock;
 import org.sensorhub.api.common.BigId;
@@ -14,8 +16,10 @@ import org.sensorhub.api.data.ObsData;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.utils.OshAsserts;
+import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.impl.utils.rad.model.WebIdAnalysis;
+import org.sensorhub.impl.utils.rad.output.N42Output;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -153,6 +157,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
             // offline conversion to N42 only
 //            processCambioConversion(webIdContext);
         }
+        publishN42(webIdContext);
     }
 
     @Override
@@ -223,10 +228,55 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
             // offline conversion to N42 only
 //            processCambioConversion(webIdContext);
         }
+        publishN42(webIdContext);
     }
 
     private void processCambioConversion(WebIdRequestContext webIdContext) {
         // TODO make sure nothing special required for cambio conversion
+    }
+
+    private void publishN42(WebIdRequestContext webIdContext) {
+        var parentContext = webIdContext.parentContext;
+        String key = parentContext.getObjectKey();
+        N42Output<?> n42output;
+        String charset = parentContext.getRequest().getCharacterEncoding() != null ? parentContext.getRequest().getCharacterEncoding() : StandardCharsets.UTF_8.name();
+
+        // Grab corresponding lane n42 output
+        try {
+            n42output = (N42Output<?>) ((AbstractSensorModule<?>) hub.getModuleRegistry().getLoadedModules().stream().filter(module -> {
+                try {
+                    if (module instanceof AbstractSensorModule<?> sensor) {
+                        return sensor.getUniqueIdentifier().equals(webIdContext.laneUid);
+                    }
+                } catch (Exception ignored) {}
+                return false;
+            }).toList().get(0)).getOutputs().get(N42Output.SENSOR_OUTPUT_NAME);
+        } catch (Exception e) {
+            logger.error("Failed to get lane module for UID: {}", webIdContext.laneUid, e);
+            return;
+        }
+
+        // Multipart
+        if (parentContext.isMultipartRequest()) {
+            try {
+                if (webIdContext.hasForegroundFileName()) {
+                    n42output.onNewMessage(new String(webIdContext.foregroundData, charset));
+                }
+                if (webIdContext.hasBackgroundFileName()) {
+                    n42output.onNewMessage(new String(webIdContext.backgroundData, charset));
+                }
+            } catch (Exception e) {
+                logger.error("Failed to parse multipart request", e);
+            }
+        } else {
+            if (key.endsWith(".n42")) {
+                try {
+                    n42output.onNewMessage(new String(webIdContext.foregroundData, charset));
+                } catch (Exception e) {
+                    logger.error("Failed to parse N42 file: {}", key, e);
+                }
+            }
+        }
     }
 
     private void processWebIdAnalysis(WebIdRequestContext webIdContext) {
@@ -242,6 +292,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
             try {
                 var request = createWebIdRequest(webIdContext);
                 analysis = webIdClient.analyze(request);
+                // TODO maybe n42 pub here
                 logger.info("WebID analysis succeeded with raw data");
             } catch (Exception e) {
                 // If QR code data failed, don't try Cambio conversion - just rethrow
@@ -264,6 +315,8 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
                     }
                     n42Bytes = new CambioConverter().convertToN42(new ByteArrayInputStream(webIdContext.foregroundData), fileName);
                 }
+
+                // TODO n42 pub here
 
                 WebIdRequest.Builder requestBuilder = new WebIdRequest.Builder()
                         .foreground(new ByteArrayInputStream(n42Bytes))

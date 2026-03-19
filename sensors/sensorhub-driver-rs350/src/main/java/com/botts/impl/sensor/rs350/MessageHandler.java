@@ -180,10 +180,6 @@ public class MessageHandler {
         statusListeners.add(listener);
     }
 
-    public void addN42Listener(N42Output listener) {
-        n42Listeners.add(listener);
-    }
-
     public void addBackgroundListener(BackgroundListener listener) {
         backgroundListeners.add(listener);
     }

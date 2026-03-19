@@ -10,7 +10,6 @@ import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.comm.RobustIPConnection;
 import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
-import org.sensorhub.impl.utils.rad.output.N42Output;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,7 +23,6 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
 
     ICommProvider<?> commProvider;
     StatusOutput statusOutput;
-    N42Output n42Output;
     BackgroundOutput backgroundOutput;
     ForegroundOutput foregroundOutput;
     AlarmOutput alarmOutput;
@@ -58,12 +56,6 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
             backgroundOutput = new BackgroundOutput(this);
             addOutput(backgroundOutput, false);
             backgroundOutput.init();
-        }
-
-        if (config.outputs.enableN42Output) {
-            n42Output = new N42Output(this);
-            addOutput(n42Output, false);
-            n42Output.init();
         }
 
         if (config.outputs.enableForegroundOutput) {
@@ -123,10 +115,6 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
 
         if (config.outputs.enableStatusOutput) {
             messageHandler.addStatusListener(statusOutput);
-        }
-
-        if (config.outputs.enableN42Output) {
-            messageHandler.addN42Listener(n42Output);
         }
 
         if (config.outputs.enableBackgroundOutput) {

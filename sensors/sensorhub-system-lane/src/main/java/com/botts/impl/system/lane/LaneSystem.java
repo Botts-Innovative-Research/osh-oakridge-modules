@@ -76,8 +76,6 @@ public class LaneSystem extends SensorSystem {
     private static final String RS350_URI = URN_PREFIX + "osh:sensor:rs350";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
     private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
-    private static final String VIDEO_CLIPS_DIRECTORY = "clips/";
-    private static final String VIDEO_STREAMING_DIRECTORY = "streaming/";
 
     AbstractSensorModule<?> existingRPMModule = null;
     IDataProducerModule<?> occupancyProducer = null;
@@ -88,6 +86,7 @@ public class LaneSystem extends SensorSystem {
 
     AdjudicationControl adjudicationControl;
     WebIdOutput webIdOutput;
+    N42Output<?> n42Output;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -155,9 +154,11 @@ public class LaneSystem extends SensorSystem {
         webIdOutput = new WebIdOutput(this);
         addOutput(webIdOutput, false);
 
+        n42Output = new N42Output<>(this);
+        addOutput(n42Output, false);
+
         adjudicationControl = new AdjudicationControl(this);
         addControlInput(adjudicationControl);
-
 
         String statusMsg = "Note: ";
         if (existingRPMModule == null)
@@ -201,11 +202,10 @@ public class LaneSystem extends SensorSystem {
                 subscription.request(Long.MAX_VALUE);
                 getLogger().info("Started module subscription to {}", getLocalID());
             });
+    }
 
-        String n42Name = N42Output.SENSOR_OUTPUT_NAME;
-        if (existingRPMModule.getOutputs().containsKey(n42Name)) {
-            addOutput(existingRPMModule.getOutputs().get(n42Name), false);
-        }
+    public N42Output<?> getN42Output() {
+        return this.n42Output;
     }
 
     private FFMPEGSensorBase<?> createFFmpegModule(FFMPEGConfig ffmpegConfig) throws SensorHubException {
