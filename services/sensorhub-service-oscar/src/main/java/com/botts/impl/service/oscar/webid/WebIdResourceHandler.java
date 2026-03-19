@@ -261,10 +261,10 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         if (parentContext.isMultipartRequest()) {
             try {
                 if (webIdContext.hasForegroundFileName()) {
-                    n42output.onNewMessage(new String(webIdContext.foregroundData, charset));
+                    n42output.onNewMessage(new String(webIdContext.foregroundData, charset), bucketStore.getResourceURI(parentContext.getBucketName(), webIdContext.foregroundFileName));
                 }
                 if (webIdContext.hasBackgroundFileName()) {
-                    n42output.onNewMessage(new String(webIdContext.backgroundData, charset));
+                    n42output.onNewMessage(new String(webIdContext.backgroundData, charset), bucketStore.getResourceURI(parentContext.getBucketName(), webIdContext.backgroundFileName));
                 }
             } catch (Exception e) {
                 logger.error("Failed to parse multipart request", e);
@@ -272,7 +272,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         } else {
             if (key.endsWith(".n42")) {
                 try {
-                    n42output.onNewMessage(new String(webIdContext.foregroundData, charset));
+                    n42output.onNewMessage(new String(webIdContext.foregroundData, charset), bucketStore.getResourceURI(parentContext.getBucketName(), key));
                 } catch (Exception e) {
                     logger.error("Failed to parse N42 file: {}", key, e);
                 }
@@ -280,7 +280,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         }
     }
 
-    private void publishN42(String laneUid, String n42Data) {
+    private void publishN42(String laneUid, String n42Data, String fileName) {
         N42Output<?> n42output;
         try {
             n42output = (N42Output<?>) ((AbstractSensorModule<?>) hub.getModuleRegistry().getLoadedModules().stream().filter(module -> {
@@ -296,7 +296,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
             return;
         }
         try {
-            n42output.onNewMessage(n42Data);
+            n42output.onNewMessage(n42Data, fileName);
         } catch (Exception e) {
             logger.error("Failed to parse N42 file: {}", laneUid, e);
         }
@@ -326,11 +326,12 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
                 logger.info("WebID analysis failed with raw data, attempting Cambio conversion: {}", e.getMessage());
 
                 byte[] n42Bytes;
+                String fileName;
                 if (webIdContext.hasForegroundFileName() && (webIdContext.foregroundFileName.endsWith(".n42")
                         || webIdContext.foregroundFileName.endsWith(".xml"))) {
                     n42Bytes = webIdContext.foregroundData;
+                    fileName = webIdContext.foregroundFileName;
                 } else {
-                    String fileName;
                     if (webIdContext.foregroundFileName != null && !webIdContext.foregroundFileName.isBlank()) {
                         fileName = webIdContext.foregroundFileName;
                     } else {
@@ -339,7 +340,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
                     n42Bytes = new CambioConverter().convertToN42(new ByteArrayInputStream(webIdContext.foregroundData), fileName);
                 }
 
-                publishN42(webIdContext.laneUid, new String(n42Bytes, StandardCharsets.UTF_8));
+                publishN42(webIdContext.laneUid, new String(n42Bytes, StandardCharsets.UTF_8), fileName);
 
                 WebIdRequest.Builder requestBuilder = new WebIdRequest.Builder()
                         .foreground(new ByteArrayInputStream(n42Bytes))

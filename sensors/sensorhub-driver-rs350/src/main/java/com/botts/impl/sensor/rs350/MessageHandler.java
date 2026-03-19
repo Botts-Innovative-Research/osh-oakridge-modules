@@ -47,7 +47,7 @@ public class MessageHandler {
     private final ArrayList<BackgroundListener> backgroundListeners = new ArrayList<>();
     private final ArrayList<ForegroundListener> foregroundListeners = new ArrayList<>();
     private final ArrayList<AlarmListener> alarmListeners = new ArrayList<>();
-    private final ArrayList<N42Output> n42Listeners = new ArrayList<>();
+    //private final ArrayList<N42Output> n42Listeners = new ArrayList<>();
 
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
 
@@ -126,7 +126,7 @@ public class MessageHandler {
 
                     currentMessage = messageQueue.removeFirst();
 
-                    n42Listeners.forEach(listener -> listener.onNewMessage(currentMessage));
+                    //n42Listeners.forEach(listener -> listener.onNewMessage(currentMessage));
 
                 } catch (InterruptedException e) {
 

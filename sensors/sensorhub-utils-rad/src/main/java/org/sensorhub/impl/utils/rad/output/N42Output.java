@@ -55,6 +55,8 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         var measurementClass = radHelper.createMeasurementClassCode();
         var alarmDescription = radHelper.createAlarmDescription();
 
+        var fileName = radHelper.createText().name("fileName").description("File Name").label("File Name").build();
+
         var foregroundStruct = radHelper.createRecord()
                 .name("Foreground Report")
                 .label("Foreground Report")
@@ -131,6 +133,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                 .label(SENSOR_OUTPUT_LABEL)
                 .definition(RADHelper.getRadUri("N42Report"))
                 .addField(samplingTime.getName(), samplingTime)
+                .addField(fileName.getName(), fileName)
                 .addField(foregroundCount.getName(), foregroundCount)
                 .addField(foregroundReports.getName(), foregroundReports)
                 .addField(backgroundCount.getName(), backgroundCount)
@@ -145,15 +148,15 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
     }
 
 
-    public synchronized void onNewMessage(String n42Message) {
-        parseN42Message(n42Message);
-
-        //dataBlock.setStringValue(index, n42Message);
+    public synchronized void onNewMessage(String n42Message, String fileName) {
+        parseN42Message(n42Message, fileName);
 
         eventHandler.publish(new DataEvent(latestRecordTime, N42Output.this, dataStruct.getData().clone()));
     }
 
-    protected void parseN42Message(String n42Message) {
+
+    protected void parseN42Message(String n42Message, String fileName) {
+
         // Determine counts
         var message = radHelper.getRadInstrumentData(n42Message);
         int foregroundElementCount = 0;
@@ -276,6 +279,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         int index = 0;
         latestRecordTime = System.currentTimeMillis() / 1000;
         dataBlock.setLongValue(index++, latestRecordTime);
+        dataBlock.setStringValue(index++, fileName);
         dataBlock.setIntValue(index++, foregroundCount.getValue());
         dataBlock.setBlock(index++, (AbstractDataBlock) foregroundReports.getData());
         dataBlock.setIntValue(index++, backgroundCount.getValue());
