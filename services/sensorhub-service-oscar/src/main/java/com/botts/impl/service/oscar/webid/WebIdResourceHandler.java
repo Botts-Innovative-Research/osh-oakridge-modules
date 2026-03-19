@@ -17,6 +17,7 @@ import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.utils.OshAsserts;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.impl.utils.rad.model.WebIdAnalysis;
 import org.sensorhub.impl.utils.rad.output.N42Output;
@@ -279,6 +280,28 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         }
     }
 
+    private void publishN42(String laneUid, String n42Data) {
+        N42Output<?> n42output;
+        try {
+            n42output = (N42Output<?>) ((AbstractSensorModule<?>) hub.getModuleRegistry().getLoadedModules().stream().filter(module -> {
+                try {
+                    if (module instanceof AbstractSensorModule<?> sensor) {
+                        return sensor.getUniqueIdentifier().equals(laneUid);
+                    }
+                } catch (Exception ignored) {}
+                return false;
+            }).toList().get(0)).getOutputs().get(N42Output.SENSOR_OUTPUT_NAME);
+        } catch (Exception e) {
+            logger.error("Failed to get lane module for UID: {}", laneUid, e);
+            return;
+        }
+        try {
+            n42output.onNewMessage(n42Data);
+        } catch (Exception e) {
+            logger.error("Failed to parse N42 file: {}", laneUid, e);
+        }
+    }
+
     private void processWebIdAnalysis(WebIdRequestContext webIdContext) {
         try {
             if (webIdContext.foregroundData == null)
@@ -316,7 +339,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
                     n42Bytes = new CambioConverter().convertToN42(new ByteArrayInputStream(webIdContext.foregroundData), fileName);
                 }
 
-                // TODO n42 pub here
+                publishN42(webIdContext.laneUid, new String(n42Bytes, StandardCharsets.UTF_8));
 
                 WebIdRequest.Builder requestBuilder = new WebIdRequest.Builder()
                         .foreground(new ByteArrayInputStream(n42Bytes))
