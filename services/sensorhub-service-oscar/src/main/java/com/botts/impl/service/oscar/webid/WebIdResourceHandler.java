@@ -401,7 +401,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
                     DataBlock webIdDataBlock = WebIdAnalysis.fromWebIdAnalysis(analysis);
 
                     // Insert observation
-                    SystemDatabaseTransactionHandler txnHandler = new SystemDatabaseTransactionHandler(hub.getEventBus(), laneDb);
+                    var txnHandler = new SystemDatabaseTransactionHandler(hub.getEventBus(), laneDb);
                     var obsId = txnHandler.getDataStreamHandler(dsId).addObs(webIdDataBlock);
 
                     encodedWebIdObsId = obsIdEncoder.encodeID(obsId);
