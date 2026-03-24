@@ -18,6 +18,7 @@ import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.utils.OshAsserts;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
+import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.impl.utils.rad.model.WebIdAnalysis;
 import org.sensorhub.impl.utils.rad.output.N42Output;
@@ -400,12 +401,8 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
                     DataBlock webIdDataBlock = WebIdAnalysis.fromWebIdAnalysis(analysis);
 
                     // Insert observation
-                    var obsId = obsStore.add(new ObsData.Builder()
-                            .withDataStream(dsId)
-                            .withPhenomenonTime(Instant.now())
-                            .withResultTime(Instant.now())
-                            .withResult(webIdDataBlock)
-                            .build());
+                    SystemDatabaseTransactionHandler txnHandler = new SystemDatabaseTransactionHandler(hub.getEventBus(), laneDb);
+                    var obsId = txnHandler.getDataStreamHandler(dsId).addObs(webIdDataBlock);
 
                     encodedWebIdObsId = obsIdEncoder.encodeID(obsId);
                     logger.info("WebId analysis observation stored with ID: {}", encodedWebIdObsId);
