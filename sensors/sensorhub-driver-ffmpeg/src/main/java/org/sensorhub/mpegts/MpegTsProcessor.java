@@ -718,10 +718,10 @@ public class MpegTsProcessor extends Thread {
             //logger.warn("Already submitting frame queue to listeners");
             return;
         } else if (fileFrameQueue == null || fileFrameQueue.isEmpty()) {
-            logger.warn("No frame queue to submit to listeners");
+            logger.debug("No frame queue to submit to listeners");
             return;
         } else if (!this.hasWritingListener(FileOutput.MP4Output.class)) {
-            logger.warn("No listeners writing to MP4 file");
+            logger.debug("No listeners writing to MP4 file");
             isSubmittingFrameQueue.set(false);
             return;
         }
