@@ -53,6 +53,8 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         var adjudicatedIds = radHelper.createAdjudicatedIdsArray();
         var videoPathCount = radHelper.createVideoPathCount();
         var videoPaths = radHelper.createVideoPathsArray();
+        var webIdObsIdsCount = radHelper.createWebIdObsIdsCount();
+        var webIdObsIds = radHelper.createWebIdObsIdsArray();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
@@ -73,6 +75,8 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
                 .addField(adjudicatedIds.getName(), adjudicatedIds)
                 .addField(videoPathCount.getName(), videoPathCount)
                 .addField(videoPaths.getName(), videoPaths)
+                .addField(webIdObsIdsCount.getName(), webIdObsIdsCount)
+                .addField(webIdObsIds.getName(), webIdObsIds)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");

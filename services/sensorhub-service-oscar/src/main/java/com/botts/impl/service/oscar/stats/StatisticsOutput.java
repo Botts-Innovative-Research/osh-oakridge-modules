@@ -18,7 +18,6 @@ import org.vast.data.TextEncodingImpl;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
@@ -47,6 +46,10 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     private ScheduledExecutorService service;
     private final IObsSystemDatabase database;
     private Map<String, Set<BigId>> observedPropertyToDataStreamIds;
+
+    private record LastStatisticObservationData(Instant timestamp, Statistics total) {
+
+    }
 
     public StatisticsOutput(OSCARSystem parentSensor, IObsSystemDatabase database, int samplingPeriod) {
         super(NAME, parentSensor);
@@ -102,36 +105,39 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         long currentTime = System.currentTimeMillis();
 
         DataBlock dataBlock = latestRecord == null ? recordDescription.createDataBlock() : latestRecord.renew();
+        Instant now = Instant.now();
 
         int i = 0;
         dataBlock.setLongValue(i++, currentTime/1000);
 
         // Get total counts from all observations
-        i = populateDataBlock(dataBlock, i, null, null);
+        LastStatisticObservationData lastStatisticObservationData = getLastObservation();
 
-        // Get monthly counts
-        int currentDayOfMonth = Calendar.getInstance().get(Calendar.DAY_OF_MONTH);
-        var monthStart = Instant.now().minus(currentDayOfMonth-1, TimeUnit.DAYS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
-        var lastDayOfMonth = Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_MONTH);
-        var monthEnd = Instant.now().plus(lastDayOfMonth-currentDayOfMonth+1, TimeUnit.DAYS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
+        if (lastStatisticObservationData != null) {
+            Instant lastTimestamp = lastStatisticObservationData.timestamp();
+            Statistics previousTotal = lastStatisticObservationData.total();
+            Instant exclusiveStart = lastTimestamp.plusNanos(1);
+            Statistics incrementalStats = getStats(exclusiveStart, now);
 
-        i = populateDataBlock(dataBlock, i, monthStart, monthEnd);
+            Statistics newTotal = previousTotal.add(incrementalStats);
 
-        // Get weekly counts
-        int currentDayOfWeek = Calendar.getInstance().get(Calendar.DAY_OF_WEEK);
-        var weekStart = Instant.now().minus(currentDayOfWeek-1, TimeUnit.DAYS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
-        var lastDayOfWeek = Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_WEEK);
-        var weekEnd = Instant.now().plus(lastDayOfWeek-currentDayOfWeek+1, TimeUnit.DAYS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
+            i = populateDataBlockWithStats(dataBlock, i, newTotal);
+        } else {
+            getLogger().debug("No previous stats observation found, calculating from epoch to {}", now);
+            i = populateDataBlock(dataBlock, i, Instant.EPOCH, now);
+        }
 
-        i = populateDataBlock(dataBlock, i, weekStart, weekEnd);
+        // last 30 days
+        Instant monthStart = now.minus(30, ChronoUnit.DAYS);
+        i = populateDataBlock(dataBlock, i, monthStart, now);
 
-        // Get today's counts
-        int currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
-        var dayStart = Instant.now().minus(currentHour-1, TimeUnit.HOURS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
-        var lastHour = Calendar.getInstance().getActualMaximum(Calendar.HOUR_OF_DAY);
-        var dayEnd = Instant.now().plus(lastHour-currentHour+1, TimeUnit.HOURS.toChronoUnit()).truncatedTo(ChronoUnit.DAYS);
+        // last 7 days
+        Instant weekStart = now.minus(7, ChronoUnit.DAYS);
+        i = populateDataBlock(dataBlock, i, weekStart, now);
 
-        populateDataBlock(dataBlock, i, dayStart, dayEnd);
+        // last 24 hours
+        Instant dayStart = now.minus(24, ChronoUnit.HOURS);
+        populateDataBlock(dataBlock, i, dayStart, now);
 
         latestRecord = dataBlock;
         latestRecordTime = currentTime;
@@ -219,18 +225,59 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         var dsFilterBuilder = new DataStreamFilter.Builder()
                 .withObservedProperties(observedProperty);
 
-        if (begin != null && end != null)
-            dsFilterBuilder = dsFilterBuilder.withValidTimeDuring(begin, end);
-
         var dsFilter = dsFilterBuilder.build();
 
         var obsBuilder = new ObsFilter.Builder().withDataStreams(dsFilter);
+
+        if (begin != null && end != null) {
+            obsBuilder.withPhenomenonTime().withRange(begin, end).done();
+        }
 
         if (cqlValue != null &&  !cqlValue.isBlank()) {
             obsBuilder.withCQLFilter(cqlValue);
         }
 
         return database.getObservationStore().countMatchingEntries(obsBuilder.build());
+    }
+
+    /**
+     * get last observation
+     */
+    private LastStatisticObservationData getLastObservation() {
+        var query = database.getObservationStore().select(new ObsFilter.Builder()
+                .withSystems().withUniqueIDs(parentSensor.getUniqueIdentifier()).done()
+                .withDataStreams(new DataStreamFilter.Builder()
+                        .withOutputNames(NAME)
+                        .build())
+                .withLatestResult()
+                .build());
+
+        var observations = query.toList();
+
+        if (observations.isEmpty())
+            return null;
+
+        var result = observations.get(0).getResult();
+
+        long storedTimestampSeconds = result.getLongValue(0);
+        Instant timestamp = Instant.ofEpochSecond(storedTimestampSeconds);
+
+        Statistics allTime = getLastObservationCount(result, 0);
+
+        return new LastStatisticObservationData(timestamp, allTime);
+    }
+
+    private Statistics getLastObservationCount(DataBlock dataBlock, int index) {
+        return new Statistics.Builder()
+                .numOccupancies(dataBlock.getLongValue(index + 1))
+                .numGammaAlarms(dataBlock.getLongValue(index + 2))
+                .numNeutronAlarms(dataBlock.getLongValue(index + 3))
+                .numGammaNeutronAlarms(dataBlock.getLongValue(index + 4))
+                .numFaults(dataBlock.getLongValue(index + 5))
+                .numGammaFaults(dataBlock.getLongValue(index + 6))
+                .numNeutronFaults(dataBlock.getLongValue(index + 7))
+                .numTampers(dataBlock.getLongValue(index + 8))
+                .build();
     }
 
     @Override

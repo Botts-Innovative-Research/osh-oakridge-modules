@@ -23,6 +23,7 @@ public class Occupancy {
     private int maxNeutronCount;
     private List<String> adjudicatedIds = new ArrayList<>();
     private List<String> videoPaths = new ArrayList<>();
+    private List<String> webIdObsIds = new ArrayList<>();
 
     public int getOccupancyCount() {
         return occupancyCount;
@@ -62,6 +63,10 @@ public class Occupancy {
 
     public List<String> getVideoPaths() {
         return videoPaths;
+    }
+
+    public List<String> getWebIdObsIds() {
+        return webIdObsIds;
     }
 
     public double getSamplingTime() {
@@ -131,6 +136,11 @@ public class Occupancy {
             return this;
         }
 
+        public Builder webIdObsIds(List<String> webIdObsIds) {
+            instance.webIdObsIds = webIdObsIds;
+            return this;
+        }
+
         public Occupancy build() {
             return instance;
         }
@@ -145,8 +155,12 @@ public class Occupancy {
         this.videoPaths.add(videoPath);
     }
 
+    public void addWebIdObsId(String webIdObsId) {
+        this.webIdObsIds.add(webIdObsId);
+    }
+
     public static DataBlock fromOccupancy(Occupancy occupancy) {
-        OccupancyOutput output = new OccupancyOutput(new SensorSystem());
+        OccupancyOutput<?> output = new OccupancyOutput<>(new SensorSystem());
         DataComponent resultStructure = output.getRecordDescription();
         DataBlock dataBlock = resultStructure.createDataBlock();
         dataBlock.updateAtomCount();
@@ -192,6 +206,20 @@ public class Occupancy {
             }
         }
 
+        int webIdObsIdsCount = occupancy.getWebIdObsIds().size();
+        dataBlock.setDoubleValue(index++, webIdObsIdsCount);
+
+        var webIdObsIdsArray = ((DataArrayImpl) resultStructure.getComponent("webIdObsIds"));
+
+        if (webIdObsIdsCount > 0) {
+            webIdObsIdsArray.updateSize();
+            dataBlock.updateAtomCount();
+
+            for (int i = 0; i < occupancy.getWebIdObsIds().size(); i++) {
+                dataBlock.setStringValue(index++, occupancy.getWebIdObsIds().get(i));
+            }
+        }
+
         return dataBlock;
     }
 
@@ -219,6 +247,15 @@ public class Occupancy {
         for (int i = 0; i < videoPathCount; i++)
             videoPaths.add(dataBlock.getStringValue(index++));
 
+        List<String> webIdObsIds = new ArrayList<>();
+        try {
+            var webIdObsIdsCount = dataBlock.getIntValue(index++);
+            for (int i = 0; i < webIdObsIdsCount; i++)
+                webIdObsIds.add(dataBlock.getStringValue(index++));
+        } catch (Exception ignored) {
+            // backwards compatibility: old observations may not have webIdObsIds fields
+        }
+
         return new Builder()
                 .samplingTime(samplingTime)
                 .occupancyCount(occupancyCount)
@@ -231,6 +268,7 @@ public class Occupancy {
                 .neutronAlarm(neutronAlarm)
                 .adjudicatedIds(cmdIds)
                 .videoPaths(videoPaths)
+                .webIdObsIds(webIdObsIds)
                 .build();
     }
 }

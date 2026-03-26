@@ -94,4 +94,9 @@ public class RequestContext {
         return headers;
     }
 
+    public boolean isMultipartRequest() {
+        String contentType = request.getContentType();
+        return contentType != null && contentType.toLowerCase().startsWith("multipart/form-data");
+    }
+
 }
