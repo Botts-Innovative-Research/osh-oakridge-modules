@@ -29,20 +29,37 @@ public class FileSystemBucketStore implements IBucketStore {
     private final Path rootDirectory;
 
     public FileSystemBucketStore(Path rootDirectory) throws IOException {
-        this.rootDirectory = rootDirectory;
-        if (!Files.exists(rootDirectory)) {
-            Files.createDirectories(rootDirectory);
+        this.rootDirectory = rootDirectory.toAbsolutePath().normalize();
+        if (!Files.exists(this.rootDirectory)) {
+            Files.createDirectories(this.rootDirectory);
         }
     }
 
-    private Path getBucketPath(String bucketName) {
-        return rootDirectory.resolve(bucketName);
+    private Path getBucketPath(String bucketName) throws DataStoreException {
+        Path path = rootDirectory.resolve(bucketName).toAbsolutePath().normalize();
+        if (!path.startsWith(rootDirectory)) {
+            throw new DataStoreException("Illegal bucket name: " + bucketName);
+        }
+        return path;
+    }
+
+    private Path getObjectPath(String bucketName, String key) throws DataStoreException {
+        Path bucketPath = getBucketPath(bucketName);
+        Path objectPath = bucketPath.resolve(key).toAbsolutePath().normalize();
+        if (!objectPath.startsWith(bucketPath)) {
+            throw new DataStoreException("Illegal object key: " + key);
+        }
+        return objectPath;
     }
 
     @Override
     public boolean bucketExists(String bucketName) {
-        Path path = getBucketPath(bucketName);
-        return Files.exists(path);
+        try {
+            Path path = getBucketPath(bucketName);
+            return Files.exists(path);
+        } catch (DataStoreException e) {
+            return false;
+        }
     }
 
     @Override
@@ -90,13 +107,24 @@ public class FileSystemBucketStore implements IBucketStore {
 
     @Override
     public boolean objectExists(String bucketName, String objectName) {
-        Path path = getBucketPath(bucketName).resolve(objectName);
-        return Files.exists(path) && path.toFile().isFile();
+        try {
+            Path path = getObjectPath(bucketName, objectName);
+            return Files.exists(path) && path.toFile().isFile();
+        } catch (DataStoreException e) {
+            return false;
+        }
     }
 
     @Override
     public boolean objectExists(String relativePath) {
-        return Files.exists(getBucketPath(relativePath));
+        try {
+            Path path = rootDirectory.resolve(relativePath).toAbsolutePath().normalize();
+            if (!path.startsWith(rootDirectory))
+                return false;
+            return Files.exists(path);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     @Override
@@ -115,12 +143,15 @@ public class FileSystemBucketStore implements IBucketStore {
     @Override
     public void putObject(String bucketName, String key, InputStream data, Map<String, String> metadata) throws DataStoreException {
         try {
-            Path path = getBucketPath(bucketName);
-            if (!Files.exists(path))
+            Path bucketPath = getBucketPath(bucketName);
+            if (!Files.exists(bucketPath))
                 throw new DataStoreException(BUCKET_NOT_FOUND, new IllegalArgumentException());
-            Path resolved = path.resolve(key);
-            if (!Files.exists(resolved))
-                Files.createDirectories(resolved);
+
+            Path resolved = getObjectPath(bucketName, key);
+            Path parent = resolved.getParent();
+            if (parent != null && !Files.exists(parent))
+                Files.createDirectories(parent);
+
             Files.copy(data, resolved, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new DataStoreException(FAILED_PUT_OBJECT + bucketName, e);
@@ -129,16 +160,20 @@ public class FileSystemBucketStore implements IBucketStore {
 
     @Override
     public OutputStream putObject(String bucketName, String key, Map<String, String> metadata) throws DataStoreException {
-        Path path = getBucketPath(bucketName);
-        if (!Files.exists(path))
-            throw new DataStoreException(BUCKET_NOT_FOUND, new IllegalArgumentException());
         try {
-            var filePath = path.resolve(key).toFile().toPath();
-            if (!Files.exists(filePath)) {
-                Files.createDirectories(filePath.getParent());
-                Files.createFile(path.resolve(key));
-            }
-            return new FileOutputStream(path.resolve(key).toFile());
+            Path bucketPath = getBucketPath(bucketName);
+            if (!Files.exists(bucketPath))
+                throw new DataStoreException(BUCKET_NOT_FOUND, new IllegalArgumentException());
+
+            Path resolved = getObjectPath(bucketName, key);
+            Path parent = resolved.getParent();
+            if (parent != null && !Files.exists(parent))
+                Files.createDirectories(parent);
+
+            if (!Files.exists(resolved))
+                Files.createFile(resolved);
+
+            return new FileOutputStream(resolved.toFile());
         } catch (IOException e) {
             throw new DataStoreException(FAILED_PUT_OBJECT + bucketName, e);
         }
@@ -147,7 +182,7 @@ public class FileSystemBucketStore implements IBucketStore {
     @Override
     public InputStream getObject(String bucketName, String key) throws DataStoreException {
         try {
-            Path file = getBucketPath(bucketName).resolve(key);
+            Path file = getObjectPath(bucketName, key);
             if (!Files.exists(file))
                 throw new DataStoreException(OBJECT_NOT_FOUND + bucketName, new IllegalArgumentException());
             return Files.newInputStream(file);
@@ -158,17 +193,17 @@ public class FileSystemBucketStore implements IBucketStore {
 
     @Override
     public long getObjectSize(String bucketName, String key) throws DataStoreException {
-        Path file = getBucketPath(bucketName).resolve(key);
+        Path file = getObjectPath(bucketName, key);
         if (!Files.exists(file))
             throw new DataStoreException(OBJECT_NOT_FOUND + bucketName, new IllegalArgumentException());
         if (!file.toFile().isFile())
-            throw new DataStoreException("Object is not readable");
+            throw new DataStoreException(org.sensorhub.ui.I18N.get("error.bucket.not_readable"));
         return file.toFile().length();
     }
 
     @Override
     public String getObjectMimeType(String bucketName, String key) throws DataStoreException {
-        Path path = getBucketPath(bucketName).resolve(key);
+        Path path = getObjectPath(bucketName, key);
         if (!Files.exists(path))
             throw new DataStoreException(OBJECT_NOT_FOUND + bucketName, new IllegalArgumentException());
 
@@ -187,14 +222,14 @@ public class FileSystemBucketStore implements IBucketStore {
 
             return "application/octet-stream";
         } catch (IOException e) {
-            throw new DataStoreException("Unable to resolve mime type", e);
+            throw new DataStoreException(org.sensorhub.ui.I18N.get("error.bucket.resolve_mime"), e);
         }
     }
 
     @Override
     public void deleteObject(String bucketName, String key) throws DataStoreException {
         try {
-            Path file = getBucketPath(bucketName).resolve(key);
+            Path file = getObjectPath(bucketName, key);
             Files.deleteIfExists(file);
         } catch (IOException e) {
             throw new DataStoreException(FAILED_DELETE_OBJECT + bucketName, e);
@@ -219,12 +254,14 @@ public class FileSystemBucketStore implements IBucketStore {
 
     @Override
     public long getNumObjects(String bucketName) {
-        Path path = getBucketPath(bucketName);
-        if (!Files.exists(path))
-            return -1;
-        try (Stream<Path> stream = Files.walk(path)) {
-            return stream.filter(Files::isRegularFile).count();
-        } catch (IOException e) {
+        try {
+            Path path = getBucketPath(bucketName);
+            if (!Files.exists(path))
+                return -1;
+            try (Stream<Path> stream = Files.walk(path)) {
+                return stream.filter(Files::isRegularFile).count();
+            }
+        } catch (IOException | DataStoreException e) {
             return -1;
         }
     }
@@ -235,7 +272,7 @@ public class FileSystemBucketStore implements IBucketStore {
             throw new DataStoreException(BUCKET_NOT_FOUND);
         if (!objectExists(bucketName, key))
             throw new DataStoreException(OBJECT_NOT_FOUND + bucketName);
-        return rootDirectory.resolve(bucketName).resolve(key).toString();
+        return getObjectPath(bucketName, key).toString();
     }
 
     @Override
