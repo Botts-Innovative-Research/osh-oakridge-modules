@@ -229,6 +229,26 @@ public class LaneSystem extends SensorSystem {
     }
 
     @Override
+    protected void beforeInit() throws SensorHubException {
+        removeOccupancyProcess();
+        super.beforeInit();
+    }
+
+    @Override
+    protected void beforeStart() throws SensorHubException {
+        removeOccupancyProcess();
+        super.beforeStart();
+    }
+
+    private void removeOccupancyProcess() throws SensorHubException {
+        for (var member : this.getMembers().values()) {
+            if (member instanceof Rs350OccupancyProcessModule) {
+                this.removeSubSystem(member.getConfiguration().id);
+            }
+        }
+    }
+
+    @Override
     protected void afterStart() throws SensorHubException {
         super.afterStart();
         if (existingRPMModule instanceof RS350Sensor rs350Module) {
