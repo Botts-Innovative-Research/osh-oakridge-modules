@@ -212,4 +212,6 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     public SpreadsheetHandler getSpreadsheetHandler() {
         return spreadsheetHandler;
     }
+
+    public WebIdResourceHandler getWebIdResourceHandler() { return webIdResourceHandler; }
 }
