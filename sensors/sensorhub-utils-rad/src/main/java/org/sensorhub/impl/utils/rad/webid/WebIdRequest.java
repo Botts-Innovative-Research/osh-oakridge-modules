@@ -1,4 +1,4 @@
-package com.botts.impl.service.oscar.webid;
+package org.sensorhub.impl.utils.rad.webid;
 
 import java.io.InputStream;
 import java.net.URI;
@@ -7,7 +7,6 @@ import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.time.Duration;
 import java.util.Optional;
-import java.util.Set;
 
 public class WebIdRequest extends HttpRequest {
 

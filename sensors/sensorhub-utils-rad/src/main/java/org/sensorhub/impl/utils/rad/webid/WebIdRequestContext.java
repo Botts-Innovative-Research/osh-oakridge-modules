@@ -1,11 +1,9 @@
-package com.botts.impl.service.oscar.webid;
+package org.sensorhub.impl.utils.rad.webid;
 
 import com.botts.impl.service.bucket.util.MultipartRequestParser;
 import com.botts.impl.service.bucket.util.RequestContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
 
 public class WebIdRequestContext {
     private static final Logger logger = LoggerFactory.getLogger(WebIdRequestContext.class);
@@ -24,51 +22,6 @@ public class WebIdRequestContext {
     String backgroundFileName = null;
     byte[] backgroundData = null;
 
-    public WebIdRequestContext(RequestContext ctx) {
-        bucketName = ctx.getBucketName();
-        objectKey = ctx.getObjectKey();
-        isMultipartRequest = ctx.isMultipartRequest();
-        occupancyObsId = ctx.getRequest().getParameter("occupancyObsId");
-        laneUid = ctx.getRequest().getParameter("laneUid");
-        String webIdEnabledParam = ctx.getRequest().getParameter("webIdEnabled");
-        webIdEnabled = Boolean.parseBoolean(webIdEnabledParam);
-        drf = ctx.getRequest().getParameter("drf");
-        String synthesizeBackgroundParam = ctx.getRequest().getParameter("synthesizeBackground");
-        synthesizeBackground = Boolean.parseBoolean(synthesizeBackgroundParam);
-
-        if (isMultipartRequest) {
-            try (var parseResult = MultipartRequestParser.parse(ctx.getRequest())) {
-
-                for (var file : parseResult.files()) {
-                    String fileName = file.fileName();
-                    String fieldName = file.fieldName();
-
-                    if ("foreground".equals(fieldName)) {
-                        foregroundFileName = fileName;
-                        try (var fileStream = file.inputStream()) {
-                            foregroundData = fileStream.readAllBytes();
-                        }
-                    } else if ("background".equals(fieldName)) {
-                        backgroundFileName = fileName;
-                        try (var fileStream = file.inputStream()) {
-                            backgroundData = fileStream.readAllBytes();
-                        }
-                    }
-                }
-            } catch (IOException e) {
-                logger.error("Unable to parse multipart data", e);
-            }
-        } else {
-            try (var contextInputStream = ctx.getRequest().getInputStream()) {
-                foregroundData = contextInputStream.readAllBytes();
-                if (ctx.hasObjectKey())
-                    foregroundFileName = ctx.getObjectKey();
-            } catch (IOException e) {
-                logger.error("Unable to retrieve request context input stream", e);
-            }
-        }
-    }
-
     public boolean hasForegroundFileName() {
         return foregroundFileName != null && !foregroundFileName.isBlank();
     }
@@ -76,8 +29,6 @@ public class WebIdRequestContext {
     public boolean hasBackgroundFileName() {
         return backgroundFileName != null && !backgroundFileName.isBlank();
     }
-
-
 
     private WebIdRequestContext() {
     }

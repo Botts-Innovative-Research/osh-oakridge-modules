@@ -1,7 +1,10 @@
 package com.botts.impl.sensor.rs350;
 
 import com.botts.impl.sensor.rs350.messages.RS350Message;
-import org.sensorhub.impl.utils.rad.output.N42Output;
+import com.botts.impl.service.oscar.Constants;
+import org.sensorhub.impl.utils.rad.webid.WebIdAnalyzer;
+import org.sensorhub.impl.utils.rad.webid.WebIdRequestContext;
+import org.sensorhub.impl.sensor.AbstractSensorModule;
 import com.botts.impl.utils.n42.RadInstrumentDataType;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
@@ -9,6 +12,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -17,6 +21,9 @@ public class MessageHandler {
 
     private static final Logger log = LoggerFactory.getLogger(MessageHandler.class);
     final LinkedList<String> messageQueue = new LinkedList<>();
+    private final AbstractSensorModule<?> sensorModule;
+    WebIdAnalyzer webIdAnalyzer;
+    boolean hasAlarm = false;
 
     RADHelper radHelper = new RADHelper();
 
@@ -140,6 +147,8 @@ public class MessageHandler {
                     RadInstrumentDataType radInstrumentDataType = radHelper.getRadInstrumentData(currentMessage);
                     RS350Message message = new RS350Message(radInstrumentDataType);
 
+                    // Add webid handler call here
+
                     if (message.getRs350InstrumentCharacteristics() != null && message.getRs350Item() != null && message.getRs350LinEnergyCalibration() != null && message.getRs350CmpEnergyCalibration() != null) {
                         statusListeners.forEach(listener -> listener.onNewMessage(message));
                     }
@@ -153,7 +162,13 @@ public class MessageHandler {
                     }
 
                     if (message.getRs350RadAlarm() != null && message.getRs350DerivedData() != null) {
+                        if (!hasAlarm) {
+                            hasAlarm = true;
+                            publishWebIdRequest(currentMessage);
+                        }
                         alarmListeners.forEach(listener -> listener.onNewMessage(message));
+                    } else {
+                        hasAlarm = false;
                     }
                 }
                 catch (Exception e){
@@ -168,7 +183,9 @@ public class MessageHandler {
         }
     });
 
-    public MessageHandler(InputStream msgIn, String messageDelimiter) {
+    public MessageHandler(WebIdAnalyzer webIdAnalyzer, InputStream msgIn, String messageDelimiter, AbstractSensorModule<?> sensorModule) {
+        this.sensorModule = sensorModule;
+        this.webIdAnalyzer = webIdAnalyzer;
         this.msgIn = msgIn;
         this.messageDelimiter = messageDelimiter;
 
@@ -203,4 +220,25 @@ public class MessageHandler {
     public long getTimeSinceLastMessage() {
         return timeSinceLastMessage;
     }
+
+    private void publishWebIdRequest(String n42) {
+        String laneUID = sensorModule.getParentSystemUID();
+        if (laneUID == null) {
+            log.warn("No lane UID found for sensor module {}, using sensor UID instead", sensorModule.getName());
+            laneUID = sensorModule.getUniqueIdentifier();
+        }
+
+        var requestBuilder = WebIdRequestContext.builder();
+        String fileName = "rs350_" + laneUID + "_" + System.currentTimeMillis() + ".n42";
+
+        requestBuilder.foregroundFile(fileName, n42.getBytes(StandardCharsets.UTF_8))
+                .webIdEnabled(true)
+                .bucketName(Constants.REPORT_BUCKET)
+                .objectKey(fileName)
+                .occupancyObsId(null) // TODO
+                .multipartRequest(false);
+
+        this.webIdAnalyzer.processWebIdRequest(requestBuilder.build());
+    }
+
 }

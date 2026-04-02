@@ -2,37 +2,24 @@ package com.botts.impl.service.oscar.webid;
 
 import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.service.bucket.handler.DefaultObjectHandler;
-import com.botts.impl.service.bucket.util.InvalidRequestException;
 import com.botts.impl.service.bucket.util.MultipartRequestParser;
 import com.botts.impl.service.bucket.util.RequestContext;
 import com.botts.impl.service.oscar.cambio.CambioConverter;
-import com.botts.impl.system.lane.LaneSystem;
 import com.google.gson.JsonArray;
-import net.opengis.swe.v20.DataBlock;
-import org.sensorhub.api.common.BigId;
-import org.sensorhub.api.common.IdEncoder;
 import org.sensorhub.api.ISensorHub;
-import org.sensorhub.api.data.ObsData;
 import org.sensorhub.api.datastore.DataStoreException;
-import org.sensorhub.api.datastore.obs.DataStreamFilter;
-import org.sensorhub.api.utils.OshAsserts;
-import org.sensorhub.impl.sensor.AbstractSensorModule;
-import org.sensorhub.impl.sensor.AbstractSensorOutput;
-import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
-import org.sensorhub.impl.utils.rad.model.Occupancy;
-import org.sensorhub.impl.utils.rad.model.WebIdAnalysis;
-import org.sensorhub.impl.utils.rad.output.N42Output;
+import org.sensorhub.impl.utils.rad.webid.WebIdAnalyzer;
+import org.sensorhub.impl.utils.rad.webid.WebIdClient;
+import org.sensorhub.impl.utils.rad.webid.WebIdRequest;
+import org.sensorhub.impl.utils.rad.webid.WebIdRequestContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.time.Instant;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -156,6 +143,71 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
 
     private void processCambioConversion(WebIdRequestContext webIdContext) {
         // TODO make sure nothing special required for cambio conversion
+    }
+
+    private WebIdRequestContext generateWebIdRequest(RequestContext ctx) {
+        var webIdRequestBuilder = WebIdRequestContext.builder();
+        boolean isMultipartRequest = ctx.isMultipartRequest();
+
+        webIdRequestBuilder.bucketName(ctx.getBucketName())
+                .objectKey(ctx.getObjectKey())
+                .multipartRequest(isMultipartRequest)
+                .occupancyObsId(ctx.getRequest().getParameter("occupancyObsId"))
+                .laneUid(ctx.getRequest().getParameter("laneUid"))
+                .webIdEnabled(Boolean.parseBoolean(ctx.getRequest().getParameter("webIdEnabled")))
+                .drf(ctx.getRequest().getParameter("drf"))
+                .synthesizeBackground(Boolean.parseBoolean(ctx.getRequest().getParameter("synthesizeBackground")));
+        /*
+        objectKey = ctx.getObjectKey();
+        isMultipartRequest = ctx.isMultipartRequest();
+        occupancyObsId = ctx.getRequest().getParameter("occupancyObsId");
+        laneUid = ctx.getRequest().getParameter("laneUid");
+        String webIdEnabledParam = ctx.getRequest().getParameter("webIdEnabled");
+        webIdEnabled = Boolean.parseBoolean(webIdEnabledParam);
+        drf = ctx.getRequest().getParameter("drf");
+        String synthesizeBackgroundParam = ctx.getRequest().getParameter("synthesizeBackground");
+        synthesizeBackground = Boolean.parseBoolean(synthesizeBackgroundParam);
+
+         */
+
+        if (isMultipartRequest) {
+            try (var parseResult = MultipartRequestParser.parse(ctx.getRequest())) {
+
+                for (var file : parseResult.files()) {
+                    String fileName = file.fileName();
+                    String fieldName = file.fieldName();
+
+                    if ("foreground".equals(fieldName)) {
+                        byte[] foregroundData;
+                        try (var fileStream = file.inputStream()) {
+                            foregroundData = fileStream.readAllBytes();
+                        }
+                        webIdRequestBuilder.foregroundFile(fileName, foregroundData);
+                    } else if ("background".equals(fieldName)) {
+                        byte[] backgroundData;
+                        try (var fileStream = file.inputStream()) {
+                            backgroundData = fileStream.readAllBytes();
+                        }
+                        webIdRequestBuilder.backgroundFile(fileName, backgroundData);
+                    }
+                }
+            } catch (IOException e) {
+                logger.error("Unable to parse multipart data", e);
+            }
+        } else {
+            try (var contextInputStream = ctx.getRequest().getInputStream()) {
+                String foregroundFileName = "";
+                byte[] foregroundData;
+                foregroundData = contextInputStream.readAllBytes();
+                if (ctx.hasObjectKey())
+                    foregroundFileName = ctx.getObjectKey();
+
+                webIdRequestBuilder.foregroundFile(foregroundFileName, foregroundData);
+            } catch (IOException e) {
+                logger.error("Unable to retrieve request context input stream", e);
+            }
+        }
+        return webIdRequestBuilder.build();
     }
 
 

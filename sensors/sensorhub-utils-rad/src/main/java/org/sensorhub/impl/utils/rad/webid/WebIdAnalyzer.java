@@ -1,4 +1,4 @@
-package com.botts.impl.service.oscar.webid;
+package org.sensorhub.impl.utils.rad.webid;
 
 import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.service.oscar.cambio.CambioConverter;
@@ -28,7 +28,7 @@ import java.util.UUID;
 public class WebIdAnalyzer {
     private static final Logger logger = LoggerFactory.getLogger(WebIdAnalyzer.class);
     ISensorHub hub;
-    IBucketStore bucketStore;
+    //IBucketStore bucketStore;
     WebIdClient webIdClient;
     IdEncoder obsIdEncoder;
 
@@ -36,7 +36,7 @@ public class WebIdAnalyzer {
 
     public WebIdAnalyzer(IBucketStore bucketStore, WebIdClient webIdClient, ISensorHub hub) {
         this.hub = hub;
-        this.bucketStore = bucketStore;
+        //this.bucketStore = bucketStore;
         this.webIdClient = webIdClient;
         this.obsIdEncoder = hub.getIdEncoders().getObsIdEncoder();
     }
@@ -112,18 +112,21 @@ public class WebIdAnalyzer {
         }
     }
 
-    public void processWebIdRequest(WebIdRequestContext webIdContext) {
+    public String processWebIdRequest(WebIdRequestContext webIdContext) {
         // Check if web ID is reachable
+        String jsonAnalysis = null;
         if (webIdClient != null && webIdClient.isReachable()) {
-            processWebIdAnalysis(webIdContext);
+            jsonAnalysis = processWebIdAnalysis(webIdContext);
         } else {
             // offline conversion to N42 only
 //            processCambioConversion(webIdContext);
             publishN42(webIdContext);
         }
+        return jsonAnalysis;
     }
 
-    public void processWebIdAnalysis(WebIdRequestContext webIdContext) {
+    private String processWebIdAnalysis(WebIdRequestContext webIdContext) {
+
         try {
             if (webIdContext.foregroundData == null)
                 throw new IllegalArgumentException("Foreground data is null");
@@ -136,7 +139,7 @@ public class WebIdAnalyzer {
             try {
                 var request = createWebIdRequest(webIdContext);
                 analysis = webIdClient.analyze(request);
-                // TODO maybe n42 pub here
+
                 logger.info("WebID analysis succeeded with raw data");
             } catch (Exception e) {
                 // If QR code data failed, don't try Cambio conversion - just rethrow

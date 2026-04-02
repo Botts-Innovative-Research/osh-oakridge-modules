@@ -1,4 +1,4 @@
-package com.botts.impl.service.oscar.webid;
+package org.sensorhub.impl.utils.rad.webid;
 
 import java.io.IOException;
 
