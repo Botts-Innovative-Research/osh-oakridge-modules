@@ -1,12 +1,15 @@
 package com.botts.impl.service.oscar;
 
-import com.botts.impl.service.oscar.cambio.*;
 import gov.sandia.specutils.ParserType;
 import gov.sandia.specutils.SaveSpectrumAsType;
 import gov.sandia.specutils.SpecUtilsNativeLoader;
 import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
+import org.sensorhub.impl.utils.rad.cambio.CambioConverter;
+import org.sensorhub.impl.utils.rad.cambio.ConversionRequest;
+import org.sensorhub.impl.utils.rad.cambio.ConversionResult;
+import org.sensorhub.impl.utils.rad.cambio.SpectrumInfo;
 
 import java.io.File;
 import java.io.InputStream;

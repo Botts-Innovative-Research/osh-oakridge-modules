@@ -25,6 +25,7 @@ import com.botts.impl.service.oscar.spreadsheet.SpreadsheetHandler;
 import com.botts.impl.service.oscar.stats.StatisticsControl;
 import com.botts.impl.service.oscar.stats.StatisticsOutput;
 import com.botts.impl.service.oscar.video.VideoRetention;
+import org.sensorhub.impl.utils.rad.interfaces.IWebIdProvider;
 import org.sensorhub.impl.utils.rad.webid.WebIdClient;
 import com.botts.impl.service.oscar.webid.WebIdResourceHandler;
 import org.sensorhub.api.common.SensorHubException;
@@ -39,7 +40,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
+public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> implements IWebIdProvider {
 
     SiteInfoOutput siteInfoOutput;
     RequestReportControl reportControl;
@@ -214,4 +215,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> {
     }
 
     public WebIdResourceHandler getWebIdResourceHandler() { return webIdResourceHandler; }
+
+    @Override
+    public WebIdClient getWebIdClient() { return webIdResourceHandler.getWebIdClient(); }
 }

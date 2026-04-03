@@ -5,6 +5,7 @@ version = '1.0.0'
 dependencies {
   implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     implementation project(':sensorhub-utils-rad')
+  implementation project(':sensorhub-driver-rs350')
 }
 
 test {
