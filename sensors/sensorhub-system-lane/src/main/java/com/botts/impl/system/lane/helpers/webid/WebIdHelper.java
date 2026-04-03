@@ -199,8 +199,8 @@ public class WebIdHelper {
     }
 
     private synchronized boolean isTimeRoughlyEqual() {
-        return true;
-        //return Math.abs(lastWebId.getSampleTime().getEpochSecond() - (long)lastOccupancy.getStartTime()) < MAX_OUTPUT_INTERVAL_MS;
+        //return true;
+        return Math.abs(lastWebId.getSampleTime().getEpochSecond() - (long)lastOccupancy.getStartTime()) < MAX_OUTPUT_INTERVAL_MS;
     }
 
     private void clearWebId() {
@@ -245,7 +245,9 @@ public class WebIdHelper {
             lastOccupancy.addWebIdObsId(obsIdEncoder.encodeID(lastWebIdBigId));
             lastWebId.setOccupancyObsId(obsIdEncoder.encodeID(lastOccupancyBigId));
             lastOccupancyBlock.getResult().setUnderlyingObject(Occupancy.fromOccupancy(lastOccupancy).getUnderlyingObject());
+            lastOccupancyBlock.getResult().updateAtomCount();
             lastWebIdBlock.getResult().setUnderlyingObject(WebIdAnalysis.fromWebIdAnalysis(lastWebId).getUnderlyingObject());
+            lastWebIdBlock.getResult().updateAtomCount();
             logger.info("{}", lastOccupancyBlock);
             logger.info("{}", lastWebIdBlock);
             webIdObsStore.put(lastWebIdBigId, lastWebIdBlock);
