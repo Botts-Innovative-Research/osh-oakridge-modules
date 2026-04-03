@@ -1,7 +1,10 @@
 package com.botts.impl.sensor.rs350;
 
+import com.botts.api.service.bucket.IBucketService;
+import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.sensor.rs350.messages.RS350Message;
 //import com.botts.impl.service.oscar.Constants;
+import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.utils.rad.webid.WebIdAnalyzer;
 import org.sensorhub.impl.utils.rad.webid.WebIdRequestContext;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
@@ -10,11 +13,14 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MessageHandler {
@@ -25,6 +31,7 @@ public class MessageHandler {
     WebIdAnalyzer webIdAnalyzer;
     boolean hasAlarm = false;
     String laneUID;
+    IBucketStore bucketStore;
 
     RADHelper radHelper = new RADHelper();
 
@@ -190,6 +197,8 @@ public class MessageHandler {
         this.msgIn = msgIn;
         this.messageDelimiter = messageDelimiter;
         laneUID = parentSensor.getParentSystemUID();
+        var bucketService = parentSensor.getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
+        bucketStore = bucketService.getBucketStore();
 
         this.messageReader.start();
         this.messageNotifier.start();
@@ -246,7 +255,19 @@ public class MessageHandler {
                 .occupancyObsId(null) // TODO
                 .multipartRequest(false);
 
-        this.webIdAnalyzer.processWebIdRequest(requestBuilder.build());
+        var analysis = this.webIdAnalyzer.processWebIdRequest(requestBuilder.build());
+
+        // Store analysis JSON in bucket
+        if (analysis != null) {
+            var analysisJson = analysis.toString();
+            Map<String, String> jsonMetadata = new HashMap<>();
+            jsonMetadata.put("Content-Type", "application/json");
+            try {
+                bucketStore.createObject("reports", new ByteArrayInputStream(analysisJson.getBytes()), jsonMetadata);
+            } catch (DataStoreException e) {
+                log.error("Failed to store WebId analysis JSON in bucket", e);
+            }
+        }
     }
 
 }
