@@ -1,7 +1,5 @@
 package org.sensorhub.impl.utils.rad.webid;
 
-import com.botts.impl.service.bucket.util.MultipartRequestParser;
-import com.botts.impl.service.bucket.util.RequestContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,6 +8,16 @@ public class WebIdRequestContext {
 
     String bucketName;
     String objectKey;
+
+    public String getDirectory() {
+        return directory;
+    }
+
+    public void setDirectory(String directory) {
+        this.directory = directory;
+    }
+
+    String directory;
     String occupancyObsId;
     String laneUid;
     String drf;
@@ -30,7 +38,7 @@ public class WebIdRequestContext {
         return backgroundFileName != null && !backgroundFileName.isBlank();
     }
 
-    private WebIdRequestContext() {
+    public WebIdRequestContext() {
     }
 
     public static Builder builder() {
@@ -90,6 +98,11 @@ public class WebIdRequestContext {
 
         public Builder bucketName(String bucketName) {
             context.bucketName = bucketName;
+            return this;
+        }
+
+        public Builder directory(String directory) {
+            context.directory = directory;
             return this;
         }
 

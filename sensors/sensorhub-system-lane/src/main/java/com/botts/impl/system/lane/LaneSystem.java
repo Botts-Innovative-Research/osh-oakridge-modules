@@ -27,6 +27,7 @@ import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import com.botts.impl.sensor.rs350.RS350Config;
 import com.botts.impl.sensor.rs350.RS350Sensor;
+import com.botts.impl.system.lane.helpers.webid.WebIdHelper;
 import org.sensorhub.impl.utils.rad.output.N42Output;
 import com.botts.impl.system.lane.config.*;
 import com.botts.impl.system.lane.helpers.occupancy.OccupancyWrapper;
@@ -76,6 +77,8 @@ public class LaneSystem extends SensorSystem {
     private static final String RS350_URI = URN_PREFIX + "osh:sensor:rs350";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
     private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
+    private static final Set<Class<?>> WEBID_SENSORS = Set.of(RS350Sensor.class);
+    private static final String DEFAULT_XMLID_PREFIX = "lane";
 
     AbstractSensorModule<?> existingRPMModule = null;
     IDataProducerModule<?> occupancyProducer = null;
@@ -83,6 +86,7 @@ public class LaneSystem extends SensorSystem {
     private ExecutorService threadPool = null;
     Map<String, FFMPEGConfig> ffmpegConfigs = null;
     OccupancyWrapper occupancyWrapper;
+    WebIdHelper webIdHelper;
 
     AdjudicationControl adjudicationControl;
     WebIdOutput webIdOutput;
@@ -273,10 +277,22 @@ public class LaneSystem extends SensorSystem {
             return;
         }
         adjudicationControl.setObsStore(obsStore);
+
+        if (webIdHelper != null) {
+            webIdHelper.stop();
+        }
+        if (WEBID_SENSORS.contains(existingRPMModule.getClass())) {
+            webIdHelper = new WebIdHelper(this, occupancyProducer);
+        } else {
+            webIdHelper = null;
+        }
     }
 
     protected void doStop() throws SensorHubException {
         super.doStop();
+        if (webIdHelper != null) {
+            webIdHelper.stop();
+        }
         if (occupancyProducer != existingRPMModule) {
             removeSubSystem(occupancyProducer.getConfiguration().id);
         }
@@ -370,7 +386,8 @@ public class LaneSystem extends SensorSystem {
 
                 // If RPM is removed, nullify local object
                 if (event.getSystemUID().contains(RAPISCAN_URI) || event.getSystemUID().contains(ASPECT_URI) || event.getSystemUID().contains(RS350_URI)) {
-                    occupancyWrapper.removeRpmSensor();
+                    if (occupancyWrapper != null)
+                        occupancyWrapper.removeRpmSensor();
                     existingRPMModule = null;
                     occupancyProducer = null;
                 }
@@ -384,9 +401,11 @@ public class LaneSystem extends SensorSystem {
 
                 if (event.getModule() == occupancyProducer) {
                     if (event.getNewState() == ModuleEvent.ModuleState.STARTED) {
-                        occupancyWrapper.start();
+                        if (occupancyWrapper != null)
+                            occupancyWrapper.start();
                     } else if (event.getNewState() == ModuleEvent.ModuleState.STOPPING) {
-                        occupancyWrapper.stop();
+                        if (occupancyWrapper != null)
+                            occupancyWrapper.stop();
                     }
                 }
 
@@ -398,9 +417,11 @@ public class LaneSystem extends SensorSystem {
                     }
 
                     if (state == ModuleEvent.ModuleState.STARTED) {
-                        occupancyWrapper.addFFmpegSensor(ffmpegDriver);
+                        if (occupancyWrapper != null)
+                            occupancyWrapper.addFFmpegSensor(ffmpegDriver);
                     } else {
-                        occupancyWrapper.removeFFmpegSensor(ffmpegDriver);
+                        if (occupancyWrapper != null)
+                            occupancyWrapper.removeFFmpegSensor(ffmpegDriver);
                     }
                 }
 
@@ -419,9 +440,11 @@ public class LaneSystem extends SensorSystem {
                                 throw new RuntimeException(ex);
                             }
                         }
-                        occupancyWrapper.setRpmSensor((IDataProducerModule<?>) occupancyProducer);
+                        if (occupancyWrapper != null)
+                            occupancyWrapper.setRpmSensor((IDataProducerModule<?>) occupancyProducer);
                     } else {
-                        occupancyWrapper.removeRpmSensor();
+                        if (occupancyWrapper != null)
+                            occupancyWrapper.removeRpmSensor();
                     }
                 }
             }

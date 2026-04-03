@@ -71,7 +71,8 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     // Subset of RS350 outputs we want to connect to process input
     public static final List<String> RS350_OUTPUTS = List.of(FOREGROUND_NAME);
     public final List<Flow.Subscription> subscriptions = new ArrayList<>(ALL_OUTPUTS.size());
-    private OccupancyProcessInterface.OccupancyExtended.Builder occupancyBuilder;
+    //private OccupancyProcessInterface.OccupancyExtended.Builder occupancyBuilder;
+    Occupancy.Builder occupancyBuilder;
     private IOPropertyList allInputs = new IOPropertyList();
 
     private int occupancyCount = 0;
@@ -267,13 +268,14 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
                 hasNeutronAlarm = true;
             }
 
-            occupancyBuilder = new OccupancyProcessInterface.OccupancyExtended.Builder();
+            //occupancyBuilder = new OccupancyProcessInterface.OccupancyExtended.Builder();
+            occupancyBuilder = new Occupancy.Builder();
             occupancyBuilder.startTime(startTime).endTime(endTime).samplingTime(startTime);
             occupancyBuilder.gammaAlarm(hasGammaAlarm).neutronAlarm(hasNeutronAlarm);
             occupancyBuilder.maxGammaCount(maxGammaCount).maxNeutronCount(maxNeutronCount);
             occupancyBuilder.neutronBackground(latestNeutronBackground);
             occupancyBuilder.occupancyCount(++occupancyCount);
-            occupancyBuilder.alarmCategory(RadAlarmCategoryCodeSimpleType.fromValue(alarmCat));
+            //occupancyBuilder.alarmCategory(RadAlarmCategoryCodeSimpleType.fromValue(alarmCat));
 
             occupancy = occupancyBuilder.build();
             doPublishOccupancy = true;

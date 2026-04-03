@@ -51,7 +51,12 @@ public class OccupancyProcessInterface extends OccupancyOutput<IDataProducer> {
     Occupancy lastOccupancy;
     long lastRecordTime = Long.MIN_VALUE;
     double avgSamplingPeriod = 1.0;
+    volatile boolean doPublish = false;
     int avgSampleCount = 0;
+
+    public void doPublish() {
+        doPublish = true;
+    }
 
     public static class OccupancyExtended extends Occupancy {
         private static final Logger logger = LoggerFactory.getLogger(OccupancyExtended.class);
@@ -199,6 +204,7 @@ public class OccupancyProcessInterface extends OccupancyOutput<IDataProducer> {
                 // This handles publishing too
                 setData(occupancy);
                 eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyProcessInterface.this, dataBlock));
+                doPublish = false;
             }
         }
     };
@@ -214,13 +220,14 @@ public class OccupancyProcessInterface extends OccupancyOutput<IDataProducer> {
     {
         // TODO THIS OUTPUT ADDS AN ALARM CATEGORY CODE! ADD THIS CODE TO THE REGULAR OCCUPANCY OUTPUT!
         super(parentProcess);
-        var catCode = radHelper.createAlarmCatCode();
-        dataStruct.addField(catCode.getName(), catCode);
+        //var catCode = radHelper.createAlarmCatCode();
+        //dataStruct.addField(catCode.getName(), catCode);
         this.parentProcess = parentProcess;
         this.eventHandler = new BasicEventHandler();
 
         if (outputDescriptor != null) {
             this.outputDef = SMLHelper.getIOComponent(outputDescriptor);
+            lastOccupancy = Occupancy.toOccupancy(outputDef.createDataBlock());
             if (encoding != null)
                 this.outputEncoding = encoding;
             else

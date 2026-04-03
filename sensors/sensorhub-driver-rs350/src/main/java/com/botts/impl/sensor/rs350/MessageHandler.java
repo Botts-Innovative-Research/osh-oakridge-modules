@@ -1,7 +1,7 @@
 package com.botts.impl.sensor.rs350;
 
 import com.botts.impl.sensor.rs350.messages.RS350Message;
-import com.botts.impl.service.oscar.Constants;
+//import com.botts.impl.service.oscar.Constants;
 import org.sensorhub.impl.utils.rad.webid.WebIdAnalyzer;
 import org.sensorhub.impl.utils.rad.webid.WebIdRequestContext;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
@@ -24,6 +24,7 @@ public class MessageHandler {
     private final AbstractSensorModule<?> sensorModule;
     WebIdAnalyzer webIdAnalyzer;
     boolean hasAlarm = false;
+    String laneUID;
 
     RADHelper radHelper = new RADHelper();
 
@@ -183,11 +184,12 @@ public class MessageHandler {
         }
     });
 
-    public MessageHandler(WebIdAnalyzer webIdAnalyzer, InputStream msgIn, String messageDelimiter, AbstractSensorModule<?> sensorModule) {
-        this.sensorModule = sensorModule;
+    public MessageHandler(WebIdAnalyzer webIdAnalyzer, InputStream msgIn, String messageDelimiter, AbstractSensorModule<?> parentSensor) {
+        this.sensorModule = parentSensor;
         this.webIdAnalyzer = webIdAnalyzer;
         this.msgIn = msgIn;
         this.messageDelimiter = messageDelimiter;
+        laneUID = parentSensor.getParentSystemUID();
 
         this.messageReader.start();
         this.messageNotifier.start();
@@ -222,7 +224,10 @@ public class MessageHandler {
     }
 
     private void publishWebIdRequest(String n42) {
-        String laneUID = sensorModule.getParentSystemUID();
+        if (webIdAnalyzer == null) {
+            return;
+        }
+
         if (laneUID == null) {
             log.warn("No lane UID found for sensor module {}, using sensor UID instead", sensorModule.getName());
             laneUID = sensorModule.getUniqueIdentifier();
@@ -233,8 +238,11 @@ public class MessageHandler {
 
         requestBuilder.foregroundFile(fileName, n42.getBytes(StandardCharsets.UTF_8))
                 .webIdEnabled(true)
-                .bucketName(Constants.REPORT_BUCKET)
+                //.bucketName(Constants.REPORT_BUCKET) TODO Move constants to a module w/o dependencies?
+                .bucketName("reports")
                 .objectKey(fileName)
+                .laneUid(laneUID)
+                .synthesizeBackground(true)
                 .occupancyObsId(null) // TODO
                 .multipartRequest(false);
 

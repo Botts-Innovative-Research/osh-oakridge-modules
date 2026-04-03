@@ -4,10 +4,11 @@ import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.service.bucket.handler.DefaultObjectHandler;
 import com.botts.impl.service.bucket.util.MultipartRequestParser;
 import com.botts.impl.service.bucket.util.RequestContext;
-import com.botts.impl.service.oscar.cambio.CambioConverter;
+import org.sensorhub.impl.utils.rad.cambio.CambioConverter;
 import com.google.gson.JsonArray;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.impl.utils.rad.model.WebIdAnalysis;
 import org.sensorhub.impl.utils.rad.webid.WebIdAnalyzer;
 import org.sensorhub.impl.utils.rad.webid.WebIdClient;
 import org.sensorhub.impl.utils.rad.webid.WebIdRequest;
@@ -20,6 +21,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -32,6 +34,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
 
     private final Pattern pattern;
     private final ISensorHub hub;
+
     private final WebIdClient webIdClient;
     private final WebIdAnalyzer webIdAnalyzer;
 
@@ -39,7 +42,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         super(bucketStore);
         this.hub = hub;
         this.webIdClient = webIdClient;
-        webIdAnalyzer = new WebIdAnalyzer(bucketStore, webIdClient, hub);
+        webIdAnalyzer = new WebIdAnalyzer(webIdClient, hub);
 
         String joinedExtensions = String.join("|", WEB_ID_FILE_EXTENSIONS);
         String regex = new StringBuilder(".*\\.(")
@@ -49,6 +52,8 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         pattern = Pattern.compile(regex);
     }
 
+
+
     @Override
     public void doPut(RequestContext ctx) throws IOException, SecurityException {
         var bucketName = ctx.getBucketName();
@@ -57,16 +62,16 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         sec.checkPermission(sec.getBucketPermission(bucketName).put);
 
         // Extract query parameters
-        var webIdContext = new WebIdRequestContext(ctx);
+        var webIdContext = createWebIdRequestContext(ctx);
 
-        if (!webIdContext.webIdEnabled)
+        if (!webIdContext.isWebIdEnabled())
             return;
 
         // PUT should only update one resource, so prioritize POST for FG + BG
-        if (webIdContext.foregroundData != null && webIdContext.hasForegroundFileName()) {
+        if (webIdContext.getForegroundData() != null && webIdContext.hasForegroundFileName()) {
             // Update the object in the bucket
             try {
-                bucketStore.putObject(bucketName, objectKey, new ByteArrayInputStream(webIdContext.foregroundData), ctx.getHeaders());
+                bucketStore.putObject(bucketName, objectKey, new ByteArrayInputStream(webIdContext.getForegroundData()), ctx.getHeaders());
             } catch (DataStoreException e) {
                 throw new IOException(IBucketStore.FAILED_PUT_OBJECT + bucketName, e);
             }
@@ -74,7 +79,26 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
 
         ctx.getResponse().setStatus(HttpServletResponse.SC_OK);
 
-        webIdAnalyzer.processWebIdRequest(webIdContext);
+        var analysis = webIdAnalyzer.processWebIdRequest(webIdContext);
+
+        if (analysis != null) {
+            try {
+                storeAnalysisJson(webIdContext.getBucketName(), analysis);
+            } catch (DataStoreException e) {
+                throw new IOException(IBucketStore.FAILED_PUT_OBJECT + bucketName, e);
+            }
+        }
+    }
+
+    private void storeAnalysisJson(String bucketName, WebIdAnalysis analysis) throws DataStoreException {
+        String analysisJson = analysis.toString();
+        Map<String, String> jsonMetadata = new HashMap<>();
+        jsonMetadata.put("Content-Type", "application/json");
+        bucketStore.createObject(bucketName, new ByteArrayInputStream(analysisJson.getBytes()), jsonMetadata);
+    }
+
+    public WebIdClient getWebIdClient() {
+        return webIdClient;
     }
 
     @Override
@@ -84,41 +108,41 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         sec.checkPermission(sec.getBucketPermission(bucketName).create);
 
         // Extract query parameters
-        var webIdContext = new WebIdRequestContext(ctx);
+        var webIdContext = createWebIdRequestContext(ctx);
 
-        if (!webIdContext.webIdEnabled)
+        if (!webIdContext.isWebIdEnabled())
             return;
 
         List<String> resourceURIs = new ArrayList<>();
 
         // Save background data in bucket
-        if (webIdContext.backgroundData != null
+        if (webIdContext.getBackgroundData() != null
                 // ensure we have a filename for put requests
-                && webIdContext.backgroundFileName != null
-                && !webIdContext.backgroundFileName.isBlank()) {
+                && webIdContext.getBackgroundFileName() != null
+                && !webIdContext.getBackgroundFileName().isBlank()) {
             try {
-                bucketStore.putObject(bucketName, webIdContext.backgroundFileName,
-                        new ByteArrayInputStream(webIdContext.backgroundData), ctx.getHeaders());
+                bucketStore.putObject(bucketName, webIdContext.getBackgroundFileName(),
+                        new ByteArrayInputStream(webIdContext.getBackgroundData()), ctx.getHeaders());
                 // add to generated resource URI list
-                resourceURIs.add(bucketStore.getRelativeResourceURI(bucketName, webIdContext.backgroundFileName));
+                resourceURIs.add(bucketStore.getRelativeResourceURI(bucketName, webIdContext.getBackgroundFileName()));
             } catch (DataStoreException e) {
-                logger.error("Failed to put background data from {} in bucket store", webIdContext.backgroundFileName, e);
+                logger.error("Failed to put background data from {} in bucket store", webIdContext.getBackgroundFileName(), e);
             }
         }
 
         // For POST, we can have foreground data with no filename (i.e. QR code)
-        if (webIdContext.foregroundData != null) {
+        if (webIdContext.getForegroundData() != null) {
             try {
                 // put if foreground + background
                 if (webIdContext.hasForegroundFileName()) {
-                    bucketStore.putObject(bucketName, webIdContext.foregroundFileName,
-                            new ByteArrayInputStream(webIdContext.foregroundData), ctx.getHeaders());
+                    bucketStore.putObject(bucketName, webIdContext.getForegroundFileName(),
+                            new ByteArrayInputStream(webIdContext.getForegroundData()), ctx.getHeaders());
                     // add to generated resource URI list
-                    resourceURIs.add(bucketStore.getRelativeResourceURI(bucketName, webIdContext.foregroundFileName));
+                    resourceURIs.add(bucketStore.getRelativeResourceURI(bucketName, webIdContext.getForegroundFileName()));
                 } else {
                     // create object with random UUID if just foreground data
                     String newObjectKey = bucketStore.createObject(bucketName,
-                            new ByteArrayInputStream(webIdContext.foregroundData), ctx.getHeaders());
+                            new ByteArrayInputStream(webIdContext.getForegroundData()), ctx.getHeaders());
                     if (newObjectKey == null || newObjectKey.isBlank())
                         throw new IOException(IBucketStore.FAILED_CREATE_OBJECT + bucketName);
 
@@ -138,24 +162,42 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
             ctx.getResponse().getWriter().write(jsonArray.toString());
         }
 
-        webIdAnalyzer.processWebIdRequest(webIdContext);
+        var analysis = webIdAnalyzer.processWebIdRequest(webIdContext);
+
+        if (analysis != null) {
+            try {
+                storeAnalysisJson(webIdContext.getBucketName(), analysis);
+            } catch (DataStoreException e) {
+                throw new IOException(IBucketStore.FAILED_CREATE_OBJECT + bucketName, e);
+            }
+        }
     }
 
     private void processCambioConversion(WebIdRequestContext webIdContext) {
         // TODO make sure nothing special required for cambio conversion
     }
 
-    private WebIdRequestContext generateWebIdRequest(RequestContext ctx) {
+    private WebIdRequestContext createWebIdRequestContext(RequestContext ctx) {
         var webIdRequestBuilder = WebIdRequestContext.builder();
         boolean isMultipartRequest = ctx.isMultipartRequest();
+        String bucketName = ctx.getBucketName();
+        String objectKey = ctx.getObjectKey();
+        String bucketDir = "";
 
-        webIdRequestBuilder.bucketName(ctx.getBucketName())
-                .objectKey(ctx.getObjectKey())
+        try {
+            bucketStore.getResourceURI(bucketName, "");
+        } catch (DataStoreException e) {
+            logger.warn("Could not resolve bucket URI", e);
+        }
+
+        webIdRequestBuilder.bucketName(bucketName)
+                .objectKey(objectKey)
                 .multipartRequest(isMultipartRequest)
                 .occupancyObsId(ctx.getRequest().getParameter("occupancyObsId"))
                 .laneUid(ctx.getRequest().getParameter("laneUid"))
                 .webIdEnabled(Boolean.parseBoolean(ctx.getRequest().getParameter("webIdEnabled")))
                 .drf(ctx.getRequest().getParameter("drf"))
+                .directory(bucketDir)
                 .synthesizeBackground(Boolean.parseBoolean(ctx.getRequest().getParameter("synthesizeBackground")));
         /*
         objectKey = ctx.getObjectKey();
@@ -169,6 +211,7 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         synthesizeBackground = Boolean.parseBoolean(synthesizeBackgroundParam);
 
          */
+
 
         if (isMultipartRequest) {
             try (var parseResult = MultipartRequestParser.parse(ctx.getRequest())) {
@@ -214,17 +257,17 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
 
     private WebIdRequest createWebIdRequest(WebIdRequestContext webIdContext) {
         WebIdRequest.Builder requestBuilder = new WebIdRequest.Builder()
-                .foreground(new ByteArrayInputStream(webIdContext.foregroundData));
+                .foreground(new ByteArrayInputStream(webIdContext.getForegroundData()));
 
         // include background but if no background data then we need to synthesize it
-        if (webIdContext.backgroundData != null)
-            requestBuilder.background(new ByteArrayInputStream(webIdContext.backgroundData));
+        if (webIdContext.getBackgroundData() != null)
+            requestBuilder.background(new ByteArrayInputStream(webIdContext.getBackgroundData()));
 
         // client chooses whether to synthesize background data
-        requestBuilder.synthesizeBackground(webIdContext.synthesizeBackground);
+        requestBuilder.synthesizeBackground(webIdContext.isSynthesizeBackground());
 
-        if (webIdContext.drf != null && !webIdContext.drf.isBlank())
-            requestBuilder.drf(webIdContext.drf);
+        if (webIdContext.getDrf() != null && !webIdContext.getDrf().isBlank())
+            requestBuilder.drf(webIdContext.getDrf());
 
         return requestBuilder.build();
     }

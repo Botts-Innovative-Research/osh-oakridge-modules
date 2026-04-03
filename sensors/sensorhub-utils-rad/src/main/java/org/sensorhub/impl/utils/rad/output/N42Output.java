@@ -11,12 +11,22 @@ import org.vast.data.DataArrayImpl;
 import org.vast.data.DataBlockMixed;
 import org.vast.data.TextEncodingImpl;
 
+import javax.xml.datatype.DatatypeConfigurationException;
+import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoField;
+import java.time.temporal.TemporalField;
+import java.util.GregorianCalendar;
 import java.util.List;
+import java.util.TimeZone;
 
 public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorOutput<T> {
 
     private static final RADHelper radHelper = new RADHelper();
+    private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(N42Output.class);
 
     public static final String SENSOR_OUTPUT_NAME = "n42Report";
     public static final String SENSOR_OUTPUT_LABEL = "N42 Report";
@@ -63,13 +73,13 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                 .definition(RADHelper.getRadUri("ForegroundReport"))
                 .addField(samplingTime.getName(), samplingTime.copy())
                 .addField(duration.getName(), duration)
-                .addField(linearSpectrumCount.getName(), linearSpectrumCount)
-                .addField(linearSpectrumArray.getName(), linearSpectrumArray)
-                .addField(compressedSpectrumCount.getName(), compressedSpectrumCount)
-                .addField(compressedSpectrumArray.getName(), compressedSpectrumArray)
-                .addField(gammaGrossCount.getName(), gammaGrossCount)
-                .addField(neutronGrossCount.getName(), neutronGrossCount)
-                .addField(doseRate.getName(), doseRate)
+                .addField(linearSpectrumCount.getName(), linearSpectrumCount.copy())
+                .addField(linearSpectrumArray.getName(), linearSpectrumArray.copy())
+                .addField(compressedSpectrumCount.getName(), compressedSpectrumCount.copy())
+                .addField(compressedSpectrumArray.getName(), compressedSpectrumArray.copy())
+                .addField(gammaGrossCount.getName(), gammaGrossCount.copy())
+                .addField(neutronGrossCount.getName(), neutronGrossCount.copy())
+                .addField(doseRate.getName(), doseRate.copy())
                 .build();
 
         var backgroundStruct = radHelper.createRecord()
@@ -94,8 +104,8 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                 //.addField(duration.getName(), duration)
                 //.addField(remark.getName(), remark)
                 //.addField(measurementClass.getName(), measurementClass)
-                .addField(alarmCategory.getName(), alarmCategory)
-                .addField(alarmDescription.getName(), alarmDescription)
+                .addField(alarmCategory.getName(), alarmCategory.copy())
+                .addField(alarmDescription.getName(), alarmDescription.copy())
                 .build();
 
         foregroundReports = radHelper.createArray()
@@ -103,7 +113,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                 .label("Foreground Reports")
                 .definition(RADHelper.getRadUri("ForegroundReports"))
                 .withVariableSize("foregroundReportCount")
-                .withElement(foregroundStruct.getName(), foregroundStruct)
+                .withElement(foregroundStruct.getName(), foregroundStruct.copy())
                 .build();
 
         foregroundCount = radHelper.createArraySize("foregroundReportCount", "foregroundReportCount", "Foreground Report Count");
@@ -113,7 +123,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                 .label("Background Reports")
                 .definition(RADHelper.getRadUri("BackgroundReports"))
                 .withVariableSize("backgroundReportCount")
-                .withElement(backgroundStruct.getName(), backgroundStruct)
+                .withElement(backgroundStruct.getName(), backgroundStruct.copy())
                 .build();
 
         backgroundCount = radHelper.createArraySize("backgroundReportCount", "backgroundReportCount", "Background Report Count");
@@ -123,7 +133,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                 .label("Alarm Reports")
                 .definition(RADHelper.getRadUri("AlarmReports"))
                 .withVariableSize("alarmReportCount")
-                .withElement(alarmStruct.getName(), alarmStruct)
+                .withElement(alarmStruct.getName(), alarmStruct.copy())
                 .build();
 
         alarmCount = radHelper.createArraySize("alarmReportCount", "alarmReportCount", "Alarm Report Count");
@@ -157,6 +167,10 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
 
     protected void parseN42Message(String n42Message, String fileName) {
 
+        foregroundReports.clearData();
+        backgroundReports.clearData();
+        alarmReports.clearData();
+
         // Determine counts
         var message = radHelper.getRadInstrumentData(n42Message);
         int foregroundElementCount = 0;
@@ -186,18 +200,24 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         }
 
         foregroundCount.setValue(foregroundElementCount);
+        //foregroundReports.clearData();
         foregroundReports.updateSize();
-        foregroundReports.getData().updateAtomCount();
+        foregroundReports.setElementCount(foregroundCount);
+        //foregroundReports.getData().updateAtomCount();
         foregroundReports.assignNewDataBlock();
 
         backgroundCount.setValue(backgroundElementCount);
+        //backgroundReports.clearData();
         backgroundReports.updateSize();
-        backgroundReports.getData().updateAtomCount();
+        backgroundReports.setElementCount(backgroundCount);
+        //backgroundReports.getData().updateAtomCount();
         backgroundReports.assignNewDataBlock();
 
         alarmCount.setValue(alarmElementCount);
+        //alarmReports.clearData();
         alarmReports.updateSize();
-        alarmReports.getData().updateAtomCount();
+        alarmReports.setElementCount(alarmCount);
+        //alarmReports.getData().updateAtomCount();
         alarmReports.assignNewDataBlock();
 
         // Populate components with corresponding data
@@ -256,6 +276,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
             } else if (jaxbType == AnalysisResultsType.class) {
                 AnalysisResultsType analysisResultsType = (AnalysisResultsType) jaxbElement.getValue();
                 for (var radAlarmType : analysisResultsType.getRadAlarm()) {
+                    cleanRadAlarm(radAlarmType);
                     var reportComponent = alarmReports.getComponent(alarmIndex++);
                     populateAlarmReport(reportComponent,
                             radAlarmType.getRadAlarmDateTime().toGregorianCalendar().getTimeInMillis(),
@@ -298,6 +319,24 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         dataStruct.getComponent(index++).setData(alarmReports.getData());
 
          */
+    }
+
+    private static void cleanRadAlarm(RadAlarmType radAlarmType) {
+        if (radAlarmType.getRadAlarmDateTime() == null) {
+            try {
+                var gregorianCalendar = GregorianCalendar.from(ZonedDateTime.now(ZoneOffset.UTC));
+                var xmlGregorianCalendar = DatatypeFactory.newInstance().newXMLGregorianCalendar(gregorianCalendar);
+                radAlarmType.setRadAlarmDateTime(xmlGregorianCalendar);
+            } catch (DatatypeConfigurationException e) {
+                logger.warn("Failed to set RadAlarmDateTime", e);
+            }
+        }
+        if (radAlarmType.getRadAlarmCategoryCode() == null) {
+            radAlarmType.setRadAlarmCategoryCode(RadAlarmCategoryCodeSimpleType.OTHER); // Stand-in for unknown category
+        }
+        if (radAlarmType.getRadAlarmDescription() == null) {
+            radAlarmType.setRadAlarmDescription("");
+        }
     }
 
     private static void cleanRadMeasurement(RadMeasurementType radMeasurementType) {

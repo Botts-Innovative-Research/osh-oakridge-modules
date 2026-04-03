@@ -10,6 +10,8 @@ import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.comm.RobustIPConnection;
 import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.utils.rad.interfaces.IWebIdProvider;
+import org.sensorhub.impl.utils.rad.webid.WebIdAnalyzer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -111,7 +113,14 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
             throw new SensorException("Error while initializing communications ", e);
         }
 
-        messageHandler = new MessageHandler(msgIn, "</RadInstrumentData>");
+        try {
+            var oscarServiceModule = getParentHub().getModuleRegistry().getModuleByType(IWebIdProvider.class);
+            var webIdAnalyzer = new WebIdAnalyzer(oscarServiceModule.getWebIdClient(), getParentHub());
+            messageHandler = new MessageHandler(webIdAnalyzer, msgIn, "</RadInstrumentData>", this);
+        } catch (Exception e) {
+            logger.warn("Could not attach WebID Analysis to RS350", e);
+            messageHandler = new MessageHandler(null, msgIn, "</RadInstrumentData>", this);
+        }
 
         if (config.outputs.enableStatusOutput) {
             messageHandler.addStatusListener(statusOutput);

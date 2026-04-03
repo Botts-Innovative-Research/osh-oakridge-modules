@@ -1,8 +1,7 @@
 package org.sensorhub.impl.utils.rad.webid;
 
-import com.botts.api.service.bucket.IBucketStore;
-import com.botts.impl.service.oscar.cambio.CambioConverter;
-import com.botts.impl.system.lane.LaneSystem;
+import org.sensorhub.api.data.ObsEvent;
+import org.sensorhub.impl.utils.rad.cambio.*;
 import net.opengis.swe.v20.DataBlock;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.common.BigId;
@@ -10,6 +9,7 @@ import org.sensorhub.api.common.IdEncoder;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.impl.utils.rad.model.WebIdAnalysis;
@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -34,7 +35,7 @@ public class WebIdAnalyzer {
 
     private static final String RADDATA_PREFIX = "RADDATA://";
 
-    public WebIdAnalyzer(IBucketStore bucketStore, WebIdClient webIdClient, ISensorHub hub) {
+    public WebIdAnalyzer(WebIdClient webIdClient, ISensorHub hub) {
         this.hub = hub;
         //this.bucketStore = bucketStore;
         this.webIdClient = webIdClient;
@@ -51,27 +52,28 @@ public class WebIdAnalyzer {
 
         // Grab corresponding lane n42 output
         try {
-            n42output = ((LaneSystem) hub.getModuleRegistry().getLoadedModules().stream().filter(module -> {
+            n42output = ((N42Output<?>) ((SensorSystem) hub.getModuleRegistry().getLoadedModules().stream().filter(module -> {
                 try {
-                    if (module instanceof LaneSystem sensor) {
-                        return sensor.getUniqueIdentifier().equals(webIdContext.laneUid);
+                    if (module instanceof SensorSystem system) {
+                        return system.getUniqueIdentifier().equals(webIdContext.laneUid);
                     }
                 } catch (Exception ignored) {}
                 return false;
-            }).toList().get(0)).getN42Output();
+            }).toList().get(0)).getOutputs().get(N42Output.SENSOR_OUTPUT_NAME));
         } catch (Exception e) {
             logger.error("Failed to get lane module for UID: {}", webIdContext.laneUid, e);
             return;
         }
 
+        Path objectDir = Path.of(webIdContext.getDirectory());
         // Multipart
         if (webIdContext.isMultipartRequest()) {
             try {
                 if (webIdContext.hasForegroundFileName() && isN42(webIdContext.foregroundFileName)) {
-                    n42output.onNewMessage(new String(webIdContext.foregroundData, charset), bucketStore.getResourceURI(webIdContext.getBucketName(), webIdContext.foregroundFileName));
+                    n42output.onNewMessage(new String(webIdContext.foregroundData, charset), objectDir.resolve(webIdContext.getForegroundFileName()).toString());
                 }
                 if (webIdContext.hasBackgroundFileName() && isN42(webIdContext.backgroundFileName)) {
-                    n42output.onNewMessage(new String(webIdContext.backgroundData, charset), bucketStore.getResourceURI(webIdContext.getBucketName(), webIdContext.backgroundFileName));
+                    n42output.onNewMessage(new String(webIdContext.backgroundData, charset), objectDir.resolve(webIdContext.getBackgroundFileName()).toString());
                 }
             } catch (Exception e) {
                 logger.error("Failed to parse multipart request", e);
@@ -79,7 +81,7 @@ public class WebIdAnalyzer {
         } else {
             if (key.endsWith(".n42")) {
                 try {
-                    n42output.onNewMessage(new String(webIdContext.foregroundData, charset), bucketStore.getResourceURI(webIdContext.getBucketName(), key));
+                    n42output.onNewMessage(new String(webIdContext.foregroundData, charset), objectDir.resolve(key).toString());
                 } catch (Exception e) {
                     logger.error("Failed to parse N42 file: {}", key, e);
                 }
@@ -112,20 +114,20 @@ public class WebIdAnalyzer {
         }
     }
 
-    public String processWebIdRequest(WebIdRequestContext webIdContext) {
+    public WebIdAnalysis processWebIdRequest(WebIdRequestContext webIdContext) {
         // Check if web ID is reachable
-        String jsonAnalysis = null;
+        WebIdAnalysis analysis = null;
         if (webIdClient != null && webIdClient.isReachable()) {
-            jsonAnalysis = processWebIdAnalysis(webIdContext);
+            analysis = processWebIdAnalysis(webIdContext);
         } else {
             // offline conversion to N42 only
 //            processCambioConversion(webIdContext);
             publishN42(webIdContext);
         }
-        return jsonAnalysis;
+        return analysis;
     }
 
-    private String processWebIdAnalysis(WebIdRequestContext webIdContext) {
+    private WebIdAnalysis processWebIdAnalysis(WebIdRequestContext webIdContext) {
 
         try {
             if (webIdContext.foregroundData == null)
@@ -139,7 +141,7 @@ public class WebIdAnalyzer {
             try {
                 var request = createWebIdRequest(webIdContext);
                 analysis = webIdClient.analyze(request);
-
+                publishN42(webIdContext);
                 logger.info("WebID analysis succeeded with raw data");
             } catch (Exception e) {
                 // If QR code data failed, don't try Cambio conversion - just rethrow
@@ -181,16 +183,17 @@ public class WebIdAnalyzer {
 
             analysis.setSampleTime(Instant.now());
             analysis.setOccupancyObsId(webIdContext.occupancyObsId != null ? webIdContext.occupancyObsId : "");
-
-            // Save analysis JSON to bucket store
+            /*
             try {
-                String analysisJson = analysis.toString();
+                analysisJson = analysis.toString();
                 Map<String, String> jsonMetadata = new HashMap<>();
                 jsonMetadata.put("Content-Type", "application/json");
-                bucketStore.createObject(webIdContext.getBucketName(), new ByteArrayInputStream(analysisJson.getBytes()), jsonMetadata);
+                //bucketStore.createObject(webIdContext.getBucketName(), new ByteArrayInputStream(analysisJson.getBytes()), jsonMetadata);
             } catch (DataStoreException e) {
                 logger.error("Failed to store WebId analysis JSON in bucket", e);
             }
+
+             */
 
             // Insert WebId observation into lane database
             String encodedWebIdObsId = null;
@@ -199,7 +202,7 @@ public class WebIdAnalyzer {
                     var laneDb = hub.getSystemDriverRegistry().getDatabase(webIdContext.laneUid);
                     if (laneDb == null) {
                         logger.error("No database found for lane UID: {}", webIdContext.laneUid);
-                        return;
+                        return analysis;
                     }
 
                     var obsStore = laneDb.getObservationStore();
@@ -214,7 +217,7 @@ public class WebIdAnalyzer {
 
                     if (dsKeys.isEmpty()) {
                         logger.error("No webIdAnalysis datastream found for lane: {}", webIdContext.laneUid);
-                        return;
+                        return analysis;
                     }
 
                     var dsId = dsKeys.get(0).getInternalID();
@@ -240,14 +243,14 @@ public class WebIdAnalyzer {
                     var laneDb = hub.getSystemDriverRegistry().getDatabase(webIdContext.laneUid);
                     if (laneDb == null) {
                         logger.error("No database found for lane UID when updating occupancy: {}", webIdContext.laneUid);
-                        return;
+                        return analysis;
                     }
 
                     var obsStore = laneDb.getObservationStore();
                     var obs = obsStore.get(decodedOccObsId);
                     if (obs == null) {
                         logger.error("Occupancy observation not found for ID: {}", webIdContext.occupancyObsId);
-                        return;
+                        return analysis;
                     }
 
                     var occupancy = Occupancy.toOccupancy(obs.getResult());
@@ -266,6 +269,7 @@ public class WebIdAnalyzer {
         } catch (Exception e) {
             logger.error("WebId analysis processing failed", e);
         }
+        return null;
     }
 
     private WebIdRequest createWebIdRequest(WebIdRequestContext webIdContext) {
