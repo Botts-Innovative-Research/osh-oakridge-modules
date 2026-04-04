@@ -32,6 +32,9 @@ public class Connection {
     @DisplayInfo(label = "FPS", desc = "Number of frames per second to enforce during playback of a file."
         + " 0 means the stream will be played as fast as possible.")
     public int fps = 60;
+
+    @DisplayInfo(label = "Buffer Size", desc = "Number of frames to store in a buffer. These extra frames are only written on file output and extend the length of the video")
+    public int bufferSize = 0;
     
     @DisplayInfo(desc = "Continuously loop video playback (only available when reading from file).")
     public boolean loop = false;

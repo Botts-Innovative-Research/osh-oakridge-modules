@@ -5,7 +5,9 @@ import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
+import org.sensorhub.api.data.IDataProducer;
 import org.sensorhub.api.sensor.ISensorModule;
+import org.sensorhub.impl.data.AbstractDataInterface;
 import org.sensorhub.impl.sensor.VarRateSensorOutput;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
@@ -20,7 +22,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRateSensorOutput<SensorType> {
+public class OccupancyOutput<SensorType extends IDataProducer> extends AbstractDataInterface<SensorType> {
 
     public static final String NAME = "occupancy";
     private static final String LABEL = "Occupancy";
@@ -36,8 +38,11 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
     ScheduledExecutorService scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
     private static final int TIMEOUT = 10;
 
+    double avgSamplingPeriod = 10.0;
+    int avgSampleCount = 0;
+
     public OccupancyOutput(SensorType parentSensor) {
-        super(NAME, parentSensor, 4);
+        super(NAME, parentSensor);
 
         RADHelper radHelper = new RADHelper();
         var samplingTime = radHelper.createPrecisionTimeStamp();
@@ -93,7 +98,7 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         }, TIMEOUT, TimeUnit.SECONDS);
     }
 
-    private void augmentPublish(Occupancy occupancy) {
+    protected void augmentPublish(Occupancy occupancy) {
         augmentOccupancy(occupancy);
 
         dataBlock = Occupancy.fromOccupancy(occupancy);
@@ -101,14 +106,19 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
         dataStruct.setData(dataBlock);
 
         latestRecord = dataBlock;
-        eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyOutput.this, dataBlock));
+
+        long now = System.currentTimeMillis();
+        updateSamplingPeriod(now);
+        latestRecordTime = now;
+
+        eventHandler.publish(new DataEvent(System.currentTimeMillis(), this, dataBlock));
     }
 
     /**
      * Use callbacks to modify occupancy data before publishing. (Ex: Add video paths)
      * @param occupancy
      */
-    private void augmentOccupancy(Occupancy occupancy) {
+    protected void augmentOccupancy(Occupancy occupancy) {
         for (OccupancyCallback callback : occupancyCallbacks) {
             callback.call(occupancy);
         }
@@ -127,6 +137,37 @@ public class OccupancyOutput<SensorType extends ISensorModule<?>> extends VarRat
     public DataEncoding getRecommendedEncoding() {
         return dataEncoding;
     }
+
+    /*
+     * Refine sampling period at each new measure received by
+     * incrementally computing dt average for the 100 first records
+     */
+    protected void updateSamplingPeriod(long timeStamp)
+    {
+        if (latestRecordTime == Long.MIN_VALUE)
+            return;
+
+        if (avgSampleCount < 100)
+        {
+            if (avgSampleCount == 0)
+                avgSamplingPeriod = 0.0;
+            else
+                avgSamplingPeriod *= (double)avgSampleCount / (avgSampleCount+1);
+
+            avgSampleCount++;
+            avgSamplingPeriod += (timeStamp - latestRecordTime) / 1000.0 / avgSampleCount;
+
+            //log.trace("Sampling period = " + avgSamplingPeriod + "s");
+        }
+    }
+
+
+    @Override
+    public double getAverageSamplingPeriod()
+    {
+        return avgSamplingPeriod;
+    }
+
 
     @FunctionalInterface
     public interface OccupancyCallback { public void call(Occupancy occupancy); }

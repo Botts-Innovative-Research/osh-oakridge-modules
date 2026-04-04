@@ -6,6 +6,9 @@ import org.slf4j.LoggerFactory;
 import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
 
+import javax.validation.constraints.Null;
+import javax.xml.datatype.Duration;
+
 
 public class RS350Message {
 
@@ -37,26 +40,37 @@ public class RS350Message {
         rs350InstrumentInformation = new RS350InstrumentInformation(instrumentInfo.getRadInstrumentManufacturerName(), instrumentInfo.getRadInstrumentIdentifier(), instrumentInfo.getRadInstrumentModelName(), instrumentInfo.getRadInstrumentClassCode().name() );
 
         // create Instrument Characteristics
-        CharacteristicsType InstrumentInfoChars = msg.getRadInstrumentInformation().getRadInstrumentCharacteristics().get(0);
-        CharacteristicType deviceName = (CharacteristicType) InstrumentInfoChars.getCharacteristicOrCharacteristicGroup().get(0);
-        CharacteristicType batteryCharge = (CharacteristicType) InstrumentInfoChars.getCharacteristicOrCharacteristicGroup().get(1);
+        CharacteristicsType InstrumentInfoChars, ItemInfoChars;
+        String deviceName, batteryCharge, scanMode, scanNumber, scanTimeoutNumber, analysisEnabled;
 
-        rs350InstrumentCharacteristics = new RS350InstrumentCharacteristics(deviceName.getCharacteristicValue(), Double.parseDouble(batteryCharge.getCharacteristicValue()));
+        InstrumentInfoChars = msg.getRadInstrumentInformation().getRadInstrumentCharacteristics().get(0);
+
+        try {
+            deviceName = ((CharacteristicType) InstrumentInfoChars.getCharacteristicOrCharacteristicGroup().get(0)).getCharacteristicValue();
+            batteryCharge = ((CharacteristicType) InstrumentInfoChars.getCharacteristicOrCharacteristicGroup().get(1)).getCharacteristicValue();
+            rs350InstrumentCharacteristics = new RS350InstrumentCharacteristics(deviceName, Double.parseDouble(batteryCharge));
+        } catch (IndexOutOfBoundsException e) {
+            rs350InstrumentCharacteristics = null;
+        }
 
         // create Item
-        CharacteristicsType ItemInfoChars = msg.getRadItemInformation().get(0).getRadItemCharacteristics().get(0);
-        CharacteristicType scanMode = (CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(0);
-        CharacteristicType scanNumber = (CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(1);
-        CharacteristicType scanTimeoutNumber = (CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(2);
-        CharacteristicType analysisEnabled = (CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(3);
-
-        rs350Item = new RS350Item(scanMode.getCharacteristicValue(), Double.parseDouble(scanNumber.getCharacteristicValue()), Double.parseDouble(scanTimeoutNumber.getCharacteristicValue()), analysisEnabled.getCharacteristicValue());
+        ItemInfoChars = msg.getRadItemInformation().get(0).getRadItemCharacteristics().get(0);
+        try {
+            scanMode = ((CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(0)).getCharacteristicValue();
+            scanNumber = ((CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(1)).getCharacteristicValue();
+            scanTimeoutNumber = ((CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(2)).getCharacteristicValue();
+            analysisEnabled = ((CharacteristicType) ItemInfoChars.getCharacteristicOrCharacteristicGroup().get(3)).getCharacteristicValue();
+            rs350Item = new RS350Item(scanMode, Double.parseDouble(scanNumber), Double.parseDouble(scanTimeoutNumber), (Integer.parseInt(analysisEnabled)) != 0);
+        } catch (IndexOutOfBoundsException e) {
+            rs350Item = null;
+        }
 
         radAlarmRecieved = false;
 
         msg.getRadMeasurementOrRadMeasurementGroupOrEnergyCalibration().forEach(jaxbElement -> {
 
             Class<?> jaxbType = jaxbElement.getDeclaredType();
+            logger.debug(jaxbType.toString());
             if (jaxbType == EnergyCalibrationType.class) {
                 EnergyCalibrationType energyCalibrationType = (EnergyCalibrationType) jaxbElement.getValue();
                 switch (energyCalibrationType.getId()) {
@@ -67,15 +81,16 @@ public class RS350Message {
                     case "CmpEnCal":{
                         rs350CmpEnergyCalibration = new RS350CmpEnergyCalibration(energyCalibrationType.getCoefficientValues());
                     }
+                        break;
                     default: logger.debug("EnergyCalType ID: " + energyCalibrationType.getId());
                         break;
                 }
             }
-                else if (jaxbType == RadMeasurementType.class) {
+            else if (jaxbType == RadMeasurementType.class) {
                 RadMeasurementType radMeasurementType = (RadMeasurementType) jaxbElement.getValue();
                 switch (radMeasurementType.getMeasurementClassCode().value()) {
                     case "Background": {
-                        rs350BackgroundMeasurement = new RS350BackgroundMeasurement(radMeasurementType.getMeasurementClassCode().name(), radMeasurementType.getStartDateTime().toGregorianCalendar().getTimeInMillis(), new Double(radMeasurementType.getRealTimeDuration().getSeconds() % 60), radMeasurementType.getSpectrum().get(0).getChannelData().getValue(), radMeasurementType.getSpectrum().get(1).getChannelData().getValue(), radMeasurementType.getGrossCounts().get(0).getCountData().get(0), radMeasurementType.getGrossCounts().get(1).getCountData().get(0));
+                        rs350BackgroundMeasurement = new RS350BackgroundMeasurement(radMeasurementType.getMeasurementClassCode().name(), radMeasurementType.getStartDateTime().toGregorianCalendar().getTimeInMillis(), durationToDouble(radMeasurementType.getRealTimeDuration()), radMeasurementType.getSpectrum().get(0).getChannelData().getValue(), radMeasurementType.getSpectrum().get(1).getChannelData().getValue(), radMeasurementType.getGrossCounts().get(0).getCountData().get(0), radMeasurementType.getGrossCounts().get(1).getCountData().get(0));
                     }
                     break;
                     case "Foreground": {
@@ -83,12 +98,18 @@ public class RS350Message {
                         Double lat = 0.0;
                         Double lon = 0.0;
                         Double elv = 0.0;
-                        if (radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLongitudeValue() != null) {
-                        lat = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLatitudeValue().getValue().doubleValue();
-                        lon = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLongitudeValue().getValue().doubleValue();
-                        elv = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getElevationValue().doubleValue();
+                        try {
+                            if (radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLongitudeValue() != null) {
+                                lat = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLatitudeValue().getValue().doubleValue();
+                                lon = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLongitudeValue().getValue().doubleValue();
+                                elv = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getElevationValue().doubleValue();
+                            }
+                        } catch (NullPointerException e) {
+                            lat = 0.0;
+                            lon = 0.0;
+                            elv = 0.0;
                         }
-                        rs350ForegroundMeasurement = new RS350ForegroundMeasurement(radMeasurementType.getMeasurementClassCode().name(), radMeasurementType.getStartDateTime().toGregorianCalendar().getTimeInMillis(), new Double(radMeasurementType.getRealTimeDuration().getSeconds() % 60), radMeasurementType.getSpectrum().get(0).getChannelData().getValue(), radMeasurementType.getSpectrum().get(1).getChannelData().getValue(), radMeasurementType.getGrossCounts().get(0).getCountData().get(0), radMeasurementType.getGrossCounts().get(1).getCountData().get(0), radMeasurementType.getDoseRate().get(0).getDoseRateValue().getValue(), lat, lon, elv);
+                        rs350ForegroundMeasurement = new RS350ForegroundMeasurement(radMeasurementType.getMeasurementClassCode().name(), radMeasurementType.getStartDateTime().toGregorianCalendar().getTimeInMillis(), durationToDouble(radMeasurementType.getRealTimeDuration()), radMeasurementType.getSpectrum().get(0).getChannelData().getValue(), radMeasurementType.getSpectrum().get(1).getChannelData().getValue(), radMeasurementType.getGrossCounts().get(0).getCountData().get(0), radMeasurementType.getGrossCounts().get(1).getCountData().get(0), radMeasurementType.getDoseRate().get(0).getDoseRateValue().getValue(), lat, lon, elv);
                     }
                     break;
                     default:
@@ -97,28 +118,27 @@ public class RS350Message {
                 }
 
             }
-                else if (jaxbType == DerivedDataType.class){
-                    DerivedDataType derivedDataType = (DerivedDataType) jaxbElement.getValue();
-                    rs350DerivedData = new RS350DerivedData(derivedDataType.getRemark().get(0), derivedDataType.getMeasurementClassCode().name(), derivedDataType.getStartDateTime().toGregorianCalendar().getTimeInMillis(), new Double(derivedDataType.getRealTimeDuration().getSeconds()%60));
+            else if (jaxbType == DerivedDataType.class){
+                DerivedDataType derivedDataType = (DerivedDataType) jaxbElement.getValue();
+                rs350DerivedData = new RS350DerivedData(derivedDataType.getRemark().get(0), derivedDataType.getMeasurementClassCode().name(), derivedDataType.getStartDateTime().toGregorianCalendar().getTimeInMillis(), durationToDouble(derivedDataType.getRealTimeDuration()));
 
             }
-                else if (jaxbType == AnalysisResultsType.class && !radAlarmRecieved){
-                    AnalysisResultsType analysisResultsType = (AnalysisResultsType) jaxbElement.getValue();
+            else if (jaxbType == AnalysisResultsType.class && !radAlarmRecieved){
+                AnalysisResultsType analysisResultsType = (AnalysisResultsType) jaxbElement.getValue();
 //                    RadAlarmType radAlarmType = (RadAlarmType) jaxbElement.getValue();
                 analysisResultsType.getRadAlarm().forEach(radAlarmType -> {
                     rs350RadAlarm = new RS350RadAlarm(radAlarmType.getRadAlarmCategoryCode().value(), radAlarmType.getRadAlarmDescription());
                     radAlarmRecieved = true;
                 });
-                
-
             }
-
-                else {
-                    logger.debug(jaxbType.toString());
+            else {
+                //logger.debug(jaxbType.toString());
             }
-
         });
+    }
 
+    private static double durationToDouble(Duration duration) {
+        return duration.multiply(1000).getSeconds() / 1000.0;
     }
 
     public RS350InstrumentInformation getRs350InstrumentInformation(){

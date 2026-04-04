@@ -2,7 +2,7 @@ package com.botts.impl.sensor.rs350.messages;
 
 public class RS350Item {
 
-    public RS350Item(String rsiScanMode, Double rsiScanNumber, Double rsiScanTimeoutNumber, String rsiAnalysisEnabled) {
+    public RS350Item(String rsiScanMode, Double rsiScanNumber, Double rsiScanTimeoutNumber, boolean rsiAnalysisEnabled) {
         this.rsiScanMode = rsiScanMode;
         this.rsiScanNumber = rsiScanNumber;
         this.rsiScanTimeoutNumber = rsiScanTimeoutNumber;
@@ -12,7 +12,7 @@ public class RS350Item {
     String rsiScanMode;
     Double rsiScanNumber;
     Double rsiScanTimeoutNumber;
-    String rsiAnalysisEnabled;
+    boolean rsiAnalysisEnabled;
 
     public String getRsiScanMode() {
         return rsiScanMode;
@@ -30,7 +30,7 @@ public class RS350Item {
         return rsiScanTimeoutNumber;
     }
 
-    public String getRsiAnalysisEnabled() {
+    public boolean getRsiAnalysisEnabled() {
         return rsiAnalysisEnabled;
     }
 }

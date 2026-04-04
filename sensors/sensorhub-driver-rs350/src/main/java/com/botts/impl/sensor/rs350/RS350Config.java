@@ -3,9 +3,9 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.rs350;
 
-import org.sensorhub.api.comm.CommProviderConfig;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.sensor.SensorConfig;
+import org.sensorhub.impl.comm.TCPCommProviderConfig;
 
 public class RS350Config extends SensorConfig {
 
@@ -13,7 +13,7 @@ public class RS350Config extends SensorConfig {
     public String serialNumber;
 
     @DisplayInfo(desc = "Communication settings to connect to RS-350 data stream")
-    public CommProviderConfig<?> commSettings;
+    public TCPCommProviderConfig commSettings;
 
     @DisplayInfo.Required
     @DisplayInfo(label = "Outputs", desc = "Configuration options for source data outputs from driver")

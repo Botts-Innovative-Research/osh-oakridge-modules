@@ -1,24 +1,37 @@
 package com.botts.impl.sensor.rs350;
 
+import com.botts.api.service.bucket.IBucketService;
+import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.sensor.rs350.messages.RS350Message;
+//import com.botts.impl.service.oscar.Constants;
+import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.impl.utils.rad.webid.WebIdAnalyzer;
+import org.sensorhub.impl.utils.rad.webid.WebIdRequestContext;
+import org.sensorhub.impl.sensor.AbstractSensorModule;
 import com.botts.impl.utils.n42.RadInstrumentDataType;
 import org.sensorhub.impl.utils.rad.RADHelper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import javax.xml.stream.XMLEventReader;
-import javax.xml.stream.XMLStreamReader;
-import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MessageHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(MessageHandler.class);
     final LinkedList<String> messageQueue = new LinkedList<>();
+    private final AbstractSensorModule<?> sensorModule;
+    WebIdAnalyzer webIdAnalyzer;
+    boolean hasAlarm = false;
+    String laneUID;
+    IBucketStore bucketStore;
 
     RADHelper radHelper = new RADHelper();
 
@@ -26,12 +39,30 @@ public class MessageHandler {
 
     private final String messageDelimiter;
 
-    public interface MessageListener {
+    private long timeSinceLastMessage;
 
+
+    public interface StatusListener {
         void onNewMessage(RS350Message message);
     }
 
-    private final ArrayList<MessageListener> listeners = new ArrayList<>();
+    public interface BackgroundListener {
+        void onNewMessage(RS350Message message);
+    }
+
+    public interface ForegroundListener {
+        void onNewMessage(RS350Message message);
+    }
+
+    public interface AlarmListener {
+        void onNewMessage(RS350Message message);
+    }
+
+    private final ArrayList<StatusListener> statusListeners = new ArrayList<>();
+    private final ArrayList<BackgroundListener> backgroundListeners = new ArrayList<>();
+    private final ArrayList<ForegroundListener> foregroundListeners = new ArrayList<>();
+    private final ArrayList<AlarmListener> alarmListeners = new ArrayList<>();
+    //private final ArrayList<N42Output> n42Listeners = new ArrayList<>();
 
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
 
@@ -44,6 +75,7 @@ public class MessageHandler {
             try {
 
                 ArrayList<Character> buffer = new ArrayList<>();
+                timeSinceLastMessage = 0;
 
                 while (continueProcessing) {
 
@@ -95,7 +127,7 @@ public class MessageHandler {
 
         while (continueProcessing) {
 
-            String currentMessage = null;
+            final String currentMessage;
 
             synchronized (messageQueue) {
 
@@ -109,6 +141,8 @@ public class MessageHandler {
 
                     currentMessage = messageQueue.removeFirst();
 
+                    //n42Listeners.forEach(listener -> listener.onNewMessage(currentMessage));
+
                 } catch (InterruptedException e) {
 
                     throw new RuntimeException(e);
@@ -117,16 +151,36 @@ public class MessageHandler {
 
             if (currentMessage != null && !currentMessage.isEmpty()) {
 
-
-
                 try {
                     RadInstrumentDataType radInstrumentDataType = radHelper.getRadInstrumentData(currentMessage);
-                    listeners.forEach(messageListener -> messageListener.onNewMessage(new RS350Message(radInstrumentDataType)));
+                    RS350Message message = new RS350Message(radInstrumentDataType);
+
+                    // Add webid handler call here
+
+                    if (message.getRs350InstrumentCharacteristics() != null && message.getRs350Item() != null && message.getRs350LinEnergyCalibration() != null && message.getRs350CmpEnergyCalibration() != null) {
+                        statusListeners.forEach(listener -> listener.onNewMessage(message));
+                    }
+
+                    if (message.getRs350BackgroundMeasurement() != null) {
+                        backgroundListeners.forEach(listener -> listener.onNewMessage(message));
+                    }
+
+                    if (message.getRs350ForegroundMeasurement() != null) {
+                        foregroundListeners.forEach(listener -> listener.onNewMessage(message));
+                    }
+
+                    if (message.getRs350RadAlarm() != null && message.getRs350DerivedData() != null) {
+                        if (!hasAlarm) {
+                            hasAlarm = true;
+                            publishWebIdRequest(currentMessage);
+                        }
+                        alarmListeners.forEach(listener -> listener.onNewMessage(message));
+                    } else {
+                        hasAlarm = false;
+                    }
                 }
                 catch (Exception e){
-//                    System.out.println("Current Message: ");
-//                    System.out.println(currentMessage);
-                    System.out.println("Error: " + e);
+                    log.error("Error reading message: " + e, e);
                 }
             }
 
@@ -137,17 +191,33 @@ public class MessageHandler {
         }
     });
 
-    public MessageHandler(InputStream msgIn, String messageDelimiter) {
+    public MessageHandler(WebIdAnalyzer webIdAnalyzer, InputStream msgIn, String messageDelimiter, AbstractSensorModule<?> parentSensor) {
+        this.sensorModule = parentSensor;
+        this.webIdAnalyzer = webIdAnalyzer;
         this.msgIn = msgIn;
         this.messageDelimiter = messageDelimiter;
+        laneUID = parentSensor.getParentSystemUID();
+        var bucketService = parentSensor.getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
+        bucketStore = bucketService.getBucketStore();
 
         this.messageReader.start();
         this.messageNotifier.start();
     }
 
-    public void addMessageListener(MessageListener listener) {
+    public void addStatusListener(StatusListener listener) {
+        statusListeners.add(listener);
+    }
 
-        listeners.add(listener);
+    public void addBackgroundListener(BackgroundListener listener) {
+        backgroundListeners.add(listener);
+    }
+
+    public void addForegroundListener(ForegroundListener listener) {
+        foregroundListeners.add(listener);
+    }
+
+    public void addAlarmListener(AlarmListener listener) {
+        alarmListeners.add(listener);
     }
 
     public void stopProcessing() {
@@ -157,4 +227,47 @@ public class MessageHandler {
             isProcessing.set(false);
         }
     }
+
+    public long getTimeSinceLastMessage() {
+        return timeSinceLastMessage;
+    }
+
+    private void publishWebIdRequest(String n42) {
+        if (webIdAnalyzer == null) {
+            return;
+        }
+
+        if (laneUID == null) {
+            log.warn("No lane UID found for sensor module {}, using sensor UID instead", sensorModule.getName());
+            laneUID = sensorModule.getUniqueIdentifier();
+        }
+
+        var requestBuilder = WebIdRequestContext.builder();
+        String fileName = "rs350_" + laneUID + "_" + System.currentTimeMillis() + ".n42";
+
+        requestBuilder.foregroundFile(fileName, n42.getBytes(StandardCharsets.UTF_8))
+                .webIdEnabled(true)
+                //.bucketName(Constants.REPORT_BUCKET) TODO Move constants to a module w/o dependencies?
+                .bucketName("reports")
+                .objectKey(fileName)
+                .laneUid(laneUID)
+                .synthesizeBackground(true)
+                .occupancyObsId(null) // TODO
+                .multipartRequest(false);
+
+        var analysis = this.webIdAnalyzer.processWebIdRequest(requestBuilder.build());
+
+        // Store analysis JSON in bucket
+        if (analysis != null) {
+            var analysisJson = analysis.toString();
+            Map<String, String> jsonMetadata = new HashMap<>();
+            jsonMetadata.put("Content-Type", "application/json");
+            try {
+                bucketStore.createObject("reports", new ByteArrayInputStream(analysisJson.getBytes()), jsonMetadata);
+            } catch (DataStoreException e) {
+                log.error("Failed to store WebId analysis JSON in bucket", e);
+            }
+        }
+    }
+
 }

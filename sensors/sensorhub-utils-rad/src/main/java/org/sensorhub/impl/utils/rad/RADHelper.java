@@ -180,6 +180,31 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public Quantity createScanTimeout() {
+        return createQuantity()
+                .name("gammaBackground")
+                .label("Gamma Background")
+                .definition(getRadUri("GammaBackground"))
+                .description("Gamma count to start occupancy")
+                .build();
+    }
+
+    public Text createScanMode() {
+        return createText()
+                .name("scanMode")
+                .label("Scan Mode")
+                .definition(getRadUri("ScanMode"))
+                .build();
+    }
+    public Boolean createAnalysisEnabled() {
+        return createBoolean()
+                .name("analysisEnabled")
+                .label("Analysis Enabled")
+                .definition(getRadUri("AnalysisEnabled"))
+                .build();
+    }
+
+
     public Quantity createLatestGammaBackground() {
         return createQuantity()
                 .name("latestGammaBackground")
@@ -511,6 +536,14 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public Text createRemark(){
+        return createText()
+                .name("remark")
+                .label("Remark")
+                .definition(RADHelper.getRadUri("Remark"))
+                .build();
+    }
+
     public Quantity createSpeedMph(){
         return createQuantity()
                 .name("speedMPH")
@@ -558,70 +591,67 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
-    public DataArray createLinCalibration(){
+    public DataArray createLinearCalibration(){
         return createArray()
                 .name("linearCalibration")
                 .label("Linear Calibration")
                 .definition(getRadUri("LinearCalibration"))
-                .withFixedSize(3)
                 .withElement("linearCalibrationValues", createQuantity()
                         .label("Linear Calibration Values")
-                        .definition(getRadUri("LinearCalibration"))
+                        .definition(getRadUri("LinearCalibrationValues"))
                         .description("Linear Calibration Values")
                         .dataType(DataType.DOUBLE)
                         .build())
+                .withFixedSize(3)
                 .build();
     }
 
-    public DataArray createCmpCalibration(){
+    public DataArray createCompressedCalibration(){
         return createArray()
-                .name("cmpCalibration")
-                .label("Cmp Calibration")
-                .definition(getRadUri("CmpCal"))
-                .withFixedSize(3)
-                .withElement("CmpCalibrationValues", createQuantity()
-                        .label("Cmp Calibration Values")
-                        .definition(getRadUri("CmpCalVals"))
-                        .description("Calibration Values")
+                .name("compressedCalibration")
+                .label("Compressed Calibration")
+                .definition(getRadUri("CompressedCalibration"))
+                .withElement("compressedCalibrationValues", createQuantity()
+                        .label("Compressed Calibration Values")
+                        .definition(getRadUri("CompressedCalibrationValues"))
                         .dataType(DataType.DOUBLE)
                         .build())
+                .withFixedSize(3)
                 .build();
     }
 
-    public Count createArraySize(String name, String fieldID){
+    public Count createArraySize(String name, String fieldID, String label){
         return createCount()
                 .name(name)
-                .label(name)
+                .label(label)
                 .description("length of array")
                 .id(fieldID)
                 .build();
     }
 
-    public DataArray createLinSpectrum(String fieldID){
+    public DataArray createLinearSpectrum(){
         return createArray()
-                .name("linSpectrum")
-                .label("Lin Spectrum")
-                .definition(getRadUri("LinSpectrum"))
-                .withVariableSize(fieldID)
-                .withElement("linSpectrumValues", createQuantity()
-                        .label("Lin Spectrum Values")
-                        .definition(getRadUri("LinSpectrumVals"))
-                        .description("Spectrum Values")
+                .name("linearSpectrum")
+                .label("Linear Spectrum")
+                .definition(getRadUri("LinearSpectrum"))
+                .withVariableSize("linearSpectrumCount")
+                .withElement("linearSpectrumValues", createQuantity()
+                        .label("Linear Spectrum Values")
+                        .definition(getRadUri("LinearSpectrumValues"))
                         .dataType(DataType.DOUBLE)
                         .build())
                 .build();
     }
 
-    public DataArray createCmpSpectrum(String fieldID){
+    public DataArray createCompressedSpectrum(){
         return createArray()
-                .name("cmpSpectrum")
-                .label("Cmp Spectrum")
-                .definition(getRadUri("CmpSpectrum"))
-                .withVariableSize(fieldID)
-                .withElement("cmpSpectrumValues", createQuantity()
-                        .label("Cmp Spectrum Values")
-                        .definition(getRadUri("CmpSpectrumVals"))
-                        .description("Spectrum Values")
+                .name("compressedSpectrum")
+                .label("Compressed Spectrum")
+                .definition(getRadUri("CompressedSpectrum"))
+                .withVariableSize("compressedSpectrumCount")
+                .withElement("compressedSpectrumValues", createQuantity()
+                        .label("Compressed Spectrum Values")
+                        .definition(getRadUri("CompressedSpectrumValues"))
                         .dataType(DataType.DOUBLE)
                         .build())
                 .build();
@@ -693,6 +723,14 @@ public class RADHelper extends GeoPosHelper {
                 .label("Dose")
                 .definition(getRadUri("Dose"))
                 .uomCode("uSv/h")
+                .build();
+    }
+
+    public Text createAlarmDescription(){
+        return createText()
+                .name("alarmDescription")
+                .label("Alarm Description")
+                .definition(getRadUri("AlarmDescription"))
                 .build();
     }
 
@@ -938,6 +976,14 @@ public class RADHelper extends GeoPosHelper {
                                 .definition(getRadInstrumentUri("CharacteristicValueDataClassCode"))
                                 .addAllowedValues(ValueDataClassCodeSimpleType.ANY_URI.value(), ValueDataClassCodeSimpleType.BASE_64_BINARY.value(), ValueDataClassCodeSimpleType.BOOLEAN.value(), ValueDataClassCodeSimpleType.BYTE.value(), ValueDataClassCodeSimpleType.DATE.value(), ValueDataClassCodeSimpleType.DATE_TIME.value(), ValueDataClassCodeSimpleType.DECIMAL.value(), ValueDataClassCodeSimpleType.DOUBLE.value(), ValueDataClassCodeSimpleType.DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.DURATION.value(), ValueDataClassCodeSimpleType.FLOAT.value(), ValueDataClassCodeSimpleType.HEX_BINARY.value(), ValueDataClassCodeSimpleType.ID.value(), ValueDataClassCodeSimpleType.IDREF.value(), ValueDataClassCodeSimpleType.IDREFS.value(), ValueDataClassCodeSimpleType.INT.value(), ValueDataClassCodeSimpleType.INTEGER.value(), ValueDataClassCodeSimpleType.LONG.value(), ValueDataClassCodeSimpleType.NAME.value(), ValueDataClassCodeSimpleType.NC_NAME.value(), ValueDataClassCodeSimpleType.NEGATIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NON_BLANK_STRING.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_DOUBLE.value(), ValueDataClassCodeSimpleType.NON_NEGATIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NON_POSITIVE_INTEGER.value(), ValueDataClassCodeSimpleType.NORMALIZED_STRING.value(), ValueDataClassCodeSimpleType.PERCENT.value(), ValueDataClassCodeSimpleType.POSITIVE_DOUBLE_LIST.value(), ValueDataClassCodeSimpleType.POSITIVE_DOUBLE.value(), ValueDataClassCodeSimpleType.POSITIVE_INTEGER.value(), ValueDataClassCodeSimpleType.POSITIVE_INTEGER_LIST.value(), ValueDataClassCodeSimpleType.SHORT.value(), ValueDataClassCodeSimpleType.STRING.value(), ValueDataClassCodeSimpleType.STRING_LIST.value(), ValueDataClassCodeSimpleType.TIME.value(), ValueDataClassCodeSimpleType.TOKEN.value(), ValueDataClassCodeSimpleType.UNSIGNED_BYTE.value(), ValueDataClassCodeSimpleType.UNSIGNED_INT.value(), ValueDataClassCodeSimpleType.UNSIGNED_LONG.value(), ValueDataClassCodeSimpleType.UNSIGNED_SHORT.value(), ValueDataClassCodeSimpleType.ZERO_TO_ONE_DOUBLE.value())
                                 .build())
+                .build();
+    }
+
+    public Quantity createDuration() {
+        return createQuantity()
+                .name("duration")
+                .label("Duration")
+                .definition(getRadUri("Duration"))
                 .build();
     }
 

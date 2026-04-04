@@ -2,8 +2,8 @@ package com.botts.impl.service.oscar;
 
 import com.botts.impl.service.bucket.BucketService;
 import com.botts.impl.service.bucket.BucketServiceConfig;
-import com.botts.impl.service.oscar.webid.WebIdClient;
-import com.botts.impl.service.oscar.webid.WebIdRequest;
+import org.sensorhub.impl.utils.rad.webid.WebIdClient;
+import org.sensorhub.impl.utils.rad.webid.WebIdRequest;
 import com.botts.impl.service.oscar.webid.WebIdResourceHandler;
 import com.botts.impl.system.lane.AdjudicationControl;
 import com.botts.impl.system.lane.Descriptor;
@@ -17,7 +17,6 @@ import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.common.BigIdLong;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.data.ObsData;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.service.IHttpServer;

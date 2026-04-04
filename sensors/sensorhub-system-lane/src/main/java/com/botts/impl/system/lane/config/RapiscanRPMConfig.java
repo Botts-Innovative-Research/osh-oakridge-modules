@@ -23,7 +23,7 @@ import org.sensorhub.api.config.DisplayInfo;
  * @author Kalyn Stricklin
  * @since May 2025
  */
-public class RapiscanRPMConfig extends RPMConfig{
+public class RapiscanRPMConfig extends RPMConfig {
     @DisplayInfo(desc = "EML Lane Settings")
     public EMLConfig emlConfig = new EMLConfig();
 
