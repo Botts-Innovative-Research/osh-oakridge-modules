@@ -38,7 +38,7 @@ public class DatabasePurger {
 
     private final IObsSystemDatabase database;
     private final IBucketStore bucketStore;
-    private final ScheduledExecutorService scheduler;
+    private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> hourlyPurgeTask;
     private ScheduledFuture<?> dailyExportTask;
 
@@ -62,14 +62,15 @@ public class DatabasePurger {
         this.bucketStore = bucketStore;
         this.occupancyBufferSeconds = occupancyBufferSeconds;
 
+    }
+
+    public void start() throws SensorHubException {
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "OSCAR-database-purger");
             t.setDaemon(true);
             return t;
         });
-    }
 
-    public void start() throws SensorHubException {
         try {
             if (!bucketStore.bucketExists(DAILY_FILES_BUCKET)) {
                 bucketStore.createBucket(DAILY_FILES_BUCKET);

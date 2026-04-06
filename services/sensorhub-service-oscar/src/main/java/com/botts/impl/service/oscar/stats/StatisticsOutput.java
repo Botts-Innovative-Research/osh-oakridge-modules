@@ -97,8 +97,10 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     }
 
     public void stop() {
-        service.shutdown();
-        service = null;
+        if (service != null) {
+            service.shutdown();
+            service = null;
+        }
     }
 
     public void publishLatestStatistics() {

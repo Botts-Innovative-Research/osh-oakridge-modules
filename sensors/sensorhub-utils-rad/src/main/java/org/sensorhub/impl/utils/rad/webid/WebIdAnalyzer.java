@@ -117,14 +117,51 @@ public class WebIdAnalyzer {
     public WebIdAnalysis processWebIdRequest(WebIdRequestContext webIdContext) {
         // Check if web ID is reachable
         WebIdAnalysis analysis = null;
-        if (webIdClient != null && webIdClient.isReachable()) {
+        boolean reachable = webIdClient != null && webIdClient.isReachable();
+        logger.info("WebID reachability check: client={}, reachable={}", webIdClient != null ? "present" : "null", reachable);
+        if (reachable) {
             analysis = processWebIdAnalysis(webIdContext);
         } else {
-            // offline conversion to N42 only
-//            processCambioConversion(webIdContext);
-            publishN42(webIdContext);
+            // offline: convert to N42 via Cambio if needed, then publish
+            logger.info("WebID unreachable, entering offline conversion path for key: {}", webIdContext.getObjectKey());
+            processOfflineConversion(webIdContext);
         }
         return analysis;
+    }
+
+    private void processOfflineConversion(WebIdRequestContext webIdContext) {
+        String key = webIdContext.getObjectKey();
+        boolean alreadyN42 = isN42(key) || webIdContext.isMultipartRequest();
+
+        if (alreadyN42) {
+            publishN42(webIdContext);
+            return;
+        }
+
+        // Non-N42 file: convert via Cambio then publish
+        if (webIdContext.foregroundData == null) {
+            logger.warn("No foreground data available for offline Cambio conversion");
+            return;
+        }
+
+        logger.info("Starting Cambio conversion: foregroundData={} bytes, foregroundFileName={}, objectKey={}",
+                webIdContext.foregroundData.length, webIdContext.foregroundFileName, key);
+
+        try {
+            String sourceFileName = (webIdContext.foregroundFileName != null && !webIdContext.foregroundFileName.isBlank())
+                    ? webIdContext.foregroundFileName
+                    : key;
+            logger.info("Calling CambioConverter.convertToN42 with sourceFileName={}", sourceFileName);
+            byte[] n42Bytes = new CambioConverter().convertToN42(new ByteArrayInputStream(webIdContext.foregroundData), sourceFileName);
+            logger.info("Cambio conversion returned {} bytes", n42Bytes != null ? n42Bytes.length : 0);
+            // Use .n42 extension so publishN42 accepts it
+            String n42FileName = sourceFileName.replaceAll("\\.[^.]+$", ".n42");
+            logger.info("Cambio conversion succeeded for offline file: {} -> {}", sourceFileName, n42FileName);
+            String sanitized = sanitizeInterSpecNamespace(new String(n42Bytes, StandardCharsets.UTF_8));
+            publishN42(webIdContext.laneUid, sanitized, n42FileName);
+        } catch (Throwable e) {
+            logger.error("Cambio conversion failed for offline file: {}", key, e);
+        }
     }
 
     private WebIdAnalysis processWebIdAnalysis(WebIdRequestContext webIdContext) {
@@ -157,15 +194,18 @@ public class WebIdAnalyzer {
                     n42Bytes = webIdContext.foregroundData;
                     fileName = webIdContext.foregroundFileName;
                 } else {
+                    String sourceFileName;
                     if (webIdContext.foregroundFileName != null && !webIdContext.foregroundFileName.isBlank()) {
-                        fileName = webIdContext.foregroundFileName;
+                        sourceFileName = webIdContext.foregroundFileName;
                     } else {
-                        fileName = UUID.randomUUID() + ".n42";
+                        sourceFileName = UUID.randomUUID().toString();
                     }
-                    n42Bytes = new CambioConverter().convertToN42(new ByteArrayInputStream(webIdContext.foregroundData), fileName);
+                    n42Bytes = new CambioConverter().convertToN42(new ByteArrayInputStream(webIdContext.foregroundData), sourceFileName);
+                    // Use .n42 extension so publishN42 accepts it
+                    fileName = sourceFileName.replaceAll("\\.[^.]+$", "") + ".n42";
                 }
 
-                publishN42(webIdContext.laneUid, new String(n42Bytes, StandardCharsets.UTF_8), fileName);
+                publishN42(webIdContext.laneUid, sanitizeInterSpecNamespace(new String(n42Bytes, StandardCharsets.UTF_8)), fileName);
 
                 WebIdRequest.Builder requestBuilder = new WebIdRequest.Builder()
                         .foreground(new ByteArrayInputStream(n42Bytes))
@@ -287,6 +327,23 @@ public class WebIdAnalyzer {
             requestBuilder.drf(webIdContext.drf);
 
         return requestBuilder.build();
+    }
+
+    /**
+     * SpecUtils-generated N42 files include InterSpec-specific extension elements with an
+     * "InterSpec:" prefix that is never declared as a namespace, causing JAXB unmarshal to fail.
+     * Strip those elements (and any stray xmlns:InterSpec attributes) before parsing.
+     */
+    private String sanitizeInterSpecNamespace(String n42Xml) {
+        if (n42Xml == null || n42Xml.isEmpty())
+            return n42Xml;
+        // Remove paired <InterSpec:Foo ...>...</InterSpec:Foo> elements (DOTALL for multi-line)
+        String cleaned = n42Xml.replaceAll("(?s)<InterSpec:[^/>]*?>.*?</InterSpec:[^>]*?>", "");
+        // Remove self-closing <InterSpec:Foo .../>
+        cleaned = cleaned.replaceAll("<InterSpec:[^>]*?/>", "");
+        // Remove any leftover xmlns:InterSpec="..." attributes
+        cleaned = cleaned.replaceAll("\\s+xmlns:InterSpec=\"[^\"]*\"", "");
+        return cleaned;
     }
 
     private boolean isN42(String fileName) {

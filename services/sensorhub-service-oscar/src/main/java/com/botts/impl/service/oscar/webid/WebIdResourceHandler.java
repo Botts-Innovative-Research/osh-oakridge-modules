@@ -184,12 +184,6 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         String objectKey = ctx.getObjectKey();
         String bucketDir = "";
 
-        try {
-            bucketStore.getResourceURI(bucketName, "");
-        } catch (DataStoreException e) {
-            logger.warn("Could not resolve bucket URI", e);
-        }
-
         webIdRequestBuilder.bucketName(bucketName)
                 .objectKey(objectKey)
                 .multipartRequest(isMultipartRequest)
@@ -209,7 +203,6 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         drf = ctx.getRequest().getParameter("drf");
         String synthesizeBackgroundParam = ctx.getRequest().getParameter("synthesizeBackground");
         synthesizeBackground = Boolean.parseBoolean(synthesizeBackgroundParam);
-
          */
 
 

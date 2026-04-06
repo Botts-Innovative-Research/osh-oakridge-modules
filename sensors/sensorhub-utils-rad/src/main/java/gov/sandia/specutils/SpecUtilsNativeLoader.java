@@ -25,7 +25,13 @@ public class SpecUtilsNativeLoader {
             synchronized (SpecUtilsNativeLoader.class) {
                 if (!loaded) {
                     try {
-                        System.loadLibrary("SpecUtils");
+                        // On Linux/macOS the core library is a separate shared lib that must
+                        // be loaded first. On Windows it is statically linked into the JNI
+                        // module, so libSpecUtils is absent and that load will fail — ignore.
+                        try {
+                            System.loadLibrary("SpecUtils");
+                        } catch (UnsatisfiedLinkError ignored) {
+                        }
                         System.loadLibrary("SpecUtilsJni");
                         available = true;
                     } catch (UnsatisfiedLinkError e) {

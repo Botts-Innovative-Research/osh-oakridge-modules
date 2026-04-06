@@ -168,6 +168,8 @@ public class CambioConverter {
     }
 
     public byte[] convertToN42(InputStream inputStream, String filename) throws CambioException {
+        if (!SpecUtilsNativeLoader.isAvailable())
+            throw new CambioException("SpecUtils native library is not loaded. Cambio conversion unavailable.");
         return convertToN42(inputStream, filename, ParserType.Auto);
     }
 
