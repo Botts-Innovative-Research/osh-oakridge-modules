@@ -123,15 +123,19 @@ public class WebIdAnalyzer {
             analysis = processWebIdAnalysis(webIdContext);
         } else {
             // offline: convert to N42 via Cambio if needed, then publish
-            logger.info("WebID unreachable, entering offline conversion path for key: {}", webIdContext.getObjectKey());
+            logger.info("WebID unreachable, entering offline conversion path (objectKey={}, foregroundFileName={})",
+                    webIdContext.getObjectKey(), webIdContext.getForegroundFileName());
             processOfflineConversion(webIdContext);
         }
         return analysis;
     }
 
     private void processOfflineConversion(WebIdRequestContext webIdContext) {
-        String key = webIdContext.getObjectKey();
-        boolean alreadyN42 = isN42(key) || webIdContext.isMultipartRequest();
+        // For multipart POSTs the URL object key is blank; the real filename lives on the multipart part.
+        String effectiveName = webIdContext.hasForegroundFileName()
+                ? webIdContext.getForegroundFileName()
+                : webIdContext.getObjectKey();
+        boolean alreadyN42 = effectiveName != null && !effectiveName.isBlank() && isN42(effectiveName);
 
         if (alreadyN42) {
             publishN42(webIdContext);
@@ -145,12 +149,12 @@ public class WebIdAnalyzer {
         }
 
         logger.info("Starting Cambio conversion: foregroundData={} bytes, foregroundFileName={}, objectKey={}",
-                webIdContext.foregroundData.length, webIdContext.foregroundFileName, key);
+                webIdContext.foregroundData.length, webIdContext.foregroundFileName, webIdContext.getObjectKey());
 
         try {
-            String sourceFileName = (webIdContext.foregroundFileName != null && !webIdContext.foregroundFileName.isBlank())
-                    ? webIdContext.foregroundFileName
-                    : key;
+            String sourceFileName = (effectiveName != null && !effectiveName.isBlank())
+                    ? effectiveName
+                    : UUID.randomUUID().toString();
             logger.info("Calling CambioConverter.convertToN42 with sourceFileName={}", sourceFileName);
             byte[] n42Bytes = new CambioConverter().convertToN42(new ByteArrayInputStream(webIdContext.foregroundData), sourceFileName);
             logger.info("Cambio conversion returned {} bytes", n42Bytes != null ? n42Bytes.length : 0);
@@ -160,7 +164,7 @@ public class WebIdAnalyzer {
             String sanitized = sanitizeInterSpecNamespace(new String(n42Bytes, StandardCharsets.UTF_8));
             publishN42(webIdContext.laneUid, sanitized, n42FileName);
         } catch (Throwable e) {
-            logger.error("Cambio conversion failed for offline file: {}", key, e);
+            logger.error("Cambio conversion failed for offline file: {}", effectiveName, e);
         }
     }
 
