@@ -201,8 +201,13 @@ public class OccupancyProcessInterface extends OccupancyOutput<IDataProducer> {
 
             if (lastOccupancy == null || lastOccupancy.getSamplingTime() != occupancy.getSamplingTime()) {
                 lastOccupancy = occupancy;
-                // This handles publishing too
-                setData(occupancy);
+//                // This handles publishing too
+//                setData(occupancy);
+                // Augment occupancy with callbacks (e.g. video paths) and publish once
+                augmentOccupancy(occupancy);
+                dataBlock = Occupancy.fromOccupancy(occupancy);
+                dataStruct.setData(dataBlock);
+                latestRecord = dataBlock;
                 eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyProcessInterface.this, dataBlock));
                 doPublish = false;
             }
