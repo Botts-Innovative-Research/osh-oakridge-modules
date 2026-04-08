@@ -129,13 +129,14 @@ public class WebIdHelper {
         for (var obs : event.getObservations()) {
             ObsFilter filter = new ObsFilter.Builder()
                     .withSystems()
-                    .withUniqueIDs(laneSystem.getUniqueIdentifier())
+                        .withUniqueIDs(laneSystem.getUniqueIdentifier())
+                        .done()
                     .withDataStreams()
-                    .withOutputNames(WEBID_NAME)
-                    .withObservations()
+                        .withOutputNames(WEBID_NAME)
+                        .done()
                     .withPhenomenonTime()
-                    .withSingleValue(obs.getPhenomenonTime())
-                    .done()
+                        .withSingleValue(obs.getPhenomenonTime())
+                        .done()
                     .build();
 
             BigId obsId = null;
@@ -167,13 +168,14 @@ public class WebIdHelper {
         for (var obs : event.getObservations()) {
             ObsFilter filter = new ObsFilter.Builder()
                     .withSystems()
-                    .withUniqueIDs(occupancyProducer.getUniqueIdentifier())
+                        .withUniqueIDs(occupancyProducer.getUniqueIdentifier())
+                        .done()
                     .withDataStreams()
-                    .withOutputNames(OCCUPANCY_NAME)
-                    .withObservations()
+                        .withOutputNames(OCCUPANCY_NAME)
+                        .done()
                     .withPhenomenonTime()
-                    .withSingleValue(obs.getPhenomenonTime())
-                    .done()
+                        .withSingleValue(obs.getPhenomenonTime())
+                        .done()
                     .build();
 
             BigId obsId = null;
