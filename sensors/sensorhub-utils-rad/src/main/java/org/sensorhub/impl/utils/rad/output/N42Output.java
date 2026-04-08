@@ -66,6 +66,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         var alarmDescription = radHelper.createAlarmDescription();
 
         var fileName = radHelper.createText().name("fileName").description("File Name").label("File Name").build();
+        var occupancyObsId = radHelper.createText().name("occupancyObsId").description("Encoded ID of the occupancy observation that produced or contains this N42 record").label("Occupancy Obs ID").build();
 
         var foregroundStruct = radHelper.createRecord()
                 .name("foregroundReport")
@@ -144,6 +145,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                 .definition(RADHelper.getRadUri("N42Report"))
                 .addField(samplingTime.getName(), samplingTime)
                 .addField(fileName.getName(), fileName)
+                .addField(occupancyObsId.getName(), occupancyObsId)
                 .addField(foregroundCount.getName(), foregroundCount)
                 .addField(foregroundReports.getName(), foregroundReports)
                 .addField(backgroundCount.getName(), backgroundCount)
@@ -158,14 +160,23 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
     }
 
 
+    /**
+     * @deprecated prefer {@link #onNewMessage(String, String, String)} so that the
+     * resulting N42 observation is correlated with the originating occupancy.
+     */
+    @Deprecated
     public synchronized void onNewMessage(String n42Message, String fileName) {
-        parseN42Message(n42Message, fileName);
+        onNewMessage(n42Message, fileName, null);
+    }
+
+    public synchronized void onNewMessage(String n42Message, String fileName, String occupancyObsId) {
+        parseN42Message(n42Message, fileName, occupancyObsId);
 
         eventHandler.publish(new DataEvent(latestRecordTime, N42Output.this, dataStruct.getData().clone()));
     }
 
 
-    protected void parseN42Message(String n42Message, String fileName) {
+    protected void parseN42Message(String n42Message, String fileName, String occupancyObsId) {
 
         foregroundReports.clearData();
         backgroundReports.clearData();
@@ -301,6 +312,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         latestRecordTime = System.currentTimeMillis() / 1000;
         dataBlock.setLongValue(index++, latestRecordTime);
         dataBlock.setStringValue(index++, fileName);
+        dataBlock.setStringValue(index++, occupancyObsId != null ? occupancyObsId : "");
         dataBlock.setIntValue(index++, foregroundCount.getValue());
         dataBlock.setBlock(index++, (AbstractDataBlock) foregroundReports.getData());
         dataBlock.setIntValue(index++, backgroundCount.getValue());

@@ -46,6 +46,7 @@ public class WebIdAnalyzer {
         String key = webIdContext.getObjectKey();
         N42Output<?> n42output;
         String charset = StandardCharsets.UTF_8.name();
+        String occupancyObsId = webIdContext.occupancyObsId;
 
         if (!isN42(key) && !webIdContext.isMultipartRequest())
             return;
@@ -70,10 +71,10 @@ public class WebIdAnalyzer {
         if (webIdContext.isMultipartRequest()) {
             try {
                 if (webIdContext.hasForegroundFileName() && isN42(webIdContext.foregroundFileName)) {
-                    n42output.onNewMessage(new String(webIdContext.foregroundData, charset), objectDir.resolve(webIdContext.getForegroundFileName()).toString());
+                    n42output.onNewMessage(new String(webIdContext.foregroundData, charset), objectDir.resolve(webIdContext.getForegroundFileName()).toString(), occupancyObsId);
                 }
                 if (webIdContext.hasBackgroundFileName() && isN42(webIdContext.backgroundFileName)) {
-                    n42output.onNewMessage(new String(webIdContext.backgroundData, charset), objectDir.resolve(webIdContext.getBackgroundFileName()).toString());
+                    n42output.onNewMessage(new String(webIdContext.backgroundData, charset), objectDir.resolve(webIdContext.getBackgroundFileName()).toString(), occupancyObsId);
                 }
             } catch (Exception e) {
                 logger.error("Failed to parse multipart request", e);
@@ -81,7 +82,7 @@ public class WebIdAnalyzer {
         } else {
             if (key.endsWith(".n42")) {
                 try {
-                    n42output.onNewMessage(new String(webIdContext.foregroundData, charset), objectDir.resolve(key).toString());
+                    n42output.onNewMessage(new String(webIdContext.foregroundData, charset), objectDir.resolve(key).toString(), occupancyObsId);
                 } catch (Exception e) {
                     logger.error("Failed to parse N42 file: {}", key, e);
                 }
@@ -89,7 +90,7 @@ public class WebIdAnalyzer {
         }
     }
 
-    private void publishN42(String laneUid, String n42Data, String fileName) {
+    private void publishN42(String laneUid, String n42Data, String fileName, String occupancyObsId) {
         if (!isN42(fileName))
             return;
 
@@ -108,7 +109,7 @@ public class WebIdAnalyzer {
             return;
         }
         try {
-            n42output.onNewMessage(n42Data, fileName);
+            n42output.onNewMessage(n42Data, fileName, occupancyObsId);
         } catch (Exception e) {
             logger.error("Failed to parse N42 file: {}", laneUid, e);
         }
@@ -162,7 +163,7 @@ public class WebIdAnalyzer {
             String n42FileName = sourceFileName.replaceAll("\\.[^.]+$", ".n42");
             logger.info("Cambio conversion succeeded for offline file: {} -> {}", sourceFileName, n42FileName);
             String sanitized = sanitizeInterSpecNamespace(new String(n42Bytes, StandardCharsets.UTF_8));
-            publishN42(webIdContext.laneUid, sanitized, n42FileName);
+            publishN42(webIdContext.laneUid, sanitized, n42FileName, webIdContext.occupancyObsId);
         } catch (Throwable e) {
             logger.error("Cambio conversion failed for offline file: {}", effectiveName, e);
         }
@@ -209,7 +210,7 @@ public class WebIdAnalyzer {
                     fileName = sourceFileName.replaceAll("\\.[^.]+$", "") + ".n42";
                 }
 
-                publishN42(webIdContext.laneUid, sanitizeInterSpecNamespace(new String(n42Bytes, StandardCharsets.UTF_8)), fileName);
+                publishN42(webIdContext.laneUid, sanitizeInterSpecNamespace(new String(n42Bytes, StandardCharsets.UTF_8)), fileName, webIdContext.occupancyObsId);
 
                 WebIdRequest.Builder requestBuilder = new WebIdRequest.Builder()
                         .foreground(new ByteArrayInputStream(n42Bytes))
