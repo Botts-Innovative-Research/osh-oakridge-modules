@@ -68,7 +68,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         var fileName = radHelper.createText().name("fileName").description("File Name").label("File Name").build();
 
         var foregroundStruct = radHelper.createRecord()
-                .name("Foreground Report")
+                .name("foregroundReport")
                 .label("Foreground Report")
                 .definition(RADHelper.getRadUri("ForegroundReport"))
                 .addField(samplingTime.getName(), samplingTime.copy())
@@ -83,7 +83,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                 .build();
 
         var backgroundStruct = radHelper.createRecord()
-                .name("Background Report")
+                .name("backgroundReport")
                 .label("Background Report")
                 .definition(RADHelper.getRadUri("BackgroundReport"))
                 .addField(samplingTime.getName(), samplingTime.copy())
@@ -97,7 +97,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                 .build();
 
         var alarmStruct = radHelper.createRecord()
-                .name("Alarm Report")
+                .name("alarmReport")
                 .label("Alarm Report")
                 .definition(RADHelper.getRadUri("AlarmOutput"))
                 .addField(samplingTime.getName(), samplingTime.copy())
@@ -109,7 +109,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                 .build();
 
         foregroundReports = radHelper.createArray()
-                .name("Foreground Reports")
+                .name("foregroundReports")
                 .label("Foreground Reports")
                 .definition(RADHelper.getRadUri("ForegroundReports"))
                 .withVariableSize("foregroundReportCount")
@@ -119,7 +119,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         foregroundCount = radHelper.createArraySize("foregroundReportCount", "foregroundReportCount", "Foreground Report Count");
 
         backgroundReports = radHelper.createArray()
-                .name("Background Reports")
+                .name("backgroundReports")
                 .label("Background Reports")
                 .definition(RADHelper.getRadUri("BackgroundReports"))
                 .withVariableSize("backgroundReportCount")
@@ -129,7 +129,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         backgroundCount = radHelper.createArraySize("backgroundReportCount", "backgroundReportCount", "Background Report Count");
 
         alarmReports = radHelper.createArray()
-                .name("Alarm Reports")
+                .name("alarmReports")
                 .label("Alarm Reports")
                 .definition(RADHelper.getRadUri("AlarmReports"))
                 .withVariableSize("alarmReportCount")
