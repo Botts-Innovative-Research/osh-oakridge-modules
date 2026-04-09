@@ -16,8 +16,6 @@
 package com.botts.impl.process.rs350.occupancy.helpers;
 
 import com.botts.impl.process.rs350.occupancy.Rs350OccupancyProcessModule;
-import com.botts.impl.process.rs350.occupancy.Rs350OutputToOccupancy;
-import com.botts.impl.utils.n42.RadAlarmCategoryCodeSimpleType;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.api.data.IDataProducer;
@@ -26,24 +24,16 @@ import org.sensorhub.api.event.IEventListener;
 import org.sensorhub.api.processing.IProcessModule;
 import org.sensorhub.api.processing.ProcessingException;
 import org.sensorhub.impl.event.BasicEventHandler;
-import org.sensorhub.impl.processing.SMLProcessImpl;
-import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
+import org.sensorhub.impl.utils.rad.model.OccupancyExtended;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.vast.data.DataArrayImpl;
 import org.vast.process.DataQueue;
 import org.vast.process.ProcessException;
 import org.vast.sensorML.SMLHelper;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class OccupancyProcessInterface extends OccupancyOutput<IDataProducer> {
     final IProcessModule<?> parentProcess;
     final IEventHandler eventHandler;
-    static RADHelper radHelper = new RADHelper();
     static String OUTPUT_NAME = OccupancyOutput.NAME;
     DataComponent outputDef;
     DataEncoding outputEncoding;
@@ -58,135 +48,10 @@ public class OccupancyProcessInterface extends OccupancyOutput<IDataProducer> {
         doPublish = true;
     }
 
-    public static class OccupancyExtended extends Occupancy {
-        private static final Logger logger = LoggerFactory.getLogger(OccupancyExtended.class);
-        protected RadAlarmCategoryCodeSimpleType alarmCategory = RadAlarmCategoryCodeSimpleType.OTHER;
-
-        public RadAlarmCategoryCodeSimpleType getAlarmCategory() { return alarmCategory; }
-
-        public static class Builder extends Occupancy.Builder {
-
-            public Builder() {
-                instance = new OccupancyExtended();
-            }
-
-            @Override
-            public OccupancyExtended build() {
-                return (OccupancyExtended) instance;
-            }
-
-            public Occupancy.Builder alarmCategory(RadAlarmCategoryCodeSimpleType alarmCategory) {
-                ((OccupancyExtended) instance).alarmCategory = alarmCategory;
-                return this;
-            }
-        }
-
-        // TODO This adds the alarm category code. Incorporate this into OccupancyOutput itself.
-        public static DataBlock fromOccupancy(OccupancyExtended occupancy) {
-            OccupancyProcessInterface output;
-            try {
-                output = new OccupancyProcessInterface(new SMLProcessImpl(), null, null);
-            } catch (ProcessingException e) {
-                logger.error("Could not generate extended occupancy output", e);
-                return null;
-            }
-            DataComponent resultStructure = output.getRecordDescription();
-            DataBlock dataBlock = resultStructure.createDataBlock();
-            dataBlock.updateAtomCount();
-            resultStructure.setData(dataBlock);
-
-            int index = 0;
-
-            dataBlock.setDoubleValue(index++, occupancy.getSamplingTime());
-            dataBlock.setIntValue(index++, occupancy.getOccupancyCount());
-            dataBlock.setDoubleValue(index++, occupancy.getStartTime());
-            dataBlock.setDoubleValue(index++, occupancy.getEndTime());
-            dataBlock.setDoubleValue(index++, occupancy.getNeutronBackground());
-            dataBlock.setBooleanValue(index++, occupancy.hasGammaAlarm());
-            dataBlock.setBooleanValue(index++, occupancy.hasNeutronAlarm());
-            dataBlock.setIntValue(index++, occupancy.getMaxGammaCount());
-            dataBlock.setIntValue(index++, occupancy.getMaxNeutronCount());
-
-            int cmdIdsCount = occupancy.getAdjudicatedIds().size();
-            dataBlock.setDoubleValue(index++, cmdIdsCount);
-
-            var adjIdsArray = ((DataArrayImpl) resultStructure.getComponent("adjudicatedIds"));
-
-            if (cmdIdsCount > 0) {
-                adjIdsArray.updateSize();
-                dataBlock.updateAtomCount();
-
-                for (int i = 0; i < occupancy.getAdjudicatedIds().size(); i++) {
-                    dataBlock.setStringValue(index++, occupancy.getAdjudicatedIds().get(i));
-                }
-            }
-
-            int filePathsCount = occupancy.getVideoPaths().size();
-            dataBlock.setDoubleValue(index++, filePathsCount);
-
-            var filePathsArray = ((DataArrayImpl) resultStructure.getComponent("videoPaths"));
-
-            if (filePathsCount > 0) {
-                filePathsArray.updateSize();
-                dataBlock.updateAtomCount();
-
-                for (int i = 0; i < occupancy.getVideoPaths().size(); i++) {
-                    dataBlock.setStringValue(index++, occupancy.getVideoPaths().get(i));
-                }
-            }
-
-            // Add alarm category code
-            // Currently using "OTHER" as the default for non-alarming.
-            dataBlock.setStringValue(index, occupancy.getAlarmCategory().value());
-
-            return dataBlock;
-        }
-
-        public static OccupancyExtended toOccupancy(DataBlock dataBlock) {
-            int index = 0;
-
-            var samplingTime = dataBlock.getDoubleValue(index++);
-            var occupancyCount = dataBlock.getIntValue(index++);
-            var startTime = dataBlock.getDoubleValue(index++);
-            var endTime = dataBlock.getDoubleValue(index++);
-            var neutronBackground = dataBlock.getDoubleValue(index++);
-            var gammaAlarm = dataBlock.getBooleanValue(index++);
-            var neutronAlarm = dataBlock.getBooleanValue(index++);
-            var maxGammaCount = dataBlock.getIntValue(index++);
-            var maxNeutronCount = dataBlock.getIntValue(index++);
-            var cmdIdsCount = dataBlock.getIntValue(index++);
-
-            List<String> cmdIds = new ArrayList<>();
-            for (int i = 0; i < cmdIdsCount; i++)
-                cmdIds.add(dataBlock.getStringValue(index++));
-
-            var videoPathCount = dataBlock.getIntValue(index++);
-
-            List<String> videoPaths = new ArrayList<>();
-            for (int i = 0; i < videoPathCount; i++)
-                videoPaths.add(dataBlock.getStringValue(index++));
-
-            var catCode = dataBlock.getStringValue(index);
-
-            return (OccupancyExtended) new OccupancyExtended.Builder()
-                    .alarmCategory(RadAlarmCategoryCodeSimpleType.fromValue(catCode))
-                    .samplingTime(samplingTime)
-                    .occupancyCount(occupancyCount)
-                    .startTime(startTime)
-                    .endTime(endTime)
-                    .neutronBackground(neutronBackground)
-                    .maxGammaCount(maxGammaCount)
-                    .maxNeutronCount(maxNeutronCount)
-                    .gammaAlarm(gammaAlarm)
-                    .neutronAlarm(neutronAlarm)
-                    .adjudicatedIds(cmdIds)
-                    .videoPaths(videoPaths)
-                    .build();
-        }
-    }
-
     /**
-     * Output queue used to publish process outputs as data events
+     * Output queue used to publish process outputs as data events. Reads incoming
+     * datablocks as {@link OccupancyExtended} so the RS350-specific
+     * {@code alarmCategoryCode} field is preserved end-to-end.
      */
     protected DataQueue outputQueue = new DataQueue()
     {
@@ -197,11 +62,12 @@ public class OccupancyProcessInterface extends OccupancyOutput<IDataProducer> {
                 return;
             }
             DataBlock data = sourceComponent.getData();
-            Occupancy occupancy = Occupancy.toOccupancy(data);
+            OccupancyExtended occupancy = OccupancyExtended.toOccupancy(data);
 
             if (lastOccupancy == null || lastOccupancy.getSamplingTime() != occupancy.getSamplingTime()) {
                 lastOccupancy = occupancy;
-                // This handles publishing too
+                // This handles publishing too (parent setData → augmentPublish,
+                // which we override below to serialize extended datablocks).
                 setData(occupancy);
                 eventHandler.publish(new DataEvent(System.currentTimeMillis(), OccupancyProcessInterface.this, dataBlock));
                 doPublish = false;
@@ -210,7 +76,13 @@ public class OccupancyProcessInterface extends OccupancyOutput<IDataProducer> {
     };
 
     /**
-     * Output interface to facilitate connection between process outputs and output queue
+     * Output interface to facilitate connection between process outputs and output queue.
+     * <p>
+     * Overrides the inherited {@link OccupancyOutput#dataStruct} with the extended
+     * record schema (base occupancy fields + {@code alarmCategoryCode}) so that both
+     * the published datablock and the registered datastream schema carry the alarm
+     * category string reported by the RS350 driver.
+     *
      * @param parentProcess OSH process module
      * @param outputDescriptor output to connect to data queue
      * @param encoding data encoding retrieved from data stream info
@@ -218,16 +90,17 @@ public class OccupancyProcessInterface extends OccupancyOutput<IDataProducer> {
      */
     public OccupancyProcessInterface(IProcessModule<?> parentProcess, AbstractSWEIdentifiable outputDescriptor, DataEncoding encoding) throws ProcessingException
     {
-        // TODO THIS OUTPUT ADDS AN ALARM CATEGORY CODE! ADD THIS CODE TO THE REGULAR OCCUPANCY OUTPUT!
         super(parentProcess);
-        //var catCode = radHelper.createAlarmCatCode();
-        //dataStruct.addField(catCode.getName(), catCode);
+        // Replace the base (16-field) record with the extended (17-field) record so
+        // the augmentPublish path serializes datablocks that match the schema
+        // persisted for the datastream. See OccupancyExtended.createExtendedRecordStructure.
+        this.dataStruct = OccupancyExtended.createExtendedRecordStructure();
         this.parentProcess = parentProcess;
         this.eventHandler = new BasicEventHandler();
 
         if (outputDescriptor != null) {
             this.outputDef = SMLHelper.getIOComponent(outputDescriptor);
-            lastOccupancy = Occupancy.toOccupancy(outputDef.createDataBlock());
+            lastOccupancy = OccupancyExtended.toOccupancy(outputDef.createDataBlock());
             if (encoding != null)
                 this.outputEncoding = encoding;
             else
@@ -243,6 +116,52 @@ public class OccupancyProcessInterface extends OccupancyOutput<IDataProducer> {
                 throw new ProcessingException("Error while connecting output " + outputDef.getName(), e);
             }
         }
+    }
+
+    /**
+     * Override the parent's publish path so datablocks are serialized via
+     * {@link OccupancyExtended#fromOccupancy(OccupancyExtended)} — the base
+     * {@link OccupancyOutput#augmentPublish(Occupancy)} uses
+     * {@link Occupancy#fromOccupancy(Occupancy)} which produces a base-schema
+     * datablock that's missing the trailing {@code alarmCategoryCode} field and
+     * therefore does not match the datastream schema registered for the RS350
+     * occupancy output.
+     */
+    @Override
+    protected void augmentPublish(Occupancy occupancy) {
+        augmentOccupancy(occupancy);
+
+        if (occupancy instanceof OccupancyExtended extended) {
+            dataBlock = OccupancyExtended.fromOccupancy(extended);
+        } else {
+            // Wrap any plain Occupancy as an extended one with an empty category so
+            // the datablock still matches the extended schema.
+            OccupancyExtended wrapper = (OccupancyExtended) new OccupancyExtended.Builder()
+                    .alarmCategory("")
+                    .samplingTime(occupancy.getSamplingTime())
+                    .occupancyCount(occupancy.getOccupancyCount())
+                    .startTime(occupancy.getStartTime())
+                    .endTime(occupancy.getEndTime())
+                    .neutronBackground(occupancy.getNeutronBackground())
+                    .gammaAlarm(occupancy.hasGammaAlarm())
+                    .neutronAlarm(occupancy.hasNeutronAlarm())
+                    .maxGammaCount(occupancy.getMaxGammaCount())
+                    .maxNeutronCount(occupancy.getMaxNeutronCount())
+                    .adjudicatedIds(occupancy.getAdjudicatedIds())
+                    .videoPaths(occupancy.getVideoPaths())
+                    .webIdObsIds(occupancy.getWebIdObsIds())
+                    .build();
+            dataBlock = OccupancyExtended.fromOccupancy(wrapper);
+        }
+
+        dataStruct.setData(dataBlock);
+        latestRecord = dataBlock;
+
+        long now = System.currentTimeMillis();
+        updateSamplingPeriod(now);
+        latestRecordTime = now;
+
+        eventHandler.publish(new DataEvent(now, this, dataBlock));
     }
 
     @Override

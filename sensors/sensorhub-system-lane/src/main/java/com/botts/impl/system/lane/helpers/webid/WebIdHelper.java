@@ -3,6 +3,7 @@ package com.botts.impl.system.lane.helpers.webid;
 import com.botts.impl.system.lane.LaneSystem;
 import com.botts.impl.system.lane.WebIdOutput;
 import net.opengis.swe.v20.DataBlock;
+import net.opengis.swe.v20.DataComponent;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.IdEncoder;
@@ -12,6 +13,7 @@ import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.data.ObsData;
 import org.sensorhub.api.data.ObsEvent;
 import org.sensorhub.api.datastore.EmptyFilterIntersection;
+import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.event.EventUtils;
@@ -20,6 +22,7 @@ import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.system.DataStreamTransactionHandler;
 import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
+import org.sensorhub.impl.utils.rad.model.OccupancyExtended;
 import org.sensorhub.impl.utils.rad.model.WebIdAnalysis;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.sensorhub.utils.Async;
@@ -235,9 +238,28 @@ public class WebIdHelper {
     private void setOccupancy(ObsData occupancyObs, BigId obsId) {
         synchronized (this) {
             lastOccupancyBlock = occupancyObs;
-            lastOccupancy = Occupancy.toOccupancy(lastOccupancyBlock.getResult());
+            // Schema-aware read: returns OccupancyExtended (carrying alarmCategory)
+            // for RS350 datastreams, plain Occupancy for Rapiscan/Aspect.
+            DataComponent recordStructure = getOccupancyRecordStructure(occupancyObs);
+            lastOccupancy = OccupancyExtended.readOccupancy(recordStructure, lastOccupancyBlock.getResult());
             lastOccupancyTime = System.currentTimeMillis();
             lastOccupancyBigId = obsId;
+        }
+    }
+
+    /**
+     * Look up the record description for the datastream backing this observation
+     * so we can dispatch to the correct (base vs. extended) occupancy serializer.
+     * Falls back to {@code null} if the datastream is unknown — callers treat
+     * that as the base schema.
+     */
+    private DataComponent getOccupancyRecordStructure(ObsData occupancyObs) {
+        try {
+            var dsInfo = occupancyObsStore.getDataStreams().get(new DataStreamKey(occupancyObs.getDataStreamID()));
+            return dsInfo != null ? dsInfo.getRecordStructure() : null;
+        } catch (Exception e) {
+            logger.warn("Failed to look up datastream for occupancy obs", e);
+            return null;
         }
     }
 
@@ -246,8 +268,16 @@ public class WebIdHelper {
             if (lastOccupancy == null || lastWebId == null) { return; }
             lastOccupancy.addWebIdObsId(obsIdEncoder.encodeID(lastWebIdBigId));
             lastWebId.setOccupancyObsId(obsIdEncoder.encodeID(lastOccupancyBigId));
-            lastOccupancyBlock.getResult().setUnderlyingObject(Occupancy.fromOccupancy(lastOccupancy).getUnderlyingObject());
+
+            // Schema-aware write: serializes a 16-field datablock for Rapiscan/Aspect
+            // and a 17-field datablock (with trailing alarmCategoryCode) for RS350,
+            // matching the datastream record so the JSON serializer in PostgisObsStoreImpl
+            // doesn't fall off the end of the atom array.
+            DataComponent occupancyRecord = getOccupancyRecordStructure(lastOccupancyBlock);
+            DataBlock newOccupancyBlock = OccupancyExtended.writeOccupancy(occupancyRecord, lastOccupancy);
+            lastOccupancyBlock.getResult().setUnderlyingObject(newOccupancyBlock.getUnderlyingObject());
             lastOccupancyBlock.getResult().updateAtomCount();
+
             lastWebIdBlock.getResult().setUnderlyingObject(WebIdAnalysis.fromWebIdAnalysis(lastWebId).getUnderlyingObject());
             lastWebIdBlock.getResult().updateAtomCount();
             logger.info("{}", lastOccupancyBlock);

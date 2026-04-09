@@ -17,6 +17,7 @@ package com.botts.impl.process.rs350.occupancy;
 
 import com.botts.impl.process.rs350.occupancy.helpers.OccupancyProcessInterface;
 import com.botts.impl.utils.n42.RadAlarmCategoryCodeSimpleType;
+import org.sensorhub.impl.utils.rad.model.OccupancyExtended;
 import net.opengis.sensorml.v20.IOPropertyList;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
@@ -71,8 +72,8 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     // Subset of RS350 outputs we want to connect to process input
     public static final List<String> RS350_OUTPUTS = List.of(FOREGROUND_NAME);
     public final List<Flow.Subscription> subscriptions = new ArrayList<>(ALL_OUTPUTS.size());
-    //private OccupancyProcessInterface.OccupancyExtended.Builder occupancyBuilder;
-    Occupancy.Builder occupancyBuilder;
+    // Use the extended builder so the trailing alarmCategoryCode field is populated.
+    OccupancyExtended.Builder occupancyBuilder;
     private IOPropertyList allInputs = new IOPropertyList();
 
     private int occupancyCount = 0;
@@ -80,7 +81,7 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     private int maxGammaCount = 0;
     private int maxNeutronCount = 0;
 
-    private Occupancy occupancy;
+    private OccupancyExtended occupancy;
 
     private volatile boolean doPublishOccupancy = false;
     private volatile long lastAlarmTime = 0;
@@ -132,7 +133,10 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
                 .value("")
                 .build());
 
-        outputData.add(OccupancyOutput.NAME, occupancyOutput.getRecordDescription());
+        // Register the RS350-extended occupancy record (base fields + alarmCategoryCode)
+        // so downstream subscribers (OccupancyProcessInterface) see the extra field
+        // in the datastream schema.
+        outputData.add(OccupancyOutput.NAME, OccupancyExtended.createExtendedRecordStructure());
         outputData.add(DailyFileStruct.DAILY_FILE_NAME, DailyFileStruct.getRecordDescription());
     }
 
@@ -159,8 +163,11 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
         }
     }
 
-    private void setOccupancyOutput(Occupancy occupancy) {
-        ((DataComponent) outputData.get(OCCUPANCY_NAME)).setData(Occupancy.fromOccupancy(occupancy));
+    private void setOccupancyOutput(OccupancyExtended occupancy) {
+        // Serialize via the extended helper so the trailing alarmCategoryCode atom
+        // matches the registered extended schema.
+        ((DataComponent) outputData.get(OCCUPANCY_NAME))
+                .setData(OccupancyExtended.fromOccupancy(occupancy));
     }
 
     /**
@@ -258,24 +265,29 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
             alarmDuration = endTime - startTime;
 
 
-            // TODO This needs to be tested
+            // Preserve the raw alarm category string reported by the RS350 driver
+            // (e.g. "Gamma", "Neutron", "Gamma-Neutron", "Alpha", ...) unchanged.
+            // The UI prefers this field over the gamma/neutron booleans.
             String alarmCat = alarmComponent.getComponent(ALARM_CAT_NAME).getData().getStringValue();
-            //String alarmCat = RadAlarmCategoryCodeSimpleType.GAMMA.value();
             boolean hasGammaAlarm = alarmCat.toLowerCase().contains(RadAlarmCategoryCodeSimpleType.GAMMA.value().toLowerCase());
             boolean hasNeutronAlarm = alarmCat.toLowerCase().contains(RadAlarmCategoryCodeSimpleType.NEUTRON.value().toLowerCase());
             if (!hasGammaAlarm && !hasNeutronAlarm) {
+                // Fallback for unknown/combined categories so that
+                // gamma/neutron boolean consumers still see an alarm.
                 hasGammaAlarm = true;
                 hasNeutronAlarm = true;
             }
 
-            //occupancyBuilder = new OccupancyProcessInterface.OccupancyExtended.Builder();
-            occupancyBuilder = new Occupancy.Builder();
+            occupancyBuilder = new OccupancyExtended.Builder();
+            // alarmCategory() must be called first because Occupancy.Builder setters
+            // return the parent builder type (see the note on
+            // OccupancyExtended.Builder.alarmCategory).
+            occupancyBuilder.alarmCategory(alarmCat);
             occupancyBuilder.startTime(startTime).endTime(endTime).samplingTime(startTime);
             occupancyBuilder.gammaAlarm(hasGammaAlarm).neutronAlarm(hasNeutronAlarm);
             occupancyBuilder.maxGammaCount(maxGammaCount).maxNeutronCount(maxNeutronCount);
             occupancyBuilder.neutronBackground(latestNeutronBackground);
             occupancyBuilder.occupancyCount(++occupancyCount);
-            //occupancyBuilder.alarmCategory(RadAlarmCategoryCodeSimpleType.fromValue(alarmCat));
 
             occupancy = occupancyBuilder.build();
             doPublishOccupancy = true;

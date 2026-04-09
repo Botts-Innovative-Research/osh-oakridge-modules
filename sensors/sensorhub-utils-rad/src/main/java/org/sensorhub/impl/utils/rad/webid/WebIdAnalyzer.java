@@ -11,7 +11,9 @@ import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.SensorSystem;
 import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
+import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
+import org.sensorhub.impl.utils.rad.model.OccupancyExtended;
 import org.sensorhub.impl.utils.rad.model.WebIdAnalysis;
 import org.sensorhub.impl.utils.rad.output.N42Output;
 import org.slf4j.Logger;
@@ -298,10 +300,15 @@ public class WebIdAnalyzer {
                         return analysis;
                     }
 
-                    var occupancy = Occupancy.toOccupancy(obs.getResult());
+                    // Schema-aware read/write so RS350 occupancy datastreams (which
+                    // carry the trailing alarmCategoryCode field) are serialized properly
+                    var dsInfo = obsStore.getDataStreams().get(new DataStreamKey(obs.getDataStreamID()));
+                    var occupancyRecord = dsInfo != null ? dsInfo.getRecordStructure() : null;
+
+                    var occupancy = OccupancyExtended.readOccupancy(occupancyRecord, obs.getResult());
                     occupancy.addWebIdObsId(encodedWebIdObsId);
 
-                    DataBlock newOccupancyResult = Occupancy.fromOccupancy(occupancy);
+                    DataBlock newOccupancyResult = OccupancyExtended.writeOccupancy(occupancyRecord, occupancy);
                     obs.getResult().setUnderlyingObject(newOccupancyResult.getUnderlyingObject());
                     obs.getResult().updateAtomCount();
 

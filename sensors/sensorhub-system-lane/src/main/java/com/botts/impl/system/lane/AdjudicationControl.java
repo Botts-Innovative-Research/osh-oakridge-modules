@@ -14,6 +14,7 @@ import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Adjudication;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
+import org.sensorhub.impl.utils.rad.model.OccupancyExtended;
 import org.vast.data.DataArrayImpl;
 import org.vast.swe.SWEHelper;
 import org.vast.util.TimeExtent;
@@ -111,10 +112,16 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
                // update the occupancy adjudication command IDs array with latest command id
                var commandId = getParentProducer().getParentHub().getIdEncoders().getCommandIdEncoder().encodeID(command.getID());
                var result = obs.getResult();
-               var occupancy = Occupancy.toOccupancy(result);
+               // Schema-aware so RS350 occupancies (which carry the trailing
+               // alarmCategoryCode field) are read/written with the matching
+               // 17-field datablock layout. The base helpers would otherwise
+               // produce a 16-field datablock that doesn't match the registered
+               // datastream schema and crash the JSON serializer in put().
+               var occupancyRecord = ds.getRecordStructure();
+               var occupancy = OccupancyExtended.readOccupancy(occupancyRecord, result);
 
                occupancy.addAdjudicatedId(commandId);
-               DataBlock newOccupancyResult = Occupancy.fromOccupancy(occupancy);
+               DataBlock newOccupancyResult = OccupancyExtended.writeOccupancy(occupancyRecord, occupancy);
                obs.getResult().setUnderlyingObject(newOccupancyResult.getUnderlyingObject());
                obs.getResult().updateAtomCount();
 
