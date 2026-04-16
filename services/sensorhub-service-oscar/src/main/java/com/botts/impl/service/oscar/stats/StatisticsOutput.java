@@ -41,6 +41,12 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     public static String neutronFaultCQL = "alarmState = 'Fault - Neutron High'";
     public static String tamperCQL = "tamperStatus = true";
 
+    // RS350 alarm CQL filters (AlarmOutput uses alarmCategoryCode field)
+    public static String rs350GammaAlarmCQL = "alarmCategoryCode = 'Gamma'";
+    public static String rs350NeutronAlarmCQL = "alarmCategoryCode = 'Neutron'";
+
+    private static final String DEF_ALARM_CATEGORY = RADHelper.getRadUri("AlarmCategoryCode");
+
     private final DataComponent recordDescription;
     private final DataEncoding recommendedEncoding;
     private final int samplingPeriod;
@@ -75,7 +81,8 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
                 RADHelper.DEF_GAMMA,
                 RADHelper.DEF_NEUTRON,
                 RADHelper.DEF_ALARM,
-                RADHelper.DEF_TAMPER
+                RADHelper.DEF_TAMPER,
+                DEF_ALARM_CATEGORY
         };
 
         for (String property : observedProperties) {
@@ -209,6 +216,13 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         long numNeutronFaults = countObservations(database, neutronFaultCQL, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
         long numTampers = countObservations(database, tamperCQL, start, end, RADHelper.DEF_TAMPER);
         long numFaults = countObservations(database, faultCQL, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
+
+        // RS350 alarm counts from raw AlarmOutput (uses alarmCategoryCode observed property)
+        long numRS350GammaAlarms = countObservations(database, rs350GammaAlarmCQL, start, end, DEF_ALARM_CATEGORY);
+        long numRS350NeutronAlarms = countObservations(database, rs350NeutronAlarmCQL, start, end, DEF_ALARM_CATEGORY);
+        numGammaAlarms += numRS350GammaAlarms;
+        numNeutronAlarms += numRS350NeutronAlarms;
+        numOccupancies += numRS350GammaAlarms + numRS350NeutronAlarms;
 
         return new Statistics.Builder()
                 .numOccupancies(numOccupancies)
