@@ -66,17 +66,16 @@ public class VideoRetention {
             logger.info("decimating, {}", occupancy.getVideoPaths().get(0));
             if (!bucketStore.objectExists("", videoFile)) {
                 logger.info("Video file {} does not exist", videoFile);
-                return false;
-            } else {
-                try {
-                    if (!decimate(bucketStore.getResourceURI("", videoFile))) {
-                        logger.info("Video file was already decimated {}", videoFile);
-                        return false;
-                    }
-                } catch (DataStoreException e) {
-                    logger.warn("Failed to decimate video file {}", videoFile, e);
+                continue;
+            }
+            try {
+                if (!decimate(bucketStore.getResourceURI("", videoFile))) {
+                    logger.info("Video file was already decimated {}", videoFile);
                     return false;
                 }
+            } catch (DataStoreException e) {
+                logger.warn("Failed to decimate video file {}", videoFile, e);
+                continue;
             }
         }
         return true;

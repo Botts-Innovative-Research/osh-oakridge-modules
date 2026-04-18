@@ -771,11 +771,13 @@ public class MpegTsProcessor extends Thread {
         }
         videoDataBufferListeners.clear();
 
-        for (AVPacket avPacket : fileFrameQueue) {
-            av_packet_free(avPacket);
+        if (fileFrameQueue != null) {
+            for (AVPacket avPacket : fileFrameQueue) {
+                av_packet_free(avPacket);
+            }
+            fileFrameQueue.clear();
+            fileFrameQueue = null;
         }
-        fileFrameQueue.clear();
-        fileFrameQueue = null;
     }
 
     private void submitPacketToFrameQueue(AVPacket avPacket) {
@@ -802,7 +804,7 @@ public class MpegTsProcessor extends Thread {
         AVPacket avPacket;
 
         // Create an AV packet container to pass data to demuxer
-        avPacket = new AVPacket();
+        avPacket = avcodec.av_packet_alloc();
 
         // Read frames
         long startTime = System.currentTimeMillis();
