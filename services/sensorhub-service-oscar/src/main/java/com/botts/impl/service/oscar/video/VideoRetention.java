@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Paths;
 import java.time.temporal.TemporalAmount;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class VideoRetention {
 
@@ -65,17 +66,16 @@ public class VideoRetention {
             logger.info("decimating, {}", occupancy.getVideoPaths().get(0));
             if (!bucketStore.objectExists("", videoFile)) {
                 logger.info("Video file {} does not exist", videoFile);
-                return false;
-            } else {
-                try {
-                    if (!decimate(bucketStore.getResourceURI("", videoFile))) {
-                        logger.info("Video file was already decimated {}", videoFile);
-                        return false;
-                    }
-                } catch (DataStoreException e) {
-                    logger.warn("Failed to decimate video file {}", videoFile, e);
+                continue;
+            }
+            try {
+                if (!decimate(bucketStore.getResourceURI("", videoFile))) {
+                    logger.info("Video file was already decimated {}", videoFile);
                     return false;
                 }
+            } catch (DataStoreException e) {
+                logger.warn("Failed to decimate video file {}", videoFile, e);
+                continue;
             }
         }
         return true;
@@ -101,30 +101,56 @@ public class VideoRetention {
         String decimatedMp4 = fileName.substring(0, fileName.lastIndexOf('.')) + "_decimated.mp4";
 
         MpegTsProcessor videoInput = new MpegTsProcessor(originalMp4);
-        videoInput.setInjectExtradata(false);
-        videoInput.openStream();
-        videoInput.queryEmbeddedStreams();
-        var stream = videoInput.getAvStream();
-        if (stream == null || stream.avg_frame_rate() == null || stream.avg_frame_rate().num() < stream.avg_frame_rate().den()) {
-            return false; // if fps < 1, assume this file has already been decimated and we lost track somehow
-        }
-
-        VideoKeyframeDecimator videoOutput = new VideoKeyframeDecimator(decimatedMp4, frameCount, stream);
-        videoInput.addVideoDataBufferListener(videoOutput);
-
-        videoOutput.setFileCloseCallback(() -> {
-            videoInput.stopProcessingStream();
-            videoInput.closeStream();
-        });
-
-        videoInput.processStream();
-
+        VideoKeyframeDecimator videoOutput = null;
+        AtomicBoolean inputClosed = new AtomicBoolean(false);
+        boolean success = false;
         try {
-            videoInput.join();
-        } catch (InterruptedException e) {
-            logger.warn("Interrupted while waiting for video processing to finish. Writing output early, stopping thread.", e);
-            videoOutput.closeFile();
-            Thread.currentThread().interrupt();
+            videoInput.setInjectExtradata(false);
+            videoInput.openStream();
+            videoInput.queryEmbeddedStreams();
+            var stream = videoInput.getAvStream();
+            if (stream == null || stream.avg_frame_rate() == null || stream.avg_frame_rate().num() < stream.avg_frame_rate().den()) {
+                return false; // if fps < 1, assume this file has already been decimated and we lost track somehow
+            }
+
+            videoOutput = new VideoKeyframeDecimator(decimatedMp4, frameCount, stream);
+            videoInput.addVideoDataBufferListener(videoOutput);
+
+            videoOutput.setFileCloseCallback(() -> {
+                if (inputClosed.compareAndSet(false, true)) {
+                    videoInput.stopProcessingStream();
+                    videoInput.closeStream();
+                }
+            });
+
+            videoInput.processStream();
+
+            try {
+                videoInput.join();
+            } catch (InterruptedException e) {
+                logger.warn("Interrupted while waiting for video processing to finish. Writing output early, stopping thread.", e);
+                videoOutput.closeFile();
+                Thread.currentThread().interrupt();
+            }
+            success = true;
+        } catch (Throwable t) {
+            logger.error("Failed to decimate video file {}; skipping", originalMp4, t);
+            return false;
+        } finally {
+            if (inputClosed.compareAndSet(false, true)) {
+                try {
+                    videoInput.stopProcessingStream();
+                    videoInput.closeStream();
+                } catch (Throwable t) {
+                    logger.warn("Failed to close video input for {}", originalMp4, t);
+                }
+            }
+            if (!success) {
+                var partial = Paths.get(decimatedMp4).toFile();
+                if (partial.exists() && !partial.delete()) {
+                    logger.warn("Failed to delete partial decimated file {}", decimatedMp4);
+                }
+            }
         }
 
         // TODO May be nice to rename objects through the bucket store
