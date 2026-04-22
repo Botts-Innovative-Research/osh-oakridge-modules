@@ -66,6 +66,7 @@ public class SpreadsheetTests {
         assertNotNull(lane.laneOptionsConfig.ffmpegConfig);
         assertTrue(lane.laneOptionsConfig.ffmpegConfig.size() == 1);
         handler.loadModules(lanes);
+        assertNotNull(lanes.get(0).location);
     }
 
 

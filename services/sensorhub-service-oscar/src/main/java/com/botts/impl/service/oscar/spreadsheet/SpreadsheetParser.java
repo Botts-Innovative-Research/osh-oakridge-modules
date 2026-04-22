@@ -107,6 +107,7 @@ public class SpreadsheetParser {
             PositionConfig.LLALocation location = new PositionConfig.LLALocation();
             location.lat = Double.parseDouble(row.get(SchemaV1.LATITUDE));
             location.lon = Double.parseDouble(row.get(SchemaV1.LONGITUDE));
+            laneConfig.location = location;
         }
 
         laneConfig.laneOptionsConfig = new LaneOptionsConfig();
