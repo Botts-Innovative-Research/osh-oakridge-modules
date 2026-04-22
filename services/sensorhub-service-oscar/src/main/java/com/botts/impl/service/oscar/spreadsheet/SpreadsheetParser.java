@@ -157,6 +157,10 @@ public class SpreadsheetParser {
             eml.emlEnabled = Boolean.parseBoolean(row.get(SchemaV1.EML_ENABLED));
             eml.isCollimated = row.get(SchemaV1.EML_COLLIMATED) != null && Boolean.parseBoolean(row.get(SchemaV1.EML_COLLIMATED));
             eml.laneWidth = row.get(SchemaV1.LANE_WIDTH) == null ? 0.0f : Double.parseDouble(row.get(SchemaV1.LANE_WIDTH));
+        } else if (rpmType.equalsIgnoreCase("RS350")) {
+            rpmConfig = new RS350RPMConfig();
+            rpmConfig.remoteHost = row.get(SchemaV1.RPM_HOST);
+            rpmConfig.remotePort = Integer.parseInt(row.get(SchemaV1.RPM_PORT));
         }
 
         return rpmConfig;
@@ -237,8 +241,7 @@ public class SpreadsheetParser {
         var opts = lane.laneOptionsConfig;
         var rpm = opts.rpmConfig;
         if (rpm != null) {
-            if (rpm instanceof AspectRPMConfig) {
-                var aspect = (AspectRPMConfig) rpm;
+            if (rpm instanceof AspectRPMConfig aspect) {
                 addToRow(r, "Aspect");
                 addToRow(r, aspect.remoteHost);
                 addToRow(r, aspect.remotePort);
@@ -246,8 +249,7 @@ public class SpreadsheetParser {
                 addToRow(r, aspect.addressRange.to);
                 // Add empty vals for EML
                 addNullsToRow(r, 3);
-            } else if (rpm instanceof RapiscanRPMConfig) {
-                var rapiscan = (RapiscanRPMConfig) rpm;
+            } else if (rpm instanceof RapiscanRPMConfig rapiscan) {
                 addToRow(r, "Rapiscan");
                 addToRow(r, rapiscan.remoteHost);
                 addToRow(r, rapiscan.remotePort);
@@ -260,6 +262,12 @@ public class SpreadsheetParser {
                     addToRow(r, eml.laneWidth);
                 } else
                     addNullsToRow(r, 3);
+            } else if (rpm instanceof RS350RPMConfig rs350) {
+                addToRow(r, "RS350");
+                addToRow(r, rs350.remoteHost);
+                addToRow(r, rs350.remotePort);
+                // Aspect start/end and EML columns
+                addNullsToRow(r, 5);
             }
         } else {
             addNullsToRow(r, 8);
