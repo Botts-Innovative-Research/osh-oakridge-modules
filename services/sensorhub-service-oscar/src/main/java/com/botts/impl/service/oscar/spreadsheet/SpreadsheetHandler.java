@@ -30,6 +30,7 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Objects;
 
 public class SpreadsheetHandler implements IFileHandler {
 
@@ -110,22 +111,39 @@ public class SpreadsheetHandler implements IFileHandler {
     }
 
     public void loadModules(Collection<LaneConfig> laneConfigs) throws SensorHubException {
-        for (var config : laneConfigs)
-            reg.loadModuleAsync(config, (event) -> {
-                if (event instanceof ModuleEvent moduleEvent) {
-                    if (moduleEvent.getType() == ModuleEvent.Type.ERROR) {
-                        if (moduleEvent.getError() != null) {
-                            if (moduleEvent.getModule() != null && moduleEvent.getModule().getName() != null) {
-                                logger.warn("Could not import module: {}", moduleEvent.getModule().getName(), moduleEvent.getError());
+        // Filter out lanes with existing UIDs
+        var existingLanes = reg.getLoadedModules(LaneSystem.class);
+        var newLanes = laneConfigs.stream()
+                .filter(laneConfig ->
+                        existingLanes.stream().noneMatch(existingLane ->
+                                Objects.equals(existingLane.getConfiguration().uniqueID, laneConfig.uniqueID)
+                        )
+                )
+                .toList();
+
+        for (var config : newLanes) {
+            try {
+                reg.loadModuleAsync(config, (event) -> {
+                    if (event instanceof ModuleEvent moduleEvent) {
+                        if (moduleEvent.getType() == ModuleEvent.Type.ERROR) {
+                            if (moduleEvent.getError() != null) {
+                                if (moduleEvent.getModule() != null && moduleEvent.getModule().getName() != null) {
+                                    logger.warn("Could not import module: {}", moduleEvent.getModule().getName(), moduleEvent.getError());
+                                } else {
+                                    logger.warn("Could not import module", moduleEvent.getError());
+                                }
                             } else {
-                                logger.warn("Could not import module", moduleEvent.getError());
+                                logger.warn("Could not import module");
                             }
-                        } else {
-                            logger.warn("Could not import module");
                         }
                     }
-                }
-            });
+                });
+            } catch (SensorHubException e) {
+                logger.warn("Could not import module {}", config.name);
+            }
+        }
+
+        logger.info("{} new lanes were loaded", newLanes.size());
     }
 
 }
