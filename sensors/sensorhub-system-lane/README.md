@@ -5,7 +5,7 @@ Specialized sensor system module to be used to create a lane with an RPM and vid
 ## Configuration
 
 Configuring the sensor requires:
-Select ```Sensors``` from the left-hand accordion control and right-click for the context-sensitive menu in the
+Select `Sensors` from the left-hand accordion control and right-click for the context-sensitive menu in the
 accordion control.
 Click 'Add New Module' and select 'Lane System' from the list of available modules.
 
@@ -14,7 +14,6 @@ Click 'Add New Module' and select 'Lane System' from the list of available modul
   - UniqueID: The platform's serial number, or a unique identifier, this will be used for all submodules and must be unique.
   - Auto Start: Check the box to start this module when OSH node is launched
   - Delete Data on Lane Removal: Check the box to remove systems data from database if lane is deleted from node.
-
 
 **- Fixed Location:**
   - Latitude:
@@ -30,13 +29,16 @@ Click 'Add New Module' and select 'Lane System' from the list of available modul
       - **Aspect RPM (Specific)**
         - Address Range:
 
-    - *Initial Camera Config:*
+  - *Initial Camera Config:*
     - Click `Add` and select between the `Axis`, `Sony` and the `Custom` video cameras. To configure the video cameras you need the host IP of the device. If applicable, you can add the username and password of the camera. Additional configurations may be necessary for different camera types. 
+    
+    ![Initial Camera Configuration UI](./Screenshot%202026-04-24%20at%208.17.45%E2%80%AFAM.png)
+
       - **Sony/Axis/Custom**
-        - Remote Host:
-        - Username:
-        - Password:
+        - Remote Host: Enter your camera's `ip.ip.ip.ip:port` (e.g., `192.168.8.77:8554`).
+        - Username: Enter your camera's username in this field.
+        - Password: Enter your camera's password in this field.
       - **Axis (Specific):**
         - Stream Codec:
       - **Custom (Specific):**
-        - Stream Path:
+        - Stream Path: Enter everything that comes after your camera's `ip.ip.ip.ip:port` (e.g., `/lane04_cam`).
