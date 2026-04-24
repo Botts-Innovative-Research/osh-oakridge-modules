@@ -32,7 +32,7 @@ Click 'Add New Module' and select 'Lane System' from the list of available modul
   - *Initial Camera Config:*
     - Click `Add` and select between the `Axis`, `Sony` and the `Custom` video cameras. To configure the video cameras you need the host IP of the device. If applicable, you can add the username and password of the camera. Additional configurations may be necessary for different camera types. 
     
-    ![Initial Camera Configuration UI](./Screenshot%202026-04-24%20at%208.17.45%E2%80%AFAM.png)
+    ![Initial Camera Configuration UI](./Camera.png)
 
       - **Sony/Axis/Custom**
         - Remote Host: Enter your camera's `ip.ip.ip.ip:port` (e.g., `192.168.8.77:8554`).
