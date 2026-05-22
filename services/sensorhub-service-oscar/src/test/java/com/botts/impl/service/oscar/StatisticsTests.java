@@ -6,6 +6,8 @@ import com.botts.impl.service.bucket.BucketServiceConfig;
 import com.botts.impl.service.oscar.siteinfo.SiteDiagramConfig;
 import com.botts.impl.service.oscar.stats.StatisticsControl;
 import com.botts.impl.service.oscar.stats.StatisticsOutput;
+import net.opengis.swe.v20.DataArray;
+import net.opengis.swe.v20.DataRecord;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -194,6 +196,61 @@ public class StatisticsTests {
     public void testRaceCondition() throws ExecutionException, InterruptedException {
         for (int i = 0; i < 200; i++)
             testVerifyOutputLatestObsFromCommand();
+    }
+
+    /**
+     * Each of the four time-bucket sub-records must expose a numLanes counter
+     * and a byLane variable-size array of lane-stat records — the frontend
+     * detail panel parses these fields directly.
+     */
+    @Test
+    public void testSiteStatisticsSchemaIncludesByLaneArray() {
+        var schema = statsOutput.getRecordDescription();
+        for (var bucketName : new String[] { "allTime", "monthly", "weekly", "daily" }) {
+            var bucket = schema.getComponent(bucketName);
+            assertNotNull("Missing bucket sub-record: " + bucketName, bucket);
+            assertNotNull("Missing numLanes in " + bucketName, bucket.getComponent("numLanes"));
+
+            var byLane = bucket.getComponent("byLane");
+            assertNotNull("Missing byLane array in " + bucketName, byLane);
+            assertTrue(bucketName + ".byLane should be a DataArray", byLane instanceof DataArray);
+
+            var element = ((DataArray) byLane).getElementType();
+            assertTrue(bucketName + ".byLane element should be a record", element instanceof DataRecord);
+            for (var field : new String[] {
+                    "laneId", "numOccupancies", "numGammaAlarms", "numNeutronAlarms",
+                    "numGammaNeutronAlarms", "numFaults", "numGammaFaults", "numNeutronFaults",
+                    "numTampers", "numAdjudicated", "avgTimeToAdjudicateSec" }) {
+                assertNotNull("Missing per-lane field " + field + " in " + bucketName,
+                        element.getComponent(field));
+            }
+        }
+    }
+
+    /**
+     * With no lane systems registered, the published observation must still
+     * report numLanes = 0 in every bucket (and not crash trying to populate
+     * an empty per-lane array).
+     */
+    @Test
+    public void testPublishedObservationHasZeroLanesWhenNoLanes() {
+        statsOutput.publishLatestStatistics();
+        var record = statsOutput.getLatestRecord();
+        assertNotNull(record);
+
+        var schema = statsOutput.getRecordDescription();
+        // The flat atom index for "numLanes" inside each bucket sits right
+        // after the 8 count fields (numOccupancies..numTampers). The first
+        // bucket starts at index 1 (index 0 is samplingTime).
+        int bucketAtomCount = 8 + 1; // 8 counts + numLanes (byLane has 0 elements)
+        int i = 1;
+        for (var bucketName : new String[] { "allTime", "monthly", "weekly", "daily" }) {
+            int numLanesIdx = i + 8;
+            assertEquals("Expected numLanes=0 in bucket " + bucketName,
+                    0, record.getIntValue(numLanesIdx));
+            i += bucketAtomCount;
+            assertNotNull(schema.getComponent(bucketName));
+        }
     }
 
     private OSCARServiceConfig createOscarServiceConfig() throws SensorHubException {

@@ -1191,22 +1191,31 @@ public class RADHelper extends GeoPosHelper {
                 .description("Statistics for this node's RPMs/lanes")
                 .addField("samplingTime", createTime()
                         .asSamplingTimeIsoUTC())
-                .addField("allTime", createRecord()
-                        .label("All Time Total")
-                        .definition(getRadUri("AllTimeCount"))
-                        .addAllFields(createCountStatistics()))
-                .addField("monthly", createRecord()
-                        .label("Monthly Total")
-                        .definition(getRadUri("MonthlyCount"))
-                        .addAllFields(createCountStatistics()))
-                .addField("weekly", createRecord()
-                        .label("Weekly Total")
-                        .definition(getRadUri("WeeklyCount"))
-                        .addAllFields(createCountStatistics()))
-                .addField("daily", createRecord()
-                        .label("Daily Total")
-                        .definition(getRadUri("DailyCount"))
-                        .addAllFields(createCountStatistics()))
+                .addField("allTime", createBucketStatistics("All Time Total", "AllTimeCount"))
+                .addField("monthly", createBucketStatistics("Monthly Total", "MonthlyCount"))
+                .addField("weekly", createBucketStatistics("Weekly Total", "WeeklyCount"))
+                .addField("daily", createBucketStatistics("Daily Total", "DailyCount"))
+                .build();
+    }
+
+    /**
+     * Returns the per-bucket record (counts + per-lane breakdown) used inside
+     * {@link #createSiteStatistics()} and as the result schema of the
+     * Statistics control's custom-range command.
+     */
+    public DataRecord createBucketStatistics(String label, String definitionSuffix) {
+        return createRecord()
+                .label(label)
+                .definition(getRadUri(definitionSuffix))
+                .addAllFields(createCountStatistics())
+                .addField("numLanes", createCount()
+                        .id("numLanes")
+                        .label("Number of Lanes")
+                        .definition(getRadUri("NumberOfLanes")))
+                .addField("byLane", createArray()
+                        .withVariableSize("numLanes")
+                        .definition(getRadUri("LaneStatistics"))
+                        .withElement("lane", createLaneCountStatistics()))
                 .build();
     }
 
@@ -1248,6 +1257,32 @@ public class RADHelper extends GeoPosHelper {
                         .dataType(DataType.LONG)
                         .label("Total Number of Tampers")
                         .definition(getRadUri("NumTampers")))
+                .build();
+    }
+
+    /**
+     * Returns a per-lane record: lane UID, the eight standard count fields,
+     * and adjudication metrics. Used as the element type of the {@code byLane}
+     * array inside {@link #createBucketStatistics(String, String)}.
+     */
+    public DataRecord createLaneCountStatistics() {
+        return createRecord()
+                .name("laneCounts")
+                .label("Lane Counts")
+                .definition(getRadUri("LaneStatistics"))
+                .addField("laneId", createText()
+                        .label("Lane Unique ID")
+                        .definition(getRadUri("LaneID")))
+                .addAllFields(createCountStatistics())
+                .addField("numAdjudicated", createQuantity()
+                        .dataType(DataType.LONG)
+                        .label("Number of Adjudicated Occupancies")
+                        .definition(getRadUri("NumAdjudicated")))
+                .addField("avgTimeToAdjudicateSec", createQuantity()
+                        .dataType(DataType.DOUBLE)
+                        .label("Average Time to Adjudicate")
+                        .definition(getRadUri("AvgTimeToAdjudicate"))
+                        .uomCode("s"))
                 .build();
     }
 
