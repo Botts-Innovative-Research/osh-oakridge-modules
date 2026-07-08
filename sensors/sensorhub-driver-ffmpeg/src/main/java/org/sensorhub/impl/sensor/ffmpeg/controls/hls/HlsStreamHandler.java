@@ -5,16 +5,16 @@ import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.service.bucket.handler.DefaultObjectHandler;
 import com.botts.impl.service.bucket.util.RequestContext;
 import com.botts.impl.service.bucket.util.ServiceErrors;
-import net.opengis.swe.v20.Category;
-import org.sensorhub.api.command.CommandData;
-import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.sensor.ffmpeg.controls.HLSControl;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -23,6 +23,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 public class HlsStreamHandler extends DefaultObjectHandler {
+
+    private static final Logger logger = LoggerFactory.getLogger(HlsStreamHandler.class);
 
     private static final Pattern HLS_PATTERN = Pattern.compile(".*\\.(m3u8|ts)$");
     // A stream is torn down (and its files deleted) after this long without a manifest
@@ -93,24 +95,37 @@ public class HlsStreamHandler extends DefaultObjectHandler {
         }
     }
 
-    private void stopStream(HLSControl<?> control) {
-        if (control != null) {
-            var command = control.getCommandDescription().clone();
-            command.renewDataBlock();
-            ((Category)command.getComponent(0)).setValue(HLSControl.CMD_END_STREAM);
-            control.submitCommand(new CommandData.Builder().withParams(command.getData()).withCommandStream(BigId.NONE).build());
-        }
-    }
-
     private void cleanupInactiveStreams() {
-        // Remove active streams after timeout
-        activeStreams.entrySet().removeIf(entry -> {
-            if (System.currentTimeMillis() - entry.getValue() > STREAM_TIMEOUT_MS) {
-                stopStream(activeControls.remove(entry.getKey())); // Remove the corresponding control and stop its stream
-                return true;
+        // This runs via scheduleAtFixedRate: a single escaped exception silently
+        // cancels all future runs (which is how the previous implementation — a
+        // synthetic CommandData that fails id validation — killed the watchdog on
+        // its first reap). Nothing may escape this method.
+        try {
+            long now = System.currentTimeMillis();
+            var expired = new ArrayList<String>();
+            for (var entry : activeStreams.entrySet()) {
+                if (now - entry.getValue() > STREAM_TIMEOUT_MS)
+                    expired.add(entry.getKey());
             }
-            return false;
-        });
+            for (String key : expired) {
+                activeStreams.remove(key);
+                HLSControl<?> control = activeControls.remove(key);
+                if (control != null) {
+                    logger.info("HLS stream {} had no manifest requests for {} ms; stopping it", key, STREAM_TIMEOUT_MS);
+                    try {
+                        control.endStreamNow();
+                    } catch (Exception e) {
+                        logger.error("Failed to stop inactive HLS stream {}", key, e);
+                    }
+                } else {
+                    // Reaping without a control means requests and controls are being
+                    // tracked by different handler instances and the mux keeps running.
+                    logger.warn("Expired HLS stream {} has no registered control in this handler; its mux may still be running", key);
+                }
+            }
+        } catch (Exception e) {
+            logger.error("HLS inactive-stream cleanup pass failed", e);
+        }
     }
 
     @Override
