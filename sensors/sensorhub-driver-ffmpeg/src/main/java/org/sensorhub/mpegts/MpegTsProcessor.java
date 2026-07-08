@@ -213,6 +213,18 @@ public class MpegTsProcessor extends Thread {
 
     private long timeout = 5000000;
 
+    /**
+     * If true, re-establish the session and resume demuxing after a read error instead
+     * of letting the processing thread end. Intended for network sources; file playback
+     * keeps its existing loop/end-of-file behavior.
+     */
+    private volatile boolean reconnectOnError = false;
+
+    private static final long RECONNECT_INITIAL_DELAY_MS = 1000;
+    private static final long RECONNECT_MAX_DELAY_MS = 30000;
+    /** A session that survives this long resets the reconnect backoff. */
+    private static final long RECONNECT_STABLE_MS = 10000;
+
     byte[] spsPpsHeader = null;
 
     private boolean useTCP;
@@ -334,6 +346,10 @@ public class MpegTsProcessor extends Thread {
     public AVCodecParameters getCodecParams() {
         synchronized (contextLock) {
             try {
+                if (!streamOpened || avFormatContext == null || videoStreamId == INVALID_STREAM_ID) {
+                    logger.error("Stream not open; no codec parameters available");
+                    return null;
+                }
                 AVCodecParameters src = avFormatContext.streams(videoStreamId).codecpar();
                 AVCodecParameters dst = avcodec.avcodec_parameters_alloc();
                 if (src == null) {
@@ -356,6 +372,8 @@ public class MpegTsProcessor extends Thread {
 
     public AVStream getAvStream() {
         synchronized (contextLock) {
+            if (!streamOpened || avFormatContext == null || videoStreamId == INVALID_STREAM_ID)
+                return null;
             return avFormatContext.streams(videoStreamId);
         }
     }
@@ -443,6 +461,10 @@ public class MpegTsProcessor extends Thread {
 
     public void setTimeout(long timeout) {
         this.timeout = timeout;
+    }
+
+    public void setReconnectOnError(boolean reconnectOnError) {
+        this.reconnectOnError = reconnectOnError;
     }
 
     /**
@@ -687,9 +709,92 @@ public class MpegTsProcessor extends Thread {
                 avformat.av_seek_frame(avFormatContext, 0, 0, avformat.AVSEEK_FLAG_ANY);
             }
         }
-        while (loop);
+        while (loop && !terminateProcessing.get());
+
+        // A network session that drops used to end this thread permanently while the
+        // module still reported itself connected. Keep re-establishing the session,
+        // with backoff, until we are explicitly stopped.
+        long reconnectDelay = RECONNECT_INITIAL_DELAY_MS;
+        while (reconnectOnError && !terminateProcessing.get()) {
+            logger.warn("Stream {} ended unexpectedly; reconnecting in {} ms", streamSource, reconnectDelay);
+            sleepUnlessTerminated(reconnectDelay);
+            if (terminateProcessing.get())
+                break;
+
+            if (reopenStream()) {
+                logger.info("Reconnected to stream {}", streamSource);
+                long sessionStart = System.currentTimeMillis();
+                processStreamPackets();
+                logger.info("End of MISB TS stream");
+                if (System.currentTimeMillis() - sessionStart >= RECONNECT_STABLE_MS) {
+                    reconnectDelay = RECONNECT_INITIAL_DELAY_MS;
+                    continue;
+                }
+            }
+            reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_DELAY_MS);
+        }
 
         shutdownExecutors();
+    }
+
+    /**
+     * Tear down the dead session and try to establish a new one, refreshing the stream
+     * ids, extradata, and codec context that depend on it.
+     *
+     * @return true when packets can be read again.
+     */
+    private boolean reopenStream() {
+        synchronized (contextLock) {
+            closeCodecContext();
+            if (streamOpened) {
+                if (avFormatContext != null)
+                    avformat.avformat_close_input(avFormatContext);
+                streamOpened = false;
+            }
+            avFormatContext = null;
+
+            try {
+                if (!openStream())
+                    return false;
+
+                boolean priorTranscode = doTranscode;
+                videoStreamId = INVALID_STREAM_ID;
+                queryEmbeddedStreams();
+
+                // The decode/encode pipeline was sized when processing started and
+                // cannot be rebuilt here; refuse a source whose codec changed.
+                if (doTranscode != priorTranscode) {
+                    logger.error("Codec changed across reconnect of {}; cannot resume", streamSource);
+                    doTranscode = priorTranscode;
+                    return false;
+                }
+
+                if (!hasVideoStream()) {
+                    logger.error("No video stream after reconnect of {}", streamSource);
+                    return false;
+                }
+
+                openCodecContext();
+                return true;
+            } catch (Exception e) {
+                logger.error("Reconnect to {} failed", streamSource, e);
+                return false;
+            }
+        }
+    }
+
+    /** Sleep for the given duration, returning early if processing is terminated. */
+    private void sleepUnlessTerminated(long millis) {
+        long deadline = System.currentTimeMillis() + millis;
+        long remaining;
+        while (!terminateProcessing.get() && (remaining = deadline - System.currentTimeMillis()) > 0) {
+            try {
+                Thread.sleep(Math.min(remaining, 250));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
     }
 
     private void submitPacketToListeners(AVPacket avPacket, Class<? extends DataBufferListener> listenerType) {
@@ -939,10 +1044,10 @@ public class MpegTsProcessor extends Thread {
 
         logger.debug("stopProcessingStream");
 
-        if (streamOpened) {
-            loop = false;
-            terminateProcessing.set(true);
-        }
+        // Not gated on streamOpened: during a reconnect attempt the stream is closed,
+        // and the flags must still be set or join() would wait on the retry loop forever.
+        loop = false;
+        terminateProcessing.set(true);
     }
 
     /**

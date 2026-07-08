@@ -72,6 +72,8 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     final int MAX_PACKET_QUEUE_SIZE = 1000;
     volatile long filePts;
     volatile long curPts;
+    volatile long ptsOffset;
+    volatile boolean hasWrittenPacket;
     private WriteCallback writeCallback;
     private SeekCallback seekCallback;
     BytePointer buffer;
@@ -282,6 +284,8 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     private void initCtx(AVCodecParameters codecParams) throws IOException {
         filePts = 0;
         curPts = 0;
+        ptsOffset = 0;
+        hasWrittenPacket = false;
         int ret;
 
         //AVFormatContext inputContext = this.parentSensor.getProcessor().getAvFormatContext();
@@ -331,21 +335,50 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
             filePts = avPacket.pts();
         }
 
-        long newPts = avutil.av_rescale_q(avPacket.pts() - filePts, inputTimeBase, timeBase);
-        if (isLive && newPts <= curPts) {
-            newPts = curPts + 1;
+        long newPts = avutil.av_rescale_q(avPacket.pts() - filePts, inputTimeBase, timeBase) + ptsOffset;
+
+        // Input timestamps jump when the upstream source loops its clip, reconnects, or
+        // wraps. A jump must not reach the muxer: mp4 rejects non-monotonic timestamps
+        // (av_write_frame EINVAL) and the HLS segmenter stops cutting segments while the
+        // timeline stands still. Rebase so the output timeline keeps advancing by one
+        // nominal frame across the jump.
+        if (hasWrittenPacket && (newPts <= curPts || newPts > curPts + maxPtsGap())) {
+            long rebasedPts = curPts + nominalFrameDuration();
+            ptsOffset += rebasedPts - newPts;
+            newPts = rebasedPts;
         }
+
         avPacket.pts(newPts);
         avPacket.dts(newPts);
 
         //avPacket.duration(av_rescale_q(1, inputFrameRate, timeBase));
         //avPacket.time_base(timeBase);
         curPts = newPts;
+        hasWrittenPacket = true;
+    }
+
+    /** Largest forward PTS step (in output time base units) still treated as continuous. */
+    private long maxPtsGap() {
+        return 10L * timeBase.den() / Math.max(1, timeBase.num());
+    }
+
+    /** One frame interval in output time base units, from the input frame rate. */
+    private long nominalFrameDuration() {
+        if (inputFrameRate != null && inputFrameRate.num() > 0 && inputFrameRate.den() > 0 && timeBase.num() > 0) {
+            long duration = ((long) timeBase.den() * inputFrameRate.den()) / ((long) timeBase.num() * inputFrameRate.num());
+            if (duration > 0)
+                return duration;
+        }
+        // Frame rate unknown: assume 30 fps.
+        return Math.max(1, timeBase.den() / (30L * Math.max(1, timeBase.num())));
     }
 
     private static AVDictionary hlsOptions() {
         AVDictionary options = new AVDictionary();
-        av_dict_set(options, "hls_list_size", "2", 0);
+        // The live window (hls_list_size × hls_time) must stay comfortably larger than
+        // the player's live-edge sync target, or it perpetually chases segments that
+        // are about to be deleted.
+        av_dict_set(options, "hls_list_size", "6", 0);
         av_dict_set(options, "hls_time", "1", 0);
         //avutil.av_dict_set(options, "hls_segment_type", "ts", 0);
         //avutil.av_dict_set(options, "movflags", "faststart+default_base_moof", 0);

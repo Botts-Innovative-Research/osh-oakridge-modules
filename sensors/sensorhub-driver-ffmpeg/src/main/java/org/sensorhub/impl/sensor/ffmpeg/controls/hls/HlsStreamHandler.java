@@ -25,7 +25,11 @@ import java.util.regex.Pattern;
 public class HlsStreamHandler extends DefaultObjectHandler {
 
     private static final Pattern HLS_PATTERN = Pattern.compile(".*\\.(m3u8|ts)$");
-    private static final long STREAM_TIMEOUT_MS = 30000;
+    // A stream is torn down (and its files deleted) after this long without a manifest
+    // request. Browsers legitimately pause polling for tens of seconds (background-tab
+    // throttling, transient network loss) and then resume; keep the timeout above that.
+    private static final long STREAM_TIMEOUT_MS = 90000;
+    private static final long CLEANUP_PERIOD_MS = 30000;
     private static final String M3U8_SUFFIX = ".m3u8";
 
     private final Map<String, Long> activeStreams = new ConcurrentHashMap<>();
@@ -35,7 +39,7 @@ public class HlsStreamHandler extends DefaultObjectHandler {
     public HlsStreamHandler(IBucketService service) {
         super(service.getBucketStore());
         scheduler = Executors.newSingleThreadScheduledExecutor();
-        scheduler.scheduleAtFixedRate(this::cleanupInactiveStreams, STREAM_TIMEOUT_MS, STREAM_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        scheduler.scheduleAtFixedRate(this::cleanupInactiveStreams, CLEANUP_PERIOD_MS, CLEANUP_PERIOD_MS, TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -61,6 +65,10 @@ public class HlsStreamHandler extends DefaultObjectHandler {
 
         try {
             ctx.getResponse().setContentType(mimeType);
+            // Live HLS objects must never be cached: the manifest mutates in place and
+            // segment names are reused after a stream restart, and Cloudflare fronts
+            // this endpoint in some deployments.
+            ctx.getResponse().setHeader("Cache-Control", "no-store");
             InputStream objectData;
             objectData = bucketStore.getObject(bucketName, objectKey);
             objectData.transferTo(ctx.getResponse().getOutputStream());
