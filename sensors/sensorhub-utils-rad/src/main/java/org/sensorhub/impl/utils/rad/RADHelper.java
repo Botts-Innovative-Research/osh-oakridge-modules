@@ -8,6 +8,7 @@ import jakarta.xml.bind.Unmarshaller;
 import net.opengis.swe.v20.*;
 import net.opengis.swe.v20.Boolean;
 import org.sensorhub.impl.utils.rad.model.Adjudication;
+import org.sensorhub.impl.utils.rad.model.VehicleOcrResult;
 import org.vast.swe.SWEBuilders;
 import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
@@ -1307,6 +1308,56 @@ public class RADHelper extends GeoPosHelper {
                                 .definition(getRadUri("AnalysisWarning"))))
                 .addField("occupancyObsId", createText()
                         .definition(getRadUri("OccupancyObsID")))
+                .build();
+    }
+
+    // Vehicle OCR (container number / license plate read from lane cameras)
+
+    public DataRecord createVehicleOcrRecord() {
+        return createRecord()
+                .name("vehicleOcr")
+                .label("Vehicle OCR Read")
+                .description("Shipping container number or license plate read from lane camera recordings of an alarming occupancy")
+                .definition(getRadUri("VehicleOCR"))
+                .addField("sampleTime", createTime()
+                        .asSamplingTimeIsoUTC())
+                .addField("occupancyObsId", createText()
+                        .label("Occupancy Observation ID")
+                        .definition(getRadUri("OccupancyObsID")))
+                .addField("idType", createCategory()
+                        .label("Vehicle ID Type")
+                        .definition(getRadUri("VehicleIDType"))
+                        .addAllowedValues(VehicleOcrResult.ID_TYPE_CONTAINER, VehicleOcrResult.ID_TYPE_PLATE))
+                .addField("value", createText()
+                        .label("OCR Value")
+                        .definition(getRadUri("OCRValue")))
+                .addField("normalizedValue", createText()
+                        .label("Normalized Vehicle ID")
+                        .definition(getRadUri("VehicleID")))
+                .addField("checksumValid", createBoolean()
+                        .label("Checksum Valid")
+                        .description("True when an ISO 6346 container number passed check-digit validation; always false for plates")
+                        .definition(getRadUri("ChecksumValid")))
+                .addField("confidence", createQuantity()
+                        .dataType(DataType.FLOAT)
+                        .label("Confidence")
+                        .definition(getRadUri("ConfidenceLevel")))
+                .addField("readCount", createCount()
+                        .label("Read Count")
+                        .description("Number of sampled frames (across cameras) that agreed on this value")
+                        .definition(getRadUri("ReadCount")))
+                .addField("cameraUid", createText()
+                        .label("Camera UID")
+                        .definition(getRadUri("CameraUID")))
+                .addField("frameTime", createTime()
+                        .asPhenomenonTimeIsoUTC()
+                        .name("frameTime")
+                        .label("Frame Time")
+                        .definition(getRadUri("FrameTime")))
+                .addField("evidenceImagePath", createText()
+                        .label("Evidence Image Path")
+                        .description("Bucket-relative path of the JPEG crop this value was read from")
+                        .definition(getRadUri("EvidenceImagePath")))
                 .build();
     }
 

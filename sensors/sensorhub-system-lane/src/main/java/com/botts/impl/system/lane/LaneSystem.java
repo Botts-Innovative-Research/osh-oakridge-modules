@@ -31,6 +31,7 @@ import com.botts.impl.sensor.kromek.d5.D5Config;
 import com.botts.impl.sensor.kromek.d5.D5Sensor;
 import com.botts.impl.sensor.rs350.RS350Config;
 import com.botts.impl.sensor.rs350.RS350Sensor;
+import com.botts.impl.system.lane.helpers.ocr.OcrHelper;
 import com.botts.impl.system.lane.helpers.webid.WebIdHelper;
 import org.sensorhub.impl.utils.rad.output.N42Output;
 import com.botts.impl.system.lane.config.*;
@@ -97,6 +98,8 @@ public class LaneSystem extends SensorSystem {
     AdjudicationControl adjudicationControl;
     WebIdOutput webIdOutput;
     N42Output<?> n42Output;
+    VehicleOcrOutput vehicleOcrOutput;
+    OcrHelper ocrHelper;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -166,6 +169,14 @@ public class LaneSystem extends SensorSystem {
 
         n42Output = new N42Output<>(this);
         addOutput(n42Output, false);
+
+        // OCR is strictly opt-in: disabled lanes expose no vehicleOcr datastream at all
+        if (getConfiguration().ocrConfig != null && getConfiguration().ocrConfig.enabled) {
+            vehicleOcrOutput = new VehicleOcrOutput(this);
+            addOutput(vehicleOcrOutput, false);
+        } else {
+            vehicleOcrOutput = null;
+        }
 
         adjudicationControl = new AdjudicationControl(this);
         addControlInput(adjudicationControl);
@@ -292,12 +303,25 @@ public class LaneSystem extends SensorSystem {
         } else {
             webIdHelper = null;
         }
+
+        if (ocrHelper != null) {
+            ocrHelper.stop();
+            ocrHelper = null;
+        }
+        var ocrConfig = getConfiguration().ocrConfig;
+        if (ocrConfig != null && ocrConfig.enabled && vehicleOcrOutput != null && occupancyProducer != null) {
+            ocrHelper = new OcrHelper(this, occupancyProducer, vehicleOcrOutput, ocrConfig);
+        }
     }
 
     protected void doStop() throws SensorHubException {
         super.doStop();
         if (webIdHelper != null) {
             webIdHelper.stop();
+        }
+        if (ocrHelper != null) {
+            ocrHelper.stop();
+            ocrHelper = null;
         }
         if (occupancyProducer != existingRPMModule) {
             removeSubSystem(occupancyProducer.getConfiguration().id);

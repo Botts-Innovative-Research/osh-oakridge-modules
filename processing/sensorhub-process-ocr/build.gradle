@@ -1,0 +1,33 @@
+description = 'Vehicle OCR Process'
+ext.details = 'OCR of shipping container numbers and license plates from lane camera recordings'
+version = '1.0.0'
+
+dependencies {
+  implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+  implementation project(':sensorhub-utils-rad')
+  implementation project(':sensorhub-service-bucket')
+  implementation project(':sensorhub-driver-ffmpeg')
+  embeddedApi 'org.bytedeco:ffmpeg-platform:7.1-1.5.11'
+  embeddedImpl 'com.microsoft.onnxruntime:onnxruntime:1.20.0'
+}
+
+test {
+    useJUnit()
+}
+
+// add info to OSGi manifest
+osgi {
+  manifest {
+    attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
+  }
+}
+
+// add info to maven pom
+ext.pom >>= {
+  developers {
+    developer {
+      organization 'Botts Innovative Research, Inc.'
+      organizationUrl 'http://www.botts-inc.com'
+    }
+  }
+}
