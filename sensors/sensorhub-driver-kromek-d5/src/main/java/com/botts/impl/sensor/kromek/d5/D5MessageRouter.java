@@ -12,6 +12,7 @@
 
 package com.botts.impl.sensor.kromek.d5;
 
+import com.botts.impl.sensor.kromek.d5.reports.KromekSerialRadiometricStatusReport;
 import com.botts.impl.sensor.kromek.d5.reports.SerialReport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -86,6 +87,11 @@ public class D5MessageRouter implements Runnable {
                 report = sendRequest(report, inputStream, outputStream);
 
                 output.setData(report);
+
+                // RadiometricStatus carries the unit's GPS fix; mirror it to
+                // the dedicated location output for map/tracking consumers
+                if (report instanceof KromekSerialRadiometricStatusReport statusReport)
+                    sensor.publishLocation(statusReport);
             } catch (Exception e) {
                 logger.error("Error", e);
             }

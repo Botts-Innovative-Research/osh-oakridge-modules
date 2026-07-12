@@ -55,6 +55,26 @@ public class KromekSerialRadiometricStatusReport extends SerialReport {
         System.arraycopy(payload, 17, nuclideData, 0, nuclideData.length);
     }
 
+    public boolean isDoseAlarmActive() {
+        return doseAlarmActive;
+    }
+
+    public boolean isGammaCpsAlarmActive() {
+        return gammaCpsAlarmActive;
+    }
+
+    public boolean isNeutronCpsAlarmActive() {
+        return neutronCpsAlarmActive;
+    }
+
+    public float getLatitude() {
+        return latitude;
+    }
+
+    public float getLongitude() {
+        return longitude;
+    }
+
     @Override
     public String toString() {
         return KromekSerialRadiometricStatusReport.class.getSimpleName() + " {" +
