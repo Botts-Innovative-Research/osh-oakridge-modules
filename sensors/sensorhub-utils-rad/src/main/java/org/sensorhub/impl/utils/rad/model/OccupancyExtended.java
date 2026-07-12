@@ -37,11 +37,29 @@ import java.util.List;
 public class OccupancyExtended extends Occupancy {
 
     public static final String ALARM_CATEGORY_FIELD_NAME = "alarmCategoryCode";
+    public static final String LATITUDE_FIELD_NAME = "latitude";
+    public static final String LONGITUDE_FIELD_NAME = "longitude";
 
     protected String alarmCategory = "";
+    // Alarm position for mobile detectors (RS350 backpack / Kromek D5).
+    // 0,0 means "no fix known" — fixed portals never populate these.
+    protected double latitude = 0.0;
+    protected double longitude = 0.0;
 
     public String getAlarmCategory() {
         return alarmCategory;
+    }
+
+    public double getLatitude() {
+        return latitude;
+    }
+
+    public double getLongitude() {
+        return longitude;
+    }
+
+    public boolean hasLocation() {
+        return latitude != 0.0 || longitude != 0.0;
     }
 
     public static class Builder extends Occupancy.Builder {
@@ -64,6 +82,16 @@ public class OccupancyExtended extends Occupancy {
          */
         public Occupancy.Builder alarmCategory(String alarmCategory) {
             ((OccupancyExtended) instance).alarmCategory = alarmCategory == null ? "" : alarmCategory;
+            return this;
+        }
+
+        /**
+         * Position where the alarm occurred (mobile detectors). Same
+         * chain-order caveat as {@link #alarmCategory(String)}.
+         */
+        public Occupancy.Builder location(double latitude, double longitude) {
+            ((OccupancyExtended) instance).latitude = latitude;
+            ((OccupancyExtended) instance).longitude = longitude;
             return this;
         }
     }
@@ -108,6 +136,22 @@ public class OccupancyExtended extends Occupancy {
                 .description("Raw alarm category string reported by the RPM driver")
                 .build();
         extended.addComponent(ALARM_CATEGORY_FIELD_NAME, alarmCategoryCode);
+
+        // Alarm position for mobile detectors; 0,0 when unknown/fixed-portal
+        extended.addComponent(LATITUDE_FIELD_NAME, radHelper.createQuantity()
+                .name(LATITUDE_FIELD_NAME)
+                .label("Latitude")
+                .definition(RADHelper.getRadUri("AlarmLatitude"))
+                .description("Latitude where the alarm occurred (mobile detectors); 0 if unknown")
+                .uomCode("deg")
+                .build());
+        extended.addComponent(LONGITUDE_FIELD_NAME, radHelper.createQuantity()
+                .name(LONGITUDE_FIELD_NAME)
+                .label("Longitude")
+                .definition(RADHelper.getRadUri("AlarmLongitude"))
+                .description("Longitude where the alarm occurred (mobile detectors); 0 if unknown")
+                .uomCode("deg")
+                .build());
 
         return extended;
     }
@@ -172,7 +216,10 @@ public class OccupancyExtended extends Occupancy {
      * extended writer (e.g. AdjudicationControl mutating a base-read instance).
      */
     public static OccupancyExtended wrapAsExtended(Occupancy occupancy, String alarmCategory) {
-        return (OccupancyExtended) new OccupancyExtended.Builder()
+        var builder = new OccupancyExtended.Builder();
+        if (occupancy instanceof OccupancyExtended ext)
+            builder.location(ext.getLatitude(), ext.getLongitude());
+        return (OccupancyExtended) builder
                 .alarmCategory(alarmCategory)
                 .samplingTime(occupancy.getSamplingTime())
                 .occupancyCount(occupancy.getOccupancyCount())
@@ -246,9 +293,11 @@ public class OccupancyExtended extends Occupancy {
             }
         }
 
-        // Trailing alarm category code
+        // Trailing alarm category code + alarm position
         String alarmCat = occupancy.getAlarmCategory();
-        dataBlock.setStringValue(index, alarmCat == null ? "" : alarmCat);
+        dataBlock.setStringValue(index++, alarmCat == null ? "" : alarmCat);
+        dataBlock.setDoubleValue(index++, occupancy.getLatitude());
+        dataBlock.setDoubleValue(index, occupancy.getLongitude());
 
         return dataBlock;
     }
@@ -284,17 +333,23 @@ public class OccupancyExtended extends Occupancy {
 
         List<String> webIdObsIds = new ArrayList<>();
         String alarmCat = "";
+        double latitude = 0.0;
+        double longitude = 0.0;
         try {
             int webIdObsIdsCount = dataBlock.getIntValue(index++);
             for (int i = 0; i < webIdObsIdsCount; i++)
                 webIdObsIds.add(dataBlock.getStringValue(index++));
-            alarmCat = dataBlock.getStringValue(index);
+            alarmCat = dataBlock.getStringValue(index++);
+            latitude = dataBlock.getDoubleValue(index++);
+            longitude = dataBlock.getDoubleValue(index);
         } catch (Exception ignored) {
-            // backwards compatibility: older records may lack webIdObsIds
-            // and/or the alarm category code trailing field
+            // backwards compatibility: older records may lack webIdObsIds,
+            // the alarm category code, and/or the alarm position fields
         }
 
-        return (OccupancyExtended) new OccupancyExtended.Builder()
+        var builder = new OccupancyExtended.Builder();
+        builder.location(latitude, longitude);
+        return (OccupancyExtended) builder
                 .alarmCategory(alarmCat)
                 .samplingTime(samplingTime)
                 .occupancyCount(occupancyCount)

@@ -18,5 +18,8 @@ public class RS350Outputs {
 
     @DisplayInfo(label = "Alarm", desc = "Includes Derived Data and Alarm Data")
     public boolean enableAlarmOutput = true;
+
+    @DisplayInfo(label = "Location", desc = "GPS position reported in foreground measurements (for mobile/backpack use)")
+    public boolean enableLocationOutput = true;
 }
 
