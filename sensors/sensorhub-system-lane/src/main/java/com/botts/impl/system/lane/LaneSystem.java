@@ -16,6 +16,8 @@
 package com.botts.impl.system.lane;
 
 
+import com.botts.impl.process.d5.occupancy.D5OccupancyProcessConfig;
+import com.botts.impl.process.d5.occupancy.D5OccupancyProcessModule;
 import com.botts.impl.process.rs350.occupancy.Rs350OccupancyProcessConfig;
 import com.botts.impl.process.rs350.occupancy.Rs350OccupancyProcessModule;
 import com.botts.impl.sensor.aspect.AspectConfig;
@@ -25,6 +27,8 @@ import com.botts.impl.sensor.aspect.comm.ModbusTCPCommProviderConfig;
 import com.botts.impl.sensor.rapiscan.EMLConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
+import com.botts.impl.sensor.kromek.d5.D5Config;
+import com.botts.impl.sensor.kromek.d5.D5Sensor;
 import com.botts.impl.sensor.rs350.RS350Config;
 import com.botts.impl.sensor.rs350.RS350Sensor;
 import com.botts.impl.system.lane.helpers.webid.WebIdHelper;
@@ -74,7 +78,9 @@ public class LaneSystem extends SensorSystem {
     private static final String URN_PREFIX = "urn:";
     private static final String LANE_SYSTEM_PREFIX = URN_PREFIX + "osh:system:lane:";
     private static final String RAPISCAN_URI = URN_PREFIX + "osh:sensor:rapiscan";
-    private static final String RS350_URI = URN_PREFIX + "osh:sensor:rs350";
+    // Must match RS350Sensor.doInit's generateUniqueID prefix (urn:osh:sensor:rsi:rs350:)
+    private static final String RS350_URI = URN_PREFIX + "osh:sensor:rsi:rs350";
+    private static final String D5_URI = URN_PREFIX + "osh:sensor:kromek:d5";
     private static final String ASPECT_URI = URN_PREFIX + "osh:sensor:aspect";
     private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
     private static final Set<Class<?>> WEBID_SENSORS = Set.of(RS350Sensor.class);
@@ -122,10 +128,10 @@ public class LaneSystem extends SensorSystem {
             } else if (member instanceof FFMPEGSensor) {
                 ffmpegConfigs.put(member.getLocalID(), ((FFMPEGSensor) member).getConfiguration());
 
-            // Want to be able to handle both RS350 and its process.
-            } else if (member instanceof RS350Sensor) {
+            // Want to be able to handle both RS350/D5 and their processes.
+            } else if (member instanceof RS350Sensor || member instanceof D5Sensor) {
                 existingRPMModule = (AbstractSensorModule<?>) member;
-            } else if (member instanceof Rs350OccupancyProcessModule) {
+            } else if (member instanceof Rs350OccupancyProcessModule || member instanceof D5OccupancyProcessModule) {
                 occupancyProducer = (IDataProducerModule<?>) member;
             }
         }
@@ -190,7 +196,7 @@ public class LaneSystem extends SensorSystem {
                 }
                 catch (Exception e) {
                     // If RPM fails to initialize, then don't load process module
-                    if (module instanceof RapiscanSensor || module instanceof AspectSensor || module instanceof RS350Sensor)
+                    if (module instanceof RapiscanSensor || module instanceof AspectSensor || module instanceof RS350Sensor || module instanceof D5Sensor)
                         rpmFailedToInit = true;
                     getLogger().error("Cannot initialize system component {}", MsgUtils.moduleString(module), e);
                 }
@@ -246,7 +252,7 @@ public class LaneSystem extends SensorSystem {
 
     private void removeOccupancyProcess() throws SensorHubException {
         for (var member : this.getMembers().values()) {
-            if (member instanceof Rs350OccupancyProcessModule) {
+            if (member instanceof Rs350OccupancyProcessModule || member instanceof D5OccupancyProcessModule) {
                 this.removeSubSystem(member.getConfiguration().id);
             }
         }
@@ -255,8 +261,8 @@ public class LaneSystem extends SensorSystem {
     @Override
     protected void afterStart() throws SensorHubException {
         super.afterStart();
-        if (existingRPMModule instanceof RS350Sensor rs350Module) {
-            var processConfig = createOccupancyProcessConfig(rs350Module);
+        if (existingRPMModule instanceof RS350Sensor || existingRPMModule instanceof D5Sensor) {
+            var processConfig = createOccupancyProcessConfig(existingRPMModule);
             occupancyProducer = (IDataProducerModule<?>) registerSubmodule(processConfig);
         } else {
             occupancyProducer = existingRPMModule;
@@ -385,7 +391,7 @@ public class LaneSystem extends SensorSystem {
             if (event.getParentGroupUID() != null && event.getParentGroupUID().equals(getUniqueIdentifier())) {
 
                 // If RPM is removed, nullify local object
-                if (event.getSystemUID().contains(RAPISCAN_URI) || event.getSystemUID().contains(ASPECT_URI) || event.getSystemUID().contains(RS350_URI)) {
+                if (event.getSystemUID().contains(RAPISCAN_URI) || event.getSystemUID().contains(ASPECT_URI) || event.getSystemUID().contains(RS350_URI) || event.getSystemUID().contains(D5_URI)) {
                     if (occupancyWrapper != null)
                         occupancyWrapper.removeRpmSensor();
                     existingRPMModule = null;
@@ -425,7 +431,7 @@ public class LaneSystem extends SensorSystem {
                     }
                 }
 
-                else if ((event.getModule() instanceof RapiscanSensor || event.getModule() instanceof AspectSensor || event.getModule() instanceof RS350Sensor)
+                else if ((event.getModule() instanceof RapiscanSensor || event.getModule() instanceof AspectSensor || event.getModule() instanceof RS350Sensor || event.getModule() instanceof D5Sensor)
                 && getMembers().containsValue(event.getModule())) {
                     var state = event.getNewState();
 
@@ -434,6 +440,8 @@ public class LaneSystem extends SensorSystem {
                             try {
                                 if (occupancyProducer instanceof Rs350OccupancyProcessModule rs350Process) {
                                     rs350Process.getConfiguration().systemUID = existingRPMModule.getUniqueIdentifier();
+                                } else if (occupancyProducer instanceof D5OccupancyProcessModule d5Process) {
+                                    d5Process.getConfiguration().systemUID = existingRPMModule.getUniqueIdentifier();
                                 }
                                 occupancyProducer.init();
                             } catch (SensorHubException ex) {
@@ -533,7 +541,6 @@ public class LaneSystem extends SensorSystem {
 
         // Using this structure just in case another type of rpm is added that needs a process
         if (parentRpm instanceof RS350Sensor) {
-            String rpmId = parentRpm.getUniqueIdentifier();
             var rs350Config = new Rs350OccupancyProcessConfig();
 
             rs350Config.serialNumber = getConfiguration().uniqueID;
@@ -541,6 +548,14 @@ public class LaneSystem extends SensorSystem {
             rs350Config.autoStart = true;
 
             config = rs350Config;
+        } else if (parentRpm instanceof D5Sensor) {
+            var d5Config = new D5OccupancyProcessConfig();
+
+            d5Config.serialNumber = getConfiguration().uniqueID;
+            d5Config.moduleClass = D5OccupancyProcessModule.class.getCanonicalName();
+            d5Config.autoStart = true;
+
+            config = d5Config;
         }
         return config;
     }
@@ -602,8 +617,21 @@ public class LaneSystem extends SensorSystem {
             comm.connection.reconnectAttempts = 10;
 
             config = rs350Config;
+        } else if (rpmConfig instanceof D5RPMConfig d5RPMConfig){
+            D5Config d5Config = new D5Config();
+            d5Config.serialNumber = getConfiguration().uniqueID;
+            d5Config.moduleClass = D5Sensor.class.getCanonicalName();
+
+            var comm = new TCPCommProviderConfig();
+            comm.protocol.remoteHost = d5RPMConfig.remoteHost;
+            comm.protocol.remotePort = d5RPMConfig.remotePort;
+            comm.connection.connectTimeout = 5000;
+            comm.connection.reconnectAttempts = 10;
+            d5Config.commSettings = comm;
+
+            config = d5Config;
         } else{
-            reportError("RPM Config specified is invalid, config must be of type AspectRPMConfig, RapiscanRPMConfig or RS350RPMConfig", new IllegalArgumentException());
+            reportError("RPM Config specified is invalid, config must be of type AspectRPMConfig, RapiscanRPMConfig, RS350RPMConfig or D5RPMConfig", new IllegalArgumentException());
         }
 
         config.name = getConfiguration().name + " - RPM";

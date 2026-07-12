@@ -1,0 +1,27 @@
+description = 'Kromek D5 Occupancy Process'
+ext.details = 'Turns Kromek D5 alarm activity into occupancy observations for the OSCAR event table and adjudication'
+version = '1.0.0'
+
+dependencies {
+  implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+  implementation project(':sensorhub-utils-rad')
+  implementation project(':sensorhub-driver-kromek-d5')
+}
+
+// add info to OSGi manifest
+osgi {
+  manifest {
+    attributes('Bundle-Vendor': 'Botts Innovative Research, Inc.')
+    attributes('Bundle-Activator': 'com.botts.impl.process.d5.occupancy.Activator')
+  }
+}
+
+// add info to maven pom
+ext.pom >>= {
+  developers {
+    developer {
+      organization 'Botts Innovative Research, Inc.'
+      organizationUrl 'http://www.botts-inc.com'
+    }
+  }
+}
