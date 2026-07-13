@@ -1,5 +1,5 @@
 description = 'RS-350 Radiation Sensor Driver'
-ext.details = ''
+ext.details = 'Low-level driver for the RS-350 radiation detector data feed. To deploy a backpack unit, use the Mobile Detector System module instead.'
 version = '1.0.0'
 
 dependencies {

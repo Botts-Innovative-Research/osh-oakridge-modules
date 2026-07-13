@@ -147,8 +147,10 @@ public class LaneSystem extends SensorSystem {
                 // Create Rapiscan or Aspect config, then add as submodule
                 var config = createRPMConfig(rpmConfig);
                 existingRPMModule = (AbstractSensorModule<?>) registerSubmodule(config);
-
-
+            } else if (rpmConfig != null) {
+                // Lane-level host/port is authoritative: push it down to the existing
+                // RPM member so the two never silently diverge
+                syncRPMCommSettings(rpmConfig, existingRPMModule);
             }
 
             // Initial FFmpeg config
@@ -251,30 +253,97 @@ public class LaneSystem extends SensorSystem {
 
     @Override
     protected void beforeInit() throws SensorHubException {
-        removeOccupancyProcess();
+        removeStaleOccupancyProcesses();
         super.beforeInit();
     }
 
     @Override
     protected void beforeStart() throws SensorHubException {
-        removeOccupancyProcess();
+        removeStaleOccupancyProcesses();
         super.beforeStart();
     }
 
-    private void removeOccupancyProcess() throws SensorHubException {
+    /**
+     * Removes occupancy process members that don't match the lane's RPM type,
+     * plus any duplicates. The matching process (at most one) is kept and reused
+     * across restarts; removed members are cleaned up so their event-bus
+     * subscriptions don't keep resurrecting them.
+     */
+    private void removeStaleOccupancyProcesses() throws SensorHubException {
+        var expectedClass = expectedOccupancyProcessClass();
+        boolean keptOne = false;
         for (var member : this.getMembers().values()) {
-            if (member instanceof Rs350OccupancyProcessModule || member instanceof D5OccupancyProcessModule) {
-                this.removeSubSystem(member.getConfiguration().id);
+            if (!(member instanceof Rs350OccupancyProcessModule || member instanceof D5OccupancyProcessModule))
+                continue;
+            if (expectedClass != null && expectedClass.isInstance(member) && !keptOne) {
+                keptOne = true;
+                continue;
+            }
+            this.removeSubSystem(member.getConfiguration().id);
+            try {
+                member.cleanup();
+            } catch (Exception ex) {
+                getLogger().warn("Error cleaning up stale occupancy process {}", member.getName(), ex);
             }
         }
+    }
+
+    // Which occupancy process type this lane needs: keyed off the RPM member if
+    // present, else the configured RPM type (members may not exist yet at beforeInit)
+    private Class<?> expectedOccupancyProcessClass() {
+        for (var member : getMembers().values()) {
+            if (member instanceof RS350Sensor)
+                return Rs350OccupancyProcessModule.class;
+            if (member instanceof D5Sensor)
+                return D5OccupancyProcessModule.class;
+            if (member instanceof RapiscanSensor || member instanceof AspectSensor)
+                return null; // these produce occupancies natively
+        }
+        var laneOptions = getConfiguration().laneOptionsConfig;
+        var rpmConfig = laneOptions != null ? laneOptions.rpmConfig : null;
+        if (rpmConfig instanceof RS350RPMConfig)
+            return Rs350OccupancyProcessModule.class;
+        if (rpmConfig instanceof D5RPMConfig)
+            return D5OccupancyProcessModule.class;
+        return null;
+    }
+
+    private IDataProducerModule<?> findOccupancyProcessMember() {
+        var expectedClass = expectedOccupancyProcessClass();
+        if (expectedClass == null)
+            return null;
+        for (var member : getMembers().values()) {
+            if (expectedClass.isInstance(member))
+                return member;
+        }
+        return null;
+    }
+
+    // Heal identity fields on a reused process member (lane may have been renamed)
+    private void refreshOccupancyProcessConfig(IDataProducerModule<?> process) {
+        var processConfig = process.getConfiguration();
+        if (processConfig.name == null || processConfig.name.isBlank())
+            processConfig.name = getConfiguration().name + " - Occupancy";
+        if (processConfig instanceof Rs350OccupancyProcessConfig rs350Config)
+            rs350Config.serialNumber = getConfiguration().uniqueID;
+        else if (processConfig instanceof D5OccupancyProcessConfig d5Config)
+            d5Config.serialNumber = getConfiguration().uniqueID;
     }
 
     @Override
     protected void afterStart() throws SensorHubException {
         super.afterStart();
         if (existingRPMModule instanceof RS350Sensor || existingRPMModule instanceof D5Sensor) {
-            var processConfig = createOccupancyProcessConfig(existingRPMModule);
-            occupancyProducer = (IDataProducerModule<?>) registerSubmodule(processConfig);
+            // Reuse the occupancy process member if one is already attached (persisted
+            // config or previous start); only create one on first setup
+            var existingProcess = findOccupancyProcessMember();
+            if (existingProcess != null) {
+                refreshOccupancyProcessConfig(existingProcess);
+                occupancyProducer = existingProcess;
+            } else {
+                var processConfig = createOccupancyProcessConfig(existingRPMModule);
+                occupancyProducer = (IDataProducerModule<?>) registerSubmodule(processConfig);
+            }
         } else {
             occupancyProducer = existingRPMModule;
         }
@@ -298,7 +367,7 @@ public class LaneSystem extends SensorSystem {
         if (webIdHelper != null) {
             webIdHelper.stop();
         }
-        if (WEBID_SENSORS.contains(existingRPMModule.getClass())) {
+        if (existingRPMModule != null && WEBID_SENSORS.contains(existingRPMModule.getClass())) {
             webIdHelper = new WebIdHelper(this, occupancyProducer);
         } else {
             webIdHelper = null;
@@ -322,9 +391,6 @@ public class LaneSystem extends SensorSystem {
         if (ocrHelper != null) {
             ocrHelper.stop();
             ocrHelper = null;
-        }
-        if (occupancyProducer != existingRPMModule) {
-            removeSubSystem(occupancyProducer.getConfiguration().id);
         }
         if (occupancyWrapper != null) {
             occupancyWrapper.removeRpmSensor();
@@ -569,6 +635,7 @@ public class LaneSystem extends SensorSystem {
 
             rs350Config.serialNumber = getConfiguration().uniqueID;
             rs350Config.moduleClass = Rs350OccupancyProcessModule.class.getCanonicalName();
+            rs350Config.name = getConfiguration().name + " - Occupancy";
             rs350Config.autoStart = true;
 
             config = rs350Config;
@@ -577,6 +644,7 @@ public class LaneSystem extends SensorSystem {
 
             d5Config.serialNumber = getConfiguration().uniqueID;
             d5Config.moduleClass = D5OccupancyProcessModule.class.getCanonicalName();
+            d5Config.name = getConfiguration().name + " - Occupancy";
             d5Config.autoStart = true;
 
             config = d5Config;
@@ -663,7 +731,72 @@ public class LaneSystem extends SensorSystem {
 
         return config;
     }
-    
+
+    /**
+     * Re-applies the lane-level RPM endpoint to an existing RPM member's comm
+     * settings. The lane config is the single source of truth for host/port;
+     * without this, edits to the lane config are silently ignored once a
+     * subsystem has been persisted.
+     */
+    private void syncRPMCommSettings(RPMConfig rpmConfig, AbstractSensorModule<?> rpmModule) {
+        if (rpmConfig.remoteHost == null || rpmModule == null)
+            return;
+
+        var driverConfig = rpmModule.getConfiguration();
+
+        if (driverConfig instanceof AspectConfig aspectConfig) {
+            if (aspectConfig.commSettings == null) {
+                aspectConfig.commSettings = new ModbusTCPCommProviderConfig();
+                aspectConfig.commSettings.connection.connectTimeout = 5000;
+                aspectConfig.commSettings.connection.reconnectAttempts = 10;
+                aspectConfig.commSettings.moduleClass = ModbusTCPCommProvider.class.getCanonicalName();
+            }
+            var protocol = aspectConfig.commSettings.protocol;
+            warnIfEndpointDiverges(rpmModule, protocol.remoteHost, protocol.remotePort, rpmConfig);
+            protocol.remoteHost = rpmConfig.remoteHost;
+            protocol.remotePort = rpmConfig.remotePort;
+            if (rpmConfig instanceof AspectRPMConfig aspectRPMConfig && aspectRPMConfig.addressRange != null) {
+                protocol.addressRange.from = aspectRPMConfig.addressRange.from;
+                protocol.addressRange.to = aspectRPMConfig.addressRange.to;
+            }
+        } else if (driverConfig instanceof RapiscanConfig rapiscanConfig) {
+            if (rapiscanConfig.commSettings == null)
+                rapiscanConfig.commSettings = newTCPCommSettings();
+            var protocol = rapiscanConfig.commSettings.protocol;
+            warnIfEndpointDiverges(rpmModule, protocol.remoteHost, protocol.remotePort, rpmConfig);
+            protocol.remoteHost = rpmConfig.remoteHost;
+            protocol.remotePort = rpmConfig.remotePort;
+        } else if (driverConfig instanceof RS350Config rs350Config) {
+            if (rs350Config.commSettings == null)
+                rs350Config.commSettings = newTCPCommSettings();
+            var protocol = rs350Config.commSettings.protocol;
+            warnIfEndpointDiverges(rpmModule, protocol.remoteHost, protocol.remotePort, rpmConfig);
+            protocol.remoteHost = rpmConfig.remoteHost;
+            protocol.remotePort = rpmConfig.remotePort;
+        } else if (driverConfig instanceof D5Config d5Config) {
+            if (!(d5Config.commSettings instanceof TCPCommProviderConfig)) {
+                d5Config.commSettings = newTCPCommSettings();
+            }
+            var protocol = ((TCPCommProviderConfig) d5Config.commSettings).protocol;
+            warnIfEndpointDiverges(rpmModule, protocol.remoteHost, protocol.remotePort, rpmConfig);
+            protocol.remoteHost = rpmConfig.remoteHost;
+            protocol.remotePort = rpmConfig.remotePort;
+        }
+    }
+
+    private TCPCommProviderConfig newTCPCommSettings() {
+        var comm = new TCPCommProviderConfig();
+        comm.connection.connectTimeout = 5000;
+        comm.connection.reconnectAttempts = 10;
+        return comm;
+    }
+
+    private void warnIfEndpointDiverges(AbstractSensorModule<?> rpmModule, String currentHost, int currentPort, RPMConfig rpmConfig) {
+        if (currentHost != null && (!currentHost.equals(rpmConfig.remoteHost) || currentPort != rpmConfig.remotePort))
+            getLogger().warn("Overriding {} comm settings {}:{} with lane RPM config {}:{} (lane config is authoritative)",
+                    rpmModule.getName(), currentHost, currentPort, rpmConfig.remoteHost, rpmConfig.remotePort);
+    }
+
     private FFMPEGConfig createFFmpegConfig(FFMpegConfig ffmpegConfig, int videoIndex) {
         String defaultAxis = "/axis-media/media.amp?adjustablelivestream=1&resolution=640x480&videocodec=h264&videokeyframeinterval=15";
 

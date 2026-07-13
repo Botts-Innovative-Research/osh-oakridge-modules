@@ -50,6 +50,8 @@ import java.util.concurrent.TimeoutException;
 // Based on SMLProcessImpl
 public class D5OccupancyProcessModule extends AbstractProcessModule<D5OccupancyProcessConfig> {
 
+    private static final int MAX_RESTART_ATTEMPTS = 5;
+
     protected SMLUtils smlUtils;
     public AggregateProcessImpl wrapperProcess;
     protected int errorCount = 0;
@@ -122,22 +124,34 @@ public class D5OccupancyProcessModule extends AbstractProcessModule<D5OccupancyP
             && event.getType().equals(ModuleEvent.Type.STATE_CHANGED)
             && event.getNewState().equals(ModuleEvent.ModuleState.STARTED)
             && this.isStarted()) {
+                // A removed member's subscription outlives its removal from the parent
+                // system: without this guard the orphan re-inits itself here and keeps
+                // running as a duplicate
+                var parent = getParentSystem();
+                if (parent != null && !parent.getMembers().containsValue(this)) {
+                    getLogger().info("No longer a member of {}, cancelling event subscription", parentSystemUID);
+                    if (subscription != null) {
+                        subscription.cancel();
+                        subscription = null;
+                    }
+                    return;
+                }
                 try {
                     Async.waitForCondition(() -> checkSystemDriverFinishedRegistration(driver.getUniqueIdentifier(), driver), 500, 10000);
                     new Thread(() -> {
-                        boolean isStarting = true;
-                        while (isStarting) {
+                        for (int attempt = 1; attempt <= MAX_RESTART_ATTEMPTS; attempt++) {
                             try {
                                 this.init();
                                 boolean isInitialized = waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
                                 if (!isInitialized)
                                     continue;
                                 this.start();
-                                isStarting = false;
+                                return;
                             } catch (SensorHubException ex) {
                                 getLogger().info("Failed restart, trying again to restart module...");
                             }
                         }
+                        getLogger().error("Giving up restarting process after {} attempts", MAX_RESTART_ATTEMPTS);
                     }).start();
                 } catch (TimeoutException ex) {
                     throw new RuntimeException(ex);

@@ -35,8 +35,16 @@ tasks.register('copyReadme', Copy) {
     onlyIf { file("${projectDir}/README.md").exists() }
 }
 
+tasks.register('copyMobileReadme', Copy) {
+    from "${projectDir}/README-mobile-detector.md"
+    into "${projectDir}/src/main/resources/com/botts/impl/system/lane/mobile/config"
+    rename { 'README.md' }
+    onlyIf { file("${projectDir}/README-mobile-detector.md").exists() }
+}
+
 processResources {
     dependsOn copyReadme
+    dependsOn copyMobileReadme
 }
 
 // add info to OSGi manifest
