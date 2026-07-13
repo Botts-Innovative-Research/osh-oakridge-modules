@@ -1,1 +1,2 @@
 com.botts.impl.system.lane.Descriptor
+com.botts.impl.system.lane.mobile.MobileDetectorDescriptor

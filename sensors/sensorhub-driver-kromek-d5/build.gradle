@@ -1,5 +1,5 @@
 description = 'Kromek D5 Radiation Sensor Driver'
-ext.details = 'Driver for the Kromek D5 radiation sensor.'
+ext.details = 'Low-level driver for the Kromek D5 radiation sensor. To deploy a D5 walker, use the Mobile Detector System module instead.'
 version = '1.0.0'
 
 repositories {
@@ -8,6 +8,7 @@ repositories {
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation project(':sensorhub-utils-rad')
     implementation 'com.fazecast:jSerialComm:2.6.2'
     implementation 'junit:junit:4.13.1'
     testImplementation('junit:junit:4.13.1')

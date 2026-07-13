@@ -45,6 +45,7 @@ public class LaneConfigForm extends GenericConfigForm {
                 classList.put("Aspect", Class.forName(LANE_CONFIG_PACKAGE + "AspectRPMConfig"));
                 classList.put("Rapiscan", Class.forName(LANE_CONFIG_PACKAGE + "RapiscanRPMConfig"));
                 classList.put("RS350", Class.forName(LANE_CONFIG_PACKAGE + "RS350RPMConfig"));
+                classList.put("D5", Class.forName(LANE_CONFIG_PACKAGE + "D5RPMConfig"));
             }
             catch (ClassNotFoundException e)
             {

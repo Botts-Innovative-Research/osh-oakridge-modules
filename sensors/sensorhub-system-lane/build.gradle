@@ -9,8 +9,11 @@ dependencies {
     implementation project(':sensorhub-driver-aspect')
     implementation project(':sensorhub-driver-rapiscan')
     implementation project(':sensorhub-driver-rs350')
+    implementation project(':sensorhub-driver-kromek-d5')
     implementation project(':sensorhub-driver-videocam')
     implementation project(':sensorhub-process-rs350-occupancy')
+    implementation project(':sensorhub-process-d5-occupancy')
+    implementation project(':sensorhub-process-ocr')
     // NOTE: Uncomment and use if you want to run specific lane module unit tests
 //    testImplementation project(':sensorhub-driver-fakeweather')
     implementation project(':sensorhub-driver-ffmpeg')
@@ -32,8 +35,16 @@ tasks.register('copyReadme', Copy) {
     onlyIf { file("${projectDir}/README.md").exists() }
 }
 
+tasks.register('copyMobileReadme', Copy) {
+    from "${projectDir}/README-mobile-detector.md"
+    into "${projectDir}/src/main/resources/com/botts/impl/system/lane/mobile/config"
+    rename { 'README.md' }
+    onlyIf { file("${projectDir}/README-mobile-detector.md").exists() }
+}
+
 processResources {
     dependsOn copyReadme
+    dependsOn copyMobileReadme
 }
 
 // add info to OSGi manifest

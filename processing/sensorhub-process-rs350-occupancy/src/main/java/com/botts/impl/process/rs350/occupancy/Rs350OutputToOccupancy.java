@@ -61,6 +61,9 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     public static final String ALARM_NAME = "alarm";
     public static final String BACKGROUND_NAME = "backgroundReport";
     public static final String FOREGROUND_NAME = "foregroundReport";
+    public static final String LOCATION_NAME = "location";
+    // Ignore GPS fixes older than this when stamping an alarm position
+    private static final long LOCATION_FIX_MAX_AGE_MS = 120_000;
     private static final String SAMPLING_TIME_NAME = radHelper.createPrecisionTimeStamp().getName();
     private static final String DURATION_NAME = radHelper.createDuration().getName();
     private static final String ALARM_CAT_NAME = radHelper.createAlarmCatCode().getName();
@@ -68,7 +71,7 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     private static final String NEUTRON_GROSS_COUNT_NAME = radHelper.createNeutronGrossCount().getName();
 
     // All RS350 outputs. Some arrive less regularly, so we don't want to connect as input and block while waiting
-    public static final List<String> ALL_OUTPUTS = List.of(ALARM_NAME, BACKGROUND_NAME, FOREGROUND_NAME);
+    public static final List<String> ALL_OUTPUTS = List.of(ALARM_NAME, BACKGROUND_NAME, FOREGROUND_NAME, LOCATION_NAME);
     // Subset of RS350 outputs we want to connect to process input
     public static final List<String> RS350_OUTPUTS = List.of(FOREGROUND_NAME);
     public final List<Flow.Subscription> subscriptions = new ArrayList<>(ALL_OUTPUTS.size());
@@ -80,6 +83,10 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     private double latestNeutronBackground = 0;
     private int maxGammaCount = 0;
     private int maxNeutronCount = 0;
+    // Latest GPS fix from the driver's location output (mobile/backpack use)
+    private volatile double lastFixLat = 0;
+    private volatile double lastFixLon = 0;
+    private volatile long lastFixTimeMillis = 0;
 
     private OccupancyExtended occupancy;
 
@@ -244,7 +251,22 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
             case ALARM_NAME -> processAlarm(obsResults);
             case BACKGROUND_NAME -> processBackground(obsResults);
             case FOREGROUND_NAME -> processForeground(obsResults);
+            case LOCATION_NAME -> processLocation(obsResults);
             default -> logger.debug("(Default) Received data event for unknown output: {}", outputName);
+        }
+    }
+
+    // Cache the latest GPS fix so alarms can be stamped with the position
+    // where they occurred. Record layout: samplingTime, lat, lon, alt.
+    private void processLocation(DataBlock... eventRecords) {
+        for (DataBlock eventRecord : eventRecords) {
+            double lat = eventRecord.getDoubleValue(1);
+            double lon = eventRecord.getDoubleValue(2);
+            if (lat == 0.0 && lon == 0.0)
+                continue;
+            lastFixLat = lat;
+            lastFixLon = lon;
+            lastFixTimeMillis = System.currentTimeMillis();
         }
     }
 
@@ -279,10 +301,12 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
             }
 
             occupancyBuilder = new OccupancyExtended.Builder();
-            // alarmCategory() must be called first because Occupancy.Builder setters
-            // return the parent builder type (see the note on
-            // OccupancyExtended.Builder.alarmCategory).
+            // alarmCategory()/location() must be called first because base
+            // Occupancy.Builder setters return the parent builder type (see the
+            // note on OccupancyExtended.Builder.alarmCategory).
             occupancyBuilder.alarmCategory(alarmCat);
+            if (lastFixTimeMillis > 0 && System.currentTimeMillis() - lastFixTimeMillis < LOCATION_FIX_MAX_AGE_MS)
+                occupancyBuilder.location(lastFixLat, lastFixLon);
             occupancyBuilder.startTime(startTime).endTime(endTime).samplingTime(startTime);
             occupancyBuilder.gammaAlarm(hasGammaAlarm).neutronAlarm(hasNeutronAlarm);
             occupancyBuilder.maxGammaCount(maxGammaCount).maxNeutronCount(maxNeutronCount);

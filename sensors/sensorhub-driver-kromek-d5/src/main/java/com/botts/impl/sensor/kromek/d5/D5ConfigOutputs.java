@@ -65,4 +65,7 @@ public class D5ConfigOutputs {
 
     @DisplayInfo(label = "KromekSerialOTGReport", desc = "OTG Report")
     public boolean enableKromekSerialOTGReport = false;
+
+    @DisplayInfo(label = "Location", desc = "GPS position from the Radiometric Status Report as a standard sensorLocation stream (requires that report to be enabled)")
+    public boolean enableLocationOutput = true;
 }
