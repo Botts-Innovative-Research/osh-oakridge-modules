@@ -298,6 +298,26 @@ public class MultipartUploadTest {
         result.close();
     }
 
+    @Test
+    public void testParseRejectsConfiguredFileSizeLimit() throws Exception {
+        String boundary = "----WebKitFormBoundarySizeLimit";
+        String fileContent = "0123456789";
+        String filename = "too-large.csv";
+
+        byte[] multipartBody = createMultipartBody(boundary, filename, "text/csv", fileContent);
+
+        HttpServletRequest mockRequest = createMockRequest("POST",
+            "multipart/form-data; boundary=" + boundary,
+            multipartBody);
+
+        try {
+            MultipartRequestParser.parse(mockRequest, 5);
+            fail("Expected multipart parser to reject file over configured size limit");
+        } catch (Exception expected) {
+            assertTrue(expected.getMessage().contains("File size exceeds maximum allowed"));
+        }
+    }
+
     /**
      * Test full round-trip: parse multipart, store, and retrieve.
      */

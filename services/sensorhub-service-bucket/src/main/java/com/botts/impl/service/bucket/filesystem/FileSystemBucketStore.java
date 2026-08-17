@@ -10,9 +10,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public class FileSystemBucketStore implements IBucketStore {
@@ -28,17 +30,64 @@ public class FileSystemBucketStore implements IBucketStore {
             Map.entry("application/json", ".json"),
             Map.entry("application/test", ".test")
     );
+    private static final Set<PosixFilePermission> DIRECTORY_PERMISSIONS = Set.of(
+            PosixFilePermission.OWNER_READ,
+            PosixFilePermission.OWNER_WRITE,
+            PosixFilePermission.OWNER_EXECUTE
+    );
+    private static final Set<PosixFilePermission> FILE_PERMISSIONS = Set.of(
+            PosixFilePermission.OWNER_READ,
+            PosixFilePermission.OWNER_WRITE
+    );
     private final Path rootDirectory;
+    private final long maxFileSizeBytes;
 
     public FileSystemBucketStore(Path rootDirectory) throws IOException {
+        this(rootDirectory, UploadPolicy.DEFAULT_MAX_FILE_SIZE_MB);
+    }
+
+    public FileSystemBucketStore(Path rootDirectory, long maxFileSizeMb) throws IOException {
         this.rootDirectory = rootDirectory;
+        this.maxFileSizeBytes = UploadPolicy.maxFileSizeBytes(maxFileSizeMb);
         if (!Files.exists(rootDirectory)) {
-            Files.createDirectories(rootDirectory);
+            createDirectories(rootDirectory);
         }
+        setDirectoryPermissions(rootDirectory);
     }
 
     private Path getBucketPath(String bucketName) {
         return rootDirectory.resolve(bucketName);
+    }
+
+    private void createDirectories(Path directory) throws IOException {
+        Files.createDirectories(directory);
+        setDirectoryPermissions(directory);
+    }
+
+    private void createObjectParentDirectories(Path bucketPath, Path parent) throws IOException {
+        Files.createDirectories(parent);
+        setDirectoryPermissions(bucketPath);
+        Path current = bucketPath;
+        Path relativeParent = bucketPath.relativize(parent);
+        for (Path segment : relativeParent) {
+            current = current.resolve(segment);
+            setDirectoryPermissions(current);
+        }
+    }
+
+    private void setDirectoryPermissions(Path directory) throws IOException {
+        setPermissions(directory, DIRECTORY_PERMISSIONS);
+    }
+
+    private void setFilePermissions(Path file) throws IOException {
+        setPermissions(file, FILE_PERMISSIONS);
+    }
+
+    private void setPermissions(Path path, Set<PosixFilePermission> permissions) throws IOException {
+        if (Files.getFileStore(path).supportsFileAttributeView("posix"))
+            Files.setPosixFilePermissions(path, permissions);
+        else if (!Files.isDirectory(path))
+            path.toFile().setExecutable(false, false);
     }
 
     private Path resolveObjectPath(String bucketName, String key) throws DataStoreException {
@@ -77,7 +126,7 @@ public class FileSystemBucketStore implements IBucketStore {
     @Override
     public void createBucket(String bucketName) throws DataStoreException {
         try {
-            Files.createDirectories(getBucketPath(bucketName));
+            createDirectories(getBucketPath(bucketName));
         } catch (IOException e) {
             throw new DataStoreException(FAILED_CREATE_BUCKET + bucketName, e);
         }
@@ -153,18 +202,26 @@ public class FileSystemBucketStore implements IBucketStore {
 
     @Override
     public void putObject(String bucketName, String key, InputStream data, Map<String, String> metadata) throws DataStoreException {
+        Path resolved = null;
         try {
             UploadPolicy.validateUpload(key, metadata);
             Path path = getBucketPath(bucketName);
             if (!Files.exists(path))
                 throw new DataStoreException(BUCKET_NOT_FOUND, new IllegalArgumentException());
-            Path resolved = resolveObjectPath(bucketName, key);
+            Path bucketPath = path.toRealPath();
+            resolved = resolveObjectPath(bucketName, key);
             // Create parent directories if they don't exist (for nested keys like "subdir/file.txt")
             Path parent = resolved.getParent();
             if (parent != null && !Files.exists(parent))
-                Files.createDirectories(parent);
-            Files.copy(data, resolved, StandardCopyOption.REPLACE_EXISTING);
+                createObjectParentDirectories(bucketPath, parent);
+            Files.copy(new LimitedInputStream(data), resolved, StandardCopyOption.REPLACE_EXISTING);
+            setFilePermissions(resolved);
         } catch (IOException e) {
+            if (resolved != null) {
+                try {
+                    Files.deleteIfExists(resolved);
+                } catch (IOException ignored) {}
+            }
             throw new DataStoreException(FAILED_PUT_OBJECT + bucketName, e);
         }
     }
@@ -176,12 +233,14 @@ public class FileSystemBucketStore implements IBucketStore {
             throw new DataStoreException(BUCKET_NOT_FOUND, new IllegalArgumentException());
         try {
             UploadPolicy.validateUpload(key, metadata);
+            Path bucketPath = path.toRealPath();
             var filePath = resolveObjectPath(bucketName, key);
             if (!Files.exists(filePath)) {
-                Files.createDirectories(filePath.getParent());
+                createObjectParentDirectories(bucketPath, filePath.getParent());
                 Files.createFile(filePath);
             }
-            return new FileOutputStream(filePath.toFile());
+            setFilePermissions(filePath);
+            return new LimitedOutputStream(Files.newOutputStream(filePath), filePath);
         } catch (IOException e) {
             throw new DataStoreException(FAILED_PUT_OBJECT + bucketName, e);
         }
@@ -290,5 +349,79 @@ public class FileSystemBucketStore implements IBucketStore {
         return Paths.get(bucketName, key).toString();
     }
 
+
+    private class LimitedInputStream extends FilterInputStream {
+
+        private long bytesRead;
+
+        LimitedInputStream(InputStream in) {
+            super(in);
+        }
+
+        @Override
+        public int read() throws IOException {
+            int read = super.read();
+            if (read != -1)
+                countBytes(1);
+            return read;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            int read = super.read(b, off, len);
+            if (read > 0)
+                countBytes(read);
+            return read;
+        }
+
+        private void countBytes(long count) throws IOException {
+            bytesRead += count;
+            if (bytesRead > maxFileSizeBytes)
+                throw new IOException("File size exceeds maximum allowed: " +
+                        (maxFileSizeBytes / (1024 * 1024)) + "MB");
+        }
+    }
+
+    private class LimitedOutputStream extends FilterOutputStream {
+
+        private final Path filePath;
+        private long bytesWritten;
+
+        LimitedOutputStream(OutputStream out, Path filePath) {
+            super(out);
+            this.filePath = filePath;
+        }
+
+        @Override
+        public void write(int b) throws IOException {
+            countBytes(1);
+            super.write(b);
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            countBytes(len);
+            out.write(b, off, len);
+        }
+
+        @Override
+        public void close() throws IOException {
+            try {
+                super.close();
+            } finally {
+                if (bytesWritten > maxFileSizeBytes)
+                    Files.deleteIfExists(filePath);
+                else if (Files.exists(filePath))
+                    setFilePermissions(filePath);
+            }
+        }
+
+        private void countBytes(long count) throws IOException {
+            bytesWritten += count;
+            if (bytesWritten > maxFileSizeBytes)
+                throw new IOException("File size exceeds maximum allowed: " +
+                        (maxFileSizeBytes / (1024 * 1024)) + "MB");
+        }
+    }
 
 }

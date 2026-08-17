@@ -16,8 +16,6 @@ import java.util.Map;
 
 public class MultipartRequestParser {
 
-    private static final long MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
-    private static final long MAX_REQUEST_SIZE = 200 * 1024 * 1024; // 200MB
     private static final int FILE_SIZE_THRESHOLD = 1024 * 1024; // 1MB
     private static final String MULTIPART = "multipart/";
 
@@ -49,6 +47,11 @@ public class MultipartRequestParser {
     // parse multipart request
     public static MultipartParseResult parse(HttpServletRequest request)
             throws InvalidRequestException {
+        return parse(request, UploadPolicy.DEFAULT_MAX_FILE_SIZE_BYTES);
+    }
+
+    public static MultipartParseResult parse(HttpServletRequest request, long maxFileSizeBytes)
+            throws InvalidRequestException {
 
         // Check content type directly to support both POST and PUT requests
         // (ServletFileUpload.isMultipartContent only allows POST)
@@ -60,8 +63,8 @@ public class MultipartRequestParser {
         factory.setRepository(new File(System.getProperty("java.io.tmpdir")));
 
         ServletFileUpload upload = new ServletFileUpload(factory);
-        upload.setFileSizeMax(MAX_FILE_SIZE);
-        upload.setSizeMax(MAX_REQUEST_SIZE);
+        upload.setFileSizeMax(maxFileSizeBytes);
+        upload.setSizeMax(Math.multiplyExact(maxFileSizeBytes, 2));
         upload.setHeaderEncoding("UTF-8");
 
         List<FileItem> items;
@@ -70,7 +73,7 @@ public class MultipartRequestParser {
         } catch (FileUploadException e) {
             if (e.getMessage() != null && e.getMessage().contains("size")) {
                 throw ServiceErrors.badRequest("File size exceeds maximum allowed: " +
-                    (MAX_FILE_SIZE / (1024 * 1024)) + "MB");
+                    (maxFileSizeBytes / (1024 * 1024)) + "MB");
             }
             throw ServiceErrors.badRequest("Failed to parse multipart request: " + e.getMessage());
         }

@@ -16,7 +16,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public record MultipartHandler(IBucketStore bucketStore) {
+public record MultipartHandler(IBucketStore bucketStore, long maxFileSizeBytes) {
+
+    public MultipartHandler(IBucketStore bucketStore) {
+        this(bucketStore, UploadPolicy.DEFAULT_MAX_FILE_SIZE_BYTES);
+    }
 
     /**
      * Handle POST with multipart/form-data
@@ -37,7 +41,7 @@ public record MultipartHandler(IBucketStore bucketStore) {
         MultipartRequestParser.MultipartParseResult result = null;
         try {
             // Parse multipart request
-            result = MultipartRequestParser.parse(ctx.getRequest());
+            result = MultipartRequestParser.parse(ctx.getRequest(), maxFileSizeBytes);
 
             // Extract metadata from form fields
             Map<String, String> baseMetadata = new HashMap<>(ctx.getHeaders());
@@ -123,7 +127,7 @@ public record MultipartHandler(IBucketStore bucketStore) {
 
         MultipartRequestParser.MultipartParseResult result = null;
         try {
-            result = MultipartRequestParser.parse(ctx.getRequest());
+            result = MultipartRequestParser.parse(ctx.getRequest(), maxFileSizeBytes);
 
             // PUT only accepts single file
             if (result.files().size() > 1) {

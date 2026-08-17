@@ -8,6 +8,9 @@ import java.util.Set;
 
 public final class UploadPolicy {
 
+    public static final long DEFAULT_MAX_FILE_SIZE_MB = 100;
+    public static final long DEFAULT_MAX_FILE_SIZE_BYTES = maxFileSizeBytes(DEFAULT_MAX_FILE_SIZE_MB);
+
     private static final Set<String> BLOCKED_EXTENSIONS = Set.of(
             ".html", ".htm", ".shtml", ".xhtml",
             ".js", ".mjs", ".cjs", ".jsx",
@@ -39,6 +42,12 @@ public final class UploadPolicy {
     );
 
     private UploadPolicy() {
+    }
+
+    public static long maxFileSizeBytes(long maxFileSizeMb) {
+        if (maxFileSizeMb <= 0)
+            throw new IllegalArgumentException("Max file size must be greater than zero");
+        return Math.multiplyExact(maxFileSizeMb, 1024L * 1024L);
     }
 
     public static void validateUpload(String objectKey, Map<String, String> metadata) throws InvalidRequestException {

@@ -38,6 +38,9 @@ public class BucketServiceConfig extends HttpServiceConfig {
     @DisplayInfo(desc = "Root directory for filesystem bucket store")
     public String fileStoreRootDir;
 
+    @DisplayInfo(label = "Max File Size (MB)", desc = "Maximum allowed upload size per file, in megabytes")
+    public int maxFileSizeMb = 100;
+
     public BucketServiceConfig()
     {
         this.moduleClass = BucketService.class.getCanonicalName();

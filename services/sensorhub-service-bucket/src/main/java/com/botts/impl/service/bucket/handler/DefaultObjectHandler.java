@@ -18,8 +18,12 @@ public class DefaultObjectHandler implements IObjectHandler {
     private final MultipartHandler multipartHandler;
 
     public DefaultObjectHandler(IBucketStore bucketStore) {
+        this(bucketStore, UploadPolicy.DEFAULT_MAX_FILE_SIZE_BYTES);
+    }
+
+    public DefaultObjectHandler(IBucketStore bucketStore, long maxFileSizeBytes) {
         this.bucketStore = bucketStore;
-        this.multipartHandler = new MultipartHandler(bucketStore);
+        this.multipartHandler = new MultipartHandler(bucketStore, maxFileSizeBytes);
     }
 
     @Override

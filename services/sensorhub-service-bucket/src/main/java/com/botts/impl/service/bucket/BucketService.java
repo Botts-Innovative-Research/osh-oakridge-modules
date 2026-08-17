@@ -22,6 +22,7 @@ import com.botts.impl.service.bucket.filesystem.FileSystemBucketStore;
 import com.botts.impl.service.bucket.handler.BucketHandler;
 import com.botts.impl.service.bucket.handler.DefaultObjectHandler;
 import com.botts.impl.service.bucket.handler.MP4Handler;
+import com.botts.impl.service.bucket.util.UploadPolicy;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.service.AbstractHttpServiceModule;
 import org.sensorhub.utils.NamedThreadFactory;
@@ -52,9 +53,11 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
         Asserts.checkNotNull(config.fileStoreRootDir);
 
         try {
-            bucketStore = new FileSystemBucketStore(Path.of(config.fileStoreRootDir));
+            bucketStore = new FileSystemBucketStore(Path.of(config.fileStoreRootDir), config.maxFileSizeMb);
         } catch (IOException e) {
             throw new SensorHubException("Unable to initialize default file system bucket store");
+        } catch (IllegalArgumentException e) {
+            throw new SensorHubException("Invalid max file size for bucket store", e);
         }
 
         if (config.initialBuckets != null && !config.initialBuckets.isEmpty())
@@ -75,7 +78,7 @@ public class BucketService extends AbstractHttpServiceModule<BucketServiceConfig
                 Runtime.getRuntime().availableProcessors(),
                 new NamedThreadFactory("BucketStorageService-Pool"));
 
-        defaultObjectHandler = new DefaultObjectHandler(bucketStore);
+        defaultObjectHandler = new DefaultObjectHandler(bucketStore, UploadPolicy.maxFileSizeBytes(config.maxFileSizeMb));
         BucketHandler bucketHandler = new BucketHandler(this);
         if (mp4Handler == null)
             mp4Handler = new MP4Handler(bucketStore);
