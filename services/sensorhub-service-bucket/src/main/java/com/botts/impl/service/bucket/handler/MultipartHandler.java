@@ -5,6 +5,7 @@ import com.botts.impl.service.bucket.util.InvalidRequestException;
 import com.botts.impl.service.bucket.util.MultipartRequestParser;
 import com.botts.impl.service.bucket.util.RequestContext;
 import com.botts.impl.service.bucket.util.ServiceErrors;
+import com.botts.impl.service.bucket.util.UploadPolicy;
 import com.google.gson.JsonArray;
 import org.sensorhub.api.datastore.DataStoreException;
 
@@ -71,9 +72,11 @@ public record MultipartHandler(IBucketStore bucketStore) {
                 // Use filename as key if available, otherwise fall back to UUID
                 String objectKey;
                 if (file.fileName() != null && !file.fileName().isBlank()) {
+                    UploadPolicy.validateUpload(file.fileName(), fileMetadata);
                     bucketStore.putObject(bucketName, file.fileName(), file.inputStream(), fileMetadata);
                     objectKey = file.fileName();
                 } else {
+                    UploadPolicy.validateMetadata(fileMetadata);
                     objectKey = bucketStore.createObject(bucketName, file.inputStream(), fileMetadata);
                     if (objectKey == null) {
                         throw ServiceErrors.internalError(IBucketStore.FAILED_CREATE_OBJECT + bucketName);
@@ -148,6 +151,8 @@ public record MultipartHandler(IBucketStore bucketStore) {
             if (file.fileName() != null) {
                 metadata.put("X-Original-Filename", file.fileName());
             }
+
+            UploadPolicy.validateUpload(objectKey, metadata);
 
             // Determine status code
             int successStatus = bucketStore.objectExists(bucketName, objectKey) ?

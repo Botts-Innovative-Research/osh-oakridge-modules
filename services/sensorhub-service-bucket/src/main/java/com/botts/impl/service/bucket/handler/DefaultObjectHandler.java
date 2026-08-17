@@ -4,6 +4,7 @@ import com.botts.api.service.bucket.IBucketStore;
 import com.botts.api.service.bucket.IObjectHandler;
 import com.botts.impl.service.bucket.util.RequestContext;
 import com.botts.impl.service.bucket.util.ServiceErrors;
+import com.botts.impl.service.bucket.util.UploadPolicy;
 import org.sensorhub.api.datastore.DataStoreException;
 
 import javax.servlet.http.HttpServletResponse;
@@ -69,6 +70,7 @@ public class DefaultObjectHandler implements IObjectHandler {
 
         if (ctx.getHeaders().get("Content-Type") == null)
             throw ServiceErrors.badRequest("Content-Type header is required");
+        UploadPolicy.validateMetadata(ctx.getHeaders());
 
         String newObjectKey;
         try (InputStream data = ctx.getRequest().getInputStream()) {
@@ -96,6 +98,8 @@ public class DefaultObjectHandler implements IObjectHandler {
             multipartHandler.handleMultipartPut(ctx);
             return;
         }
+
+        UploadPolicy.validateUpload(objectKey, ctx.getHeaders());
 
         // Original raw stream upload behavior
         int successStatus = bucketStore.objectExists(bucketName, objectKey) ?
