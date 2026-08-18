@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class VideoRetention {
 
+    private static final String DECIMATED_SUFFIX = "_decimated.mp4";
     private static final Logger logger = LoggerFactory.getLogger(VideoRetention.class);
     final IBucketStore bucketStore;
     volatile boolean hasStarted = false;
@@ -92,13 +93,17 @@ public class VideoRetention {
 
     /**
      *
-     * @param fileName Result of getResourceURI on an object from the bucket store
-     * @return true if input was not already decimated (fps > 1)
+     * @param originalMp4 Result of getResourceURI on an object from the bucket store
+     * @return true if input was not already decimated (labeled with  or fps > 1)
      */
-    public boolean decimate(String fileName) {
+    public boolean decimate(String originalMp4) {
 
-        String originalMp4 = fileName;
-        String decimatedMp4 = fileName.substring(0, fileName.lastIndexOf('.')) + "_decimated.mp4";
+        if (originalMp4.endsWith(DECIMATED_SUFFIX)) {
+            logger.warn("Video file {} marked with {} suffix, skipping.", originalMp4, DECIMATED_SUFFIX);
+            return false;
+        }
+
+        String decimatedMp4 = originalMp4.substring(0, originalMp4.lastIndexOf('.')) + DECIMATED_SUFFIX;
 
         MpegTsProcessor videoInput = new MpegTsProcessor(originalMp4);
         VideoKeyframeDecimator videoOutput = null;
@@ -119,6 +124,11 @@ public class VideoRetention {
             videoOutput.setFileCloseCallback(() -> {
                 if (inputClosed.compareAndSet(false, true)) {
                     videoInput.stopProcessingStream();
+                    try {
+                        videoInput.join();
+                    } catch (InterruptedException e) {
+                        logger.error("Exception while joining MpegTsProcessor", e);
+                    }
                     videoInput.closeStream();
                 }
             });
