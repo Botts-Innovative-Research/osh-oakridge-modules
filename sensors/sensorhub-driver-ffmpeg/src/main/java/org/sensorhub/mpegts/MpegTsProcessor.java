@@ -129,7 +129,7 @@ public class MpegTsProcessor extends Thread {
 
     boolean injectExtradata = true;
 
-    public final Object contextLock = new Object();
+    protected final Object contextLock = new Object();
 
     private Queue<AVPacket> fileFrameQueue = null;
 
@@ -155,19 +155,9 @@ public class MpegTsProcessor extends Thread {
     private AVFormatContext avFormatContext;
 
     /**
-     * Codec context, holds information about the codec used in transport stream
-     */
-    private AVCodecContext avCodecContext;
-
-    /**
      * Container for possible video sub stream id
      */
     private int videoStreamId = INVALID_STREAM_ID;
-
-    /**
-     * Container for possible data sub stream id
-     */
-    private int dataStreamId = INVALID_STREAM_ID;
 
     /**
      * Listener for video buffers extracted from the transport stream
@@ -177,12 +167,12 @@ public class MpegTsProcessor extends Thread {
     /**
      * Flag indicating if processing of the transport stream should be terminated
      */
-    private final AtomicBoolean terminateProcessing = new AtomicBoolean(false);
+    private volatile boolean terminateProcessing = false;
 
     /**
      * Flag indicating whether or not the stream has been opened or connected to successfully
      */
-    private boolean streamOpened = false;
+    private volatile boolean streamOpened = false;
 
     /**
      * A string representation of the file or url to use as the source of the transport stream to
@@ -256,6 +246,20 @@ public class MpegTsProcessor extends Thread {
         this.useTCP = useTCP;
     }
 
+    /**
+     * Sets the frame buffer size for the frame queue. The frame count provided determines
+     * the maximum number of frames that can be stored in the buffer. If the frame count is less
+     * than or equal to zero, the frame buffer will be set to null.
+     *
+     * <p>Increase the size of the frame buffer when the trigger for the
+     * {@link org.sensorhub.impl.sensor.ffmpeg.controls.FileControl} file save command is late.</p>
+     *
+     * <p>E.g., if the file save command is typically two seconds late
+     * and the stream is 30 fps, a buffer of 60 frames should be sufficient.</p>
+     *
+     * @param frameCount The number of frames to allocate space for in the buffer. A value of 0 or
+     *                   less will set the buffer to null.
+     */
     // TODO: Convert from number of frames to seconds, convert to queue size using fps
     public void setFrameBuffer(int frameCount) {
         if (frameCount < 0) {
@@ -314,6 +318,7 @@ public class MpegTsProcessor extends Thread {
 
                         streamOpened = true;
                         logger.debug("Stream opened {}", streamSource);
+
                     }
                 } else {
 
@@ -329,7 +334,7 @@ public class MpegTsProcessor extends Thread {
         return streamOpened;
     }
 
-    public void setInjectExtradata(boolean injectExtradata) {this.injectExtradata = injectExtradata;}
+    public void setInjectExtradata(boolean injectExtradata) { this.injectExtradata = injectExtradata; }
 
     public AVCodecParameters getCodecParams() {
         synchronized (contextLock) {
@@ -350,7 +355,10 @@ public class MpegTsProcessor extends Thread {
                     logger.error("AVCodecParameters failed: {}", ret);
                 }
                 return dst;
-            } catch (Exception e) { return null; }
+            } catch (Exception e) {
+                logger.error("Exception when copying codec parameters", e);
+                return null;
+            }
         }
     }
 
@@ -633,9 +641,6 @@ public class MpegTsProcessor extends Thread {
         logger.debug("processStream");
 
         if (streamOpened) {
-            //avutil.av_log_set_level(avutil.AV_LOG_DEBUG);
-            // Allocate the codec contexts and attempt to open them
-            openCodecContext();
 
             if (doTranscode) {
                 var settings = new HashMap<String, Integer>();
@@ -795,6 +800,12 @@ public class MpegTsProcessor extends Thread {
         fileFrameQueue.add(newPacket);
     }
 
+    private boolean readPacket(AVPacket avPacket) {
+        synchronized (contextLock) {
+            return !terminateProcessing && streamOpened && (av_read_frame(avFormatContext, avPacket)) >= 0;
+        }
+    }
+
     /**
      * Stream processing, where the demuxing is invoked on underlying ffmpeg libraries
      * and callbacks, if registered, are invoked for appropriate buffers.
@@ -809,10 +820,8 @@ public class MpegTsProcessor extends Thread {
         // Read frames
         long startTime = System.currentTimeMillis();
         long frameCount = 0;
-        int retCode;
-        boolean doProcessing = true;
 
-        while (!terminateProcessing.get() && (retCode = av_read_frame(avFormatContext, avPacket)) >= 0) {
+        while (readPacket(avPacket)) {
             // Discard the frame if no listeners are writing and we're not writing to a frame buffer
             boolean isWriting = hasWritingListener();
             //boolean isWritingFile = hasWritingListener(FileOutput.MP4Output.class);
@@ -898,22 +907,6 @@ public class MpegTsProcessor extends Thread {
     }
 
     /**
-     * Closes the codec context and cleans up its associated resources.  This method is invoked
-     * by {@link MpegTsProcessor#closeStream()} to ensure cleanup is neat and orderly.
-     */
-    private void closeCodecContext() {
-
-        if (null != avCodecContext) {
-
-            avcodec.avcodec_close(avCodecContext);
-
-            avcodec.avcodec_free_context(avCodecContext);
-
-            avCodecContext = null;
-        }
-    }
-
-    /**
      * Closes the transport stream, releasing allocated resources including the codec context.
      */
     public void closeStream() {
@@ -921,14 +914,12 @@ public class MpegTsProcessor extends Thread {
         logger.debug("closeStream");
 
         if (streamOpened) {
-
-            closeCodecContext();
-
-            if (null != avFormatContext) {
-                avformat.avformat_close_input(avFormatContext);
+            synchronized (contextLock) {
+                if (null != avFormatContext) {
+                    avformat.avformat_close_input(avFormatContext);
+                }
+                streamOpened = false;
             }
-
-            streamOpened = false;
         }
     }
 
@@ -939,49 +930,8 @@ public class MpegTsProcessor extends Thread {
 
         logger.debug("stopProcessingStream");
 
-        if (streamOpened) {
-            loop = false;
-            terminateProcessing.set(true);
-        }
-    }
-
-    /**
-     * Opens the codec context, and sets it up according to the {@link MpegTsProcessor#videoStreamId}.
-     * This method is invoked by {@link MpegTsProcessor#openStream()} to ensure resources are allocated
-     * and codec context is setup according to contents of the transport stream.
-     *
-     * @throws IllegalStateException if the codec is unsupported.
-     */
-    private void openCodecContext() throws IllegalStateException {
-
-        avCodecContext = avcodec.avcodec_alloc_context3(null);
-
-        // Store the codec parameters in the codec context
-        avcodec.avcodec_parameters_to_context(avCodecContext, avFormatContext.streams(videoStreamId).codecpar());
-
-        // Get the associated codec from the id stored in the context
-        AVCodec codec = avcodec.avcodec_find_decoder(avCodecContext.codec_id());
-        if (null == codec) {
-
-            String message = "Unsupported codec";
-
-            logger.error(message);
-
-            throw new IllegalStateException(message);
-        }
-
-        // Attempt to open the codec
-        int returnCode = avcodec.avcodec_open2(avCodecContext, codec, (PointerPointer<?>) null);
-
-        // If codec could not be opened
-        if (returnCode < 0) {
-
-            String message = "Cannot open codec";
-
-            logger.error(message);
-
-            throw new IllegalStateException(message);
-        }
+        loop = false;
+        terminateProcessing = true;
     }
 
     public int getCodecId() {
