@@ -206,76 +206,83 @@ public class MessageHandler {
 
         switch (mainChar) {
             // ------------------- NOT OCCUPIED
-            case "GB":
+            case "GB" -> {
                 parentSensor.getGammaOutput().onNewMessage(csvLine, System.currentTimeMillis(), BACKGROUND, null);
+
                 // Send latest Gamma Background to threshold calculator and EML service
                 parentSensor.getGammaThresholdOutput().onNewBackground(csvLine);
 
-                if(parentSensor.getConfiguration().emlConfig.emlEnabled)
+                if (parentSensor.getConfiguration().emlConfig.emlEnabled)
                     parentSensor.getEmlService().setLatestGammaBackground(csvLine);
                 break;
-            case "GH":
+            }
+            case "GH" -> {
                 parentSensor.getGammaOutput().onNewMessage(csvLine, System.currentTimeMillis(), FAULT_GH, null);
-                break;
-            case "GL":
+            }
+            case "GL" -> {
                 parentSensor.getGammaOutput().onNewMessage(csvLine, System.currentTimeMillis(), FAULT_GL, null);
-                break;
-            case "NB":
+            }
+            case "NB" -> {
                 parentSensor.getNeutronOutput().onNewMessage(csvLine, System.currentTimeMillis(), BACKGROUND);
 
-                if(parentSensor.getConfiguration().emlConfig.emlEnabled)
+                if (parentSensor.getConfiguration().emlConfig.emlEnabled)
                     parentSensor.getEmlService().setLatestNeutronBackground(csvLine);
-                break;
-            case "NH":
+            }
+            case "NH" -> {
                 parentSensor.getNeutronOutput().onNewMessage(csvLine, System.currentTimeMillis(), FAULT_NH);
-                break;
+            }
 
             // --------------- OCCUPIED
-            case "GA":
+            case "GA" -> {
                 gammaScanRunningSumBatch.addLast(csvLine);
                 if (!currentOccupancy) {
                     occupancyStartTime = System.currentTimeMillis();
                     currentOccupancy = true;
-                } else {
-                    // 200ms
-                    int gamma = Integer.parseInt(csvLine[1]) +
-                            Integer.parseInt(csvLine[2]) +
-                            Integer.parseInt(csvLine[3]) +
-                            Integer.parseInt(csvLine[4]);
-                        occupancyGammaBatch.addLast(gamma);
                 }
-                parentSensor.getGammaThresholdOutput().onNewForeground(getGammaForegroundCountsPerSecond());
-                parentSensor.getGammaOutput().onNewMessage(csvLine, System.currentTimeMillis(), ALARM, getGammaForegroundCountsPerSecond());
+
+                int gamma = Integer.parseInt(csvLine[1]) +
+                        Integer.parseInt(csvLine[2]) +
+                        Integer.parseInt(csvLine[3]) +
+                        Integer.parseInt(csvLine[4]);
+                occupancyGammaBatch.addLast(gamma);
+
+                var counts = getGammaForegroundCountsPerSecond();
+                if (counts != null) {
+                    parentSensor.getGammaThresholdOutput().onNewForeground(counts);
+                    parentSensor.getGammaOutput().onNewMessage(csvLine, System.currentTimeMillis(), ALARM, counts);
+                }
 
                 isGammaAlarm = true;
-                break;
+            }
 
-            case "GS":
+            case "GS" -> {
                 gammaScanRunningSumBatch.addLast(csvLine);
+
                 //usually the foreground value will switch to "GA" in an alarm state
                 if (!currentOccupancy) {
                     occupancyStartTime = System.currentTimeMillis();
                     currentOccupancy = true;
-                } else {
-                    // 200ms
-                    int gamma = Integer.parseInt(csvLine[1]) +
-                            Integer.parseInt(csvLine[2]) +
-                            Integer.parseInt(csvLine[3]) +
-                            Integer.parseInt(csvLine[4]);
-                    occupancyGammaBatch.addLast(gamma);
                 }
-                parentSensor.getGammaThresholdOutput().onNewForeground(getGammaForegroundCountsPerSecond());
-                parentSensor.getGammaOutput().onNewMessage(csvLine, System.currentTimeMillis(), SCAN, getGammaForegroundCountsPerSecond());
+                int gamma = Integer.parseInt(csvLine[1]) +
+                        Integer.parseInt(csvLine[2]) +
+                        Integer.parseInt(csvLine[3]) +
+                        Integer.parseInt(csvLine[4]);
+                occupancyGammaBatch.addLast(gamma);
 
-                break;
+                var counts = getGammaForegroundCountsPerSecond();
+                if (counts != null) {
+                    parentSensor.getGammaThresholdOutput().onNewForeground(counts);
+                    parentSensor.getGammaOutput().onNewMessage(csvLine, System.currentTimeMillis(), SCAN, counts);
+                }
+            }
 
-            case "NA":
+            case "NA" -> {
                 if (!currentOccupancy) {
                     occupancyStartTime = System.currentTimeMillis();
                     currentOccupancy = true;
 
                 } else {
-                    int neutron =  Integer.parseInt(csvLine[1]) +
+                    int neutron = Integer.parseInt(csvLine[1]) +
                             Integer.parseInt(csvLine[2]) +
                             Integer.parseInt(csvLine[3]) +
                             Integer.parseInt(csvLine[4]);
@@ -284,14 +291,14 @@ public class MessageHandler {
                 parentSensor.getNeutronOutput().onNewMessage(csvLine, System.currentTimeMillis(), ALARM);
 
                 isNeutronAlarm = true;
-                break;
+            }
 
-            case "NS":
+            case "NS" -> {
                 if (!currentOccupancy) {
                     occupancyStartTime = System.currentTimeMillis();
                     currentOccupancy = true;
                 } else {
-                    int neutron =  Integer.parseInt(csvLine[1]) +
+                    int neutron = Integer.parseInt(csvLine[1]) +
                             Integer.parseInt(csvLine[2]) +
                             Integer.parseInt(csvLine[3]) +
                             Integer.parseInt(csvLine[4]);
@@ -299,9 +306,9 @@ public class MessageHandler {
                 }
                 parentSensor.getNeutronOutput().onNewMessage(csvLine, System.currentTimeMillis(), SCAN);
 
-                break;
+            }
 
-            case "GX":
+            case "GX" -> {
                 occupancyEndTime = System.currentTimeMillis();
                 gammaMax = getGammaMax(occupancyGammaBatch);
                 neutronMax = Collections.max(occupancyNeutronBatch);
@@ -335,36 +342,31 @@ public class MessageHandler {
                     parentSensor.getEmlContextualOutput().handleContextualMessage(results);
                     parentSensor.getEmlAnalysisOutput().handleAnalysisMessage(results);
                 }
-                break;
+            }
 
             // -------------------- OTHER STATE
-            case "TC":
-                parentSensor.getTamperOutput().onNewMessage(false);
-                break;
-            case "TT":
-                parentSensor.getTamperOutput().onNewMessage(true);
-                break;
-            case "SP":
-                parentSensor.getSpeedOutput().onNewMessage(csvLine);
-                break;
-            case "SG1":
-                setupGamma1 = csvLine;
-                break;
-            case "SG2":
-                setupGamma2 = csvLine;
-                break;
-            case "SG3":
+            case "TC" -> parentSensor.getTamperOutput().onNewMessage(false);
+
+            case "TT" -> parentSensor.getTamperOutput().onNewMessage(true);
+
+            case "SP" -> parentSensor.getSpeedOutput().onNewMessage(csvLine);
+
+            case "SG1" -> setupGamma1 = csvLine;
+
+            case "SG2"-> setupGamma2 = csvLine;
+
+            case "SG3" -> {
                 parentSensor.getSetupGammaOutput().onNewMessage(setupGamma1, setupGamma2, csvLine);
                 setupGamma1 = new String[]{""};
                 setupGamma2 = new String[]{""};
-                break;
-            case "SN1":
-                setupNeutron1 = csvLine;
-                break;
-            case "SN2":
+            }
+
+            case "SN1" -> setupNeutron1 = csvLine;
+
+            case "SN2" -> {
                 parentSensor.getSetupNeutronOutput().onNewMessage(setupNeutron1, csvLine);
                 setupNeutron1 = new String[]{""};
-                break;
+            }
         }
 
         if (gammaScanRunningSumBatch.size() > 4) {
