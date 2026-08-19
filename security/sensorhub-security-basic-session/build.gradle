@@ -1,0 +1,26 @@
+description = 'Session Basic Authentication'
+ext.details = 'Uses JSESSIONID from cookie to authenticate requests after initial login'
+version = '1.0.0'
+
+dependencies {
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+}
+
+// add info to OSGi manifest
+osgi {
+    manifest {
+        attributes('Bundle-Vendor': 'GeoRobotix Innovative Research')
+        attributes('Bundle-Activator': 'org.sensorhub.impl.security.cookie.Activator')
+    }
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'kalynstricklin'
+            name 'Kalyn Stallings'
+            organization 'GeoRobotix Innovative Research'
+        }
+    }
+}
