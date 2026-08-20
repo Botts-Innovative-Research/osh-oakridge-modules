@@ -10,7 +10,7 @@ dependencies {
 osgi {
     manifest {
         attributes('Bundle-Vendor': 'GeoRobotix Innovative Research')
-        attributes('Bundle-Activator': 'org.sensorhub.impl.security.cookie.Activator')
+        attributes('Bundle-Activator': 'org.sensorhub.impl.security.session.Activator')
     }
 }
 
