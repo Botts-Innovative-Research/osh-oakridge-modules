@@ -18,8 +18,10 @@ package org.sensorhub.impl.security.session;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.concurrent.ConcurrentHashMap;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
+import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
@@ -36,9 +38,12 @@ import org.slf4j.Logger;
 public class BasicSessionAuthenticator extends LoginAuthenticator {
     private static final String AUTH_METHOD = "BASIC+SESSION";
     private static final String LOGOUT_PATH = "/logout";
+    private static final String JSESSIONID_COOKIE = "JSESSIONID";
 
     private final Logger log;
     private final ISecurityManager securityManager;
+
+    private final ConcurrentHashMap<String, Authentication.User> authCache = new ConcurrentHashMap<>();
 
     public BasicSessionAuthenticator(ISecurityManager securityManager, Logger log) {
         this.securityManager = securityManager;
@@ -75,8 +80,16 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
                     HttpSession session = getSession(request, false);
                     if (session != null) {
                         var sessionId = session.getId();
+                        authCache.remove(sessionId);
                         session.invalidate();
                         log.debug("Log out from session @ {}", sessionId);
+                    } else {
+                        // no session handler in scope — clear from cache using cookie value
+                        String cookieId = getSessionIdFromCookie(request);
+                        if (cookieId != null) {
+                            authCache.remove(cookieId);
+                            log.debug("Log out from auth cache @ {}", cookieId);
+                        }
                     }
 
                     var adminUrl = request.getRequestURL().toString().replace(LOGOUT_PATH, "/admin");
@@ -100,6 +113,17 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
                     else
                         return (User) cachedSession;
                 }
+            } else {
+                String cookieId = getSessionIdFromCookie(request);
+                if (cookieId != null) {
+                    Authentication.User cached = authCache.get(cookieId);
+                    if (cached != null) {
+                        if (!_loginService.validate(cached.getUserIdentity()))
+                            authCache.remove(cookieId);
+                        else
+                            return cached;
+                    }
+                }
             }
 
             // check for basic auth credentials
@@ -120,6 +144,7 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
                         session = getSession(request, true);
                         if (session != null) {
                             session.setAttribute(SessionAuthentication.__J_AUTHENTICATED, userAuth);
+                            authCache.put(session.getId(), userAuth);
                             log.debug("Authenticated user '{}', session cached @ {}", username, session.getId());
                         } else {
                             log.debug("Authenticated user '{}' (no session manager available)", username);
@@ -156,6 +181,22 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
             // no SessionHandler in scope (request outside servlet context)
             return null;
         }
+    }
+
+    private String getSessionIdFromCookie(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if (JSESSIONID_COOKIE.equals(cookie.getName())) {
+                    // strip the ".nodeX" worker suffix from the extended ID
+                    // so it matches session.getId()
+                    String value = cookie.getValue();
+                    int dot = value.lastIndexOf('.');
+                    return (dot > 0) ? value.substring(0, dot) : value;
+                }
+            }
+        }
+        return null;
     }
 
 }
