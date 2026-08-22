@@ -18,6 +18,7 @@ package com.botts.impl.service.oscar;
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.service.oscar.purge.DatabasePurger;
+import com.botts.impl.service.oscar.retention.StoragePressureRetention;
 import com.botts.impl.service.oscar.reports.RequestReportControl;
 import com.botts.impl.service.oscar.siteinfo.SiteInfoOutput;
 import com.botts.impl.service.oscar.siteinfo.SitemapDiagramHandler;
@@ -55,6 +56,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
     SpreadsheetHandler spreadsheetHandler;
     VideoRetention videoRetention;
     DatabasePurger databasePurger;
+    StoragePressureRetention storagePressureRetention;
     WebIdResourceHandler webIdResourceHandler;
 
     @Override
@@ -93,6 +95,14 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
         } else {
             videoRetention = null;
             logger.info("No video retention config set.");
+        }
+
+        if (getConfiguration().storagePressureRetentionConfig != null) {
+            storagePressureRetention = new StoragePressureRetention(bucketStore,
+                    getConfiguration().storagePressureRetentionConfig, getLogger());
+        } else {
+            storagePressureRetention = null;
+            logger.info("No storage pressure retention config set.");
         }
 
         system.updateSensorDescription();
@@ -156,6 +166,9 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
 
         if (videoRetention != null)
             videoRetention.start();
+
+        if (storagePressureRetention != null)
+            storagePressureRetention.start();
     }
 
     @Override
@@ -172,6 +185,9 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
 
         if (videoRetention != null)
             videoRetention.stop();
+
+        if (storagePressureRetention != null)
+            storagePressureRetention.stop();
 
         if (webIdResourceHandler != null) {
             bucketService.unregisterObjectHandler(webIdResourceHandler);

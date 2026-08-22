@@ -16,6 +16,7 @@
 package org.sensorhub.impl.security.session;
 
 import java.io.IOException;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 import java.security.SecureRandom;
@@ -24,11 +25,13 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import javax.servlet.ServletException;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
 import javax.security.auth.Subject;
 import org.eclipse.jetty.security.ServerAuthException;
 import org.eclipse.jetty.security.UserAuthentication;
@@ -57,6 +60,7 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
     private final long absoluteTimeoutMillis;
     private final boolean secureCookie;
     private final String sameSite;
+    private final String defaultRedirectPath;
     private final SecureRandom random = new SecureRandom();
     private final Map<String, SessionRecord> sessions = new ConcurrentHashMap<>();
     private volatile long nextPruneAt;
@@ -71,6 +75,8 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
             throw new IllegalArgumentException("SameSite must be Strict, Lax, or None");
         if (config.sameSite.equalsIgnoreCase("None") && !config.secureCookie)
             throw new IllegalArgumentException("SameSite=None requires a secure cookie");
+        if (!isSafeRedirectTarget(config.defaultRedirectPath))
+            throw new IllegalArgumentException("Default redirect path must be a local absolute path");
 
         this.cookieName = config.cookieName;
         this.idleTimeoutMillis = Math.multiplyExact((long) config.idleTimeoutSeconds, 1000L);
@@ -78,6 +84,7 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
         this.secureCookie = config.secureCookie;
         this.sameSite = Character.toUpperCase(config.sameSite.charAt(0))
                 + config.sameSite.substring(1).toLowerCase();
+        this.defaultRedirectPath = config.defaultRedirectPath;
         this.securityManager = securityManager;
         this.log = log;
     }
@@ -129,7 +136,7 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
                 return Authentication.NOT_CHECKED;
 
             if (acceptsHtml(request) && "GET".equalsIgnoreCase(request.getMethod())) {
-                response.sendRedirect(LOGIN_PATH);
+                redirectToLogin(request, response);
                 return Authentication.SEND_CONTINUE;
             }
 
@@ -201,11 +208,16 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
     }
 
     private boolean isLogoutRequest(HttpServletRequest request) {
-        return LOGOUT_PATH.equals(request.getServletPath()) || LOGOUT_PATH.equals(request.getRequestURI());
+        return isRequestPath(request, LOGOUT_PATH);
     }
 
     private boolean isLoginRequest(HttpServletRequest request) {
-        return LOGIN_PATH.equals(request.getServletPath()) || LOGIN_PATH.equals(request.getRequestURI());
+        return isRequestPath(request, LOGIN_PATH);
+    }
+
+    private boolean isRequestPath(HttpServletRequest request, String path) {
+        String contextPath = request.getContextPath() == null ? "" : request.getContextPath();
+        return path.equals(request.getServletPath()) || (contextPath + path).equals(request.getRequestURI());
     }
 
     private boolean acceptsHtml(HttpServletRequest request) {
@@ -214,8 +226,9 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
     }
 
     private void handleLogin(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String redirectTarget = redirectTarget(request.getParameter("continue"));
         if ("GET".equalsIgnoreCase(request.getMethod())) {
-            renderLogin(response, false);
+            renderLogin(response, false, redirectTarget);
             return;
         }
         if (!"POST".equalsIgnoreCase(request.getMethod())) {
@@ -226,21 +239,21 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
         String username = request.getParameter("username");
         String password = request.getParameter("password");
         if (username == null || password == null || username.length() > 256 || password.length() > 4096) {
-            renderLogin(response, true);
+            renderLogin(response, true, redirectTarget);
             return;
         }
 
         UserIdentity identity = login(username, password, request);
         if (identity == null) {
             log.warn("Failed form authentication for user '{}'", username);
-            renderLogin(response, true);
+            renderLogin(response, true, redirectTarget);
             return;
         }
 
         identity = withoutCredentials(username);
         createSession(request, response, username);
         log.debug("Created authentication session for user '{}'", username);
-        response.sendRedirect("/");
+        response.sendRedirect(response.encodeRedirectURL(redirectTarget));
     }
 
     private void logout(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -248,15 +261,30 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
         if (token != null)
             sessions.remove(token);
         expireCookie(response);
+        HttpSession servletSession = request.getSession(false);
+        try {
+            request.logout();
+        } catch (ServletException e) {
+            log.warn("Cannot clear the servlet authentication state during logout", e);
+        }
+        if (servletSession != null) {
+            try {
+                servletSession.invalidate();
+            } catch (IllegalStateException e) {
+                log.debug("Servlet session was already invalidated during logout");
+            }
+        }
 
         if ("GET".equalsIgnoreCase(request.getMethod()))
-            response.sendRedirect("/");
+            response.sendRedirect(LOGIN_PATH);
         else
             response.setStatus(HttpServletResponse.SC_NO_CONTENT);
     }
 
-    private void renderLogin(HttpServletResponse response, boolean failed) throws IOException {
+    private void renderLogin(HttpServletResponse response, boolean failed, String redirectTarget) throws IOException {
         String error = failed ? "<p class=\"error\">Invalid username or password.</p>" : "";
+        String continueInput = "<input type=\"hidden\" name=\"continue\" value=\""
+                + escapeHtml(redirectTarget) + "\">";
         String page = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
                 + "<title>OSCAR sign in</title><style>body{font:16px system-ui,sans-serif;background:#f4f6f8;"
@@ -266,7 +294,7 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
                 + "input,button{font:inherit;padding:.65rem;margin-top:.35rem}button{margin-top:1.5rem;cursor:pointer}"
                 + ".error{color:#a40000}</style></head><body><main><h1>OSCAR</h1><p>Sign in to continue.</p>"
                 + error + "<form method=\"post\" action=\"/login\" autocomplete=\"off\">"
-                + "<label>Username<input name=\"username\" required maxlength=\"256\" autofocus autocomplete=\"off\"></label>"
+                + continueInput + "<label>Username<input name=\"username\" required maxlength=\"256\" autofocus autocomplete=\"off\"></label>"
                 + "<label>Password<input name=\"password\" type=\"password\" required maxlength=\"4096\" autocomplete=\"off\"></label>"
                 + "<button type=\"submit\">Sign in</button></form></main></body></html>";
         byte[] body = page.getBytes(StandardCharsets.UTF_8);
@@ -277,6 +305,45 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
         response.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
         response.setHeader("Referrer-Policy", "no-referrer");
         response.getOutputStream().write(body);
+    }
+
+    private void redirectToLogin(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String target = request.getRequestURI();
+        if (request.getQueryString() != null)
+            target += "?" + request.getQueryString();
+        String loginUrl = LOGIN_PATH + "?continue="
+                + URLEncoder.encode(redirectTarget(target), StandardCharsets.UTF_8.name());
+        response.sendRedirect(response.encodeRedirectURL(loginUrl));
+    }
+
+    private String redirectTarget(String candidate) {
+        return isSafeRedirectTarget(candidate) ? candidate : defaultRedirectPath;
+    }
+
+    private static boolean isSafeRedirectTarget(String target) {
+        if (target == null || target.isEmpty() || !target.startsWith("/") || target.startsWith("//")
+                || target.indexOf('\\') >= 0)
+            return false;
+        for (int i = 0; i < target.length(); i++) {
+            char c = target.charAt(i);
+            if (c < 0x20 || c == 0x7f)
+                return false;
+        }
+        return true;
+    }
+
+    private static String escapeHtml(String value) {
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            switch (value.charAt(i)) {
+                case '&': escaped.append("&amp;"); break;
+                case '"': escaped.append("&quot;"); break;
+                case '<': escaped.append("&lt;"); break;
+                case '>': escaped.append("&gt;"); break;
+                default: escaped.append(value.charAt(i));
+            }
+        }
+        return escaped.toString();
     }
 
     private String readSessionCookie(HttpServletRequest request) {

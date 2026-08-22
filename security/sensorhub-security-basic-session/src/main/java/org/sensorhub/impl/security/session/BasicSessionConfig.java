@@ -35,4 +35,7 @@ public class BasicSessionConfig extends SecurityModuleConfig {
 
     @DisplayInfo(label="SameSite policy", desc="Use Strict for the local node. None permits credentialed cross-site access to an external node and requires HTTPS.")
     public String sameSite = "Strict";
+
+    @DisplayInfo(label="Default redirect path", desc="Local path used after login when there is no saved destination.")
+    public String defaultRedirectPath = "/";
 }

@@ -16,6 +16,7 @@
 package com.botts.impl.service.oscar;
 
 import com.botts.impl.service.oscar.siteinfo.SiteDiagramConfig;
+import com.botts.impl.service.oscar.retention.StoragePressureRetentionConfig;
 import com.botts.impl.service.oscar.video.VideoRetentionConfig;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.database.IObsSystemDatabaseModule;
@@ -28,6 +29,8 @@ public class OSCARServiceConfig extends ServiceConfig {
     public SiteDiagramConfig siteDiagramConfig;
 
     public VideoRetentionConfig videoRetentionConfig;
+
+    public StoragePressureRetentionConfig storagePressureRetentionConfig;
 
     @DisplayInfo.Required
     @DisplayInfo(label = "Node ID", desc = "Unique identifier of this OSCAR node")
