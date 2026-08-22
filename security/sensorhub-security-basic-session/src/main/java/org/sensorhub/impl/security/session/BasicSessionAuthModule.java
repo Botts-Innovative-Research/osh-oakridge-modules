@@ -29,6 +29,7 @@ public class BasicSessionAuthModule extends AbstractModule<BasicSessionConfig>
     {
 
         authenticator = new BasicSessionAuthenticator(
+                config,
                 getParentHub().getSecurityManager(),
                 getLogger()
         );
@@ -40,6 +41,11 @@ public class BasicSessionAuthModule extends AbstractModule<BasicSessionConfig>
     @Override
     protected void doStop() throws SensorHubException
     {
+        if (authenticator != null) {
+            getParentHub().getSecurityManager().unregisterAuthenticator(authenticator);
+            if (authenticator instanceof BasicSessionAuthenticator)
+                ((BasicSessionAuthenticator) authenticator).close();
+        }
         this.authenticator = null;
     }
 
