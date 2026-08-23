@@ -50,6 +50,7 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
     private static final String AUTH_METHOD = "BASIC+SESSION";
     private static final String LOGIN_PATH = "/login";
     private static final String LOGOUT_PATH = "/logout";
+    private static final String SESSION_PATH = "/session";
     private static final int MAX_AUTH_HEADER_LENGTH = 16 * 1024;
     private static final long PRUNE_INTERVAL_MILLIS = 60_000L;
 
@@ -125,8 +126,13 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
             }
 
             Authentication sessionAuthentication = authenticateSession(request, response);
-            if (sessionAuthentication != null)
+            if (sessionAuthentication != null) {
+                if (isSessionRequest(request)) {
+                    renderSession(response, sessionUsername(request));
+                    return Authentication.SEND_CONTINUE;
+                }
                 return sessionAuthentication;
+            }
 
             Authentication basicAuthentication = authenticateBasic(request, response);
             if (basicAuthentication != null)
@@ -215,6 +221,10 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
         return isRequestPath(request, LOGIN_PATH);
     }
 
+    private boolean isSessionRequest(HttpServletRequest request) {
+        return isRequestPath(request, SESSION_PATH);
+    }
+
     private boolean isRequestPath(HttpServletRequest request, String path) {
         String contextPath = request.getContextPath() == null ? "" : request.getContextPath();
         return path.equals(request.getServletPath()) || (contextPath + path).equals(request.getRequestURI());
@@ -293,7 +303,7 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
                 + "label,input,button{display:block;width:100%;box-sizing:border-box}label{margin-top:1rem}"
                 + "input,button{font:inherit;padding:.65rem;margin-top:.35rem}button{margin-top:1.5rem;cursor:pointer}"
                 + ".error{color:#a40000}</style></head><body><main><h1>OSCAR</h1><p>Sign in to continue.</p>"
-                + error + "<form method=\"post\" action=\"/login\" autocomplete=\"off\">"
+                + error + "<form method=\"post\" autocomplete=\"off\">"
                 + continueInput + "<label>Username<input name=\"username\" required maxlength=\"256\" autofocus autocomplete=\"off\"></label>"
                 + "<label>Password<input name=\"password\" type=\"password\" required maxlength=\"4096\" autocomplete=\"off\"></label>"
                 + "<button type=\"submit\">Sign in</button></form></main></body></html>";
@@ -302,9 +312,29 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
         response.setContentType("text/html; charset=UTF-8");
         response.setContentLength(body.length);
         response.setHeader("Cache-Control", "no-store");
-        response.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+        response.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'");
         response.setHeader("Referrer-Policy", "no-referrer");
         response.getOutputStream().write(body);
+    }
+
+    private void renderSession(HttpServletResponse response, String username) throws IOException {
+        if (username == null) {
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
+        }
+        byte[] body = ("{\"username\":\"" + escapeJson(username) + "\"}")
+                .getBytes(StandardCharsets.UTF_8);
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType("application/json; charset=UTF-8");
+        response.setContentLength(body.length);
+        response.setHeader("Cache-Control", "no-store");
+        response.getOutputStream().write(body);
+    }
+
+    private String sessionUsername(HttpServletRequest request) {
+        String token = readSessionCookie(request);
+        SessionRecord session = token == null ? null : sessions.get(token);
+        return session == null ? null : session.username;
     }
 
     private void redirectToLogin(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -341,6 +371,28 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
                 case '<': escaped.append("&lt;"); break;
                 case '>': escaped.append("&gt;"); break;
                 default: escaped.append(value.charAt(i));
+            }
+        }
+        return escaped.toString();
+    }
+
+    private static String escapeJson(String value) {
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '"': escaped.append("\\\""); break;
+                case '\\': escaped.append("\\\\"); break;
+                case '\b': escaped.append("\\b"); break;
+                case '\f': escaped.append("\\f"); break;
+                case '\n': escaped.append("\\n"); break;
+                case '\r': escaped.append("\\r"); break;
+                case '\t': escaped.append("\\t"); break;
+                default:
+                    if (c < 0x20)
+                        escaped.append(String.format("\\u%04x", (int) c));
+                    else
+                        escaped.append(c);
             }
         }
         return escaped.toString();

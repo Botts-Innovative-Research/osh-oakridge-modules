@@ -25,3 +25,7 @@ Some browsers or site policies block third-party cookies even with `SameSite=Non
 ## Logout
 
 `GET /logout` invalidates the server-side session, expires the cookie, and redirects to `/`. Non-GET logout requests return `204 No Content`.
+
+## Current user
+
+`GET /session` returns the current username as JSON for authenticated same-origin user interfaces. It never returns credentials or the opaque session token and is marked `no-store`.
