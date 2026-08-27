@@ -107,7 +107,6 @@ public class VideoRetention {
         MpegTsProcessor videoInput = new MpegTsProcessor(originalMp4);
         VideoKeyframeDecimator videoOutput = null;
         boolean success = true;
-        final AtomicBoolean decimateFinished = new AtomicBoolean(false);
 
         videoInput.setInjectExtradata(false);
         videoInput.openStream();
@@ -120,33 +119,28 @@ public class VideoRetention {
         videoOutput = new VideoKeyframeDecimator(decimatedMp4, frameCount, stream);
         videoInput.addVideoDataBufferListener(videoOutput);
 
-        long endTime;
         long maxDuration;
         if (stream.duration() > 0 && stream.time_base() != null && !stream.time_base().isNull()) {
             maxDuration = (long) (stream.duration() * (double) stream.time_base().num() / stream.time_base().den() * 100_000) * MAX_PROCESS_TIME_MULTIPLIER;
-            endTime = System.currentTimeMillis() + maxDuration;
         } else {
             maxDuration = DEFAULT_VIDEO_DURATION_MS * MAX_PROCESS_TIME_MULTIPLIER;
-            endTime = System.currentTimeMillis() + maxDuration;
         }
-
-        // Decimated file will be written/closed automatically.
-        videoOutput.setFileCloseCallback(() -> decimateFinished.set(true));
 
         // Process video. Proceed after the decimated file is written.
         try {
             videoInput.processStream();
             videoInput.join(maxDuration);
+            boolean isAlive = videoInput.isAlive();
             videoInput.stopProcessingStream();
-            while (!decimateFinished.get() && checkTimeDuringDecimation(endTime) && checkInterruptedDuringDecimation()) {
-                Thread.onSpinWait();
+            if (isAlive) {
+                throw new TimeoutException("Video decimation timeout on " + fileName + " after  " + maxDuration + " ms.");
             }
         } catch (InterruptedException e) {
-            logger.warn("Interrupted while waiting for {} video processing to finish. Writing output early.", fileName, e);
+            logger.error("Interrupted while waiting for {} video processing to finish.", fileName, e);
             success = false;
             Thread.currentThread().interrupt();
         } catch (Exception e) {
-            logger.warn("Exception while waiting for {} video processing to finish. Writing output early.", fileName, e);
+            logger.error("Exception while waiting for {} video processing to finish.", fileName, e);
             success = false;
         } finally {
             videoInput.closeStream();
@@ -165,20 +159,6 @@ public class VideoRetention {
         var originalFile = Paths.get(originalMp4).toFile();
         originalFile.delete();
         decimatedFile.renameTo(originalFile);
-        return true;
-    }
-
-    private static boolean checkInterruptedDuringDecimation() throws InterruptedException {
-        if (Thread.currentThread().isInterrupted()) {
-            throw new InterruptedException("Interrupted during video decimation");
-        }
-        return true;
-    }
-
-    private static boolean checkTimeDuringDecimation(long maxTime) throws TimeoutException {
-        if (System.currentTimeMillis() > maxTime) {
-            throw new TimeoutException("Timeout waiting for video decimation");
-        }
         return true;
     }
 }

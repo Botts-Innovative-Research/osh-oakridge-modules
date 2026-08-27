@@ -16,6 +16,7 @@ import org.sensorhub.impl.sensor.ffmpeg.controls.FileControl;
 import org.sensorhub.impl.sensor.ffmpeg.controls.HLSControl;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.Video;
+import org.sensorhub.mpegts.DeliveryMode;
 import org.sensorhub.mpegts.MpegTsProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -237,7 +238,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 
     protected void createHLSControl() {
         try {
-            var fileOutput = new FileOutput.LiveOutput<>(this, "HLSControlOutput");
+            var fileOutput = new FileOutput<>(this, "HLSControlOutput", DeliveryMode.LIVE_ONLY);
             hlsControl = new HLSControl<>(this, fileOutput);
             //mpegTsProcessor.addVideoDataBufferListener(hlsControl.getFileOutput());
 
@@ -251,7 +252,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 
     protected void createFileControl() {
         try {
-            var fileOutput = new FileOutput.MP4Output<>(this, "FileControlOutput");
+            var fileOutput = new FileOutput<>(this, "FileControlOutput", DeliveryMode.BUFFERED);
             fileControl = new FileControl<>(this, fileOutput);
             //mpegTsProcessor.addVideoDataBufferListener(fileControl.getFileOutput());
 

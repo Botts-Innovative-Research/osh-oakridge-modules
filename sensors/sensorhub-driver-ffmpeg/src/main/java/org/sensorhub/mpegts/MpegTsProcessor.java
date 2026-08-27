@@ -29,7 +29,6 @@ import org.bytedeco.javacpp.PointerPointer;
 import org.eclipse.jetty.util.BlockingArrayQueue;
 import org.sensorhub.impl.process.video.transcoder.coders.Decoder;
 import org.sensorhub.impl.process.video.transcoder.coders.Encoder;
-import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -127,6 +126,41 @@ public class MpegTsProcessor extends Thread {
         }
     }
 
+    /**
+     * A registered listener together with everything needed to dispatch to it: the delivery mode
+     * it asked for, and the executor its callbacks run on. A null executor means the listener is
+     * invoked inline on the stream processing thread.
+     * <p>
+     * Keeping the executor here rather than in a side map means it can never go missing while a
+     * packet is being dispatched to the listener it belongs to.
+     */
+    private record Subscription(DataBufferListener listener, DeliveryMode mode, ExecutorService executor) {
+
+        void deliver(DataBufferRecord record) {
+            if (executor == null) {
+                listener.onDataBuffer(record);
+            } else {
+                executor.submit(() -> listener.onDataBuffer(record));
+            }
+        }
+
+        void shutdown() {
+            if (executor != null) {
+                executor.shutdownNow();
+            }
+        }
+    }
+
+    /**
+     * Dispatch targets, pre-built so the per-packet path never allocates a set.
+     */
+    private static final Set<DeliveryMode> ALL_MODES =
+            Collections.unmodifiableSet(EnumSet.allOf(DeliveryMode.class));
+    private static final Set<DeliveryMode> LIVE_MODES =
+            Collections.unmodifiableSet(EnumSet.of(DeliveryMode.LIVE_ONLY));
+    private static final Set<DeliveryMode> BUFFERED_MODES =
+            Collections.unmodifiableSet(EnumSet.of(DeliveryMode.BUFFERED));
+
     boolean injectExtradata = true;
 
     protected final Object contextLock = new Object();
@@ -160,9 +194,13 @@ public class MpegTsProcessor extends Thread {
     private int videoStreamId = INVALID_STREAM_ID;
 
     /**
-     * Listener for video buffers extracted from the transport stream
+     * Listeners for video buffers extracted from the transport stream, each paired with the
+     * delivery mode it registered under and the executor its callbacks run on.
+     * <p>
+     * Copy-on-write because this is read once per demuxed packet and written only when the stream
+     * starts or stops, which keeps the dispatch path free of locks and allocations.
      */
-    private final Map<DataBufferListener, ExecutorService> videoDataBufferListeners = Collections.synchronizedMap(new HashMap<>());
+    private final CopyOnWriteArrayList<Subscription> videoSubscriptions = new CopyOnWriteArrayList<>();
 
     /**
      * Flag indicating if processing of the transport stream should be terminated
@@ -577,54 +615,99 @@ public class MpegTsProcessor extends Thread {
         addVideoDataBufferListener(videoDataBufferListener);
     }
 
+    /**
+     * Registers a listener to be called back on its own thread, under the delivery mode it
+     * reports from {@link DataBufferListener#getDeliveryMode()}.
+     *
+     * @param videoDataBufferListener the listener to invoke when a video buffer is retrieved from
+     *                                the transport stream
+     *
+     * @throws NullPointerException if the data buffer listener is null
+     */
     public void addVideoDataBufferListener(DataBufferListener videoDataBufferListener) throws NullPointerException {
-        synchronized (videoDataBufferListeners) {
-            if (null == videoDataBufferListener) {
+        addVideoDataBufferListener(videoDataBufferListener, true);
+    }
 
-                throw new NullPointerException("Attempt to set null videoStreamPacketListener");
-            }
+    /**
+     * Registers a listener under the delivery mode it reports from
+     * {@link DataBufferListener#getDeliveryMode()}.
+     * <p>
+     * Registering a listener that is already registered replaces its existing subscription.
+     *
+     * @param videoDataBufferListener the listener to invoke when a video buffer is retrieved from
+     *                                the transport stream
+     * @param async true to call the listener back on a dedicated thread, false to call it inline
+     *              on the stream processing thread. Inline listeners must return promptly, since
+     *              they hold up demuxing for everyone.
+     *
+     * @throws NullPointerException if the data buffer listener is null
+     */
+    public void addVideoDataBufferListener(DataBufferListener videoDataBufferListener, boolean async) throws NullPointerException {
+        if (null == videoDataBufferListener) {
 
-            this.videoDataBufferListeners.put(videoDataBufferListener, Executors.newSingleThreadExecutor(new ListenerThreadFactory(
-                    WORKER_THREAD_NAME, videoDataBufferListener.getName()
-            )));
+            throw new NullPointerException("Attempt to set null videoStreamPacketListener");
         }
+
+        removeVideoDataBufferListener(videoDataBufferListener);
+
+        ExecutorService executor = async
+                ? Executors.newSingleThreadExecutor(new ListenerThreadFactory(
+                        WORKER_THREAD_NAME, videoDataBufferListener.getName()))
+                : null;
+
+        videoSubscriptions.add(new Subscription(
+                videoDataBufferListener, videoDataBufferListener.getDeliveryMode(), executor));
     }
 
     public Set<DataBufferListener> getVideoDataBufferListeners() {
-        return videoDataBufferListeners.keySet();
+        Set<DataBufferListener> out = new HashSet<>();
+        for (var subscription : videoSubscriptions) {
+            out.add(subscription.listener());
+        }
+        return out;
     }
 
     public void clearVideoDataBufferListeners() {
-        synchronized (videoDataBufferListeners) {
-            this.videoDataBufferListeners.clear();
+        for (var subscription : videoSubscriptions) {
+            subscription.shutdown();
         }
+        videoSubscriptions.clear();
     }
 
-    public void removeVideoDataBufferListener(DataBufferListener videoDataBufferListener) throws NullPointerException {
-        synchronized (videoDataBufferListeners) {
-            var executor = this.videoDataBufferListeners.remove(videoDataBufferListener);
-            executor.shutdownNow();
-        }
-    }
-
-    protected void notifyVideoDataBufferListeners(DataBufferRecord dataRecord, DataBufferListener... listeners) {
-        var dataClone = dataRecord.clone();
-        for (var listener : listeners) {
-            if (listener.isWriting())
-                videoDataBufferListeners.get(listener).submit(() -> listener.onDataBuffer(dataClone));
-        }
-    }
-
-    public <T extends DataBufferListener> List<T> getVideoDataBufferListeners(Class<T> dataBufferListenerType) {
-        List<T> out = new ArrayList<>();
-        synchronized (videoDataBufferListeners) {
-            for (var listener : videoDataBufferListeners.keySet()) {
-                if (dataBufferListenerType.isInstance(listener)) {
-                    out.add((T) listener);
-                }
+    /**
+     * Unregisters a listener and shuts down its callback thread. Removing a listener that was
+     * never registered is a no-op.
+     */
+    public void removeVideoDataBufferListener(DataBufferListener videoDataBufferListener) {
+        videoSubscriptions.removeIf(subscription -> {
+            if (subscription.listener() != videoDataBufferListener) {
+                return false;
             }
+            subscription.shutdown();
+            return true;
+        });
+    }
+
+    /**
+     * Hands a record to every registered listener that asked for one of the given delivery modes
+     * and is currently writing.
+     * <p>
+     * The record is cloned once and shared across the matching listeners, which only read it.
+     *
+     * @param dataRecord the record to deliver
+     * @param targetModes the delivery modes to deliver to
+     */
+    protected void notifyVideoDataBufferListeners(DataBufferRecord dataRecord, Set<DeliveryMode> targetModes) {
+        DataBufferRecord dataClone = null;
+        for (var subscription : videoSubscriptions) {
+            if (!targetModes.contains(subscription.mode()) || !subscription.listener().isWriting()) {
+                continue;
+            }
+            if (dataClone == null) {
+                dataClone = dataRecord.clone();
+            }
+            subscription.deliver(dataClone);
         }
-        return out;
     }
 
     /**
@@ -668,14 +751,24 @@ public class MpegTsProcessor extends Thread {
         }
     }
 
+    /**
+     * @return true if any registered listener, in any delivery mode, is currently writing
+     */
     public boolean hasWritingListener() {
-        return hasWritingListener(DataBufferListener.class);
+        for (var subscription : videoSubscriptions) {
+            if (subscription.listener().isWriting()) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    public boolean hasWritingListener(Class<? extends DataBufferListener> listenerType) {
-        var listeners = getVideoDataBufferListeners(listenerType);
-        for (DataBufferListener listener : listeners) {
-            if (listener.isWriting()) {
+    /**
+     * @return true if any listener registered under the given delivery mode is currently writing
+     */
+    public boolean hasWritingListener(DeliveryMode mode) {
+        for (var subscription : videoSubscriptions) {
+            if (subscription.mode() == mode && subscription.listener().isWriting()) {
                 return true;
             }
         }
@@ -697,8 +790,7 @@ public class MpegTsProcessor extends Thread {
         shutdownExecutors();
     }
 
-    private void submitPacketToListeners(AVPacket avPacket, Class<? extends DataBufferListener> listenerType) {
-        var listeners = getVideoDataBufferListeners(listenerType);
+    private void submitPacketToListeners(AVPacket avPacket, Set<DeliveryMode> targetModes) {
 
         boolean isKeyFrame = (avPacket.flags() & avcodec.AV_PKT_FLAG_KEY) != 0;
 
@@ -706,16 +798,17 @@ public class MpegTsProcessor extends Thread {
         byte[] dataBuffer = new byte[avPacket.size()];
         avPacket.data().get(dataBuffer);
 
-        // Pass data buffer to interested listeners
+        // Prepend the SPS/PPS header to key frames so each one can be decoded standalone
         if (isKeyFrame && spsPpsHeader != null) {
             byte[] combined = new byte[spsPpsHeader.length + dataBuffer.length];
             System.arraycopy(spsPpsHeader, 0, combined, 0, spsPpsHeader.length);
             System.arraycopy(dataBuffer, 0, combined, spsPpsHeader.length, dataBuffer.length);
-
-            notifyVideoDataBufferListeners(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, combined, isKeyFrame), listeners.toArray(DataBufferListener[]::new));
-        } else {
-            notifyVideoDataBufferListeners(new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer, isKeyFrame), listeners.toArray(DataBufferListener[]::new));
+            dataBuffer = combined;
         }
+
+        // Pass data buffer to interested listeners
+        notifyVideoDataBufferListeners(
+                new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer, isKeyFrame), targetModes);
     }
 
     private synchronized void submitFrameQueueToListenersAsync() {
@@ -725,8 +818,8 @@ public class MpegTsProcessor extends Thread {
         } else if (fileFrameQueue == null || fileFrameQueue.isEmpty()) {
             logger.debug("No frame queue to submit to listeners");
             return;
-        } else if (!this.hasWritingListener(FileOutput.MP4Output.class)) {
-            logger.debug("No listeners writing to MP4 file");
+        } else if (!(this.hasWritingListener(DeliveryMode.BUFFERED))) {
+            logger.debug("No listeners waiting on the frame buffer");
             isSubmittingFrameQueue.set(false);
             return;
         }
@@ -738,7 +831,7 @@ public class MpegTsProcessor extends Thread {
             for (AVPacket avPacket : fileFrameQueue) {
                 if (!isSubmittingFrameQueue.get())
                     break;
-                submitPacketToListeners(avPacket, FileOutput.MP4Output.class);
+                submitPacketToListeners(avPacket, BUFFERED_MODES);
                 av_packet_free(avPacket);
             }
             isSubmittingFrameQueue.set(false);
@@ -771,10 +864,7 @@ public class MpegTsProcessor extends Thread {
             frameQueueSubmitter = null;
         }
 
-        for (var executor : videoDataBufferListeners.values()) {
-            executor.shutdownNow();
-        }
-        videoDataBufferListeners.clear();
+        clearVideoDataBufferListeners();
 
         if (fileFrameQueue != null) {
             for (AVPacket avPacket : fileFrameQueue) {
@@ -824,7 +914,6 @@ public class MpegTsProcessor extends Thread {
         while (readPacket(avPacket)) {
             // Discard the frame if no listeners are writing and we're not writing to a frame buffer
             boolean isWriting = hasWritingListener();
-            //boolean isWritingFile = hasWritingListener(FileOutput.MP4Output.class);
             boolean skipProcessing = !isWriting && fileFrameQueue == null;
 
             if (skipProcessing) {
@@ -887,10 +976,11 @@ public class MpegTsProcessor extends Thread {
 
                 if (isWriting) {
                     if (fileFrameQueue == null || fileFrameQueue.isEmpty()) {
-                        submitPacketToListeners(avPacket, DataBufferListener.class);
+                        submitPacketToListeners(avPacket, ALL_MODES);
                     } else {
-                        // Submit separately to frame buffer and live output. (Only want buffer for mp4 output)
-                        submitPacketToListeners(avPacket, FileOutput.LiveOutput.class);
+                        // A frame buffer replay is pending, so BUFFERED listeners get this packet
+                        // through the replay rather than directly.
+                        submitPacketToListeners(avPacket, LIVE_MODES);
                         submitPacketToFrameQueue(avPacket);
                         // Only needs to be called once, but won't hurt to call on every iteration.
                         submitFrameQueueToListenersAsync();
