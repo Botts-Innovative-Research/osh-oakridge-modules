@@ -125,7 +125,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
         if (database == null)
             database = getParentHub().getDatabaseRegistry().getFederatedDatabase();
 
-        statsOutput = new StatisticsOutput(system, database, config.statsFrequencyMinutes);
+        statsOutput = new StatisticsOutput(system, database, getParentHub().getIdEncoders().getObsIdEncoder(), config.statsFrequencyMinutes);
         system.addOutput(statsOutput, false);
     }
 
