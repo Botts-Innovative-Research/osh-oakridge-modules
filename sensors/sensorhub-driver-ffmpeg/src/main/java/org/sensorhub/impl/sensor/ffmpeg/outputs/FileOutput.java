@@ -25,6 +25,7 @@ import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.util.ByteArraySeekableBuffer;
 import org.sensorhub.mpegts.DataBufferListener;
 import org.sensorhub.mpegts.DataBufferRecord;
+import org.sensorhub.mpegts.DeliveryMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.swe.SWEHelper;
@@ -38,18 +39,6 @@ import static org.bytedeco.ffmpeg.global.avutil.*;
 
 
 public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractSensorOutput<FFMPEGSensorBase<FFMPEGConfigType>> implements DataBufferListener {
-
-    public static class MP4Output<FFMPEGConfigType extends FFMPEGConfig> extends FileOutput<FFMPEGConfigType> {
-        public MP4Output(FFMPEGSensorBase<FFMPEGConfigType> parentSensor, String name) throws SensorHubException {
-            super(parentSensor, name);
-        }
-    }
-
-    public static class LiveOutput<FFMPEGConfigType extends FFMPEGConfig> extends FileOutput<FFMPEGConfigType> {
-        public LiveOutput(FFMPEGSensorBase<FFMPEGConfigType> parentSensor, String name) throws SensorHubException {
-            super(parentSensor, name);
-        }
-    }
 
     public String outputName = "FileNameOutput";
     final DataComponent outputStruct;
@@ -78,10 +67,25 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     ByteArraySeekableBuffer seekableBuffer;
     String fileName;
     private boolean isLive = false;
+    private final DeliveryMode deliveryMode;
 
+    /**
+     * Creates an output that receives packets as they are demuxed.
+     */
     public FileOutput(FFMPEGSensorBase<FFMPEGConfigType> parentSensor, String name) throws SensorHubException {
+        this(parentSensor, name, DeliveryMode.LIVE_ONLY);
+    }
+
+    /**
+     * @param deliveryMode how this output wants packets delivered. Use
+     *                     {@link DeliveryMode#BUFFERED} for recordings that should include the
+     *                     pre-roll frames leading up to the record command, and
+     *                     {@link DeliveryMode#LIVE_ONLY} for anything that has to stay current.
+     */
+    public FileOutput(FFMPEGSensorBase<FFMPEGConfigType> parentSensor, String name, DeliveryMode deliveryMode) throws SensorHubException {
         super(name, parentSensor);
         this.outputName = name;
+        this.deliveryMode = deliveryMode;
         var helper = new SWEHelper();
 
         outputStruct = helper.createText()
@@ -95,6 +99,11 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     @Override
     public boolean isWriting() {
         return doFileWrite.get();
+    }
+
+    @Override
+    public DeliveryMode getDeliveryMode() {
+        return deliveryMode;
     }
 
     @Override

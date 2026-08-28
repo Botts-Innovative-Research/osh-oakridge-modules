@@ -42,11 +42,11 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
     DataRecord resultData;
     String fileName = "";
     Path filePath = Paths.get(VIDEO_BUCKET);
-    private final FileOutput.LiveOutput fileOutput;
+    private final FileOutput<?> fileOutput;
 
     private static final Logger logger = LoggerFactory.getLogger(HLSControl.class);
 
-    public HLSControl(FFMPEGSensorBase<FFmpegConfigType> sensor, FileOutput.LiveOutput<?> fileOutput) throws DataStoreException {
+    public HLSControl(FFMPEGSensorBase<FFmpegConfigType> sensor, FileOutput<?> fileOutput) throws DataStoreException {
         super(SENSOR_CONTROL_NAME, sensor);
 
         this.fileOutput = fileOutput;

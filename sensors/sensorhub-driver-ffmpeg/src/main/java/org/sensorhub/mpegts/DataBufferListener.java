@@ -27,4 +27,14 @@ public interface DataBufferListener {
     public boolean isWriting();
 
     public String getName();
+
+    /**
+     * Declares how this listener wants packets delivered to it. Listeners that just want packets
+     * as they arrive can leave this alone.
+     *
+     * @return the delivery mode to register this listener under
+     */
+    default DeliveryMode getDeliveryMode() {
+        return DeliveryMode.LIVE_ONLY;
+    }
 }

@@ -10,11 +10,15 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Paths;
 import java.time.temporal.TemporalAmount;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class VideoRetention {
 
     private static final Logger logger = LoggerFactory.getLogger(VideoRetention.class);
+    private static final int MAX_PROCESS_TIME_MULTIPLIER = 5;
+    private static final int DEFAULT_VIDEO_DURATION_MS = 100_000;
+
     final IBucketStore bucketStore;
     volatile boolean hasStarted = false;
     int frameCount;
@@ -102,54 +106,51 @@ public class VideoRetention {
 
         MpegTsProcessor videoInput = new MpegTsProcessor(originalMp4);
         VideoKeyframeDecimator videoOutput = null;
-        AtomicBoolean inputClosed = new AtomicBoolean(false);
-        boolean success = false;
+        boolean success = true;
+
+        videoInput.setInjectExtradata(false);
+        videoInput.openStream();
+        videoInput.queryEmbeddedStreams();
+        var stream = videoInput.getAvStream();
+        if (stream == null || stream.avg_frame_rate() == null || stream.avg_frame_rate().num() < stream.avg_frame_rate().den()) {
+            return false; // if fps < 1, assume this file has already been decimated and we lost track somehow
+        }
+
+        videoOutput = new VideoKeyframeDecimator(decimatedMp4, frameCount, stream);
+        videoInput.addVideoDataBufferListener(videoOutput);
+
+        long maxDuration;
+        if (stream.duration() > 0 && stream.time_base() != null && !stream.time_base().isNull()) {
+            maxDuration = (long) (stream.duration() * (double) stream.time_base().num() / stream.time_base().den() * 100_000) * MAX_PROCESS_TIME_MULTIPLIER;
+        } else {
+            maxDuration = DEFAULT_VIDEO_DURATION_MS * MAX_PROCESS_TIME_MULTIPLIER;
+        }
+
+        // Process video. Proceed after the decimated file is written.
         try {
-            videoInput.setInjectExtradata(false);
-            videoInput.openStream();
-            videoInput.queryEmbeddedStreams();
-            var stream = videoInput.getAvStream();
-            if (stream == null || stream.avg_frame_rate() == null || stream.avg_frame_rate().num() < stream.avg_frame_rate().den()) {
-                return false; // if fps < 1, assume this file has already been decimated and we lost track somehow
-            }
-
-            videoOutput = new VideoKeyframeDecimator(decimatedMp4, frameCount, stream);
-            videoInput.addVideoDataBufferListener(videoOutput);
-
-            videoOutput.setFileCloseCallback(() -> {
-                if (inputClosed.compareAndSet(false, true)) {
-                    videoInput.stopProcessingStream();
-                    videoInput.closeStream();
-                }
-            });
-
             videoInput.processStream();
-
-            try {
-                videoInput.join();
-            } catch (InterruptedException e) {
-                logger.warn("Interrupted while waiting for video processing to finish. Writing output early, stopping thread.", e);
-                videoOutput.closeFile();
-                Thread.currentThread().interrupt();
+            videoInput.join(maxDuration);
+            boolean isAlive = videoInput.isAlive();
+            videoInput.stopProcessingStream();
+            if (isAlive) {
+                throw new TimeoutException("Video decimation timeout on " + fileName + " after  " + maxDuration + " ms.");
             }
-            success = true;
-        } catch (Throwable t) {
-            logger.error("Failed to decimate video file {}; skipping", originalMp4, t);
-            return false;
+        } catch (InterruptedException e) {
+            logger.error("Interrupted while waiting for {} video processing to finish.", fileName, e);
+            success = false;
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            logger.error("Exception while waiting for {} video processing to finish.", fileName, e);
+            success = false;
         } finally {
-            if (inputClosed.compareAndSet(false, true)) {
-                try {
-                    videoInput.stopProcessingStream();
-                    videoInput.closeStream();
-                } catch (Throwable t) {
-                    logger.warn("Failed to close video input for {}", originalMp4, t);
-                }
-            }
-            if (!success) {
-                var partial = Paths.get(decimatedMp4).toFile();
-                if (partial.exists() && !partial.delete()) {
-                    logger.warn("Failed to delete partial decimated file {}", decimatedMp4);
-                }
+            videoInput.closeStream();
+            videoOutput.closeFile();
+        }
+
+        if (!success) {
+            var partial = Paths.get(decimatedMp4).toFile();
+            if (partial.exists() && !partial.delete()) {
+                logger.warn("Failed to delete partial decimated file {}", decimatedMp4);
             }
         }
 
