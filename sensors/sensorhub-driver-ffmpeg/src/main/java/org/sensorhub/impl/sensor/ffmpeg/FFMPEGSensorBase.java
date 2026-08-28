@@ -291,6 +291,9 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 	            mpegTsProcessor = new MpegTsProcessor(config.connection.transportStreamPath, config.connection.fps, config.connection.loop, config.connection.useTCP);
 	        } else if ((null != config.connection.connectionString) && (!config.connection.connectionString.isBlank())) {
 	            mpegTsProcessor = new MpegTsProcessor(config.connection.connectionString, config.connection.fps, false, config.connection.useTCP);
+	            // Network source: re-establish the session after read errors instead of
+	            // letting the demux thread die while the module still reports connected.
+	            mpegTsProcessor.setReconnectOnError(true);
 	        } else {
 	        	throw new SensorHubException("Either the input file path or the connection string must be set");
 	        }

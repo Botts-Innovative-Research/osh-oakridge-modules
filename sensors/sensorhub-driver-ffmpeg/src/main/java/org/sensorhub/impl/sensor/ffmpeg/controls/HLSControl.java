@@ -56,9 +56,17 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
         bucketService = sensor.getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
         bucketStore = bucketService.getBucketStore();
 
-        if (hlsHandler.get() == null) {
-            hlsHandler.set(new HlsStreamHandler(bucketService));
-            bucketService.registerObjectHandler(hlsHandler.get());
+        // Lane modules init in parallel, and a plain check-then-set here used to create
+        // and register one handler per lane. Requests were then served by the first
+        // registered instance while controls registered with the last one, so the
+        // inactivity watchdog could never match a stale stream to its control.
+        // Create and register exactly one handler.
+        synchronized (HLSControl.class) {
+            if (hlsHandler.get() == null) {
+                var handler = new HlsStreamHandler(bucketService);
+                hlsHandler.set(handler);
+                bucketService.registerObjectHandler(handler);
+            }
         }
 
         boolean videosBucketExists = bucketStore.bucketExists(VIDEO_BUCKET);
@@ -136,33 +144,8 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                     }
                 }
             } else if (selected.equals(CMD_END_STREAM)) {
-                if (!fileOutput.isWriting())
-                    commandStatus = false;
-                else {
-                    try {
-                        this.fileOutput.closeFile();
-                        this.parentSensor.reportStatus("Closing video stream: " + fileName);
-                        hlsHandler.get().removeControl(fileName, this);
-                        commandStatus = true;
-                        reportFileName = false;
-
-                        // File cleanup
-                        try {
-                            var fileNameNoExt = fileName.substring(0, fileName.lastIndexOf('.'));
-                            var filteredNames = bucketStore.listObjects(VIDEO_BUCKET).stream().filter(name -> {
-                                return name.contains(fileNameNoExt);
-                            }).toList();
-                            for (String hlsFile : filteredNames) {
-                                bucketStore.deleteObject(VIDEO_BUCKET, hlsFile);
-                            }
-                        } catch (Exception de) {
-                            logger.warn("Exception during HLS cleanup: ", de);
-                        }
-                        fileName = "";
-                    } catch (Exception e) {
-                        commandStatus = false;
-                    }
-                }
+                commandStatus = endStreamNow();
+                reportFileName = false;
             } else {
                 commandStatus = false;
             }
@@ -182,6 +165,42 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
             }
             return status.build();
         });
+    }
+
+    /**
+     * Stop the HLS mux and delete the stream's files. Called by the endStream command
+     * and directly by the inactivity watchdog — the watchdog cannot go through
+     * submitCommand: a synthetic CommandData without a valid command stream id fails
+     * builder validation.
+     *
+     * @return true if a running stream was stopped.
+     */
+    public boolean endStreamNow() {
+        if (!fileOutput.isWriting())
+            return false;
+        try {
+            this.fileOutput.closeFile();
+            this.parentSensor.reportStatus("Closing video stream: " + fileName);
+            hlsHandler.get().removeControl(fileName, this);
+
+            // File cleanup
+            try {
+                var fileNameNoExt = fileName.substring(0, fileName.lastIndexOf('.'));
+                var filteredNames = bucketStore.listObjects(VIDEO_BUCKET).stream().filter(name -> {
+                    return name.contains(fileNameNoExt);
+                }).toList();
+                for (String hlsFile : filteredNames) {
+                    bucketStore.deleteObject(VIDEO_BUCKET, hlsFile);
+                }
+            } catch (Exception de) {
+                logger.warn("Exception during HLS cleanup: ", de);
+            }
+            fileName = "";
+            return true;
+        } catch (Exception e) {
+            logger.error("Exception while closing HLS output", e);
+            return false;
+        }
     }
 
     @Override
