@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.List;
 import java.util.Map;
@@ -253,6 +254,30 @@ public class FileSystemBucketStore implements IBucketStore {
     }
 
     @Override
+    public OutputStream appendObject(String bucketName, String key, Map<String, String> metadata) throws DataStoreException {
+        Path path = getBucketPath(bucketName);
+        if (!Files.exists(path))
+            throw new DataStoreException(BUCKET_NOT_FOUND, new IllegalArgumentException());
+        try {
+            UploadPolicy.validateUpload(key, metadata);
+            Path bucketPath = path.toRealPath();
+            var filePath = resolveObjectPath(bucketName, key);
+            if (!Files.exists(filePath)) {
+                createObjectParentDirectories(bucketPath, filePath.getParent());
+                Files.createFile(filePath);
+            }
+            setFilePermissions(filePath);
+            long existingBytes = Files.size(filePath);
+            // Never delete on overflow: an appended object (e.g. a daily log) may hold data from earlier writers
+            return new LimitedOutputStream(
+                    Files.newOutputStream(filePath, StandardOpenOption.CREATE, StandardOpenOption.APPEND),
+                    filePath, existingBytes, false);
+        } catch (IOException e) {
+            throw new DataStoreException(FAILED_PUT_OBJECT + bucketName, e);
+        }
+    }
+
+    @Override
     public InputStream getObject(String bucketName, String key) throws DataStoreException {
         try {
             Path file = resolveObjectPath(bucketName, key);
@@ -391,11 +416,18 @@ public class FileSystemBucketStore implements IBucketStore {
     private class LimitedOutputStream extends FilterOutputStream {
 
         private final Path filePath;
+        private final boolean deleteOnOverflow;
         private long bytesWritten;
 
         LimitedOutputStream(OutputStream out, Path filePath) {
+            this(out, filePath, 0, true);
+        }
+
+        LimitedOutputStream(OutputStream out, Path filePath, long initialBytes, boolean deleteOnOverflow) {
             super(out);
             this.filePath = filePath;
+            this.bytesWritten = initialBytes;
+            this.deleteOnOverflow = deleteOnOverflow;
         }
 
         @Override
@@ -415,7 +447,7 @@ public class FileSystemBucketStore implements IBucketStore {
             try {
                 super.close();
             } finally {
-                if (bytesWritten > maxFileSizeBytes)
+                if (deleteOnOverflow && bytesWritten > maxFileSizeBytes)
                     Files.deleteIfExists(filePath);
                 else if (Files.exists(filePath))
                     setFilePermissions(filePath);

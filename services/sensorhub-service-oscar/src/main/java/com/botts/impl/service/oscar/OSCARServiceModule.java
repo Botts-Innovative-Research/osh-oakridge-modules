@@ -150,7 +150,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
 
 
             if (databasePurger == null)
-                databasePurger = new DatabasePurger((IObsSystemDatabase) module, bucketStore, 5);
+                databasePurger = new DatabasePurger((IObsSystemDatabase) module, 5);
 
             databasePurger.start();
         }

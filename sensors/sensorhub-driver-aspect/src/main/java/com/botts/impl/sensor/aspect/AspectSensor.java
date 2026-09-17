@@ -20,6 +20,7 @@ import com.ghgande.j2mod.modbus.ModbusException;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileAppender;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +41,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     IModbusTCPCommProvider<?> commProviderModule;
 
     MessageHandler messageHandler;
+    private DailyFileAppender dailyFileAppender;
 
     GammaOutput gammaOutput;
     NeutronOutput neutronOutput;
@@ -158,13 +160,17 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         }
 
         // Start message handler
-        messageHandler = new MessageHandler(this, primaryDeviceAddress);
+        messageHandler = new MessageHandler(this, primaryDeviceAddress, dailyFileAppender);
     }
 
     @Override
     protected void doStart() throws SensorHubException {
 
         connection.waitForConnection();
+
+        // Daily file lines are appended as they are produced
+        if (dailyFileAppender == null)
+            dailyFileAppender = DailyFileAppender.forHub(getParentHub(), dailyFileId(), getLogger());
 
         try{
             initMsgHandler();
@@ -203,9 +209,15 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
             }
         }
 
-        // unsubscribe from message handler
+        // stop message handler
         if (messageHandler != null) {
+            messageHandler.stop();
             messageHandler = null;
+        }
+
+        if (dailyFileAppender != null) {
+            dailyFileAppender.close();
+            dailyFileAppender = null;
         }
 
 
@@ -227,6 +239,14 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     }
 
     public ConnectionStatusOutput getConnectionStatusOutput() {return connectionStatusOutput;}
+    /**
+     * Daily file name prefix: the part of the unique ID after the last ':' (the serial number).
+     */
+    private String dailyFileId() {
+        String uid = getUniqueIdentifier();
+        return uid != null && uid.contains(":") ? uid.substring(uid.lastIndexOf(':') + 1) : uid;
+    }
+
     public DailyFileOutput getDailyFileOutput() {
         return dailyFileOutput;
     }
