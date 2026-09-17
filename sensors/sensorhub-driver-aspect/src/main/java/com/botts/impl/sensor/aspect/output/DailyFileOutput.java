@@ -21,8 +21,6 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
 
-    String dailyFile;
-
     public DailyFileOutput(AspectSensor parentSensor){
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
@@ -45,8 +43,12 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
 
-    public void getDailyFile(MonitorRegisters monitorRegisters){
-        dailyFile = String.join(",",
+    /**
+     * Builds the daily file line for the current monitor registers: 14 comma separated register values,
+     * unquoted, no timestamp. This exact text is written to the daily file and published on this output.
+     */
+    public static String buildDailyFileLine(MonitorRegisters monitorRegisters){
+        return String.join(",",
                 String.valueOf(monitorRegisters.getTimeElapsed()),
                 String.valueOf(monitorRegisters.getInputSignals()),
                 String.valueOf(monitorRegisters.getGammaChannelStatus()),
@@ -63,7 +65,7 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
                 String.valueOf(monitorRegisters.getOutputSignals())
         );
     }
-    public void onNewMessage() {
+    public void onNewMessage(String dailyFile) {
         DataBlock dataBlock;
 
         if (latestRecord == null) {
@@ -72,7 +74,6 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
             dataBlock = latestRecord.renew();
         }
 
-//        System.out.println("Daily File: " + dailyfile);
 
         Instant timeStamp = Instant.now();
         dataBlock.setTimeStamp(0, timeStamp);

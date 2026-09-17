@@ -23,6 +23,7 @@ import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.comm.RobustIPConnection;
 import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileAppender;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +47,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     // Utilities
     private MessageHandler messageHandler;
+    private DailyFileAppender dailyFileAppender;
     private EMLService emlService;
 
     // Connection
@@ -142,7 +144,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
         // Connect to input stream
         InputStream msgIn = new BufferedInputStream(commProviderModule.getInputStream());
-        messageHandler = new MessageHandler(msgIn, this);
+        messageHandler = new MessageHandler(msgIn, this, dailyFileAppender);
     }
 
     public void createEMLOutputs(){
@@ -209,6 +211,10 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
         connection.waitForConnection();
 
+        // Raw RPM messages are appended to the daily file as they arrive
+        if (dailyFileAppender == null)
+            dailyFileAppender = DailyFileAppender.forHub(getParentHub(), dailyFileId(), getLogger());
+
         try{
             initMsgHandler();
         }catch(IOException e){
@@ -256,6 +262,11 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                 logger.error("Error stopping message handler", e);
             }
             messageHandler = null;
+        }
+
+        if (dailyFileAppender != null) {
+            dailyFileAppender.close();
+            dailyFileAppender = null;
         }
 
         if (connection != null) {
@@ -337,6 +348,14 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     public EMLContextualOutput getEmlContextualOutput() {
         return emlContextualOutput;
+    }
+
+    /**
+     * Daily file name prefix: the part of the unique ID after the last ':' (the serial number).
+     */
+    private String dailyFileId() {
+        String uid = getUniqueIdentifier();
+        return uid != null && uid.contains(":") ? uid.substring(uid.lastIndexOf(':') + 1) : uid;
     }
 
     public DailyFileOutput getDailyFileOutput() {

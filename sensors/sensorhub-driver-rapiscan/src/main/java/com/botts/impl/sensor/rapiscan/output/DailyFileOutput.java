@@ -1,7 +1,6 @@
 package com.botts.impl.sensor.rapiscan.output;
 
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
-import gov.llnl.ernie.vm250.tools.DailyFileWriter;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -12,8 +11,6 @@ import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
 import java.time.Instant;
-import java.time.LocalTime;
-import java.util.Objects;
 
 public class DailyFileOutput extends AbstractSensorOutput<RapiscanSensor> {
 
