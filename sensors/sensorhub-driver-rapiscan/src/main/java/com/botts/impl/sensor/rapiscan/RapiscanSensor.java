@@ -13,6 +13,7 @@
  ******************************* END LICENSE BLOCK ***************************/
 package com.botts.impl.sensor.rapiscan;
 
+import com.botts.impl.sensor.rapiscan.control.ManualTamperControl;
 import com.botts.impl.sensor.rapiscan.eml.EMLService;
 import com.botts.impl.sensor.rapiscan.eml.outputs.EMLAnalysisOutput;
 import com.botts.impl.sensor.rapiscan.eml.outputs.EMLContextualOutput;
@@ -64,6 +65,9 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     private DailyFileOutput dailyFileOutput;
     private ConnectionStatusOutput connectionStatusOutput;
 
+    // Controls
+    private ManualTamperControl manualTamperControl;
+
     private EMLAnalysisOutput emlAnalysisOutput;
     private EMLScanContextualOutput emlScanContextualOutput;
     private EMLContextualOutput emlContextualOutput;
@@ -88,6 +92,9 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
         // Add outputs
         createOutputs();
+
+        // Add controls
+        createControls();
 
         // Register GammaThresholdOutput as a listener to SetupGammaOutput
         setupGammaOutput.registerListener(gammaThresholdOutput);
@@ -201,6 +208,11 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         connectionStatusOutput = new ConnectionStatusOutput(this);
         addOutput(connectionStatusOutput,false);
         connectionStatusOutput.init();
+    }
+
+    public void createControls() {
+        manualTamperControl = new ManualTamperControl(this);
+        addControlInput(manualTamperControl);
     }
 
 
@@ -345,6 +357,10 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     public ConnectionStatusOutput getConnectionStatusOutput() {return connectionStatusOutput;}
 
+    public ManualTamperControl getManualTamperControl() {
+        return manualTamperControl;
+    }
+
     public void heartbeatCheck() {
         if (!isRunning)
             return;
@@ -382,4 +398,3 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         }
     }
 }
-
