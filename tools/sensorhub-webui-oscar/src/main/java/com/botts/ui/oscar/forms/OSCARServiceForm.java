@@ -20,6 +20,8 @@ import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
+import static org.sensorhub.ui.AdminI18n.trConfig;
+
 public class OSCARServiceForm extends GenericConfigForm {
 
     private static final String PROP_SPREADSHEET = "spreadsheetConfigPath";
@@ -79,7 +81,8 @@ public class OSCARServiceForm extends GenericConfigForm {
                                 try {
                                     return fileHandler.handleUpload(filename);
                                 } catch (DataStoreException e) {
-                                    DisplayUtils.showErrorPopup("Upload failed.", e);
+                                    DisplayUtils.showErrorPopup(trConfig(
+                                        OSCARServiceForm.class, "ui.uploadFailed", "Upload failed."), e);
                                 }
                             }
 
@@ -95,9 +98,16 @@ public class OSCARServiceForm extends GenericConfigForm {
                         boolean fileLoaded = fileHandler.handleFile(e.getFilename());
 
                         if (!fileLoaded) {
-                            DisplayUtils.showErrorPopup("Unable to load file from " + e.getFilename(), new IllegalStateException());
+                            DisplayUtils.showErrorPopup(trConfig(
+                                OSCARServiceForm.class,
+                                "ui.loadFailed",
+                                "Unable to load file from {0}").replace("{0}", e.getFilename()),
+                                new IllegalStateException());
                         } else {
-                            DisplayUtils.showOperationSuccessful("Successfully loaded file " + e.getFilename() + "!");
+                            DisplayUtils.showOperationSuccessful(trConfig(
+                                OSCARServiceForm.class,
+                                "ui.loadSucceeded",
+                                "Successfully loaded file {0}!").replace("{0}", e.getFilename()));
                         }
                     });
 
@@ -106,15 +116,23 @@ public class OSCARServiceForm extends GenericConfigForm {
                                 new StreamResource(() ->
                                         oscarService.getSpreadsheetHandler().getDownloadStream(),
                                         oscarService.getSpreadsheetHandler().CONFIG_KEY));
-                        Button button = new Button("Download");
+                        Button button = new Button(trConfig(
+                            OSCARServiceForm.class, "ui.download", "Download"));
                         button.addClickListener((event) -> {
                             if (oscarService.getSpreadsheetHandler().getDownloadStream() != null)
                                 button.setEnabled(false);
                             else
-                                DisplayUtils.showErrorPopup("Unable to download config because there are no lanes loaded.", new IllegalArgumentException("File data is null"));
+                                DisplayUtils.showErrorPopup(trConfig(
+                                    OSCARServiceForm.class,
+                                    "ui.noLanes",
+                                    "Unable to download the configuration because no lanes are loaded."),
+                                    new IllegalArgumentException("File data is null"));
                         });
                         download.setErrorHandler(e -> {
-                            DisplayUtils.showErrorPopup("Error downloading config file.", e.getThrowable());
+                            DisplayUtils.showErrorPopup(trConfig(
+                                OSCARServiceForm.class,
+                                "ui.downloadFailed",
+                                "Error downloading configuration file."), e.getThrowable());
                             button.setEnabled(true);
                         });
                         download.extend(button);
@@ -129,4 +147,3 @@ public class OSCARServiceForm extends GenericConfigForm {
         return field;
     }
 }
-

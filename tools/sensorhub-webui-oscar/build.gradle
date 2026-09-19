@@ -23,6 +23,20 @@ dependencies {
     implementation project(':sensorhub-service-oscar')
 
     testImplementation('junit:junit:4.13.1')
+    testImplementation project(':sensorhub-driver-aspect')
+    testImplementation project(':sensorhub-driver-ffmpeg')
+    testImplementation project(':sensorhub-driver-kromek-d3s')
+    testImplementation project(':sensorhub-driver-kromek-d5')
+    testImplementation project(':sensorhub-driver-proximity')
+    testImplementation project(':sensorhub-driver-rapiscan')
+    testImplementation project(':sensorhub-driver-rs350')
+    testImplementation project(':sensorhub-driver-tstar')
+    testImplementation(project(':sensorhub-driver-homseer-ds100-g8')) { transitive = false }
+    testImplementation(project(':sensorhub-driver-wadwaz-1')) { transitive = false }
+    testImplementation(project(':sensorhub-driver-wapirz-1')) { transitive = false }
+    testImplementation(project(':sensorhub-driver-zooz-zse18-800lr')) { transitive = false }
+    testImplementation(project(':sensorhub-driver-zw100-multisensor-6')) { transitive = false }
+    testImplementation(project(':sensorhub-zwave-comms')) { transitive = false }
     implementation('junit:junit:4.13.1')
 }
 
