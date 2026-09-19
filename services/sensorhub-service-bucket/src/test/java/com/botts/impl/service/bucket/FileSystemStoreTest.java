@@ -157,6 +157,77 @@ public class FileSystemStoreTest extends AbstractBucketStoreTest {
         assertFalse("Uploaded file should not be executable", file.toFile().canExecute());
     }
 
+    @Test
+    public void testAppendObjectAppendsToExisting() throws Exception {
+        bucketStore.createBucket(TEST_BUCKET);
+
+        bucketStore.putObject(TEST_BUCKET, "log.csv",
+                new ByteArrayInputStream("A".getBytes(StandardCharsets.UTF_8)), Collections.emptyMap());
+        try (OutputStream out = bucketStore.appendObject(TEST_BUCKET, "log.csv", Map.of("Content-Type", "text/csv"))) {
+            out.write("B".getBytes(StandardCharsets.UTF_8));
+        }
+        try (OutputStream out = bucketStore.appendObject(TEST_BUCKET, "log.csv", Map.of("Content-Type", "text/csv"))) {
+            out.write("C".getBytes(StandardCharsets.UTF_8));
+        }
+
+        assertEquals("ABC", readObject("log.csv"));
+    }
+
+    @Test
+    public void testAppendObjectCreatesMissingFile() throws Exception {
+        bucketStore.createBucket(TEST_BUCKET);
+
+        assertFalse(bucketStore.objectExists(TEST_BUCKET, "nested/new.csv"));
+        try (OutputStream out = bucketStore.appendObject(TEST_BUCKET, "nested/new.csv", Collections.emptyMap())) {
+            out.write("X".getBytes(StandardCharsets.UTF_8));
+        }
+        assertTrue(bucketStore.objectExists(TEST_BUCKET, "nested/new.csv"));
+        assertEquals("X", readObject("nested/new.csv"));
+    }
+
+    @Test
+    public void testAppendObjectSeedsSizeLimitAndKeepsFile() throws Exception {
+        bucketStore.createBucket(TEST_BUCKET);
+
+        // Fill the object exactly to the limit with a normal put
+        byte[] full = new byte[(int) TEST_MAX_FILE_SIZE_BYTES];
+        bucketStore.putObject(TEST_BUCKET, "full.csv", new ByteArrayInputStream(full), Collections.emptyMap());
+        assertEquals(TEST_MAX_FILE_SIZE_BYTES, bucketStore.getObjectSize(TEST_BUCKET, "full.csv"));
+
+        OutputStream out = bucketStore.appendObject(TEST_BUCKET, "full.csv", Collections.emptyMap());
+        try {
+            out.write(1);
+            fail("Expected append beyond the size limit to be rejected");
+        } catch (IOException expected) {
+            // expected
+        } finally {
+            try {
+                out.close();
+            } catch (IOException ignored) {}
+        }
+
+        assertTrue("Appended object must survive an overflow", bucketStore.objectExists(TEST_BUCKET, "full.csv"));
+        assertEquals(TEST_MAX_FILE_SIZE_BYTES, bucketStore.getObjectSize(TEST_BUCKET, "full.csv"));
+    }
+
+    @Test
+    public void testAppendObjectRejectsBlockedExtension() throws Exception {
+        bucketStore.createBucket(TEST_BUCKET);
+
+        try {
+            bucketStore.appendObject(TEST_BUCKET, "log.html", Collections.emptyMap());
+            fail("Expected blocked extension to be rejected");
+        } catch (DataStoreException expected) {
+            assertFalse(bucketStore.objectExists(TEST_BUCKET, "log.html"));
+        }
+    }
+
+    private String readObject(String key) throws Exception {
+        try (InputStream in = bucketStore.getObject(TEST_BUCKET, key)) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
     private void assertPutRejected(String key, Map<String, String> metadata) throws IOException {
         try {
             bucketStore.putObject(TEST_BUCKET, key, testData(), metadata);

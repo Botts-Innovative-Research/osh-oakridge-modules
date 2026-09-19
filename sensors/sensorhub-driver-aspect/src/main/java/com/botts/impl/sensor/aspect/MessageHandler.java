@@ -1,7 +1,9 @@
 package com.botts.impl.sensor.aspect;
 
+import com.botts.impl.sensor.aspect.output.DailyFileOutput;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileAppender;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +22,7 @@ import static java.lang.Thread.sleep;
  */
 public class MessageHandler {
     private final AspectSensor parentSensor;
+    private final DailyFileAppender dailyFile;
     private static final Logger log = LoggerFactory.getLogger(MessageHandler.class);
     Thread thread;
 
@@ -45,18 +48,22 @@ public class MessageHandler {
         return timeSinceLastMessage;
     }
 
-    public MessageHandler(AspectSensor parentSensor, int deviceAddress) {
+    /**
+     * @param parentSensor  owning sensor module
+     * @param deviceAddress Modbus unit address
+     * @param dailyFile     appender that records every daily file line before it is published (may be null in tests)
+     */
+    public MessageHandler(AspectSensor parentSensor, int deviceAddress, DailyFileAppender dailyFile) {
         this.parentSensor = parentSensor;
         this.deviceAddress = deviceAddress;
+        this.dailyFile = dailyFile;
 
         occupancyGammaBatch = new LinkedList<>();
         occupancyNeutronBatch = new LinkedList<>();
 
 
 
-//        thread = new Thread(this, "Message Handler");
-
-        Thread msgReader = new Thread(()->{
+        thread = new Thread(()->{
 
             try {
                 DeviceDescriptionRegisters deviceDescriptionRegisters = new DeviceDescriptionRegisters(parentSensor.commProviderModule.getConnection());
@@ -75,46 +82,47 @@ public class MessageHandler {
 
                     double timestamp = System.currentTimeMillis() / 1000d;
 
-                    if (checkScan(monitorRegisters)) {
-                        if (timer >= SCAN_INTERVAL_MS) {
-                            timer = 0;
+                    try {
+                        if (checkScan(monitorRegisters)) {
+                            if (timer >= SCAN_INTERVAL_MS) {
+                                timer = 0;
 
-                            parentSensor.dailyFileOutput.getDailyFile(monitorRegisters);
-                            parentSensor.dailyFileOutput.onNewMessage();
+                                publishDailyFile(monitorRegisters);
 
-                            parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
-                            parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
-                            parentSensor.speedOutput.setData(monitorRegisters, timestamp);
+                                parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
+                                parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
+                                parentSensor.speedOutput.setData(monitorRegisters, timestamp);
+                            }
+
+                        } else {
+                            if (timer >= BACKGROUND_INTERVAL_MS) {
+                                timer = 0;
+
+                                publishDailyFile(monitorRegisters);
+
+                                parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
+                                parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
+                            }
                         }
 
-                    } else {
-                        if (timer >= BACKGROUND_INTERVAL_MS) {
-                            timer = 0;
+                        if (checkOccupancyRecord(monitorRegisters, timestamp)) {
+                            Occupancy occupancy = new Occupancy.Builder()
+                                    .occupancyCount(monitorRegisters.getObjectCounter())
+                                    .startTime(startTime)
+                                    .endTime(endTime)
+                                    .samplingTime(timestamp)
+                                    .neutronBackground(monitorRegisters.getNeutronChannelBackground())
+                                    .gammaAlarm(gammaAlarm)
+                                    .neutronAlarm(neutronAlarm)
+                                    .maxGammaCount(maxGamma)
+                                    .maxNeutronCount(maxNeutron)
+                                    .build();
 
-                            parentSensor.dailyFileOutput.getDailyFile(monitorRegisters);
-                            parentSensor.dailyFileOutput.onNewMessage();
-
-                            parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
-                            parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
+                            parentSensor.occupancyOutput.setData(occupancy);
                         }
-                    }
-
-
-
-                    if (checkOccupancyRecord(monitorRegisters, timestamp)) {
-                        Occupancy occupancy = new Occupancy.Builder()
-                                .occupancyCount(monitorRegisters.getObjectCounter())
-                                .startTime(startTime)
-                                .endTime(endTime)
-                                .samplingTime(timestamp)
-                                .neutronBackground(monitorRegisters.getNeutronChannelBackground())
-                                .gammaAlarm(gammaAlarm)
-                                .neutronAlarm(neutronAlarm)
-                                .maxGammaCount(maxGamma)
-                                .maxNeutronCount(maxNeutron)
-                                .build();
-
-                        parentSensor.occupancyOutput.setData(occupancy);
+                    } catch (Exception e) {
+                        // A failure while publishing one poll must not kill the polling loop
+                        log.warn("Error processing Aspect register poll: {}", e.toString());
                     }
 
                 }
@@ -124,8 +132,26 @@ public class MessageHandler {
                 log.error("Error in worker thread: {} due to exception: {}", Thread.currentThread().getName(), stringWriter);
             }
 
-        });
-        msgReader.start();
+        }, "Aspect-Reader-" + parentSensor.getUniqueIdentifier());
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    /**
+     * Builds the daily file line once, appends it to the daily file first, then publishes it.
+     */
+    private void publishDailyFile(MonitorRegisters monitorRegisters) {
+        String line = DailyFileOutput.buildDailyFileLine(monitorRegisters);
+        if (dailyFile != null)
+            dailyFile.append(line);
+        parentSensor.dailyFileOutput.onNewMessage(line);
+    }
+
+    public void stop() {
+        if (thread != null) {
+            thread.interrupt();
+            thread = null;
+        }
     }
 
     private boolean checkScan(MonitorRegisters monitorRegisters) {

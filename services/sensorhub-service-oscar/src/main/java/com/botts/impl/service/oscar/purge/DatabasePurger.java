@@ -1,13 +1,9 @@
 package com.botts.impl.service.oscar.purge;
 
-import com.botts.api.service.bucket.IBucketStore;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.data.IDataStreamInfo;
 import org.sensorhub.api.database.IObsSystemDatabase;
-import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
-import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.resource.ResourceKey;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
@@ -16,36 +12,27 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.util.TimeExtent;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 public class DatabasePurger {
     private static final Logger log = LoggerFactory.getLogger(DatabasePurger.class);
 
     private final IObsSystemDatabase database;
-    private final IBucketStore bucketStore;
     private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> hourlyPurgeTask;
-    private ScheduledFuture<?> dailyExportTask;
+    private ScheduledFuture<?> dailyPurgeTask;
 
     private final int occupancyBufferSeconds;
-
-    private static final String DAILY_FILES_BUCKET = "dailyfiles";
 
     private static final int CONNECTION_STATUS_RETENTION_HOURS = 1;
 
@@ -63,11 +50,9 @@ public class DatabasePurger {
     private static final String OUTPUT_FOREGROUND_REPORT = "foregroundReport";
     private static final String OUTPUT_STATUS = "status";
 
-    public DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds) {
+    public DatabasePurger(IObsSystemDatabase database, int occupancyBufferSeconds) {
         this.database = database;
-        this.bucketStore = bucketStore;
         this.occupancyBufferSeconds = occupancyBufferSeconds;
-
     }
 
     public void start() throws SensorHubException {
@@ -77,33 +62,24 @@ public class DatabasePurger {
             return t;
         });
 
-        try {
-            if (!bucketStore.bucketExists(DAILY_FILES_BUCKET)) {
-                bucketStore.createBucket(DAILY_FILES_BUCKET);
-                log.info("Created bucket for daily file exports: {}", DAILY_FILES_BUCKET);
-            }
+        hourlyPurgeTask = scheduler.scheduleAtFixedRate(
+            this::executeHourlyPurge,
+            0,
+            1,
+            TimeUnit.HOURS
+        );
+        log.info("Scheduled hourly purge task (every 1 hour)");
 
-            hourlyPurgeTask = scheduler.scheduleAtFixedRate(
-                this::executeHourlyPurge,
-                0,
-                1,
-                TimeUnit.HOURS
-            );
-            log.info("Scheduled hourly purge task (every 1 hour)");
-
-            // Schedule daily midnight export and purge
-            long initialDelayMinutes = calculateDelayUntilMidnight();
-            dailyExportTask = scheduler.scheduleAtFixedRate(
-                this::executeDailyExportAndPurge,
-                initialDelayMinutes,
-                TimeUnit.DAYS.toMinutes(1),
-                TimeUnit.MINUTES
-            );
-            log.info("Scheduled daily export task (next run in {} minutes at midnight)", initialDelayMinutes);
-
-        } catch (DataStoreException e) {
-            throw new SensorHubException("Failed to create daily files bucket", e);
-        }
+        // Schedule daily purge at local midnight. Daily files themselves are written by the RPM drivers
+        // as messages arrive (see DailyFileAppender); the observations are only kept for live consumers.
+        long initialDelayMinutes = calculateDelayUntilMidnight();
+        dailyPurgeTask = scheduler.scheduleAtFixedRate(
+            this::executeDailyPurge,
+            initialDelayMinutes,
+            TimeUnit.DAYS.toMinutes(1),
+            TimeUnit.MINUTES
+        );
+        log.info("Scheduled daily purge task (next run in {} minutes at midnight)", initialDelayMinutes);
     }
 
     public void stop() throws SensorHubException {
@@ -111,8 +87,8 @@ public class DatabasePurger {
 
         if (hourlyPurgeTask != null)
             hourlyPurgeTask.cancel(false);
-        if (dailyExportTask != null)
-            dailyExportTask.cancel(false);
+        if (dailyPurgeTask != null)
+            dailyPurgeTask.cancel(false);
 
         scheduler.shutdown();
         try {
@@ -145,13 +121,13 @@ public class DatabasePurger {
         }
     }
 
-    private void executeDailyExportAndPurge() {
+    private void executeDailyPurge() {
         try {
-            log.info("Starting daily export and purge task...");
-            exportAndPurgeDailyFileData();
-            log.info("Daily export and purge task completed successfully");
+            log.info("Starting daily purge task...");
+            purgeDailyFileData();
+            log.info("Daily purge task completed successfully");
         } catch (Exception e) {
-            log.error("Error during daily export and purge task", e);
+            log.error("Error during daily purge task", e);
         }
     }
 
@@ -166,22 +142,6 @@ public class DatabasePurger {
             .selectKeys(filter)
             .map(ResourceKey::getInternalID)
             .collect(Collectors.toSet());
-    }
-
-    private Map<BigId, IDataStreamInfo> getDataStreamEntriesByOutputNames(String... outputNames) {
-        var filter = new DataStreamFilter.Builder()
-            .withOutputNames(outputNames)
-            .build();
-
-        Map<BigId, IDataStreamInfo> result = new HashMap<>();
-        database.getDataStreamStore()
-            .selectEntries(filter)
-            .forEach(entry -> {
-                DataStreamKey key = entry.getKey();
-                IDataStreamInfo value = entry.getValue();
-                result.put(key.getInternalID(), value);
-            });
-        return result;
     }
 
     private List<TimeExtent> getOccupancyWindows() {
@@ -254,24 +214,26 @@ public class DatabasePurger {
         log.info("Purged {} Connection Status observations older than {}", deleted, cutoff);
     }
 
-    public void exportAndPurgeDailyFileData() {
-        log.info("Exporting and purging Daily File data...");
+    /**
+     * Purges dailyFile observations from before today's local midnight. The daily files in the
+     * bucket store are written directly by the drivers, so these observations only need to
+     * live long enough for live consumers (lane state tracking).
+     */
+    public void purgeDailyFileData() {
+        log.info("Purging Daily File data...");
 
-        // Export daily files
-        exportDailyFileOutputToCSV();
-        // Purge daily files
         Set<BigId> ids = getDataStreamIdsByOutputNames(OUTPUT_DAILY_FILE);
         if (ids.isEmpty()) {
             log.debug("No Daily File data streams found");
             return;
         }
 
-        // Purge data that was exported (yesterday and before) - using UTC
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
-        Instant cutoff = today.atStartOfDay(ZoneOffset.UTC).toInstant();
+        // Same day boundary as the daily files: local midnight
+        ZoneId zone = ZoneId.systemDefault();
+        Instant cutoff = LocalDate.now(zone).atStartOfDay(zone).toInstant();
 
         long deleted = deleteObservationsBeforeTime(ids, cutoff);
-        log.info("Purged {} Daily File observations", deleted);
+        log.info("Purged {} Daily File observations before {}", deleted, cutoff);
     }
 
     public void purgeNonOccupancyData() {
@@ -386,86 +348,9 @@ public class DatabasePurger {
         return database.getObservationStore().removeEntries(filter);
     }
 
-    private void exportDailyFileOutputToCSV() {
-        // Use UTC for consistent daily file exports
-        LocalDate yesterday = LocalDate.now(ZoneOffset.UTC).minusDays(1);
-        String dateStr = yesterday.format(DateTimeFormatter.ISO_LOCAL_DATE);
-
-        Instant startOfYesterday = yesterday.atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant endOfYesterday = yesterday.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-
-        // Get daily file dataStream info for name lookup
-        Map<BigId, IDataStreamInfo> dataStreamInfo = getDataStreamEntriesByOutputNames(OUTPUT_DAILY_FILE);
-
-        if (dataStreamInfo.isEmpty()) {
-            log.info("No Daily File dataStreams found, nothing to export");
-            return;
-        }
-
-        log.info("Exporting DailyFileOutput records for {} lanes...", dataStreamInfo.size());
-
-        // Export each dataStream to its own CSV file
-        for (var entry : dataStreamInfo.entrySet()) {
-            BigId dataStreamId = entry.getKey();
-            IDataStreamInfo dsInfo = entry.getValue();
-
-            // Use system ID to create a unique filename per lane
-            String systemId = dsInfo.getSystemID().getUniqueID();
-            // Extract lane identifier from system ID (e.g., "urn:osh:sensor:rapiscan:lane1" -> "lane1")
-            String laneId = systemId.contains(":") ? systemId.substring(systemId.lastIndexOf(':') + 1) : systemId;
-            String objectKey = String.format("%s_%s.csv", laneId, dateStr);
-
-            exportDataStreamToCSV(dataStreamId, objectKey, startOfYesterday, endOfYesterday);
-        }
-    }
-
-    private void exportDataStreamToCSV(BigId dataStreamId, String objectKey,
-                                       Instant startTime, Instant endTime) {
-        var filter = new ObsFilter.Builder()
-            .withDataStreams(Set.of(dataStreamId))
-            .withPhenomenonTimeDuring(startTime, endTime)
-            .build();
-
-        Map<String, String> metadata = new HashMap<>();
-        metadata.put("Content-Type", "text/csv");
-
-        try (OutputStream outputStream = bucketStore.putObject(DAILY_FILES_BUCKET, objectKey, metadata);
-             OutputStreamWriter writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8)) {
-
-            // Write CSV header
-            writer.write("message,timestamp\n");
-
-            AtomicLong counter = new AtomicLong();
-            database.getObservationStore()
-                .select(filter)
-                .forEach(obs -> {
-                    try {
-                        String timestamp = obs.getPhenomenonTime().toString();
-
-                        // Get the message content from the observation
-                        String message = "";
-                        if (obs.getResult() != null && obs.getResult().getAtomCount() > 1) {
-                            message = obs.getResult().getStringValue(1);
-                            // Escape quotes and wrap in quotes for CSV
-                            message = "\"" + message.replace("\"", "\"\"") + "\"";
-                        }
-
-                        writer.write(String.format("%s,%s\n", message, timestamp));
-                        counter.getAndIncrement();
-                    } catch (IOException e) {
-                        log.warn("Failed to write observation to CSV: {}", e.getMessage());
-                    }
-                });
-
-            log.info("Exported {} DailyFileOutput records to bucket {}/{}", counter, DAILY_FILES_BUCKET, objectKey);
-        } catch (IOException | DataStoreException e) {
-            log.error("Failed to export DailyFileOutput to bucket {}/{}: {}", DAILY_FILES_BUCKET, objectKey, e.getMessage(), e);
-        }
-    }
-
     private long calculateDelayUntilMidnight() {
-        // Schedule based on UTC midnight for consistent behavior
-        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        // Local midnight, matching the daily file day boundary
+        LocalDateTime now = LocalDateTime.now(ZoneId.systemDefault());
         LocalDateTime nextMidnight = now.toLocalDate().plusDays(1).atStartOfDay();
         Duration duration = Duration.between(now, nextMidnight);
         return duration.toMinutes();
