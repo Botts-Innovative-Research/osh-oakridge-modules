@@ -20,6 +20,7 @@ import org.vast.util.Asserts;
 import java.io.File;
 
 import static com.botts.impl.service.oscar.Constants.SITE_MAP_BUCKET;
+import static org.sensorhub.ui.AdminI18n.trConfig;
 import static org.vast.swe.SWEHelper.getPropertyUri;
 
 /**
@@ -100,8 +101,10 @@ public class SiteDiagramForm extends GenericConfigForm {
         layout.setSpacing(true);
 
         HorizontalLayout coordinateLayout = new HorizontalLayout();
-        Label pixelCoordinatesTitle = new Label("Pixel Coordinates: ");
-        Label pixelCoordinates = new Label("Click map to select location of lane");
+        Label pixelCoordinatesTitle = new Label(trConfig(
+            SiteDiagramForm.class, "ui.pixelCoordinates.label", "Pixel Coordinates:"));
+        Label pixelCoordinates = new Label(trConfig(
+            SiteDiagramForm.class, "ui.selectLaneLocation", "Click map to select the lane location"));
         coordinateLayout.addComponents(pixelCoordinatesTitle, pixelCoordinates);
         layout.addComponent(coordinateLayout);
 
@@ -111,7 +114,8 @@ public class SiteDiagramForm extends GenericConfigForm {
 
         if (!imageFile.exists()) {
             getOshLogger().error("Error building SiteMap Diagram image");
-            layout.addComponent(new Label("No SiteMap Image Found"));
+            layout.addComponent(new Label(trConfig(
+                SiteDiagramForm.class, "ui.noSiteMap", "No site map image found")));
         } else {
             siteMap.setSource(new FileResource(imageFile));
             siteMap.setHeight("600px");

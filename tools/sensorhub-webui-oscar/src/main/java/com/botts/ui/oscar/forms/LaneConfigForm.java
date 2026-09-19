@@ -15,6 +15,8 @@
 
 package com.botts.ui.oscar.forms;
 
+import static org.sensorhub.ui.AdminI18n.trConfig;
+
 import org.sensorhub.ui.GenericConfigForm;
 import org.sensorhub.ui.data.BaseProperty;
 
@@ -42,9 +44,9 @@ public class LaneConfigForm extends GenericConfigForm {
             try
             {
                 // TODO: Make sure AspectRPMConfig is implemented/handled on main branch oakridge modules
-                classList.put("Aspect", Class.forName(LANE_CONFIG_PACKAGE + "AspectRPMConfig"));
-                classList.put("Rapiscan", Class.forName(LANE_CONFIG_PACKAGE + "RapiscanRPMConfig"));
-                classList.put("RS350", Class.forName(LANE_CONFIG_PACKAGE + "RS350RPMConfig"));
+                addTranslatedType(classList, "AspectRPMConfig", "Aspect");
+                addTranslatedType(classList, "RapiscanRPMConfig", "Rapiscan");
+                addTranslatedType(classList, "RS350RPMConfig", "RS350");
             }
             catch (ClassNotFoundException e)
             {
@@ -58,9 +60,9 @@ public class LaneConfigForm extends GenericConfigForm {
             try
             {
                 // TODO: Implement these classes as an extension of some generic camera config class
-                classList.put("Sony", Class.forName(LANE_CONFIG_PACKAGE + "SonyCameraConfig"));
-                classList.put("Axis", Class.forName(LANE_CONFIG_PACKAGE + "AxisCameraConfig"));
-                classList.put("Custom", Class.forName(LANE_CONFIG_PACKAGE + "CustomCameraConfig"));
+                addTranslatedType(classList, "SonyCameraConfig", "Sony");
+                addTranslatedType(classList, "AxisCameraConfig", "Axis");
+                addTranslatedType(classList, "CustomCameraConfig", "Custom");
             }
             catch (ClassNotFoundException e)
             {
@@ -70,5 +72,13 @@ public class LaneConfigForm extends GenericConfigForm {
         }
 
         return super.getPossibleTypes(propId, prop);
+    }
+
+
+    private void addTranslatedType(Map<String, Class<?>> classList, String className, String fallback)
+        throws ClassNotFoundException
+    {
+        Class<?> configClass = Class.forName(LANE_CONFIG_PACKAGE + className);
+        classList.put(trConfig(configClass, "type.name", fallback), configClass);
     }
 }
