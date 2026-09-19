@@ -70,9 +70,8 @@ public class SitemapDiagramHandler implements IFileHandler {
     public boolean handleFile(String filename, SiteDiagramConfig siteDiagramConfig) {
         String objectKey = normalizeFileName(filename);
 
-        if (siteDiagramConfig == null || siteDiagramConfig.siteLowerLeftBound == null ||
-                siteDiagramConfig.siteUpperRightBound == null) {
-            module.getLogger().warn("Site diagram bounds have not been configured");
+        if (!hasValidBounds(siteDiagramConfig)) {
+            module.getLogger().warn("Site diagram bounds are missing or invalid");
             return false;
         }
 
@@ -112,5 +111,20 @@ public class SitemapDiagramHandler implements IFileHandler {
         String normalized = filename.replace('\\', '/');
         int lastSeparator = normalized.lastIndexOf('/');
         return (lastSeparator >= 0 ? normalized.substring(lastSeparator + 1) : normalized).trim();
+    }
+
+    public static boolean hasValidBounds(SiteDiagramConfig config) {
+        if (config == null || config.siteLowerLeftBound == null || config.siteUpperRightBound == null)
+            return false;
+
+        double lowerLat = config.siteLowerLeftBound.lat;
+        double lowerLon = config.siteLowerLeftBound.lon;
+        double upperLat = config.siteUpperRightBound.lat;
+        double upperLon = config.siteUpperRightBound.lon;
+        return Double.isFinite(lowerLat) && Double.isFinite(lowerLon) &&
+                Double.isFinite(upperLat) && Double.isFinite(upperLon) &&
+                Math.abs(lowerLat) <= 90 && Math.abs(upperLat) <= 90 &&
+                Math.abs(lowerLon) <= 180 && Math.abs(upperLon) <= 180 &&
+                lowerLat < upperLat && lowerLon < upperLon;
     }
 }

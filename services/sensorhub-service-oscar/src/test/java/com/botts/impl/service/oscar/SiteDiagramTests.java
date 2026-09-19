@@ -17,6 +17,7 @@ import java.util.Comparator;
 
 import static com.botts.impl.service.oscar.Constants.SITE_MAP_BUCKET;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class SiteDiagramTests {
@@ -92,6 +93,19 @@ public class SiteDiagramTests {
                 }
             }
         }
+    }
+
+    @Test
+    public void rejectsZeroOrInvertedDiagramBounds() {
+        var zeroBounds = new SiteDiagramConfig();
+        zeroBounds.siteLowerLeftBound = new SiteDiagramConfig.LatLonLocation();
+        zeroBounds.siteUpperRightBound = new SiteDiagramConfig.LatLonLocation();
+        assertFalse(SitemapDiagramHandler.hasValidBounds(zeroBounds));
+
+        var invertedBounds = siteDiagramConfig();
+        invertedBounds.siteLowerLeftBound.lat = invertedBounds.siteUpperRightBound.lat;
+        assertFalse(SitemapDiagramHandler.hasValidBounds(invertedBounds));
+        assertTrue(SitemapDiagramHandler.hasValidBounds(siteDiagramConfig()));
     }
 
     private SiteDiagramConfig siteDiagramConfig() {

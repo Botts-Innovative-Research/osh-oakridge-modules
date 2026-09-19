@@ -9,6 +9,7 @@ import com.vaadin.server.StreamResource;
 import com.botts.impl.service.oscar.siteinfo.SiteDiagramConfig;
 import com.vaadin.ui.*;
 import com.vaadin.v7.data.Property;
+import com.vaadin.v7.data.fieldgroup.FieldGroup.CommitException;
 import com.vaadin.v7.ui.Field;
 import com.vaadin.v7.ui.TextField;
 import com.vaadin.v7.ui.Upload;
@@ -116,6 +117,20 @@ public class OSCARServiceForm extends GenericConfigForm {
                         boolean fileLoaded;
 
                         if (propId.endsWith(PROP_SITEMAP)) {
+                            try {
+                                // Coordinate fields live in nested subforms and
+                                // remain buffered until the form is committed.
+                                // Commit the entire site-diagram form before
+                                // publishing its bounds with the uploaded image.
+                                OSCARServiceForm.this.commit();
+                            } catch (CommitException commitError) {
+                                DisplayUtils.showErrorPopup(trConfig(
+                                        OSCARServiceForm.class,
+                                        "ui.uploadFailed",
+                                        "Upload failed."), commitError);
+                                return;
+                            }
+
                             SiteDiagramConfig siteDiagramConfig = getEditedSiteDiagramConfig();
                             fileLoaded = oscarService.getSitemapDiagramHandler()
                                     .handleFile(objectKey, siteDiagramConfig);
