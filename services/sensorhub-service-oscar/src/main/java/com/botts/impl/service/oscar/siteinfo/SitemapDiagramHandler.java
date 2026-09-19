@@ -58,20 +58,33 @@ public class SitemapDiagramHandler implements IFileHandler {
 
     @Override
     public boolean handleFile(String filename) {
-        SiteDiagramConfig siteDiagramConfig = module.getConfiguration().siteDiagramConfig;
+        return handleFile(filename, module.getConfiguration().siteDiagramConfig);
+    }
 
-        if (siteDiagramConfig == null) {
-            module.getLogger().warn("No site diagram config found in OSCAR Module Service config");
+    /**
+     * Activates an uploaded site diagram using the configuration currently
+     * being edited in the admin UI. This is intentionally separate from the
+     * module's running configuration, which is not replaced until the user
+     * clicks Apply Changes.
+     */
+    public boolean handleFile(String filename, SiteDiagramConfig siteDiagramConfig) {
+        String objectKey = normalizeFileName(filename);
+
+        if (siteDiagramConfig == null || siteDiagramConfig.siteLowerLeftBound == null ||
+                siteDiagramConfig.siteUpperRightBound == null) {
+            module.getLogger().warn("Site diagram bounds have not been configured");
             return false;
         }
 
-        if(!bucketStore.objectExists(SITE_MAP_BUCKET, filename)){
-            module.getLogger().error("Sitemap file {} not found in bucket {}", filename, SITE_MAP_BUCKET);
+        if (objectKey.isBlank() || !bucketStore.objectExists(SITE_MAP_BUCKET, objectKey)) {
+            module.getLogger().error("Sitemap file {} not found in bucket {}", objectKey, SITE_MAP_BUCKET);
             return false;
         }
 
         try {
-            siteInfoOutput.setData(bucketStore.getRelativeResourceURI(SITE_MAP_BUCKET, filename), siteDiagramConfig.siteLowerLeftBound, siteDiagramConfig.siteUpperRightBound);
+            siteDiagramConfig.siteDiagramPath = objectKey;
+            siteInfoOutput.setData(bucketStore.getRelativeResourceURI(SITE_MAP_BUCKET, objectKey),
+                    siteDiagramConfig.siteLowerLeftBound, siteDiagramConfig.siteUpperRightBound);
         } catch (DataStoreException e) {
             module.getLogger().error("Unable to read bucket for sitemap config", e);
             return false;
@@ -82,11 +95,22 @@ public class SitemapDiagramHandler implements IFileHandler {
 
     @Override
     public boolean isValidFileType(String fileName, String mimeType) {
-        return fileName.endsWith(".png") || fileName.endsWith(".jpg");
+        String normalizedName = normalizeFileName(fileName).toLowerCase();
+        return normalizedName.endsWith(".png") || normalizedName.endsWith(".jpg") ||
+                normalizedName.endsWith(".jpeg");
     }
 
     @Override
     public OutputStream handleUpload(String filename) throws DataStoreException {
-        return bucketStore.putObject(SITE_MAP_BUCKET, filename, Collections.emptyMap());
+        return bucketStore.putObject(SITE_MAP_BUCKET, normalizeFileName(filename), Collections.emptyMap());
+    }
+
+    public static String normalizeFileName(String filename) {
+        if (filename == null)
+            return "";
+
+        String normalized = filename.replace('\\', '/');
+        int lastSeparator = normalized.lastIndexOf('/');
+        return (lastSeparator >= 0 ? normalized.substring(lastSeparator + 1) : normalized).trim();
     }
 }

@@ -162,7 +162,15 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
 
         statsOutput.start();
 
-        refreshSiteDiagram();
+        if (config.siteDiagramConfig != null && config.siteDiagramConfig.siteDiagramPath != null &&
+                !config.siteDiagramConfig.siteDiagramPath.isBlank()) {
+            if (!sitemapDiagramHandler.handleFile(
+                    config.siteDiagramConfig.siteDiagramPath, config.siteDiagramConfig))
+                getLogger().warn("Unable to activate configured site diagram {}",
+                        config.siteDiagramConfig.siteDiagramPath);
+        } else {
+            refreshSiteDiagram();
+        }
 
         if (videoRetention != null)
             videoRetention.start();
