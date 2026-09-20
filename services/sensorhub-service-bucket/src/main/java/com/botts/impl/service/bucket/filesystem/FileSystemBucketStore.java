@@ -235,12 +235,18 @@ public class FileSystemBucketStore implements IBucketStore {
             UploadPolicy.validateUpload(key, metadata);
             Path bucketPath = path.toRealPath();
             var filePath = resolveObjectPath(bucketName, key);
-            if (!Files.exists(filePath)) {
-                createObjectParentDirectories(bucketPath, filePath.getParent());
-                Files.createFile(filePath);
+            createObjectParentDirectories(bucketPath, filePath.getParent());
+            // Files.newOutputStream atomically creates a missing object and truncates an existing
+            // one. Avoid a check-then-create sequence here because concurrent writers could both
+            // observe a missing object and one would fail with FileAlreadyExistsException.
+            var outputStream = Files.newOutputStream(filePath);
+            try {
+                setFilePermissions(filePath);
+                return new LimitedOutputStream(outputStream, filePath);
+            } catch (IOException e) {
+                outputStream.close();
+                throw e;
             }
-            setFilePermissions(filePath);
-            return new LimitedOutputStream(Files.newOutputStream(filePath), filePath);
         } catch (IOException e) {
             throw new DataStoreException(FAILED_PUT_OBJECT + bucketName, e);
         }

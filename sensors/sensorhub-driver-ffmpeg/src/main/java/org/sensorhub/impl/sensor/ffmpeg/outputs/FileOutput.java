@@ -198,12 +198,17 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 writeCallback = null;
                 seekCallback = null;
 
-                avCodecParameters = this.parentSensor.getProcessor().getCodecParams();
-                if (avCodecParameters == null) {
-                    throw new IOException("Already writing to file " + this.fileName);
+                var processor = this.parentSensor.getProcessor();
+                if (processor == null || !processor.isStreamOpen() || !processor.isAlive()) {
+                    throw new IOException("Video input stream is not available");
                 }
 
-                var inStream = parentSensor.getProcessor().getAvStream();
+                avCodecParameters = processor.getCodecParams();
+                if (avCodecParameters == null) {
+                    throw new IOException("Video input codec parameters are not available");
+                }
+
+                var inStream = processor.getAvStream();
                 if (inStream != null) {
                     if ((inputTimeBase = inStream.time_base()) == null) {
                         inputTimeBase = av_make_q(1, 90000);
@@ -485,5 +490,4 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         }
     }
 }
-
 

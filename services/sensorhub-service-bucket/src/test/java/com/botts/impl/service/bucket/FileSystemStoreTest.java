@@ -17,6 +17,11 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.junit.Assert.*;
 
@@ -155,6 +160,49 @@ public class FileSystemStoreTest extends AbstractBucketStoreTest {
                 PosixFilePermission.OWNER_WRITE
         ), filePermissions);
         assertFalse("Uploaded file should not be executable", file.toFile().canExecute());
+    }
+
+    @Test
+    public void testConcurrentOutputStreamCreationDoesNotRace() throws Exception {
+        bucketStore.createBucket(TEST_BUCKET);
+        String objectKey = "clips/camera/concurrent.mp4";
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<?> first = concurrentPut(executor, ready, start, objectKey);
+            Future<?> second = concurrentPut(executor, ready, start, objectKey);
+            ready.await();
+            start.countDown();
+
+            assertFutureSucceeded(first);
+            assertFutureSucceeded(second);
+            assertTrue(bucketStore.objectExists(TEST_BUCKET, objectKey));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private Future<?> concurrentPut(ExecutorService executor, CountDownLatch ready,
+                                    CountDownLatch start, String objectKey) {
+        return executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            try (OutputStream output = bucketStore.putObject(
+                    TEST_BUCKET, objectKey, Collections.emptyMap())) {
+                output.write(1);
+            }
+            return null;
+        });
+    }
+
+    private void assertFutureSucceeded(Future<?> future) throws Exception {
+        try {
+            future.get();
+        } catch (ExecutionException e) {
+            throw new AssertionError("Concurrent object creation failed", e.getCause());
+        }
     }
 
     private void assertPutRejected(String key, Map<String, String> metadata) throws IOException {

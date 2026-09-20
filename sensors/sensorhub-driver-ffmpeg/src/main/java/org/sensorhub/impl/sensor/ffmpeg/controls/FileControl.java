@@ -101,19 +101,31 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
 
     @Override
     public CompletableFuture<ICommandStatus> submitCommand(ICommandData command) {
-        return CompletableFuture.supplyAsync(() -> {
+        return CompletableFuture.supplyAsync(() -> executeCommand(command));
+    }
+
+    private synchronized ICommandStatus executeCommand(ICommandData command) {
             boolean commandStatus = true;
             boolean reportFileName = false;
             String fileNameTemp = "";
+            String failureMessage = null;
             DataRecord commandData = this.commandData.copy();
             commandData.setData(command.getParams());
             var selected = ((DataChoice) commandData.getComponent(0)).getSelectedItem();
-            if (selected == null)
+            if (selected == null) {
                 commandStatus = false;
+                failureMessage = "No file command was selected";
+            }
 
             else if (selected.getName().equals(CMD_OPEN_FILE)) {
-                if (fileOutput.isWriting())
+                if (fileOutput.isWriting()) {
                     commandStatus = false;
+                    failureMessage = "Video recording is already active";
+                }
+                else if (!parentSensor.isStreamReady()) {
+                    commandStatus = false;
+                    failureMessage = "Video input stream is not available";
+                }
 
                 else {
                     fileName = Paths.get("clips", parentSensor.getUniqueIdentifier().replace(':', '-'),
@@ -131,13 +143,21 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                         this.parentSensor.getLogger().trace("Writing to file: {}", fileName);
                     } catch (Exception e) {
                         getLogger().error("Exception while opening MP4 output", e);
+                        try {
+                            bucketStore.deleteObject(VIDEO_BUCKET, fileName);
+                        } catch (Exception cleanupError) {
+                            getLogger().debug("Unable to remove incomplete MP4 output {}", fileName, cleanupError);
+                        }
                         fileName = "";
                         commandStatus = false;
+                        failureMessage = "Unable to start video recording: " + e.getMessage();
                     }
                 }
             } else if (selected.getName().equals(CMD_CLOSE_FILE)) {
-                if (!fileOutput.isWriting())
+                if (!fileOutput.isWriting()) {
                     commandStatus = false;
+                    failureMessage = "Video recording is not active";
+                }
                 else {
                     boolean saveFile = ((Boolean) selected).getValue();
                     try {
@@ -154,16 +174,21 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                         }
                         fileName = "";
                     } catch (Exception e) {
+                        getLogger().error("Exception while closing MP4 output", e);
                         commandStatus = false;
+                        failureMessage = "Unable to stop video recording: " + e.getMessage();
                     }
                 }
             } else {
                 commandStatus = false;
+                failureMessage = "Unsupported file command: " + selected.getName();
             }
 
             CommandStatus.Builder status = new CommandStatus.Builder()
                     .withCommand(command.getID())
                     .withStatusCode(commandStatus ? ICommandStatus.CommandStatusCode.ACCEPTED : ICommandStatus.CommandStatusCode.FAILED);
+            if (failureMessage != null)
+                status.withMessage(failureMessage);
 
             if (commandStatus && reportFileName) {
                 try {
@@ -174,6 +199,5 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                 } catch (Exception ignored) {}
             }
             return status.build();
-        });
     }
 }

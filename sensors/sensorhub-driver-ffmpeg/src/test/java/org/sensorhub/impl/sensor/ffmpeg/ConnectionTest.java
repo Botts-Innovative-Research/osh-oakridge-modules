@@ -23,6 +23,7 @@ import org.bytedeco.ffmpeg.global.avutil;
 import org.junit.*;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.command.CommandData;
+import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.command.IStreamingControlInterface;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.SensorHubException;
@@ -375,6 +376,91 @@ public abstract class ConnectionTest {
     }
 
     @Test
+    public void testDuplicateMp4StartIsSerialized() {
+        Optional<IStreamingControlInterface> fileControl = driver.getCommandInputs().values().stream()
+                .filter(c -> c instanceof FileControl).findFirst();
+        assertTrue("FileControl not found", fileControl.isPresent());
+
+        var struct = fileControl.get().getCommandDescription().clone();
+        struct.renewDataBlock();
+        DataChoice fileIO = (DataChoice) struct.getComponent(0);
+        fileIO.setSelectedItem(FileControl.CMD_OPEN_FILE);
+        var item = fileIO.getSelectedItem();
+        if (!item.hasData())
+            item.renewDataBlock();
+        item.getData().setStringValue("duplicate-start.mp4");
+
+        var first = fileControl.get().submitCommand(new CommandData.Builder()
+                .withCommandStream(BigId.NONE)
+                .withId(BigId.NONE)
+                .withParams(struct.getData().clone())
+                .build());
+        var second = fileControl.get().submitCommand(new CommandData.Builder()
+                .withCommandStream(BigId.NONE)
+                .withId(BigId.NONE)
+                .withParams(struct.getData().clone())
+                .build());
+
+        var statuses = java.util.List.of(first.join(), second.join());
+        assertEquals(1, statuses.stream()
+                .filter(status -> status.getStatusCode() == ICommandStatus.CommandStatusCode.ACCEPTED)
+                .count());
+        assertEquals(1, statuses.stream()
+                .filter(status -> status.getStatusCode() == ICommandStatus.CommandStatusCode.FAILED)
+                .count());
+
+        fileIO.setSelectedItem(FileControl.CMD_CLOSE_FILE);
+        var closeItem = fileIO.getSelectedItem();
+        if (!closeItem.hasData())
+            closeItem.renewDataBlock();
+        closeItem.getData().setBooleanValue(false);
+        fileControl.get().submitCommand(new CommandData.Builder()
+                .withCommandStream(BigId.NONE)
+                .withId(BigId.NONE)
+                .withParams(struct.getData())
+                .build()).join();
+    }
+
+    @Test
+    public void testDuplicateHlsStartIsIdempotent() {
+        Optional<IStreamingControlInterface> hlsControl = driver.getCommandInputs().values().stream()
+                .filter(c -> c instanceof HLSControl<?>).findFirst();
+        assertTrue("HLSControl not found", hlsControl.isPresent());
+
+        var startCommand = hlsControl.get().getCommandDescription().clone();
+        startCommand.renewDataBlock();
+        ((Category) startCommand.getComponent(0)).setValue(HLSControl.CMD_START_STREAM);
+
+        var first = hlsControl.get().submitCommand(new CommandData.Builder()
+                .withCommandStream(BigId.NONE)
+                .withId(BigId.NONE)
+                .withParams(startCommand.getData().clone())
+                .build());
+        var second = hlsControl.get().submitCommand(new CommandData.Builder()
+                .withCommandStream(BigId.NONE)
+                .withId(BigId.NONE)
+                .withParams(startCommand.getData().clone())
+                .build());
+
+        var firstStatus = first.join();
+        var secondStatus = second.join();
+        assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, firstStatus.getStatusCode());
+        assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, secondStatus.getStatusCode());
+        assertEquals(
+                firstStatus.getResult().getInlineRecords().iterator().next().getStringValue(),
+                secondStatus.getResult().getInlineRecords().iterator().next().getStringValue());
+
+        var stopCommand = hlsControl.get().getCommandDescription().clone();
+        stopCommand.renewDataBlock();
+        ((Category) stopCommand.getComponent(0)).setValue(HLSControl.CMD_END_STREAM);
+        hlsControl.get().submitCommand(new CommandData.Builder()
+                .withCommandStream(BigId.NONE)
+                .withId(BigId.NONE)
+                .withParams(stopCommand.getData())
+                .build()).join();
+    }
+
+    @Test
     public void testMp4FileOutput() throws SensorHubException {
         //driver.start();
         MpegTsProcessor mpegTsProcessor = driver.mpegTsProcessor;
@@ -471,7 +557,7 @@ public abstract class ConnectionTest {
             assertTrue(Files.exists(tempDirectory.resolve(filePath)));
 
             // --------- End Stream ---------
-            ((Category)struct.getComponent(0)).setValue(HLSControl.CMD_START_STREAM);
+            ((Category)struct.getComponent(0)).setValue(HLSControl.CMD_END_STREAM);
 
             fileControl.get().submitCommand(new CommandData.Builder()
                     .withCommandStream(BigId.NONE)

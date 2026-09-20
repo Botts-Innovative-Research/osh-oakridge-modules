@@ -14,11 +14,15 @@
 package org.sensorhub.impl.sensor.ffmpeg;
 
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.module.ModuleEvent;
-import org.sensorhub.impl.module.ModuleRegistry;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
+import org.sensorhub.mpegts.MpegTsProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Sensor driver that can read video data that is compatible with FFMPEG.
@@ -32,12 +36,16 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
     /** Debug logger */
     private static final Logger logger = LoggerFactory.getLogger(FFMPEGSensor.class);
 
-    private Thread reconnectThread;
-
+    private final Object reconnectLock = new Object();
+    private Thread streamMonitorThread;
+    private ScheduledExecutorService reconnectExecutor;
+    private ScheduledFuture<?> reconnectTask;
+    private boolean reconnectEnabled;
     private int currentReconnect;
 
     @Override
     protected void doInit() throws SensorHubException {
+        disableReconnect();
         super.doInit();
         currentReconnect = 0;
 
@@ -49,10 +57,11 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
     
     @Override
     protected void doStart() throws SensorHubException {
-    	super.doStart();
-    	// Start up the background thread if it's not already going. Normally doInit() will have just been called, so
-    	// this is redundant (but harmless). But if the user has stopped the sensor and re-started it, then this call
-    	// is necessary.
+        super.doStart();
+        enableReconnect();
+        // Start up the background thread if it's not already going. Normally doInit() will have just been called, so
+        // this is redundant (but harmless). But if the user has stopped the sensor and re-started it, then this call
+        // is necessary.
         setupExecutor();
 
         // Make sure the stream is already open. (If the sensor has been previously started, then stopped, then the
@@ -61,7 +70,7 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
         try {
             openStream();
         } catch (SensorHubException e) {
-            handleReconnect();
+            scheduleReconnect(e);
             return;
         }
 
@@ -70,59 +79,140 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
         startStream();
 
         currentReconnect = 0;
-        reconnectThread = new Thread(this::waitAndReconnect);
-        if (!reconnectThread.isAlive()) {
-            reconnectThread.start();
-        }
+        startStreamMonitor(mpegTsProcessor);
     }
 
-    private void handleReconnect() {
-        if (currentReconnect < config.connectionConfig.reconnectAttempts) {
-            try {
-                reportStatus("Reconnect attempt " + currentReconnect + 1);
-                this.getParentHub().getModuleRegistry().restartModuleAsync(this);
-                currentReconnect++;
-            } catch (SensorHubException e) {
-                throw new RuntimeException(e);
-            }
-        } else {
-            reportStatus("Failed to connect after " + currentReconnect + " attempts.");
-            currentReconnect = 0;
-            try {
-                this.getParentHub().getModuleRegistry().stopModuleAsync(this);
-            } catch (SensorHubException e) {
-                throw new RuntimeException(e);
+    void enableReconnect() {
+        synchronized (reconnectLock) {
+            reconnectEnabled = true;
+            if (reconnectExecutor == null || reconnectExecutor.isShutdown()) {
+                reconnectExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+                    Thread thread = new Thread(runnable, "ffmpeg-reconnect-" + getLocalID());
+                    thread.setDaemon(true);
+                    return thread;
+                });
             }
         }
     }
 
-    public void waitAndReconnect() {
-        // Wait for the mpegTsProcessor to finish (video stream end)
-        // and reconnect.
+    void scheduleReconnect(Exception cause) {
+        final int attempt;
+        final int maxAttempts;
+        final long delayMillis;
+
+        synchronized (reconnectLock) {
+            if (!reconnectEnabled || (reconnectTask != null && !reconnectTask.isDone()))
+                return;
+
+            maxAttempts = config.connectionConfig.reconnectAttempts;
+            if (maxAttempts == 0 || (maxAttempts > 0 && currentReconnect >= maxAttempts)) {
+                reconnectEnabled = false;
+                reportStatus("Failed to connect after " + currentReconnect + " attempts.");
+                if (cause != null)
+                    reportError("Video input stream is unavailable", cause);
+                stopAfterReconnectFailure();
+                return;
+            }
+
+            attempt = ++currentReconnect;
+            delayMillis = Math.max(0, config.connectionConfig.reconnectPeriod);
+            String attemptLimit = maxAttempts < 0 ? "unlimited" : Integer.toString(maxAttempts);
+            reportStatus("Reconnect attempt " + attempt + "/" + attemptLimit
+                    + " in " + delayMillis + " ms");
+
+            reconnectTask = reconnectExecutor.schedule(() -> {
+                synchronized (reconnectLock) {
+                    reconnectTask = null;
+                    if (!reconnectEnabled)
+                        return;
+                }
+
+                try {
+                    getParentHub().getModuleRegistry().restartModuleAsync(this);
+                } catch (SensorHubException e) {
+                    logger.error("Unable to schedule FFmpeg module restart", e);
+                    scheduleReconnect(e);
+                }
+            }, delayMillis, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private void stopAfterReconnectFailure() {
         try {
-            if(mpegTsProcessor != null)
-                mpegTsProcessor.join();
+            getParentHub().getModuleRegistry().stopModuleAsync(this);
+        } catch (SensorHubException e) {
+            logger.error("Unable to stop FFmpeg module after reconnect attempts were exhausted", e);
+        }
+    }
+
+    private void startStreamMonitor(MpegTsProcessor processor) {
+        synchronized (reconnectLock) {
+            if (!reconnectEnabled || processor == null)
+                return;
+
+            if (streamMonitorThread != null)
+                streamMonitorThread.interrupt();
+
+            streamMonitorThread = new Thread(() -> waitAndReconnect(processor),
+                    "ffmpeg-stream-monitor-" + getLocalID());
+            streamMonitorThread.setDaemon(true);
+            streamMonitorThread.start();
+        }
+    }
+
+    private void waitAndReconnect(MpegTsProcessor processor) {
+        try {
+            processor.join();
         } catch (InterruptedException e) {
-            // If join is interrupted, this means doStop was called
-            // and the function should immediately return to avoid
-            // starting the reconnect loop.
-            logger.debug("Mpeg process interrupted.");
-            currentReconnect = 0;
+            logger.debug("FFmpeg stream monitor interrupted.");
+            Thread.currentThread().interrupt();
             return;
         }
-        handleReconnect();
+
+        synchronized (reconnectLock) {
+            if (!reconnectEnabled || processor != mpegTsProcessor)
+                return;
+            streamMonitorThread = null;
+        }
+        scheduleReconnect(null);
+    }
+
+    void disableReconnect() {
+        Thread monitor;
+        ScheduledExecutorService executor;
+        synchronized (reconnectLock) {
+            reconnectEnabled = false;
+            if (reconnectTask != null) {
+                reconnectTask.cancel(true);
+                reconnectTask = null;
+            }
+            monitor = streamMonitorThread;
+            streamMonitorThread = null;
+            executor = reconnectExecutor;
+            reconnectExecutor = null;
+        }
+
+        if (monitor != null)
+            monitor.interrupt();
+        if (executor != null)
+            executor.shutdownNow();
     }
 
     @Override
     public void doStop() throws SensorHubException {
-        if (reconnectThread != null) {
-            try {
-                reconnectThread.interrupt();
-            } catch (SecurityException e) {
-                logger.debug("Reconnect thread could not be interrupted.");
-            }
-            reconnectThread = null;
-        }
+        disableReconnect();
         super.doStop();
+    }
+
+    int getReconnectAttemptCount() {
+        synchronized (reconnectLock) {
+            return currentReconnect;
+        }
+    }
+
+    boolean isReconnectPending() {
+        synchronized (reconnectLock) {
+            return reconnectTask != null && !reconnectTask.isDone();
+        }
     }
 }

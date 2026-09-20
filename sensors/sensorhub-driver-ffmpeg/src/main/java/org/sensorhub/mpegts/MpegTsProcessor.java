@@ -372,6 +372,13 @@ public class MpegTsProcessor extends Thread {
         return streamOpened;
     }
 
+    /**
+     * @return {@code true} when the native input context is currently open.
+     */
+    public boolean isStreamOpen() {
+        return streamOpened;
+    }
+
     public void setInjectExtradata(boolean injectExtradata) { this.injectExtradata = injectExtradata; }
 
     public AVCodecParameters getCodecParams() {
