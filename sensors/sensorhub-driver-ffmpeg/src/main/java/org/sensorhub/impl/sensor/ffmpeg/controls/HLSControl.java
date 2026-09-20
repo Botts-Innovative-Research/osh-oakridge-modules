@@ -98,21 +98,30 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
 
     @Override
     public CompletableFuture<ICommandStatus> submitCommand(ICommandData command) {
+        return CompletableFuture.supplyAsync(() -> executeCommand(command));
+    }
 
-        return CompletableFuture.supplyAsync(() -> {
+    private synchronized ICommandStatus executeCommand(ICommandData command) {
             boolean commandStatus = true;
             boolean reportFileName = false;
+            String failureMessage = null;
             //DataRecord commandData = this.commandData.copy();
             //commandData.setData(command.getParams());
             var selected = command.getParams().getStringValue();
 
-            if (selected == null)
+            if (selected == null) {
                 commandStatus = false;
+                failureMessage = "No stream command was selected";
+            }
 
             else if (selected.equals(CMD_START_STREAM)) {
                 if (fileOutput.isWriting()) {
                     commandStatus = true;
                     reportFileName = true;
+                }
+                else if (!parentSensor.isStreamReady()) {
+                    commandStatus = false;
+                    failureMessage = "Video input stream is not available";
                 }
                 else {
                     filePath = Paths.get("streams", parentSensor.getUniqueIdentifier().replace(':', '-'), "live.m3u8");
@@ -131,13 +140,21 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                     } catch (Exception e) {
                         logger.error("Exception while opening HLS output", e);
                         hlsHandler.get().removeControl(fileName, this);
+                        try {
+                            bucketStore.deleteObject(VIDEO_BUCKET, fileName);
+                        } catch (Exception cleanupError) {
+                            logger.debug("Unable to remove incomplete HLS manifest {}", fileName, cleanupError);
+                        }
                         fileName = "";
                         commandStatus = false;
+                        failureMessage = "Unable to start HLS stream: " + e.getMessage();
                     }
                 }
             } else if (selected.equals(CMD_END_STREAM)) {
-                if (!fileOutput.isWriting())
+                if (!fileOutput.isWriting()) {
                     commandStatus = false;
+                    failureMessage = "HLS stream is not active";
+                }
                 else {
                     try {
                         this.fileOutput.closeFile();
@@ -160,16 +177,21 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                         }
                         fileName = "";
                     } catch (Exception e) {
+                        logger.error("Exception while closing HLS output", e);
                         commandStatus = false;
+                        failureMessage = "Unable to stop HLS stream: " + e.getMessage();
                     }
                 }
             } else {
                 commandStatus = false;
+                failureMessage = "Unsupported stream command: " + selected;
             }
 
             CommandStatus.Builder status = new CommandStatus.Builder()
                     .withCommand(command.getID())
                     .withStatusCode(commandStatus ? ICommandStatus.CommandStatusCode.ACCEPTED : ICommandStatus.CommandStatusCode.FAILED);
+            if (failureMessage != null)
+                status.withMessage(failureMessage);
             if (commandStatus && reportFileName) {
                 try {
                     resultData.renewDataBlock();
@@ -181,7 +203,6 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                 }
             }
             return status.build();
-        });
     }
 
     @Override

@@ -83,6 +83,8 @@ public class LaneSystem extends SensorSystem {
     AbstractSensorModule<?> existingRPMModule = null;
     IDataProducerModule<?> occupancyProducer = null;
     Flow.Subscription subscription = null;
+    private final Object subscriptionLock = new Object();
+    private long subscriptionGeneration = 0;
     private ExecutorService threadPool = null;
     Map<String, FFMPEGConfig> ffmpegConfigs = null;
     OccupancyWrapper occupancyWrapper;
@@ -94,6 +96,8 @@ public class LaneSystem extends SensorSystem {
 
     @Override
     protected void doInit() throws SensorHubException {
+        cancelLaneEventSubscription();
+        shutdownThreadPool();
         threadPool = Executors.newSingleThreadExecutor();
         ffmpegConfigs = new HashMap<>();
         occupancyWrapper = null;
@@ -176,17 +180,14 @@ public class LaneSystem extends SensorSystem {
         for (var module: getMembers().values()) {
             if (module != null && module instanceof AbstractSensorModule<?>) {
                 try {
-                    /*
-                    threadPool.execute(() -> {
-                        try {
-                            module.init();
-                        } catch (SensorHubException e) {
-                            throw new RuntimeException(e);
-                        }
-                    });
-
-                     */
-                    module.init();
+                    var state = module.getCurrentState();
+                    if (state == ModuleEvent.ModuleState.INITIALIZING) {
+                        module.waitForState(ModuleEvent.ModuleState.INITIALIZED, 10000);
+                    } else if (state != ModuleEvent.ModuleState.INITIALIZED
+                            && state != ModuleEvent.ModuleState.STARTING
+                            && state != ModuleEvent.ModuleState.STARTED) {
+                        module.init();
+                    }
                 }
                 catch (Exception e) {
                     // If RPM fails to initialize, then don't load process module
@@ -197,14 +198,26 @@ public class LaneSystem extends SensorSystem {
             }
         }
 
+        final long generation;
+        synchronized (subscriptionLock) {
+            generation = ++subscriptionGeneration;
+        }
+
         getParentHub().getEventBus().newSubscription()
             // TODO: osh-core needs to use EventUtils for module topic IDs
             .withTopicID(EventUtils.getSystemRegistryTopicID(), ModuleRegistry.EVENT_GROUP_ID)
             .subscribe(this::handleLaneEvent)
-            .thenAccept(subscription -> {
-                this.subscription = subscription;
-                subscription.request(Long.MAX_VALUE);
-                getLogger().info("Started module subscription to {}", getLocalID());
+            .thenAccept(newSubscription -> {
+                synchronized (subscriptionLock) {
+                    if (generation != subscriptionGeneration) {
+                        newSubscription.cancel();
+                        return;
+                    }
+
+                    subscription = newSubscription;
+                    newSubscription.request(Long.MAX_VALUE);
+                    getLogger().info("Started module subscription to {}", getLocalID());
+                }
             });
     }
 
@@ -289,6 +302,8 @@ public class LaneSystem extends SensorSystem {
     }
 
     protected void doStop() throws SensorHubException {
+        cancelLaneEventSubscription();
+        shutdownThreadPool();
         super.doStop();
         if (webIdHelper != null) {
             webIdHelper.stop();
@@ -303,6 +318,8 @@ public class LaneSystem extends SensorSystem {
 
     @Override
     public void cleanup() throws SensorHubException {
+        cancelLaneEventSubscription();
+        shutdownThreadPool();
         super.cleanup();
 
         // Auto delete lane data if specified
@@ -320,10 +337,22 @@ public class LaneSystem extends SensorSystem {
             }
         }
 
-        // Cancel and remove module/system subscription on cleanup
-        if (subscription != null) {
-            subscription.cancel();
-            subscription = null;
+    }
+
+    private void cancelLaneEventSubscription() {
+        synchronized (subscriptionLock) {
+            subscriptionGeneration++;
+            if (subscription != null) {
+                subscription.cancel();
+                subscription = null;
+            }
+        }
+    }
+
+    private void shutdownThreadPool() {
+        if (threadPool != null) {
+            threadPool.shutdownNow();
+            threadPool = null;
         }
     }
 

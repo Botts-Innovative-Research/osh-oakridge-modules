@@ -45,6 +45,9 @@ public class OccupancyWrapper {
     Flow.Subscription occupancySubscription;
     List<String> fileNames = new ArrayList<>();
     private long cmdId = 0;
+    private final Object lifecycleLock = new Object();
+    private boolean started = false;
+    private long lifecycleGeneration = 0;
 
     public OccupancyWrapper(ISensorHub hub) {
         this.hub = hub;
@@ -77,16 +80,27 @@ public class OccupancyWrapper {
     }
 
     public void start() {
-        if (!isInitialized()) {
-            logger.warn("Cannot start; init this object first!");
-            return;
-        }
+        final long generation;
+        final IDataProducerModule<?> startedRpm;
+        synchronized (lifecycleLock) {
+            if (started) {
+                logger.debug("Occupancy wrapper is already started; ignoring duplicate start request.");
+                return;
+            }
+            if (!isInitialized()) {
+                logger.warn("Cannot start; init this object first!");
+                return;
+            }
 
-        registerStateListener();
-        registerDailyFileListener();
+            started = true;
+            generation = ++lifecycleGeneration;
+            startedRpm = rpm;
+            registerStateListener();
+        }
+        registerDailyFileListener(generation, startedRpm);
 
         try {
-            var occOut = rpm.getOutputs().values().stream().filter((predicate) -> predicate instanceof OccupancyOutput).findFirst();
+            var occOut = startedRpm.getOutputs().values().stream().filter((predicate) -> predicate instanceof OccupancyOutput).findFirst();
             if (occOut.isPresent()) {
                 observationHelper.setOccupancyOutput((OccupancyOutput<?>) occOut.get());
             } else {
@@ -97,35 +111,61 @@ public class OccupancyWrapper {
     }
 
     public void stop() {
-        if (dailyFileSubscription != null) {
-            dailyFileSubscription.cancel();
+        Flow.Subscription dailySubscription;
+        Flow.Subscription occupancyEventSubscription;
+        synchronized (lifecycleLock) {
+            started = false;
+            lifecycleGeneration++;
+            if (stateManager != null)
+                stateManager.clearListeners();
+            dailySubscription = dailyFileSubscription;
+            dailyFileSubscription = null;
+            occupancyEventSubscription = occupancySubscription;
+            occupancySubscription = null;
         }
-        dailyFileSubscription = null;
 
-        if (occupancySubscription != null) {
-            occupancySubscription.cancel();
-        }
-        occupancySubscription = null;
+        if (dailySubscription != null)
+            dailySubscription.cancel();
+        if (occupancyEventSubscription != null)
+            occupancyEventSubscription.cancel();
 
-        observationHelper.clear();
+        observationHelper.stop();
     }
 
-    public void registerDailyFileListener() {
+    private void registerDailyFileListener(long generation, IDataProducerModule<?> startedRpm) {
         hub.getEventBus().newSubscription().withEventType(ObsEvent.class)
-                .withTopicID(EventUtils.getDataStreamDataTopicID(rpm.getUniqueIdentifier(), DAILYFILE_NAME))
+                .withTopicID(EventUtils.getDataStreamDataTopicID(startedRpm.getUniqueIdentifier(), DAILYFILE_NAME))
                 .subscribe((event) -> {
+                    IDataProducerModule<?> currentRpm;
+                    StateManager currentStateManager;
+                    synchronized (lifecycleLock) {
+                        if (!started || generation != lifecycleGeneration)
+                            return;
+                        currentRpm = rpm;
+                        currentStateManager = stateManager;
+                    }
+                    if (currentRpm == null || currentStateManager == null)
+                        return;
+
                     ObsEvent obsEvent = (ObsEvent) event;
-                    var record = rpm.getOutputs().get(DAILYFILE_NAME).getRecordDescription();
+                    var record = currentRpm.getOutputs().get(DAILYFILE_NAME).getRecordDescription();
                     var observations = obsEvent.getObservations();
 
                     for (var obs : observations) {
                         record.setData(obs.getResult());
-                        stateManager.updateDailyFile(record);
+                        currentStateManager.updateDailyFile(record);
                     }
-                }).thenAccept(subscription -> {
-                    this.dailyFileSubscription = subscription;
-                    subscription.request(Long.MAX_VALUE);
-                    logger.info("Started subscription to rpm dailyfile event.");
+                }).thenAccept(newSubscription -> {
+                    synchronized (lifecycleLock) {
+                        if (!started || generation != lifecycleGeneration || dailyFileSubscription != null) {
+                            newSubscription.cancel();
+                            return;
+                        }
+
+                        dailyFileSubscription = newSubscription;
+                        newSubscription.request(Long.MAX_VALUE);
+                        logger.info("Started subscription to rpm dailyfile event.");
+                    }
                 });
     }
 
@@ -258,12 +298,7 @@ public class OccupancyWrapper {
     }
 
     public void removeRpmSensor() {
-        if (dailyFileSubscription != null) {
-            dailyFileSubscription.cancel();
-        }
-        if (occupancySubscription != null) {
-            occupancySubscription.cancel();
-        }
+        stop();
         rpm = null;
         rpmObs = null;
         stateManager = null;
@@ -284,6 +319,7 @@ public class OccupancyWrapper {
     private static class ObservationHelper {
         private final ArrayList<String> ffmpegOuts = new ArrayList<>();
         private OccupancyOutput<?> occupancyOutput;
+        private final OccupancyOutput.OccupancyCallback occupancyCallback = this::occupancyCallback;
         private final Object lock = new Object();
         private int totalCams = 2;
         private int missingCams = 0;
@@ -317,10 +353,20 @@ public class OccupancyWrapper {
         public void setOccupancyOutput(OccupancyOutput<?> occupancyOutput) {
             synchronized (lock) {
                 if (this.occupancyOutput != null)
-                    this.occupancyOutput.removeOccupancyCallback(this::occupancyCallback);
+                    this.occupancyOutput.removeOccupancyCallback(occupancyCallback);
 
                 this.occupancyOutput = occupancyOutput;
-                this.occupancyOutput.addOccupancyCallback(this::occupancyCallback);
+                this.occupancyOutput.addOccupancyCallback(occupancyCallback);
+            }
+        }
+
+        private void stop() {
+            synchronized (lock) {
+                if (occupancyOutput != null) {
+                    occupancyOutput.removeOccupancyCallback(occupancyCallback);
+                    occupancyOutput = null;
+                }
+                clear();
             }
         }
 

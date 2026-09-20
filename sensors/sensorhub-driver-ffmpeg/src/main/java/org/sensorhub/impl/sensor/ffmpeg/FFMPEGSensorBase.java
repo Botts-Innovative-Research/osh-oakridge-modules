@@ -180,6 +180,14 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
     public MpegTsProcessor getProcessor() { return mpegTsProcessor; }
 
     /**
+     * Indicates whether commands can safely attach an output to the live input stream.
+     */
+    public boolean isStreamReady() {
+        var processor = mpegTsProcessor;
+        return processor != null && processor.isStreamOpen() && processor.isAlive() && isStarted();
+    }
+
+    /**
      * Creates the background thread that'll handle video decoding, if it hasn't already been done.
      * Also tells the setDecoder and videoOutput about the executor. This can be called multiple times without causing
      * problems, and that's done on purpose so that the two subclasses could potentially call it at different times in
@@ -371,7 +379,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 
     @Override
     public boolean isConnected() {
-        return (mpegTsProcessor != null) && isStarted();
+        return isStreamReady();
     }
 
     /**
