@@ -1,5 +1,16 @@
 # OSCAR Service Module
 
+## Administrator and operator manual
+
+The detailed OSCAR 3.8.3 manual is maintained beside `OSCARServiceConfig`, where the administration UI can select it using the active language:
+
+- [English](com/botts/impl/service/oscar/i18n/README.md)
+- [Español](com/botts/impl/service/oscar/i18n/README_es.md)
+- [Français](com/botts/impl/service/oscar/i18n/README_fr.md)
+- [Ελληνικά](com/botts/impl/service/oscar/i18n/README_el.md)
+
+Keep those four files synchronized whenever configuration or operator workflows change.
+
 ## Purpose
 The purpose of this module is to handle the following aspects of OSCAR (3.0+)
 
@@ -8,8 +19,12 @@ The purpose of this module is to handle the following aspects of OSCAR (3.0+)
 - Site diagram (png/jpg)
 - Site bounding box (lower-left and upper-right LLA coords)
 - Video data retention parameters
-  - Max age for occupancy video (days)
-  - 3-frame persistence (true/false)
+  - Age at which occupancy video is processed
+  - Query period
+  - Delete the clip or retain a configurable number of frames
+- Storage-pressure video cleanup parameters
+  - Trigger and target filesystem usage
+  - Check period, minimum object age, and monitored storage path
 
 ### Systems/DataStreams/ControlStreams
 - OSCAR client config (urn:ornl:oscar:client:config)
@@ -27,4 +42,7 @@ The purpose of this module is to handle the following aspects of OSCAR (3.0+)
         - "siteBoundingBox" ([lat, lon], [lat, lon])
 
 ### Background Operations/Services
-- Purging/trimming of video clips past max age
+- Purging/trimming of occupancy video past the configured age
+- Video cleanup when filesystem usage exceeds the configured threshold
+- Hourly database cleanup outside buffered occupancy windows
+- Midnight UTC export of daily-file data to CSV
