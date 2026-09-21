@@ -81,11 +81,19 @@ public class MessageHandlerTest {
         handler.stop();
         appender.close();
 
-        // Every non-blank raw line (including the unparseable ones) reached the daily file, verbatim
+        // Every non-blank raw line (including the unparseable ones) reached the daily file with
+        // local and UTC CAS timestamps.
         String key = "test001_" + LocalDate.now() + ".csv";
         try (InputStream file = store.getObject(DailyFileAppender.BUCKET, key)) {
-            assertEquals("GX,000001\r\n\"unterminated,quote\r\nTC,111111,111111,111111,111111\r\n",
-                    new String(file.readAllBytes(), StandardCharsets.UTF_8));
+            String[] lines = new String(file.readAllBytes(), StandardCharsets.UTF_8).split("\\r\\n");
+            assertEquals(3, lines.length);
+            assertEquals("GX,000001", lines[0].substring(0, "GX,000001".length()));
+            assertEquals("\"unterminated,quote", lines[1].substring(0, "\"unterminated,quote".length()));
+            assertEquals("TC,111111,111111,111111,111111",
+                    lines[2].substring(0, "TC,111111,111111,111111,111111".length()));
+            for (String line : lines)
+                org.junit.Assert.assertTrue(line.matches(".*\\d{2}-\\d{2}-\\d{2}\\.\\d{3},"
+                        + "\\d{2}-\\d{2}-\\d{2}\\.\\d{3}"));
         }
 
         // The live dailyFile output saw the same three lines

@@ -57,25 +57,26 @@ public class DailyFileAppenderTest {
     }
 
     @Test
-    public void writesRawLinesWithCrlfNoHeaderNoQuotes() throws Exception {
+    public void writesCasLinesWithLocalAndUtcTimestamps() throws Exception {
+        clock.set(ZonedDateTime.of(2026, 9, 16, 12, 0, 0, 961_000_000, ZONE).toInstant());
         try (DailyFileAppender appender = newAppender(store)) {
             appender.append("GB,000188,000206,000262,000243");
             appender.append("SG1,000660,000090,05,10,07.0,P");
             appender.append("SP,0.0136,50.134,080.68,000000");
         }
 
-        assertEquals("GB,000188,000206,000262,000243\r\n"
-                        + "SG1,000660,000090,05,10,07.0,P\r\n"
-                        + "SP,0.0136,50.134,080.68,000000\r\n",
+        assertEquals("GB,000188,000206,000262,000243,12-00-00.961,16-00-00.961\r\n"
+                        + "SG1,000660,000090,05,10,07.0,P,12-00-00.961,16-00-00.961\r\n"
+                        + "SP,0.0136,50.134,080.68,000000,12-00-00.961,16-00-00.961\r\n",
                 read(key(LocalDate.of(2026, 9, 16))));
     }
 
     @Test
-    public void lineWithQuotesAndCommasIsVerbatim() throws Exception {
+    public void preservesMessageFieldsBeforeTimestamps() throws Exception {
         try (DailyFileAppender appender = newAppender(store)) {
             appender.append("\"a\",b,\"c\"\"d\"");
         }
-        assertEquals("\"a\",b,\"c\"\"d\"\r\n", read(key(LocalDate.of(2026, 9, 16))));
+        assertEquals("\"a\",b,\"c\"\"d\",12-00-00.000,16-00-00.000\r\n", read(key(LocalDate.of(2026, 9, 16))));
     }
 
     @Test
@@ -85,7 +86,8 @@ public class DailyFileAppenderTest {
             appender.append("");
             appender.append("NB,000000,000000,000000,000000");
         }
-        assertEquals("NB,000000,000000,000000,000000\r\n", read(key(LocalDate.of(2026, 9, 16))));
+        assertEquals("NB,000000,000000,000000,000000,12-00-00.000,16-00-00.000\r\n",
+                read(key(LocalDate.of(2026, 9, 16))));
     }
 
     @Test
@@ -101,8 +103,8 @@ public class DailyFileAppenderTest {
             assertEquals(key(LocalDate.of(2026, 9, 17)), appender.currentKey());
         }
 
-        assertEquals("A\r\n", read(key(LocalDate.of(2026, 9, 16))));
-        assertEquals("B\r\n", read(key(LocalDate.of(2026, 9, 17))));
+        assertEquals("A,23-59-59.000,03-59-59.000\r\n", read(key(LocalDate.of(2026, 9, 16))));
+        assertEquals("B,00-00-00.000,04-00-00.000\r\n", read(key(LocalDate.of(2026, 9, 17))));
     }
 
     @Test
@@ -113,7 +115,8 @@ public class DailyFileAppenderTest {
         try (DailyFileAppender second = newAppender(store)) {
             second.append("B");
         }
-        assertEquals("A\r\nB\r\n", read(key(LocalDate.of(2026, 9, 16))));
+        assertEquals("A,12-00-00.000,16-00-00.000\r\nB,12-00-00.000,16-00-00.000\r\n",
+                read(key(LocalDate.of(2026, 9, 16))));
     }
 
     @Test
@@ -130,7 +133,9 @@ public class DailyFileAppenderTest {
 
             assertEquals(0, appender.queuedLines());
         }
-        assertEquals("A\r\nB\r\nC\r\n", read(key(LocalDate.of(2026, 9, 16))));
+        assertEquals("A,12-00-00.000,16-00-00.000\r\nB,12-00-00.000,16-00-00.000\r\n"
+                        + "C,12-00-00.000,16-00-00.000\r\n",
+                read(key(LocalDate.of(2026, 9, 16))));
     }
 
     @Test
@@ -144,9 +149,10 @@ public class DailyFileAppenderTest {
         }
 
         String content = read(key(LocalDate.of(2026, 9, 16)));
-        assertFalse("oldest line should have been dropped", content.startsWith("L0\r\n"));
-        assertTrue(content.startsWith("L1\r\n"));
-        assertTrue(content.endsWith("L" + DailyFileAppender.MAX_QUEUED_LINES + "\r\n"));
+        assertFalse("oldest line should have been dropped", content.startsWith("L0,"));
+        assertTrue(content.startsWith("L1,12-00-00.000,16-00-00.000\r\n"));
+        assertTrue(content.endsWith("L" + DailyFileAppender.MAX_QUEUED_LINES
+                + ",12-00-00.000,16-00-00.000\r\n"));
     }
 
     @Test
@@ -164,7 +170,7 @@ public class DailyFileAppenderTest {
             appender.append("B");   // reopens successfully
             assertEquals(1, appender.droppedLines());
         }
-        assertEquals("B\r\n", read(key(LocalDate.of(2026, 9, 16))));
+        assertEquals("B,12-00-00.000,16-00-00.000\r\n", read(key(LocalDate.of(2026, 9, 16))));
     }
 
     @Test
@@ -191,7 +197,7 @@ public class DailyFileAppenderTest {
         appender.append("A");
         appender.close();
         appender.append("B");
-        assertEquals("A\r\n", read(key(LocalDate.of(2026, 9, 16))));
+        assertEquals("A,12-00-00.000,16-00-00.000\r\n", read(key(LocalDate.of(2026, 9, 16))));
     }
 
     // ---- helpers ----
