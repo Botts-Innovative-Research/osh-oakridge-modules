@@ -1,6 +1,6 @@
 # OSCAR 3.8.3 administrator and operator manual
 
-This manual covers the complete first-use workflow including: trusting the OSCAR TLS certificate, signing in, preparing and georeferencing a site diagram, importing lanes from a `config.csv` file, using the OSCAR Viewer, opening an alarm, and creating a Lane System manually with an RPM and cameras.
+This manual covers the complete first-use and operations workflow including certificate trust, sign-in, site-diagram georeferencing, lane import/manual creation, alarm adjudication and evidence, event review, national statistics, reports, and node federation.
 
 The screenshots show the English interface. OSCAR also supplies Spanish, French, and Greek versions of this manual, selected automatically by the administration interface:
 
@@ -19,10 +19,14 @@ The screenshots show the English interface. OSCAR also supplies Spanish, French,
 5. [Create and upload a georeferenced site diagram](#5-create-and-upload-a-georeferenced-site-diagram)
 6. [Import or export lanes with `config.csv`](#6-import-or-export-lanes-with-configcsv)
 7. [Create a Lane System manually](#7-create-a-lane-system-manually)
-8. [Verify the OSCAR Viewer and open an alarm](#8-verify-the-oscar-viewer-and-open-an-alarm)
-9. [Data retention and storage behavior](#9-data-retention-and-storage-behavior)
-10. [Validation checklist](#10-validation-checklist)
-11. [Troubleshooting](#11-troubleshooting)
+8. [Operate the OSCAR Viewer](#8-operate-the-oscar-viewer)
+9. [National statistics](#9-national-statistics)
+10. [Report generation](#10-report-generation)
+11. [Node federation](#11-node-federation)
+12. [Data retention and storage behavior](#12-data-retention-and-storage-behavior)
+13. [Validation checklist](#13-validation-checklist)
+14. [Troubleshooting](#14-troubleshooting)
+15. [Related documentation](#15-related-documentation)
 
 ## 1. Before you begin
 
@@ -432,37 +436,94 @@ The generated FFmpeg children use TCP, request 24 frames per second, enable HLS 
 
 For driver-specific details, see the [Rapiscan](https://github.com/Botts-Innovative-Research/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-rapiscan), [Aspect](https://github.com/Botts-Innovative-Research/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-aspect), [RS-350](https://github.com/Botts-Innovative-Research/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-rs350), and [FFmpeg](https://github.com/Botts-Innovative-Research/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-ffmpeg) module documentation.
 
-## 8. Verify the OSCAR Viewer and open an alarm
+## 8. Operate the OSCAR Viewer
 
 Open `https://<oscar-host>/`. The dashboard should show lane status, the event table, and the map. When a site diagram is configured, it is the top map image and the initial extent matches its uploaded bounds. OSCAR-generated lane markers remain interactive above the diagram; a pin drawn into the source screenshot is only part of the image.
 
 ![OSCAR Viewer dashboard](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/18-viewer-dashboard.png)
 
-### 8.1 Dashboard checks
+### 8.1 Dashboard checks and alarm queue
 
 1. Confirm that every expected lane appears in **Lane Status**.
 2. Confirm that the lane marker is near the expected point on the diagram.
 3. Use the layer control to compare the site diagram with OSM or Esri when alignment needs verification.
 4. Confirm that new occupancies reach the event table and that start/end time, gamma, neutron, and status values are plausible.
-5. Select an event row to open the preview. The preview provides charts/video and a quick adjudication form. Enter the vehicle ID when known, select an adjudication code and secondary-inspection status, add notes, then review before submitting.
-6. Use the expand action to open the full Event Details page.
+5. The dashboard alarm table contains alarming occupancies that have not yet been adjudicated. Select a row once to open its preview; select it again to close the preview. The selected status cell is color-coded for Gamma, Neutron, or Gamma & Neutron.
+6. In the preview, review the CPS/NSIGMA chart tabs and each available recorded-camera item. Arrow controls move between media items.
+7. Use the expand action to open the full Event Details page. A double-click on a table row also opens Event Details.
 
-### 8.2 Event Details
+### 8.2 Quick adjudication on the dashboard
 
-![Alarm Event Details](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/19-event-details.png)
+![Dashboard alarm preview and adjudication](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/26-dashboard-adjudication.png)
+
+Use the dashboard form when the chart/video is sufficient and no evidence upload or WebID analysis is needed:
+
+1. Enter **Vehicle ID** when it is known.
+2. Choose one **Adjudicate** code from the grouped list in section 8.5.
+3. Set **Secondary Inspection** to **None**, **Requested**, or **Completed**.
+4. Add **Notes** that support the decision.
+5. Select **Submit**. A success notification identifies the occupancy, and the adjudicated alarm leaves the dashboard alarm queue. Select **Reset** to clear the local form without submitting.
+
+Submitting creates an adjudication record; it does not alter the original detector observation. Do not submit a placeholder code. If evidence, isotope selection, QR capture, WebID processing, or a review of prior decisions is required, expand to Event Details instead.
+
+### 8.3 Events page
+
+![Events list](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/27-event-list.png)
+
+The **Events** page is the historical list across configured local and federated nodes. It includes all occupancies, not only active unadjudicated alarms. Each row shows the lane and parent node, occupancy ID, start/end time, maximum gamma and neutron count rates, alarm status, and whether an adjudication exists.
+
+- **Columns** shows/hides optional columns; **Filters** opens server-side filters; **Density** changes row spacing.
+- Start/end-time filters support **after** and **before**. Status supports exact **None**, **Gamma**, **Neutron**, or **Gamma & Neutron**. Adjudicated supports **Yes** or **No**. Applying a filter returns to page 1.
+- Results are newest first and paged 15 at a time. The footer advances between pages. Counts cover the occupancy streams currently reachable from every configured node.
+- Select a row for the preview. Double-click it, or choose the row's **Details** action, to open Event Details.
+- If a federated node or lane is unavailable, its rows/count may be incomplete; correct node connectivity and refresh rather than assuming that zero means no events.
+
+### 8.4 Event Details
+
+![Event Details summary, charts, and video](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/28-event-details-summary.png)
 
 The page can include:
 
 - lane, occupancy, time, alarm status, speed, and other captured fields;
 - gamma, threshold, neutron, and supported RS-350 charts;
 - recorded video for the event window;
-- miscellaneous event data and prior adjudications;
-- uploaded evidence and QR-scanned evidence;
-- optional Web ID analysis and isotope selection;
+- WebID analysis results and the complete logged-adjudication history;
+- uploaded evidence and spectroscopic QR evidence;
+- optional WebID analysis and manual isotope selection;
 - vehicle ID, notes, secondary-inspection status, and adjudication code; and
 - **Export as PDF** for the rendered event report.
 
-Available data depends on detector type, camera health, retention, event age, user permissions, and Web ID connectivity.
+Use **Back** to return to the originating list. **CPS** and **NSIGMA** select the gamma chart presentation when both are supported. The video arrows move through camera recordings. **Export as PDF** invokes the browser print dialog for the currently rendered Event Details page; choose the browser's PDF destination to save it. This is separate from the server-generated reports in section 10.
+
+Available data depends on detector type, camera health, retention, event age, user permissions, and WebID connectivity. A missing panel is not proof that the event had no data; verify the lane, stream, camera, and retention status.
+
+### 8.5 Complete adjudication and evidence workflow
+
+![Event Details evidence and adjudication](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/29-event-details-adjudication.png)
+
+The lower half of Event Details contains three related areas:
+
+- **WebID Analysis Results** lists timestamp, isotope name/type, confidence and confidence text, count rate, isotope text/count, warning count/text, chi square, detector response function (DRF), error message, and estimated dose. Long text has **Read more**.
+- **Logged Adjudications** lists occupancy, timestamp, user, code, feedback, isotopes, evidence paths, secondary-inspection state, and vehicle ID. Evidence paths open the stored object when the node is reachable.
+- **Evidence Collection** and **Adjudication Form** create a new decision. A later submission adds another logged record; it does not silently rewrite the earlier one.
+
+#### Evidence Collection
+
+1. Select **Upload Files** to add one or more files. OSCAR does not impose a browser file-type filter here; follow site policy and never upload unrelated or untrusted material.
+2. For a spectrum that should be analyzed, enable **WebID**, select a DRF supplied by the Sandia Full Spectrum service, choose **Foreground** or **Background**, and—only for a foreground—optionally enable **Synthesize Background**. A foreground/background pair is submitted together when both are supplied.
+3. Select **QR Scanner** to capture spectroscopic text with the device camera. Grant camera permission, scan one or more codes, review/delete captures, configure the same WebID/DRF/spectrum options, then select **Done**. QR captures become text evidence files when submitted.
+4. Select **Upload to WebID** to process configured, not-yet-uploaded WebID evidence before the final adjudication. The button stays disabled when nothing eligible is selected. Network access to the configured bucket endpoint and Full Spectrum service is required.
+5. Review returned rows. In the form, **WebID Evidence** can select one or more results; **Use Selected Result** applies their isotope findings. The operator remains responsible for the final decision.
+
+Deleting an item before submission removes it only from the pending form. After upload, use the recorded evidence path and the site's evidence-retention procedure; do not assume browser removal deletes server evidence.
+
+#### Adjudication Form
+
+1. Enter **Vehicle ID** if known.
+2. Select exactly one adjudication code. Select zero or more **Isotopes**; **Unknown** is mutually exclusive with named isotopes. Available named choices are Neptunium, Plutonium, Uranium-233/235/238, Americium, Barium, Bismuth, Californium, Cesium-134/137, Cobalt-57/60, Europium-152, Iridium, Manganese, Selenium, Sodium, Strontium, Fluorine, Gallium, Iodine-123/131, Indium, Palladium, Technetium, Xenon, Potassium, Radium, and Thorium.
+3. Add **Notes** and select secondary inspection: **None**, **Requested**, or **Completed**.
+4. Select **Submit**. Review the confirmation dialog, including code/group, vehicle, isotopes, notes, inspection state, uploaded files, and QR records. Select **Confirm and Submit** to send, or return to correct the form.
+5. Confirm the success message and the new **Logged Adjudications** row. If submission fails, preserve the form, verify that the lane's adjudication control stream and node are reachable, and retry only after resolving the cause.
 
 #### Adjudication codes
 
@@ -475,9 +536,71 @@ Available data depends on detector type, camera health, retention, event age, us
 | Tamper/Fault | 10 Unauthorized Activity |
 | Other | 11 Other |
 
-Use site procedure—not convenience—to choose a code. The full form opens a confirmation dialog showing the vehicle ID, code/group, isotopes, notes, evidence files, scanned QR records, and secondary-inspection value before final submission.
+Use site procedure—not convenience—to choose a code.
 
-## 9. Data retention and storage behavior
+## 9. National statistics
+
+![National statistics](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/30-national-statistics.png)
+
+The **National** page summarizes every configured node in one row per node. Columns are **Node ID**, **Gamma Alarms**, **Neutron Alarms**, **Gamma-Neutron Alarms**, **Occupancies**, **Tamper**, **Gamma Faults**, **Neutron Faults**, and total **Faults**. Use **Columns**, **Filters**, and **Density** to adjust the grid.
+
+1. Select **All Time**, **Last 30 Days**, **Last 7 Days**, **Last 24 Hours**, or **Custom Range**.
+2. For a custom range, choose both start and end date/time. The end must not precede the start.
+3. Select **Refresh Statistics**. OSCAR sends a statistics-generation command to each node's OSCAR Service control stream. Custom dates are sent only for Custom Range; preset ranges use the server's corresponding stored/statistical window.
+4. Wait for completion and review every row. A zero is a returned/missing numeric value, not independent proof that the node was reachable. Investigate any node-specific refresh or control-stream error.
+
+The Viewer caches the preset ranges for quick switching and refetches them after a successful preset refresh. Results depend on each node's configured statistics schedule, retained source data, clock/timezone correctness, and network availability.
+
+## 10. Report generation
+
+![Report Generator with generated RDS site report](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/31-report-generator.png)
+
+The **Report Generator** asks the selected node's OSCAR Service to create a PDF in that node's `reports` bucket, then loads the returned URL in the **Generated Report** pane.
+
+1. Select a **Node**.
+2. Select **Report Type**:
+   - **RDS Site Report**: site-wide alarm totals/rates, EML suppression/rate, fault totals, and drive free/usable/total capacity.
+   - **Lane Report**: the selected lane or lanes, with lane-specific alarm and fault statistics.
+   - **Adjudication Report**: the selected lane or lanes, with adjudication disposition counts/percentages, isotope results, and adjudication-detail rows.
+   - **Event Report**: choose **Alarms and Occupancies**, **Alarms**, or **State of Health**. These produce daily charts/tables for the selected event family; State of Health covers gamma-high, gamma-low, neutron-high, and tamper.
+3. For Lane or Adjudication reports, select one or more **Lane** entries. **Select All** toggles the full node lane list; selecting it again clears the list.
+4. Select **Last 24 Hours**, **Last 7 Days**, **Last 30 Days**, **This Month**, or **Custom Range**. Custom requires both date/times and the end cannot precede the start.
+5. Select **Generate Report**. The request may be accepted immediately or remain pending while the server works. Leave the page open until success or a clear failure message.
+6. Review the embedded PDF. Use the browser PDF controls to zoom, search, download, or print. The form resets after generation, while the generated report remains displayed.
+
+The server retries a failed report job up to three times. Filenames encode node, report type, start, and end. Requesting the identical node/type/time combination can return the already stored report instead of overwriting it. Reports reflect retained data only; missing/expired source data cannot be reconstructed by the report generator.
+
+## 11. Node federation
+
+![Node federation](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/32-node-federation.png)
+
+The **Nodes** page lets one Viewer query multiple OSCAR/OpenSensorHub nodes. The local browser-derived node is the default and cannot be deleted. Remote nodes can be added, edited, or deleted.
+
+### 11.1 Add or edit a node
+
+1. Enter a unique **Name** and the node **Address** (hostname or IP, without `http://` or `https://`).
+2. Enter **Port**; the initial value is `8282`. Use the actual reverse-proxy or SensorHub port.
+3. Enter the **Connected Systems API Endpoint**; the default is `/api`. This is appended to the fixed SensorHub root `/sensorhub`.
+4. Enter **Username** and **Password** authorized to read the remote node.
+5. Enable **Use a secure connection** for HTTPS/WSS/MQTTS. Use it whenever the remote endpoint supports TLS; the address/certificate name must match.
+6. Authentication mode:
+   - Leave **Basic-only node** clear for the preferred session-capable mode. The credentials establish an opaque HttpOnly session cookie and the password is discarded immediately after authentication.
+   - Enable **Basic-only node** only when the remote node has no session-login endpoint. Credentials remain in memory for requests until this page/app is reloaded or closed.
+7. Select **Add Node** or **Save**. OSCAR first tests the complete Connected Systems endpoint. An unreachable or unauthorized node is not saved. **Cancel** abandons edits.
+
+Saved node configuration includes the name, network endpoints, TLS/authentication mode, and map metadata. Usernames and passwords are deliberately excluded from browser storage, including when older saved entries are reloaded. A session cookie is managed by the remote server; Basic-only credentials must be re-entered after reload.
+
+Duplicate names and duplicate address/port pairs are rejected. **Edit** changes a node; **Delete** removes a remote node from this browser's federation list but does not delete the remote server or its data. A remote node must permit the Viewer's origin, credentials, API/bucket paths, WebSocket/MQTT traffic, and certificate trust as applicable.
+
+### 11.2 Verify federation
+
+1. Confirm the node appears in **Nodes** without an error.
+2. Open Dashboard/Events and verify its lanes and occupancies show the remote node name.
+3. Open National and refresh statistics; each reachable configured node should have a row.
+4. Generate a node-specific report and open an event from that node to validate Connected Systems, control, bucket, and media access—not merely login.
+5. After a reload, confirm session-capable nodes reconnect. Re-enter credentials for any Basic-only node.
+
+## 12. Data retention and storage behavior
 
 When the OSCAR Service Module has an explicit **Database ID**, it starts two database-maintenance schedules:
 
@@ -490,7 +613,7 @@ Files such as site diagrams, spreadsheets, video, reports, and daily exports are
 
 Before changing retention, database selection, storage path, or **Delete Data on Lane Removal**, confirm the site's evidence, records, and backup requirements.
 
-## 10. Validation checklist
+## 13. Validation checklist
 
 ### Certificate and access
 
@@ -528,8 +651,10 @@ Before changing retention, database selection, storage path, or **Delete Data on
 - [ ] Live and recorded camera video load, including after a browser refresh.
 - [ ] Event Details opens without a client-side exception.
 - [ ] A controlled test adjudication can be reviewed and submitted under site procedure.
+- [ ] Events filters, National refresh, and each required report type were tested.
+- [ ] Every federated node was rechecked after a browser reload; no credential was found in browser storage.
 
-## 11. Troubleshooting
+## 14. Troubleshooting
 
 | Symptom | Checks and corrective action |
 | --- | --- |
@@ -545,11 +670,16 @@ Before changing retention, database selection, storage path, or **Delete Data on
 | Camera does not start | Verify RTSP reachability and credentials, omit `rtsp://` from host, include a needed port once, confirm Axis codec or Custom path, and test the generated endpoint from the OSCAR host. |
 | Video appears initially but not after refresh | Verify the camera child and HLS output remain Started and inspect server/browser logs. Refresh should not require re-creating the lane. |
 | Event Details has no media | Confirm the event belongs to an available lane, required datastreams exist for its time range, retained video has not been deleted/decimated beyond need, and the user has permission. |
+| Adjudication fails | Confirm a code was selected, the lane/node is reachable, the adjudication control stream exists, and any evidence upload completed. Do not repeatedly submit until the original result is known. |
+| WebID controls have no DRF/results | Verify internet access to the configured Sandia Full Spectrum service, select a DRF and foreground/background type, and inspect the returned warning/error columns. Manual adjudication remains the operator's responsibility. |
+| National row is zero/missing | Refresh the intended range, verify that node's OSCAR statistics control stream and retained data, and correct node authentication/connectivity. |
+| Report does not generate | Select node/type/range and required lane/event type, verify start precedes end, then check the node report control stream and `reports` bucket. An identical request may reuse an existing file. |
+| Federated node disappears or rejects requests after reload | Session nodes need a valid remote cookie; Basic-only secrets are intentionally memory-only and must be re-entered. Verify TLS, CORS, paths, port, and remote authorization. |
 | Changes disappear after restart | Apply the module form, then use the administration header's global Save. |
 
 When collecting support data, record the OSCAR version, browser, affected lane/occupancy ID, timestamp and timezone, module status/errors, and sanitized browser/server logs. Remove passwords, tokens, private keys, and sensitive evidence before sharing.
 
-## Related documentation
+## 15. Related documentation
 
 - [OSCAR release Quick Start](https://github.com/Botts-Innovative-Research/osh-oakridge-buildnode/blob/main/dist/release/QUICKSTART.md)
 - [OSCAR Deployment Guide](https://github.com/Botts-Innovative-Research/osh-oakridge-buildnode/blob/main/dist/release/DEPLOYMENT.md)

@@ -1,6 +1,6 @@
 # Manuel d'administration et d'exploitation d'OSCAR 3.8.3
 
-Ce manuel décrit l'intégralité du parcours de première utilisation illustré par les captures de formation : approuver le certificat TLS d'OSCAR, se connecter, préparer et géoréférencer un plan de site, importer des voies depuis `config.csv`, utiliser OSCAR Viewer, ouvrir une alarme et créer manuellement un Système de voie avec un RPM et des caméras.
+Ce manuel couvre la première utilisation et l'exploitation complète : certificat, connexion, plan géoréférencé, import/création des voies, adjudication et preuves, événements, statistiques nationales, rapports et fédération de nœuds.
 
 L'interface d'administration sélectionne automatiquement le manuel correspondant à la langue active :
 
@@ -19,10 +19,14 @@ L'interface d'administration sélectionne automatiquement le manuel correspondan
 5. [Créer et téléverser un plan géoréférencé](#5-créer-et-téléverser-un-plan-géoréférencé)
 6. [Importer ou exporter les voies avec `config.csv`](#6-importer-ou-exporter-les-voies-avec-configcsv)
 7. [Créer manuellement un Système de voie](#7-créer-manuellement-un-système-de-voie)
-8. [Vérifier OSCAR Viewer et ouvrir une alarme](#8-vérifier-oscar-viewer-et-ouvrir-une-alarme)
-9. [Conservation des données et stockage](#9-conservation-des-données-et-stockage)
-10. [Liste de validation](#10-liste-de-validation)
-11. [Dépannage](#11-dépannage)
+8. [Utiliser OSCAR Viewer](#8-utiliser-oscar-viewer)
+9. [Statistiques nationales](#9-statistiques-nationales)
+10. [Génération de rapports](#10-génération-de-rapports)
+11. [Fédération de nœuds](#11-fédération-de-nœuds)
+12. [Conservation des données et stockage](#12-conservation-des-données-et-stockage)
+13. [Liste de validation](#13-liste-de-validation)
+14. [Dépannage](#14-dépannage)
+15. [Documentation associée](#15-documentation-associée)
 
 ## 1. Avant de commencer
 
@@ -421,24 +425,50 @@ Les enfants FFmpeg générés utilisent TCP, demandent 24 i/s, activent HLS, dé
 
 Consultez la documentation [Rapiscan](https://github.com/Botts-Innovative-Research/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-rapiscan), [Aspect](https://github.com/Botts-Innovative-Research/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-aspect), [RS-350](https://github.com/Botts-Innovative-Research/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-rs350) et [FFmpeg](https://github.com/Botts-Innovative-Research/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-ffmpeg).
 
-## 8. Vérifier OSCAR Viewer et ouvrir une alarme
+## 8. Utiliser OSCAR Viewer
 
 Ouvrez `https://<hote-oscar>/`. Le tableau de bord doit afficher l'état des voies, la table des événements et la carte. Avec un plan configuré, il est l'image supérieure et l'étendue initiale correspond à ses limites. Les marqueurs OSCAR restent interactifs au-dessus ; une épingle dessinée dans la capture n'est qu'une partie de l'image.
 
 ![Tableau de bord OSCAR Viewer](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/18-viewer-dashboard.png)
 
-### 8.1 Contrôles du tableau de bord
+### 8.1 Tableau de bord et file d'alarmes
 
 1. Confirmez toutes les voies dans **État des voies**.
 2. Vérifiez la position de chaque marqueur.
 3. Utilisez les couches pour comparer le plan à OSM ou Esri.
 4. Vérifiez que les nouvelles occupations arrivent et que heures, gamma, neutrons et état sont plausibles.
-5. Sélectionnez une ligne pour l'aperçu : graphiques/vidéo et adjudication rapide. Saisissez l'ID véhicule, le code, l'inspection secondaire et les notes avant l'envoi.
-6. Développez pour ouvrir **Détails de l'événement**.
+5. La table d'alarmes contient les occupations en alarme non encore adjugées. Sélectionnez une ligne pour ouvrir/fermer l'aperçu; l'état colore Gamma, Neutron ou Gamma et Neutron.
+6. Vérifiez les onglets CPS/NSIGMA et chaque vidéo; les flèches changent de média.
+7. Agrandissez ou double-cliquez la ligne pour ouvrir **Détails de l'événement**.
 
-### 8.2 Détails de l'événement
+### 8.2 Adjudication rapide depuis le tableau de bord
 
-![Détails d'une alarme](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/19-event-details.png)
+![Adjudication dans le tableau de bord](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/26-dashboard-adjudication.png)
+
+Utilisez-la lorsque graphiques et vidéo suffisent, sans preuve ni WebID:
+
+1. Saisissez l'**ID véhicule** s'il est connu.
+2. Choisissez un code **Adjuger** dans la liste groupée de 8.5.
+3. Réglez **Inspection secondaire** sur **Aucune**, **Demandée** ou **Terminée**.
+4. Ajoutez des **Notes** justifiant la décision.
+5. Sélectionnez **Envoyer**. Le succès identifie l'occupation et retire l'alarme de la file. **Réinitialiser** efface le formulaire local sans envoi.
+
+L'envoi ajoute un enregistrement sans modifier l'observation d'origine. Pour preuves, isotopes, QR, WebID ou historique, ouvrez les Détails.
+
+### 8.3 Page Événements
+
+![Liste des événements](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/27-event-list.png)
+
+**Événements** est l'historique de tous les nœuds locaux et fédérés configurés, pas seulement des alarmes en attente. Il affiche voie/nœud, ID d'occupation, début/fin, maxima gamma/neutron, état et présence d'une adjudication.
+
+- **Colonnes** masque/affiche les champs, **Filtres** ouvre les filtres serveur et **Densité** règle l'espacement.
+- Début/fin acceptent **après** et **avant**. État accepte **Aucun**, **Gamma**, **Neutron**, **Gamma et Neutron**. Adjugé accepte **Oui/Non**. Un filtre revient à la première page.
+- Résultats du plus récent, par pages de 15. Sélection = aperçu; double-clic ou **Détails** = page complète.
+- Un nœud fédéré indisponible peut rendre lignes/comptes incomplets; vérifiez la connexion avant d'interpréter zéro.
+
+### 8.4 Détails de l'événement
+
+![Résumé, graphiques et vidéo de l'événement](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/28-event-details-summary.png)
 
 La page peut contenir :
 
@@ -451,7 +481,9 @@ La page peut contenir :
 - ID véhicule, notes, inspection secondaire et code ; et
 - **Exporter en PDF**.
 
-Les données disponibles dépendent du détecteur, de la caméra, de la conservation, de l'ancienneté, des droits et de Web ID.
+**Retour** revient à la liste. **CPS/NSIGMA** choisit la présentation gamma prise en charge; les flèches parcourent les vidéos. **Exporter en PDF** ouvre l'impression navigateur de la page rendue; cela diffère des rapports serveur de la section 10.
+
+Les données disponibles dépendent du détecteur, de la caméra, de la conservation, de l'ancienneté, des droits et de WebID. Un panneau vide ne prouve pas l'absence de données: vérifiez voie, flux, caméra et conservation.
 
 #### Codes d'adjudication
 
@@ -464,9 +496,81 @@ Les données disponibles dépendent du détecteur, de la caméra, de la conserva
 | Sabotage/Défaut | 10 Activité non autorisée |
 | Autre | 11 Autre |
 
-Choisissez selon la procédure du site. Le formulaire complet affiche avant envoi une confirmation avec véhicule, code/groupe, isotopes, notes, fichiers, QR et inspection secondaire.
+Choisissez selon la procédure du site, jamais par commodité.
 
-## 9. Conservation des données et stockage
+### 8.5 Adjudication complète et preuves
+
+![Preuves et adjudication complète](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/29-event-details-adjudication.png)
+
+- **Résultats d'analyse WebID** affiche heure, nom/type d'isotope, confiance, taux, texte/nombre d'isotopes, avertissements, khi carré, DRF, erreur et dose estimée; **Lire plus** développe le texte.
+- **Adjudications consignées** affiche occupation, heure, utilisateur, code, commentaire, isotopes, chemins, inspection secondaire et ID véhicule. Un nouvel envoi ajoute une ligne sans réécrire les anciennes.
+- **Collecte de preuves** et le formulaire créent la nouvelle décision.
+
+#### Preuves
+
+1. **Téléverser des fichiers** ajoute un ou plusieurs fichiers. Aucun filtre de type navigateur: respectez la politique du site.
+2. Pour analyser un spectre, activez **WebID**, choisissez une DRF fournie par Sandia Full Spectrum, **Premier plan** ou **Arrière-plan**, puis éventuellement **Synthétiser l'arrière-plan** pour un premier plan. Une paire premier/arrière-plan est envoyée ensemble.
+3. **Scanner QR** utilise la caméra pour un texte spectroscopique. Autorisez-la, scannez/révisez/supprimez les codes, réglez WebID/DRF/type, puis **Terminé**. Les captures deviennent des preuves texte.
+4. **Téléverser vers WebID** traite les preuves WebID non encore envoyées et reste désactivé sans élément éligible. Accès au bucket et au service Full Spectrum requis.
+5. Dans **Preuve WebID**, sélectionnez des résultats puis **Utiliser le résultat sélectionné** pour appliquer leurs isotopes. L'opérateur reste responsable.
+
+Supprimer avant envoi retire seulement l'élément en attente. Après téléversement, suivez le chemin consigné et la politique de conservation; le retrait du formulaire ne garantit pas la suppression serveur.
+
+#### Formulaire
+
+1. Saisissez l'ID véhicule si connu et exactement un code.
+2. Choisissez zéro ou plusieurs isotopes. **Inconnu** exclut les isotopes nommés: Neptunium, Plutonium, Uranium-233/235/238, Américium, Baryum, Bismuth, Californium, Césium-134/137, Cobalt-57/60, Europium-152, Iridium, Manganèse, Sélénium, Sodium, Strontium, Fluor, Gallium, Iode-123/131, Indium, Palladium, Technétium, Xénon, Potassium, Radium et Thorium.
+3. Ajoutez les notes et choisissez inspection **Aucune**, **Demandée** ou **Terminée**.
+4. Sélectionnez **Envoyer**, relisez la confirmation complète puis **Confirmer et envoyer**. Vérifiez le succès et la nouvelle ligne. En cas d'échec, conservez le formulaire et corrigez nœud/flux de commande/téléversement avant de réessayer.
+
+## 9. Statistiques nationales
+
+![Statistiques nationales](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/30-national-statistics.png)
+
+Une ligne par nœud donne **ID nœud**, alarmes Gamma, Neutron, combinées, occupations, sabotage, défauts Gamma, défauts Neutron et défauts totaux. Colonnes/Filtres/Densité ajustent la grille.
+
+1. Choisissez **Tout le temps**, **30 derniers jours**, **7 derniers jours**, **24 dernières heures** ou **Plage personnalisée**.
+2. Pour une plage, saisissez début et fin; la fin ne peut précéder le début.
+3. **Actualiser les statistiques** commande chaque flux de contrôle du Service OSCAR. Les dates explicites ne sont envoyées que pour Personnalisée.
+4. Attendez et vérifiez chaque nœud. Zéro ne prouve pas qu'il a répondu; examinez toute erreur de connexion/commande.
+
+Les plages prédéfinies sont mises en cache et rechargées après actualisation. Les résultats dépendent du calendrier, des données conservées, des horloges et du réseau de chaque nœud.
+
+## 10. Génération de rapports
+
+![Générateur de rapports](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/31-report-generator.png)
+
+Le générateur crée un PDF dans le bucket `reports` du nœud et l'affiche à droite.
+
+1. Choisissez **Nœud** et type:
+   - **RDS Site**: alarmes/taux, EML supprimées/taux, défauts et capacité libre/utilisable/totale.
+   - **Lane**: statistiques d'alarmes et défauts d'une ou plusieurs voies.
+   - **Adjudication**: répartitions/pourcentages, isotopes et détails par voie.
+   - **Event**: **Alarmes et occupations**, **Alarmes** ou **État de santé**; ce dernier inclut gamma haut/bas, neutron haut et sabotage.
+2. Pour Lane/Adjudication, choisissez une ou plusieurs voies. **Tout sélectionner** bascule tout/aucun.
+3. Choisissez **24 heures**, **7 jours**, **30 jours**, **Ce mois** ou **Plage personnalisée** avec deux dates valides.
+4. **Générer** peut rester accepté/en attente; gardez la page ouverte. Vérifiez le PDF et utilisez zoom, recherche, téléchargement ou impression. Le formulaire se réinitialise, pas l'aperçu.
+
+Le serveur réessaie jusqu'à trois fois. Le nom encode nœud/type/début/fin; une demande identique peut réutiliser le fichier. Seules les données conservées sont rapportées.
+
+## 11. Fédération de nœuds
+
+![Fédération de nœuds](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/32-node-federation.png)
+
+**Nœuds** interroge plusieurs serveurs. Le nœud local dérivé du navigateur est par défaut et non supprimable; les distants peuvent être ajoutés, modifiés ou retirés.
+
+1. Saisissez un **Nom** unique et une **Adresse** sans schéma.
+2. Indiquez le **Port** (initial `8282`) et l'**Endpoint Connected Systems API** (défaut `/api`, ajouté à `/sensorhub`).
+3. Saisissez utilisateur/mot de passe de lecture.
+4. Activez **Connexion sécurisée** pour HTTPS/WSS/MQTTS avec certificat/nom valides.
+5. Laissez **Nœud Basic uniquement** décoché pour une session: les identifiants créent un cookie HttpOnly opaque puis le mot de passe est supprimé. Cochez seulement sans connexion de session: secrets en mémoire jusqu'au rechargement/fermeture.
+6. **Ajouter/Enregistrer** teste d'abord l'endpoint complet; inaccessible/non autorisé n'est pas sauvegardé. **Annuler** abandonne.
+
+Nom, réseau, TLS/mode et carte sont enregistrés, jamais utilisateur/mot de passe; les anciennes entrées sont nettoyées. Les noms et couples adresse/port en doublon sont refusés. **Supprimer** retire seulement la configuration de ce navigateur, pas le serveur ni ses données.
+
+Vérifiez voies/événements distants, ligne Nationale, rapport et événement avec média pour tester API, commandes, bucket et médias. Après rechargement, vérifiez la session et ressaisissez les secrets Basic. Le distant doit autoriser origine/CORS, chemins, WebSocket/MQTT, droits et confiance TLS.
+
+## 12. Conservation des données et stockage
 
 Avec un **ID de base de données** explicite, le service démarre :
 
@@ -479,7 +583,7 @@ Le service de compartiments gère plans, CSV, vidéos, rapports et exports. Les 
 
 Avant de modifier conservation, base, chemin ou **Supprimer les données avec la voie**, confirmez les obligations de preuve et de sauvegarde.
 
-## 10. Liste de validation
+## 13. Liste de validation
 
 ### Certificat et accès
 
@@ -515,8 +619,10 @@ Avant de modifier conservation, base, chemin ou **Supprimer les données avec la
 - [ ] Vidéo en direct et enregistrée fonctionne, y compris après actualisation.
 - [ ] Détails s'ouvre sans exception côté client.
 - [ ] Une adjudication contrôlée peut être vérifiée et envoyée.
+- [ ] Les filtres Événements, l'actualisation Nationale et les rapports requis ont été testés.
+- [ ] Chaque nœud fédéré a été revérifié après rechargement; aucun identifiant n'est stocké par le navigateur.
 
-## 11. Dépannage
+## 14. Dépannage
 
 | Symptôme | Vérifications et correction |
 | --- | --- |
@@ -532,11 +638,16 @@ Avant de modifier conservation, base, chemin ou **Supprimer les données avec la
 | Caméra ne démarre pas | Testez RTSP/identifiants, retirez `rtsp://` de l'hôte, évitez un port en double, vérifiez codec Axis ou chemin Custom depuis l'hôte OSCAR. |
 | Vidéo perdue après actualisation | Vérifiez que la caméra et HLS restent démarrés et consultez les journaux. Actualiser ne doit pas imposer de recréer la voie. |
 | Événement sans média | Vérifiez voie disponible, flux sur l'intervalle, conservation et droits. |
+| Échec d'adjudication | Choisissez un code; vérifiez nœud/voie, flux de commande et téléversement. Ne renvoyez pas avant de connaître le premier résultat. |
+| WebID sans DRF/résultat | Vérifiez Full Spectrum, DRF, premier/arrière-plan et colonnes avertissement/erreur. La décision reste humaine. |
+| Nationale vide/zéro | Actualisez la plage et vérifiez commande statistique, données conservées et authentification du nœud. |
+| Rapport absent | Complétez nœud/type/plage et voie/type d'événement; vérifiez dates, commande et bucket `reports`. Une demande identique peut réutiliser un fichier. |
+| Nœud distant refusé après rechargement | La session exige un cookie valide; Basic exige de ressaisir les secrets. Vérifiez TLS, CORS, chemins, port et droits. |
 | Modifications perdues au redémarrage | Appliquez le formulaire, puis utilisez Enregistrer globalement. |
 
 Pour l'assistance, relevez version OSCAR, navigateur, voie/occupation, heure et fuseau, états et journaux nettoyés. Retirez mots de passe, jetons, clés privées et preuves sensibles.
 
-## Documentation associée
+## 15. Documentation associée
 
 - [Démarrage rapide OSCAR](https://github.com/Botts-Innovative-Research/osh-oakridge-buildnode/blob/main/dist/release/QUICKSTART.md)
 - [Guide de déploiement](https://github.com/Botts-Innovative-Research/osh-oakridge-buildnode/blob/main/dist/release/DEPLOYMENT.md)
