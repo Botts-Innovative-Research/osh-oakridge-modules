@@ -1,4 +1,4 @@
-# OSCAR 3.8.3 administrator and operator manual
+# OSCAR 3.8.5 administrator and operator manual
 
 This manual covers the complete first-use and operations workflow including certificate trust, sign-in, site-diagram georeferencing, lane import/manual creation, alarm adjudication and evidence, event review, national statistics, reports, and node federation.
 
@@ -32,7 +32,7 @@ The screenshots show the English interface. OSCAR also supplies Spanish, French,
 
 You need:
 
-- an installed and running OSCAR 3.8.3 deployment;
+- an installed and running OSCAR 3.8.5 deployment;
 - the OSCAR URL, normally `https://oscar.local/` unless deployment selected another hostname;
 - an administrator account for `/sensorhub/admin`;
 - the approved site image and the latitude/longitude of its lower-left and upper-right corners;
@@ -538,6 +538,27 @@ Deleting an item before submission removes it only from the pending form. After 
 
 Use site procedure—not convenience—to choose a code.
 
+### 8.6 Transfer an alarm by QR code in an air-gapped environment
+
+OSCAR can package a compact alarm summary in one QR code without contacting an Internet service. The export includes source node and lane, event identity and times, status and maxima, compact adjudication metadata when present, and downsampled gamma, neutron, and threshold chart data. It does **not** include video, evidence files, spectra, or every original chart sample.
+
+To export:
+
+1. Open an alarm preview on the dashboard or open **Event Details** and select **Export alarm QR**.
+2. Wait while OSCAR reads the event-window observations. The dialog reports exported/original gamma and neutron point counts.
+3. Let the receiving device scan the displayed code, select **Download QR image** to move a printable PNG, select **Download alarm file** to save the same package as `.oscar-alarm.json`, or select **Share alarm**. If the browser cannot share files, OSCAR downloads the file instead.
+
+The sampler keeps both endpoints, global minima/maxima, gamma points on both sides of threshold crossings, and local bucket minima/maxima before reducing the remaining points. Values are rounded to three decimal places. The package records a SHA-256 digest of the complete source series so a later system with those full data can compare them, but the omitted samples cannot be reconstructed from the QR code.
+
+To receive:
+
+1. Open **Alarm Transfer** from the Viewer navigation.
+2. Use **Start camera scan**, **Scan QR image**, **Import alarm file**, or paste the `OSCAR-ALARM:1:` transport text. Camera scanning requires browser permission and a secure HTTPS context; image/file import remains available when camera access is prohibited.
+3. OSCAR decompresses the package, enforces size and chart-data limits, verifies its SHA-256 transfer digest, and redraws the downsampled charts.
+4. Confirm the node, lane, occupancy, times, status, and charts, then download or share the received alarm file if authorized.
+
+> **Security boundary.** The package is compressed and integrity-checked, but it is neither encrypted nor digitally signed. The digest detects corruption; it does not identify the sender because a person who changes the content can compute a new digest. Treat imported data as a portable preview, independently confirm its source before operational use, and transfer it only through media and devices approved by site policy.
+
 ## 9. National statistics
 
 ![National statistics](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/30-national-statistics.png)
@@ -652,6 +673,7 @@ Before changing retention, database selection, storage path, or **Delete Data on
 - [ ] Event Details opens without a client-side exception.
 - [ ] A controlled test adjudication can be reviewed and submitted under site procedure.
 - [ ] Events filters, National refresh, and each required report type were tested.
+- [ ] A controlled alarm QR exports, scans/imports on the receiving device, passes integrity verification, and redraws plausible gamma/neutron curves.
 - [ ] Every federated node was rechecked after a browser reload; no credential was found in browser storage.
 
 ## 14. Troubleshooting
@@ -675,6 +697,8 @@ Before changing retention, database selection, storage path, or **Delete Data on
 | National row is zero/missing | Refresh the intended range, verify that node's OSCAR statistics control stream and retained data, and correct node authentication/connectivity. |
 | Report does not generate | Select node/type/range and required lane/event type, verify start precedes end, then check the node report control stream and `reports` bucket. An identical request may reuse an existing file. |
 | Federated node disappears or rejects requests after reload | Session nodes need a valid remote cookie; Basic-only secrets are intentionally memory-only and must be re-entered. Verify TLS, CORS, paths, port, and remote authorization. |
+| Alarm QR cannot be generated | Confirm the event's lane is available and its gamma or neutron datastream has retained observations for the event interval. Very large optional metadata may exceed one-code capacity; use the downloadable alarm file when QR transfer is not possible. |
+| Alarm QR will not scan/import | Increase display brightness or use the downloaded PNG at original size. Otherwise import the `.oscar-alarm.json` file. An integrity failure means the package is incomplete or changed; obtain a new export rather than bypassing validation. |
 | Changes disappear after restart | Apply the module form, then use the administration header's global Save. |
 
 When collecting support data, record the OSCAR version, browser, affected lane/occupancy ID, timestamp and timezone, module status/errors, and sanitized browser/server logs. Remove passwords, tokens, private keys, and sensitive evidence before sharing.
@@ -689,4 +713,4 @@ When collecting support data, record the OSCAR version, browser, affected lane/o
 
 ---
 
-Document baseline: OSCAR 3.8.3 source behavior, reviewed 2026-09-21. If a later release changes fields or workflows, update the English canonical manual and all three translations together.
+Document baseline: OSCAR 3.8.5 source behavior, reviewed 2026-09-22. If a later release changes fields or workflows, update the English canonical manual and all three translations together.

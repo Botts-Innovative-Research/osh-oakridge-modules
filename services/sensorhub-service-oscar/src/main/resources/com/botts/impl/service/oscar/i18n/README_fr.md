@@ -1,4 +1,4 @@
-# Manuel d'administration et d'exploitation d'OSCAR 3.8.3
+# Manuel d'administration et d'exploitation d'OSCAR 3.8.5
 
 Ce manuel couvre la première utilisation et l'exploitation complète : certificat, connexion, plan géoréférencé, import/création des voies, adjudication et preuves, événements, statistiques nationales, rapports et fédération de nœuds.
 
@@ -32,7 +32,7 @@ L'interface d'administration sélectionne automatiquement le manuel correspondan
 
 Vous avez besoin :
 
-- d'un déploiement OSCAR 3.8.3 installé et démarré ;
+- d'un déploiement OSCAR 3.8.5 installé et démarré ;
 - de l'URL OSCAR, généralement `https://oscar.local/` sauf si un autre hôte a été choisi ;
 - d'un compte administrateur pour `/sensorhub/admin` ;
 - de l'image de site approuvée et des coordonnées des coins inférieur gauche et supérieur droit ;
@@ -523,6 +523,27 @@ Supprimer avant envoi retire seulement l'élément en attente. Après télévers
 3. Ajoutez les notes et choisissez inspection **Aucune**, **Demandée** ou **Terminée**.
 4. Sélectionnez **Envoyer**, relisez la confirmation complète puis **Confirmer et envoyer**. Vérifiez le succès et la nouvelle ligne. En cas d'échec, conservez le formulaire et corrigez nœud/flux de commande/téléversement avant de réessayer.
 
+### 8.6 Transférer une alarme par code QR dans un environnement isolé
+
+OSCAR peut placer un résumé compact d'alarme dans un seul QR sans service Internet. L'export contient le nœud et la voie d'origine, l'identité et les heures de l'événement, l'état et les maxima, les métadonnées compactes d'adjudication présentes, ainsi que les courbes gamma, neutron et seuil sous-échantillonnées. Il **n'inclut pas** la vidéo, les fichiers de preuve, les spectres ni tous les échantillons d'origine.
+
+Pour exporter :
+
+1. Ouvrez l'aperçu de l'alarme sur le tableau de bord ou **Détails de l'événement**, puis sélectionnez **Exporter l'alarme en QR**.
+2. Attendez la lecture des observations de l'intervalle. La boîte indique le nombre de points gamma/neutron exportés et d'origine.
+3. Faites scanner le code, utilisez **Télécharger l'image QR** pour un PNG, **Télécharger le fichier d'alarme** pour un `.oscar-alarm.json`, ou **Partager l'alarme**. Si le navigateur ne partage pas les fichiers, OSCAR le télécharge.
+
+L'échantillonnage conserve les deux extrémités, minima/maxima globaux, points gamma de part et d'autre des franchissements de seuil et minima/maxima locaux. Les valeurs sont arrondies à trois décimales. Le paquet conserve l'empreinte SHA-256 des séries complètes pour une comparaison ultérieure avec la source, mais les échantillons omis ne sont pas reconstructibles depuis le QR.
+
+Pour recevoir :
+
+1. Ouvrez **Transfert d'alarme** dans la navigation du Viewer.
+2. Utilisez **Démarrer le scan caméra**, **Scanner une image QR**, **Importer le fichier d'alarme**, ou collez le texte `OSCAR-ALARM:1:`. La caméra exige une autorisation et un contexte HTTPS sécurisé; l'image ou le fichier reste utilisable lorsque la caméra est interdite.
+3. OSCAR décompresse, applique les limites de taille et de données, vérifie l'empreinte SHA-256 de transfert et redessine les courbes sous-échantillonnées.
+4. Confirmez nœud, voie, occupation, heures, état et courbes, puis téléchargez ou partagez le fichier reçu uniquement si vous y êtes autorisé.
+
+> **Limite de sécurité.** Le paquet est comprimé et son intégrité est vérifiée, mais il n'est ni chiffré ni signé numériquement. L'empreinte détecte une corruption; elle n'identifie pas l'expéditeur, car une personne modifiant le contenu peut la recalculer. Considérez-le comme un aperçu portable, confirmez indépendamment sa source avant tout usage opérationnel et utilisez uniquement les supports et appareils autorisés.
+
 ## 9. Statistiques nationales
 
 ![Statistiques nationales](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/30-national-statistics.png)
@@ -620,6 +641,7 @@ Avant de modifier conservation, base, chemin ou **Supprimer les données avec la
 - [ ] Détails s'ouvre sans exception côté client.
 - [ ] Une adjudication contrôlée peut être vérifiée et envoyée.
 - [ ] Les filtres Événements, l'actualisation Nationale et les rapports requis ont été testés.
+- [ ] Un QR d'alarme contrôlée s'exporte, se scanne/importe, passe le contrôle d'intégrité et redessine des courbes gamma/neutron plausibles.
 - [ ] Chaque nœud fédéré a été revérifié après rechargement; aucun identifiant n'est stocké par le navigateur.
 
 ## 14. Dépannage
@@ -643,6 +665,8 @@ Avant de modifier conservation, base, chemin ou **Supprimer les données avec la
 | Nationale vide/zéro | Actualisez la plage et vérifiez commande statistique, données conservées et authentification du nœud. |
 | Rapport absent | Complétez nœud/type/plage et voie/type d'événement; vérifiez dates, commande et bucket `reports`. Une demande identique peut réutiliser un fichier. |
 | Nœud distant refusé après rechargement | La session exige un cookie valide; Basic exige de ressaisir les secrets. Vérifiez TLS, CORS, chemins, port et droits. |
+| QR d'alarme impossible à générer | Vérifiez la voie et les observations gamma/neutron conservées sur l'intervalle. Si un seul QR ne suffit pas, utilisez le fichier d'alarme téléchargeable. |
+| QR impossible à scanner/importer | Augmentez la luminosité ou utilisez le PNG à sa taille d'origine; sinon importez `.oscar-alarm.json`. Un échec d'intégrité impose un nouvel export, jamais le contournement du contrôle. |
 | Modifications perdues au redémarrage | Appliquez le formulaire, puis utilisez Enregistrer globalement. |
 
 Pour l'assistance, relevez version OSCAR, navigateur, voie/occupation, heure et fuseau, états et journaux nettoyés. Retirez mots de passe, jetons, clés privées et preuves sensibles.
@@ -657,4 +681,4 @@ Pour l'assistance, relevez version OSCAR, navigateur, voie/occupation, heure et 
 
 ---
 
-Référence du document : comportement du code OSCAR 3.8.3, revu le 2026-09-21. Si une version ultérieure change les champs ou procédures, mettez à jour ensemble le manuel canonique anglais et les trois traductions.
+Référence du document : comportement du code OSCAR 3.8.5, revu le 2026-09-22. Si une version ultérieure change les champs ou procédures, mettez à jour ensemble le manuel canonique anglais et les trois traductions.
