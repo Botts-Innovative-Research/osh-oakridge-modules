@@ -43,11 +43,15 @@ import com.botts.impl.sensor.rapiscan.RapiscanConfig;
 import com.botts.impl.sensor.rapiscan.SetupGammaConfig;
 import com.botts.impl.sensor.rs350.RS350Config;
 import com.botts.impl.sensor.rs350.RS350Outputs;
+import com.botts.impl.service.oscar.OSCARServiceConfig;
 import com.botts.impl.sensor.wadwaz1.WADWAZ1Config;
 import com.botts.impl.sensor.wapirz1.WAPIRZ1Config;
 import com.botts.impl.sensor.zse18.ZSE18Config;
 import com.botts.impl.sensor.zw100.ZW100Config;
 import com.botts.impl.system.lane.config.LaneConfig;
+import com.botts.impl.service.oscar.retention.StoragePressureRetentionConfig;
+import com.botts.impl.service.oscar.siteinfo.SiteDiagramConfig;
+import com.botts.impl.service.oscar.video.VideoRetentionConfig;
 import com.botts.sensorhub.impl.zwave.comms.ZwaveCommServiceConfig;
 
 
@@ -75,6 +79,10 @@ public class OakridgeSensorI18nTest
         "/com/botts/impl/sensor/zse18/i18n/ConfigMessages",
         "/com/botts/impl/sensor/zw100/i18n/ConfigMessages",
         "/com/botts/sensorhub/impl/zwave/comms/i18n/ConfigMessages",
+        "/com/botts/impl/service/oscar/i18n/ConfigMessages",
+        "/com/botts/impl/service/oscar/siteinfo/i18n/ConfigMessages",
+        "/com/botts/impl/service/oscar/video/i18n/ConfigMessages",
+        "/com/botts/impl/service/oscar/retention/i18n/ConfigMessages",
         "/com/botts/ui/oscar/forms/i18n/ConfigMessages");
 
     private static final List<Class<?>> MODULE_CONFIGS = Arrays.asList(
@@ -94,9 +102,11 @@ public class OakridgeSensorI18nTest
         WAPIRZ1Config.class,
         ZSE18Config.class,
         ZW100Config.class,
+        OSCARServiceConfig.class,
         ZwaveCommServiceConfig.class);
 
     private static final List<Class<?>> README_CONFIGS = Arrays.asList(
+        OSCARServiceConfig.class,
         TCPCommProviderConfig.class,
         UDPCommProviderConfig.class,
         AspectConfig.class,
@@ -153,6 +163,11 @@ public class OakridgeSensorI18nTest
         ZSE18Config.ZSE18SensorDriverConfigurations.class,
         ZW100Config.class,
         ZW100Config.ZW100SensorDriverConfigurations.class,
+        OSCARServiceConfig.class,
+        SiteDiagramConfig.class,
+        SiteDiagramConfig.LatLonLocation.class,
+        VideoRetentionConfig.class,
+        StoragePressureRetentionConfig.class,
         ZwaveCommServiceConfig.class,
         ZwaveCommServiceConfig.NodeList.class);
 
@@ -185,6 +200,14 @@ public class OakridgeSensorI18nTest
             AdminI18n.trConfig(GREEK, GpioEnum.class, "value.PIN_UNSET", null));
         assertEquals("Κάντε κλικ στον χάρτη για να επιλέξετε την τοποθεσία της λωρίδας",
             AdminI18n.trConfig(GREEK, SiteDiagramForm.class, "ui.selectLaneLocation", null));
+        assertEquals("Módulo de servicio OSCAR",
+            AdminI18n.trConfig(SPANISH, OSCARServiceConfig.class, "module.name", null));
+        assertEquals("Période de requête vidéo (minutes)",
+            AdminI18n.trConfig(Locale.FRENCH, VideoRetentionConfig.class,
+                "videoQueryPeriod.label", null));
+        assertEquals("Κάτω αριστερό όριο εγκατάστασης",
+            AdminI18n.trConfig(GREEK, SiteDiagramConfig.class,
+                "siteLowerLeftBound.label", null));
     }
 
 
@@ -239,6 +262,46 @@ public class OakridgeSensorI18nTest
             assertNotEquals(configClass.getName() + " Spanish help was not translated", english, spanish);
             assertNotEquals(configClass.getName() + " French help was not translated", english, french);
             assertNotEquals(configClass.getName() + " Greek help was not translated", english, greek);
+        }
+    }
+
+
+    @Test
+    public void oscarManualCoversEveryDocumentedWorkflowInEverySupportedLanguage() throws Exception
+    {
+        for (String resourceName: Arrays.asList(
+            "i18n/README.md",
+            "i18n/README_es.md",
+            "i18n/README_fr.md",
+            "i18n/README_el.md"))
+        {
+            String manual = loadHelp(OSCARServiceConfig.class, resourceName);
+            for (String requiredContent: Arrays.asList(
+                "config.csv",
+                "01-certificate-warning.png",
+                "13-site-upload-success.png",
+                "16-csv-upload-success.png",
+                "25-lane-options-filled.png",
+                "26-dashboard-adjudication.png",
+                "27-event-list.png",
+                "28-event-details-summary.png",
+                "29-event-details-adjudication.png",
+                "30-national-statistics.png",
+                "31-report-generator.png",
+                "32-node-federation.png",
+                "RDS Site",
+                "WebID",
+                "Basic",
+                "Rapiscan",
+                "Aspect",
+                "RS350",
+                "Sony",
+                "Axis",
+                "Custom"))
+            {
+                assertTrue(resourceName + " is missing " + requiredContent,
+                    manual.contains(requiredContent));
+            }
         }
     }
 
