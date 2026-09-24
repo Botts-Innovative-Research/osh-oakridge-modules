@@ -1,6 +1,6 @@
 # OSCAR operator-manual assets
 
-The localized OSCAR 3.9.1 administrator and operator manuals are loaded directly by the OpenSensorHub administration interface from the OSCAR Service configuration package:
+The localized OSCAR 4.0.0 administrator and operator manuals are loaded directly by the OpenSensorHub administration interface from the OSCAR Service configuration package:
 
 - [English](../../services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README.md)
 - [Español](../../services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_es.md)

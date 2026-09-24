@@ -1,4 +1,4 @@
-# OSCAR 3.9.1 administrator and operator manual
+# OSCAR 4.0.0 administrator and operator manual
 
 This manual covers the complete first-use and operations workflow including certificate trust, sign-in, site-diagram georeferencing, lane import/manual creation, alarm adjudication and evidence, event review, national statistics, reports, and node federation.
 
@@ -32,7 +32,7 @@ The screenshots show the English interface. OSCAR also supplies Spanish, French,
 
 You need:
 
-- an installed and running OSCAR 3.9.1 deployment;
+- an installed and running OSCAR 4.0.0 deployment;
 - the OSCAR URL, normally `https://oscar.local/` unless deployment selected another hostname;
 - an administrator account for `/sensorhub/admin`;
 - the approved site image and the latitude/longitude of its lower-left and upper-right corners;
@@ -248,13 +248,15 @@ An uploaded row is skipped when its `UniqueID` already belongs to a loaded Lane 
 
 ### 6.2 Exact schema
 
-The first 13 headers are required, case-sensitive, and must occur in this exact order:
+The current schema has 14 required, case-sensitive main headers in this exact order. `OperationalViews` is the sixth column:
 
 ```csv
-Name,UniqueID,AutoStart,Latitude,Longitude,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth
+Name,UniqueID,AutoStart,Latitude,Longitude,OperationalViews,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth
 ```
 
-Then add one six-column group per camera. Camera numbers must start at 0 and remain sequential:
+Imports remain backward-compatible with the legacy 13-header schema that omits `OperationalViews`; those lanes receive no operational-view assignments. New exports always use the 14-header schema. With the current header, every row must include the `OperationalViews` cell, although its value may be empty.
+
+Then include at least one six-column camera group. Use an empty `CameraType0` group when the lane has no camera; additional camera numbers must remain sequential:
 
 ```csv
 CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0
@@ -271,6 +273,7 @@ There is no fixed code limit on the number of sequential camera groups, although
 | `UniqueID` | yes | Stable lane identifier. Do not reuse it. A plain suffix becomes an OSCAR lane URN. |
 | `AutoStart` | yes | `true` or `false`. Java boolean parsing treats only case-insensitive `true` as true. |
 | `Latitude` / `Longitude` | together | Decimal WGS 84 degrees. Leave both empty to omit fixed location. |
+| `OperationalViews` | no | Semicolon-separated workstation view keys, for example `north-gate;secondary`. Each key must be 1–63 lowercase ASCII letters (`a`–`z`), numbers, or hyphens and cannot begin or end with a hyphen. Leave empty for no scoped-view assignment. |
 | `RPMConfigType` | no | Empty for no initial RPM, or `Aspect`, `Rapiscan`, or `RS350` (case-insensitive). |
 | `RPMHost` | with RPM | RPM IP address or DNS name. |
 | `RPMPort` | with RPM | Integer TCP port. |
@@ -296,15 +299,15 @@ The CSV schema does not expose **Camera Video Buffer Length**; cameras imported 
 One Rapiscan lane with one Axis camera:
 
 ```csv
-Name,UniqueID,AutoStart,Latitude,Longitude,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0
-Lane01,lane01,true,35.8858,-84.2121,Rapiscan,192.0.2.10,1601,,,false,false,4.82,Axis,192.0.2.20,,H264,operator,replace-me
+Name,UniqueID,AutoStart,Latitude,Longitude,OperationalViews,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0
+Lane01,lane01,true,35.8858,-84.2121,north-gate,Rapiscan,192.0.2.10,1601,,,false,false,4.82,Axis,192.0.2.20,,H264,operator,replace-me
 ```
 
 One Aspect lane with two cameras:
 
 ```csv
-Name,UniqueID,AutoStart,Latitude,Longitude,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0,CameraType1,CameraHost1,CameraPath1,Codec1,Username1,Password1
-Lane02,lane02,true,35.8859,-84.2119,Aspect,192.0.2.11,502,1,32,,,,Sony,192.0.2.21,,,operator,replace-me,Custom,192.0.2.22:8554,/stream1,,operator,replace-me
+Name,UniqueID,AutoStart,Latitude,Longitude,OperationalViews,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0,CameraType1,CameraHost1,CameraPath1,Codec1,Username1,Password1
+Lane02,lane02,true,35.8859,-84.2119,north-gate;secondary,Aspect,192.0.2.11,502,1,32,,,,Sony,192.0.2.21,,,operator,replace-me,Custom,192.0.2.22:8554,/stream1,,operator,replace-me
 ```
 
 Replace all example addresses and credentials. Avoid spreadsheet software features that silently reformat identifiers, booleans, or decimal coordinates.
@@ -359,6 +362,7 @@ The available list can change with installed bundles. For ordinary lane setup, s
 | Unique ID | Required stable ID. A suffix such as `lane01` becomes `urn:osh:system:lane:lane01`; a full URN is accepted. Avoid spaces and never reuse a retired lane's ID without a migration plan. |
 | Last Updated | Timestamp of the last SensorML-description update; normally left system-managed/empty unless external SensorML is used. |
 | Auto Start | Starts the lane automatically when configuration loads. Enable for operational lanes after configuration is verified. |
+| Operational View Keys | Optional list of workstation view keys allowed to display this lane. Add each key separately; use 1–63 lowercase ASCII letters (`a`–`z`), numbers, or hyphens, with no leading or trailing hyphen. Leave empty when the lane should have no scoped-view assignment. |
 | Delete Data on Lane Removal | Defaults enabled. If selected, removing the lane deletes its database records. Clear it when decommissioning must preserve historical data. |
 | Data Source Info | Optional inherited metadata shown by some builds; use only when the site's SensorML/data-source model requires it. |
 
@@ -472,8 +476,11 @@ Submitting creates an adjudication record; it does not alter the original detect
 
 The **Events** page is the historical list across configured local and federated nodes. It includes all occupancies, not only active unadjudicated alarms. Each row shows the lane and parent node, occupancy ID, start/end time, maximum gamma and neutron count rates, alarm status, and whether an adjudication exists.
 
-- **Columns** shows/hides optional columns; **Filters** opens server-side filters; **Density** changes row spacing.
-- Start/end-time filters support **after** and **before**. Status supports exact **None**, **Gamma**, **Neutron**, or **Gamma & Neutron**. Adjudicated supports **Yes** or **No**. Applying a filter returns to page 1.
+- **Columns** shows/hides optional columns; **Filters** opens server-side filters; **Density** changes row spacing. Filters, counts, pages, and bulk selection apply to the complete matching server-side result set, not only the currently visible page.
+- Build filter groups with **All conditions (AND)** or **Any condition (OR)**, and nest groups when a workflow needs both. Up to 20 rules and three group levels are supported. Node and lane conditions choose the streams to query; occupancy ID, time, gamma/neutron maxima, alarm status, and adjudication conditions are sent to the server for each applicable lane. Applying a filter returns to page 1.
+- Use the operators offered for each field. Times support before, after, and between; numeric values support inclusive limits, between, and exact match; status supports None, Gamma, Neutron, or Gamma & Neutron; adjudication supports Yes/No and empty/not empty.
+- Check individual unadjudicated alarms, or select **Select all filtered alarms** to freeze the complete eligible result set at the current load time, including other pages. You may then clear individual rows. Bulk adjudication applies one code, secondary-inspection state, optional vehicle ID, and notes to the selection; it processes at most six events concurrently. It does not attach evidence or isotope selections; use Event Details when those are required.
+- Review the count and warning before submitting. Successful events leave the alarm queue or show as adjudicated. Failed events remain visible and selected, and **Retry failed** retries only those failures. If OSCAR cannot enumerate the full filtered result, it selects nothing rather than silently adjudicating a partial set.
 - Results are newest first and paged 15 at a time. The footer advances between pages. Counts cover the occupancy streams currently reachable from every configured node.
 - Select a row for the preview. Double-click it, or choose the row's **Details** action, to open Event Details.
 - If a federated node or lane is unavailable, its rows/count may be incomplete; correct node connectivity and refresh rather than assuming that zero means no events.
@@ -558,6 +565,25 @@ To receive:
 4. Confirm the node, lane, occupancy, times, status, and charts, then download or share the received alarm file if authorized.
 
 > **Security boundary.** The package is compressed and integrity-checked, but it is neither encrypted nor digitally signed. The digest detects corruption; it does not identify the sender because a person who changes the content can compute a new digest. Treat imported data as a portable preview, independently confirm its source before operational use, and transfer it only through media and devices approved by site policy.
+
+### 8.7 Monitor Status of Health
+
+Open **Status of Health** with the heart-monitor icon in the Viewer navigation or go directly to `/health`. The page displays one row for every lane visible in the current scope; `/health?view=<key>` limits it to the assigned operational view.
+
+- **Connections** reports the RPM and each configured camera as **Online**, **Offline**, or **Waiting**. Waiting means no usable current connection value has arrived and is not counted as healthy.
+- **Fault status** reports gamma high, gamma low, neutron high, tamper, and extended occupancy as **Fault**, **Clear**, or **Waiting**. Missing or failed telemetry stays Waiting and is never counted as healthy or shown as clear.
+- **Current occupancy** uses the Lane System's canonical `occupancyStatus` stream to show a stable elapsed time across Rapiscan, Aspect, and RS350 RPMs.
+- **Last update** is the browser-local time of the latest connection or fault update for that row.
+
+Extended occupancy defaults to one minute. Enter a value from 1 through 1440 minutes in **Extended occupancy threshold**. The setting is saved in that browser and immediately re-evaluates an occupancy already in progress; it does not alter server observations or reports.
+
+After upgrading, confirm that each Lane System publishes `occupancyStatus` and each RPM and FFmpeg camera publishes connection status. Stop and restart an approved test camera and verify Offline then Online. Confirm unavailable fault telemetry remains Waiting, then exercise gamma, neutron, tamper, and long-occupancy tests only under the site's approved hardware procedures.
+
+### 8.8 Use an operational-view workstation
+
+Open `https://<oscar-host>/?view=<key>` or `https://<oscar-host>/view/<key>`. OSCAR preserves the key while navigating and limits lane discovery, events, maps, notifications, reports, alarm transfer, and Status of Health to assigned lanes. The unscoped root URL loads all lanes. Invalid keys and valid keys with no assigned lanes fail closed and load no lane data.
+
+Operational views separate workstation presentation; they are not an authorization boundary. Use OSCAR authentication and network controls when access itself must be restricted.
 
 ## 9. National statistics
 
@@ -672,8 +698,10 @@ Before changing retention, database selection, storage path, or **Delete Data on
 - [ ] Live and recorded camera video load, including after a browser refresh.
 - [ ] Event Details opens without a client-side exception.
 - [ ] A controlled test adjudication can be reviewed and submitted under site procedure.
-- [ ] Events filters, National refresh, and each required report type were tested.
+- [ ] Nested AND/OR Events filters, all-filtered-result selection, a controlled bulk adjudication, National refresh, and each required report type were tested.
 - [ ] A controlled alarm QR exports, scans/imports on the receiving device, passes integrity verification, and redraws plausible gamma/neutron curves.
+- [ ] **Status of Health** lists every expected lane; RPM and cameras show Online/Offline/Waiting correctly, and approved gamma, neutron, tamper, and one-minute extended-occupancy tests produce the expected state.
+- [ ] The unscoped URL shows all lanes, and each approved `?view=<key>` or `/view/<key>` URL shows only its assigned lanes across Dashboard, Events, reports, alarm transfer, and Status of Health.
 - [ ] Every federated node was rechecked after a browser reload; no credential was found in browser storage.
 
 ## 14. Troubleshooting
@@ -688,10 +716,14 @@ Before changing retention, database selection, storage path, or **Delete Data on
 | OSM tiles show 403/blocked | Do not point production traffic directly at volunteer OSM tiles in violation of tile policy. Use the deployment's approved OSM provider/proxy or select Esri while the tile-service configuration is corrected. |
 | CSV rejected | Compare the exact header/order, camera groups of six with sequential indexes, cell count on every row, numeric fields, and plain unquoted empty cells. Remove commas from values. |
 | CSV says success but a lane is missing | Check for an existing loaded lane with the same UniqueID, a name longer than 12 characters, device-child initialization errors, and whether asynchronous loading has finished. |
+| Scoped operational view is empty or rejects its key | Confirm the lane's **Operational View Keys** contains the exact lowercase key, apply and globally save the configuration, restart the lane if required, and use `?view=<key>` or `/view/<key>`. A blank assignment never matches a scoped view. |
 | RPM does not start | Verify host reachability, exact TCP port, firewall, Aspect range, and device availability. Review the child driver status/error, not only the parent lane. |
 | Camera does not start | Verify RTSP reachability and credentials, omit `rtsp://` from host, include a needed port once, confirm Axis codec or Custom path, and test the generated endpoint from the OSCAR host. |
 | Video appears initially but not after refresh | Verify the camera child and HLS output remain Started and inspect server/browser logs. Refresh should not require re-creating the lane. |
 | Event Details has no media | Confirm the event belongs to an available lane, required datastreams exist for its time range, retained video has not been deleted/decimated beyond need, and the user has permission. |
+| Status of Health lane/device is missing, Waiting, or Offline | Confirm the lane is in the current view, the lane and device child are running, and the RPM or FFmpeg camera publishes connection status. Waiting means no usable status has arrived; test reachability and inspect child logs before treating it as healthy. |
+| Extended occupancy does not appear | Confirm the Lane System publishes `occupancyStatus`, verify the RPM's daily-file/status input reports entry and exit, set a 1–1440 minute threshold in this browser, and wait until the stable elapsed time exceeds it. |
+| Bulk adjudication partly fails | Keep the failed rows selected, review lane/node connectivity and the adjudication control stream, then use **Retry failed**. Successful rows are not resubmitted. |
 | Adjudication fails | Confirm a code was selected, the lane/node is reachable, the adjudication control stream exists, and any evidence upload completed. Do not repeatedly submit until the original result is known. |
 | WebID controls have no DRF/results | Verify internet access to the configured Sandia Full Spectrum service, select a DRF and foreground/background type, and inspect the returned warning/error columns. Manual adjudication remains the operator's responsibility. |
 | National row is zero/missing | Refresh the intended range, verify that node's OSCAR statistics control stream and retained data, and correct node authentication/connectivity. |
@@ -713,4 +745,4 @@ When collecting support data, record the OSCAR version, browser, affected lane/o
 
 ---
 
-Document baseline: OSCAR 3.9.1 source behavior, reviewed 2026-09-24. If a later release changes fields or workflows, update the English canonical manual and all three translations together.
+Document baseline: OSCAR 4.0.0 source behavior, reviewed 2026-09-24. If a later release changes fields or workflows, update the English canonical manual and all three translations together.

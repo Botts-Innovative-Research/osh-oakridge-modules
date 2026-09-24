@@ -2,7 +2,7 @@
 
 ## OSCAR operator documentation
 
-The complete OSCAR 3.8.3 administration and operations manual is available in every supported language:
+The complete OSCAR 4.0.0 administration and operations manual is available in every supported language:
 
 - [English](services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README.md)
 - [Español](services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_es.md)
