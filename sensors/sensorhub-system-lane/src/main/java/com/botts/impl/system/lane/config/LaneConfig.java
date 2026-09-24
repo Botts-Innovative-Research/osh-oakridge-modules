@@ -18,6 +18,9 @@ package com.botts.impl.system.lane.config;
 import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.impl.sensor.SensorSystemConfig;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Configuration settings for the Lane Sensor System.
  *
@@ -25,6 +28,9 @@ import org.sensorhub.impl.sensor.SensorSystemConfig;
  * @since March 2025
  */
 public class LaneConfig extends SensorSystemConfig {
+
+    @DisplayInfo(desc = "Operational view keys that may display this lane. Use lowercase letters, numbers, and hyphens only.")
+    public List<String> operationalViewKeys = new ArrayList<>();
 
     @DisplayInfo(desc = "Additional options when creating an RPM lane.")
     public LaneOptionsConfig laneOptionsConfig;
