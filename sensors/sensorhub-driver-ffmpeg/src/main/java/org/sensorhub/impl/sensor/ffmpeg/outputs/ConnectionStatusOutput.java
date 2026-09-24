@@ -7,6 +7,7 @@ import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
+import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.swe.SWEHelper;
 
 /**
@@ -17,8 +18,7 @@ public class ConnectionStatusOutput<FFMPEGConfigType extends FFMPEGConfig>
 
     private static final String SENSOR_OUTPUT_NAME = "connectionStatus";
     private static final String SENSOR_OUTPUT_LABEL = "Connection Status";
-    private static final String CONNECTION_STATUS_DEFINITION =
-            "http://www.opengis.net/def/property/OGC/0/ConnectionStatus";
+    public static final String CONNECTION_STATUS_DEFINITION = RADHelper.getRadUri("ConnectionStatus");
 
     private DataComponent dataStruct;
     private DataEncoding dataEncoding;

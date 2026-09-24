@@ -39,6 +39,11 @@ import org.vast.swe.SWEHelper;
 
 import java.util.*;
 import java.util.concurrent.Flow;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
@@ -88,6 +93,16 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     private volatile long lastOccupancyPublish = 0;
     private long lastDailyFileTime = 0;
     private final Object lock = new Object();
+    private final Rs350LiveOccupancyTracker liveOccupancy = new Rs350LiveOccupancyTracker();
+    private boolean liveOccupancyStateChanged = false;
+    private final ScheduledExecutorService liveOccupancyScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "rs350-live-occupancy");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private ScheduledFuture<?> liveOccupancyExpiryTask;
+    private long liveOccupancyExpiryGeneration = 0;
+    private boolean disposed = false;
     private double alarmDuration;
     private boolean reportingDailyFile = false;
 
@@ -115,7 +130,7 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
 
     // Want to output: (maybe subject to change)
     //  1: Occupancy (only AFTER each alarm)
-    //  2: DailyFile (only value: isAlarming boolean) (used to manage the FFmpeg recording)
+    //  2: DailyFile (live occupancy/start and alarm state) (used by lane health and FFmpeg recording)
 
     // Questions:
         // What's the best way to trigger the FFmpeg recording?
@@ -147,6 +162,14 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     public void notifyParamChange() {
         super.notifyParamChange();
         inputSystemID = systemInputParam.getData().getStringValue();
+        synchronized (lock) {
+            cancelLiveOccupancyExpiryLocked();
+            liveOccupancy.reset();
+            liveOccupancyStateChanged = false;
+        }
+        for (var output : outputData) {
+            ((DataComponent) output).renewDataBlock();
+        }
 
         if(!Objects.equals(inputSystemID, "")) {
             try {
@@ -157,9 +180,6 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
                 else
                     throw new IllegalStateException("RPM data stream " + inputSystemID + " has no data", e);
             }
-        }
-        for (var output : outputData) {
-            ((DataComponent) output).renewDataBlock();
         }
     }
 
@@ -240,11 +260,27 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
 
         DataBlock[] obsResults = Arrays.stream(event.getObservations()).map(IObsData::getResult).toArray(DataBlock[]::new);
 
+        boolean publishLiveState = false;
         switch (outputName) {
             case ALARM_NAME -> processAlarm(obsResults);
-            case BACKGROUND_NAME -> processBackground(obsResults);
-            case FOREGROUND_NAME -> processForeground(obsResults);
+            case BACKGROUND_NAME -> {
+                processBackground(obsResults);
+                publishLiveState = true;
+            }
+            case FOREGROUND_NAME -> {
+                processForeground(obsResults);
+                publishLiveState = true;
+            }
             default -> logger.debug("(Default) Received data event for unknown output: {}", outputName);
+        }
+
+        if (publishLiveState) {
+            try {
+                publishData();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.warn("Interrupted while publishing RS350 live occupancy state");
+            }
         }
     }
 
@@ -295,34 +331,95 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
     }
 
     // Concerned w/ max gamma and neutron counts
-    private synchronized void processForeground(DataBlock... eventRecords) {
-        DataComponent foregroundComponent = ((DataComponent) allInputs.get(FOREGROUND_NAME)).copy();
+    private void processForeground(DataBlock... eventRecords) {
+        synchronized (lock) {
+            DataComponent foregroundComponent = ((DataComponent) allInputs.get(FOREGROUND_NAME)).copy();
 
-        for (DataBlock eventRecord : eventRecords) {
-            foregroundComponent.setData(eventRecord);
+            for (DataBlock eventRecord : eventRecords) {
+                foregroundComponent.setData(eventRecord);
+                double measurementStart = ((Time) foregroundComponent.getComponent(SAMPLING_TIME_NAME))
+                        .getValue().getAsDouble();
+                liveOccupancyStateChanged |= liveOccupancy.onForeground(measurementStart, System.nanoTime());
 
-            int newGrossGamma = ((Count)foregroundComponent.getComponent(GAMMA_GROSS_COUNT_NAME)).getValue();
-            int newGrossNeutron = ((Count)foregroundComponent.getComponent(NEUTRON_GROSS_COUNT_NAME)).getValue();
+                int newGrossGamma = ((Count)foregroundComponent.getComponent(GAMMA_GROSS_COUNT_NAME)).getValue();
+                int newGrossNeutron = ((Count)foregroundComponent.getComponent(NEUTRON_GROSS_COUNT_NAME)).getValue();
 
-            if (newGrossGamma > maxGammaCount) {
-                maxGammaCount = newGrossGamma;
+                if (newGrossGamma > maxGammaCount) {
+                    maxGammaCount = newGrossGamma;
+                }
+                if (newGrossNeutron > maxNeutronCount) {
+                    maxNeutronCount = newGrossNeutron;
+                }
             }
-            if (newGrossNeutron > maxNeutronCount) {
-                maxNeutronCount = newGrossNeutron;
-            }
+            scheduleLiveOccupancyExpiryLocked();
         }
     }
 
     // Concerned with background neutron counts
-    private synchronized void processBackground(DataBlock... eventRecords) {
-        DataComponent backgroundComponent = ((DataComponent) allInputs.get(BACKGROUND_NAME)).copy();
+    private void processBackground(DataBlock... eventRecords) {
+        synchronized (lock) {
+            DataComponent backgroundComponent = ((DataComponent) allInputs.get(BACKGROUND_NAME)).copy();
 
-        for (DataBlock eventRecord : eventRecords) {
-            backgroundComponent.setData(eventRecord);
+            for (DataBlock eventRecord : eventRecords) {
+                backgroundComponent.setData(eventRecord);
+                liveOccupancy.onBackground(System.nanoTime());
 
-            Count grossCount = (Count) backgroundComponent.getComponent(NEUTRON_GROSS_COUNT_NAME);
-            Quantity liveTime = (Quantity) backgroundComponent.getComponent(DURATION_NAME);
-            latestNeutronBackground = grossCount.getValue() / liveTime.getValue();
+                Count grossCount = (Count) backgroundComponent.getComponent(NEUTRON_GROSS_COUNT_NAME);
+                Quantity liveTime = (Quantity) backgroundComponent.getComponent(DURATION_NAME);
+                latestNeutronBackground = grossCount.getValue() / liveTime.getValue();
+            }
+            scheduleLiveOccupancyExpiryLocked();
+        }
+    }
+
+    private void scheduleLiveOccupancyExpiryLocked() {
+        cancelLiveOccupancyExpiryLocked();
+        if (disposed)
+            return;
+
+        long delayNanos = liveOccupancy.nanosUntilNextDeadline(System.nanoTime());
+        if (delayNanos == Rs350LiveOccupancyTracker.NO_DEADLINE)
+            return;
+
+        long generation = ++liveOccupancyExpiryGeneration;
+        try {
+            liveOccupancyExpiryTask = liveOccupancyScheduler.schedule(
+                    () -> expireLiveOccupancy(generation),
+                    Math.max(1L, delayNanos),
+                    TimeUnit.NANOSECONDS);
+        } catch (RejectedExecutionException e) {
+            if (!disposed)
+                logger.warn("Unable to schedule RS350 live occupancy expiry", e);
+        }
+    }
+
+    private void expireLiveOccupancy(long generation) {
+        boolean publishTransition;
+        synchronized (lock) {
+            if (disposed || generation != liveOccupancyExpiryGeneration)
+                return;
+
+            liveOccupancyExpiryTask = null;
+            publishTransition = liveOccupancy.expire(System.nanoTime());
+            liveOccupancyStateChanged |= publishTransition;
+            scheduleLiveOccupancyExpiryLocked();
+        }
+
+        if (publishTransition) {
+            try {
+                publishData();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.warn("Interrupted while publishing RS350 occupancy timeout");
+            }
+        }
+    }
+
+    private void cancelLiveOccupancyExpiryLocked() {
+        liveOccupancyExpiryGeneration++;
+        if (liveOccupancyExpiryTask != null) {
+            liveOccupancyExpiryTask.cancel(false);
+            liveOccupancyExpiryTask = null;
         }
     }
 
@@ -334,7 +431,13 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
             boolean isDailyFileIntervalElapsed = now - DAILYFILE_INTERVAL_MS > lastDailyFileTime;
 
             // Don't need to publish dailyfile again if we have already published during this alarm (or non-alarm)
-            if (!isDailyFileIntervalElapsed) {
+            if (!isDailyFileIntervalElapsed && !liveOccupancyStateChanged) {
+                return;
+            }
+
+            // A default false value would incorrectly turn an unknown RS350
+            // state into a known-clear lane before the first source report.
+            if (!liveOccupancy.isKnown()) {
                 return;
             }
 
@@ -353,10 +456,15 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
             if (!dailyFile.hasData()) {
                 dailyFile.renewDataBlock();
             }
+            dailyFile.getComponent(DailyFileStruct.OCCUPIED_NAME).getData()
+                    .setBooleanValue(liveOccupancy.isOccupied());
+            dailyFile.getComponent(DailyFileStruct.OCCUPANCY_START_TIME_NAME).getData()
+                    .setDoubleValue(liveOccupancy.getOccupancyStartTime());
             dailyFile.getComponent(DailyFileStruct.ALARM_NAME).getData().setBooleanValue(doPublishOccupancy);
             dailyFile.getComponent(DailyFileStruct.samplingTime.getName()).getData().setDoubleValue(now / 1000.0);
             try {
                 super.publishData();
+                liveOccupancyStateChanged = false;
             } catch (InterruptedException e) {
                 logger.error("Error publishing daily file", e);
             }
@@ -376,7 +484,15 @@ public class Rs350OutputToOccupancy extends ExecutableProcessImpl implements ISe
 
     @Override
     public void dispose() {
+        synchronized (lock) {
+            disposed = true;
+            cancelLiveOccupancyExpiryLocked();
+            liveOccupancy.reset();
+            liveOccupancyStateChanged = false;
+        }
+        liveOccupancyScheduler.shutdownNow();
         subscriptions.forEach(Flow.Subscription::cancel);
+        subscriptions.clear();
         hasStarted = false;
     }
 

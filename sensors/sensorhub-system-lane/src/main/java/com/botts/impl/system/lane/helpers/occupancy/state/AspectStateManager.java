@@ -63,11 +63,28 @@ public class AspectStateManager extends StateManager {
     }
 
     @Override
-    protected void parseDailyFile() {
-        if (dailyFile.hasData() && dailyFile.getData().getStringValue(1) != null) {
-            dailyParsed = dailyFile.getData().getStringValue(1).split(",");
-        } else {
-            logger.warn("Daily file has no data");
+    protected boolean parseDailyFile() {
+        if (!dailyFile.hasData())
+            return false;
+
+        var message = dailyFile.getData().getStringValue(1);
+        if (message == null)
+            return false;
+
+        var parsed = message.split(",");
+        if (parsed.length <= OBJECT_COUNT)
+            return false;
+
+        try {
+            Integer.parseInt(parsed[INPUT_SIGNALS]);
+            Integer.parseInt(parsed[GAMMA_CHANNEL_STATUS]);
+            Integer.parseInt(parsed[NEUTRON_CHANNEL_STATUS]);
+        } catch (NumberFormatException e) {
+            logger.warn("Ignoring malformed Aspect daily-file occupancy sample");
+            return false;
         }
+
+        dailyParsed = parsed;
+        return true;
     }
 }
