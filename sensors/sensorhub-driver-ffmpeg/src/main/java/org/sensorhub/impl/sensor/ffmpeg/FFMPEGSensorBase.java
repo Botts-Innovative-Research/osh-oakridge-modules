@@ -14,6 +14,7 @@ import org.sensorhub.impl.sensor.ffmpeg.common.SyncTime;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.ffmpeg.controls.FileControl;
 import org.sensorhub.impl.sensor.ffmpeg.controls.HLSControl;
+import org.sensorhub.impl.sensor.ffmpeg.outputs.ConnectionStatusOutput;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.Video;
 import org.sensorhub.mpegts.DeliveryMode;
@@ -53,6 +54,9 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
      * Sensor output for the video frames.
      */
     protected Video<FFMPEGconfigType> videoOutput;
+
+    /** Current upstream camera-stream connection state. */
+    protected ConnectionStatusOutput<FFMPEGconfigType> connectionStatusOutput;
 
     protected FileControl<FFMPEGconfigType> fileControl;
 
@@ -107,6 +111,10 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         removeAllOutputs();
         removeAllControlInputs();
 
+        connectionStatusOutput = new ConnectionStatusOutput<>(this);
+        connectionStatusOutput.init();
+        addOutput(connectionStatusOutput, false);
+
         openStream();
         if (mpegTsProcessor == null) {
             logger.error("Could not open stream from data source");
@@ -150,6 +158,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 
     @Override
     protected void doStop() throws SensorHubException {
+        publishConnectionStatus(false);
         super.doStop();
         stopStream();
         shutdownExecutor();
@@ -178,6 +187,11 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
     }
 
     public MpegTsProcessor getProcessor() { return mpegTsProcessor; }
+
+    protected void publishConnectionStatus(boolean connected) {
+        if (connectionStatusOutput != null)
+            connectionStatusOutput.publish(connected);
+    }
 
     /**
      * Indicates whether commands can safely attach an output to the live input stream.

@@ -77,6 +77,7 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
         // Some preliminary data was read from the stream in doInit(), but this call makes it start processing all the
         // frames.
         startStream();
+        publishConnectionStatus(true);
 
         currentReconnect = 0;
         startStreamMonitor(mpegTsProcessor);
@@ -96,6 +97,7 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
     }
 
     void scheduleReconnect(Exception cause) {
+        publishConnectionStatus(false);
         final int attempt;
         final int maxAttempts;
         final long delayMillis;
