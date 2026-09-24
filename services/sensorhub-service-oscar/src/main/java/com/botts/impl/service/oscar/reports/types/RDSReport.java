@@ -23,15 +23,17 @@ public class RDSReport extends Report {
     Document document;
     PdfDocument pdfDocument;
     String siteId;
+    String laneUIDs;
     TableGenerator tableGenerator;
 
-    public RDSReport(OutputStream out, Instant startTime, Instant endTime, OSCARServiceModule module) {
+    public RDSReport(OutputStream out, Instant startTime, Instant endTime, String laneUIDs, OSCARServiceModule module) {
         super(out, startTime, endTime, module);
         pdfDocument = new PdfDocument(new PdfWriter(out));
 
         document = new Document(pdfDocument);
 
         this.siteId = module.getConfiguration().nodeId;
+        this.laneUIDs = laneUIDs;
 
         this.tableGenerator = new TableGenerator();
     }
@@ -54,6 +56,8 @@ public class RDSReport extends Report {
     private void addHeader(){
         document.add(new Paragraph("RDS Site Report").setFontSize(16).simulateBold());
         document.add(new Paragraph("Site ID: " + siteId).setFontSize(12));
+        if (laneUIDs != null && !laneUIDs.isBlank() && !laneUIDs.equals("NONE"))
+            document.add(new Paragraph("Lane UIDs: " + laneUIDs).setFontSize(12));
         document.add(new Paragraph("\n"));
     }
 
@@ -62,12 +66,12 @@ public class RDSReport extends Report {
 
         Map<String, String> alarmOccCounts = new LinkedHashMap<>();
 
-        long gammaNeutronAlarmCount = Utils.countObservations(module, Utils.gammaNeutronAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
-        long gammaAlarmCount = Utils.countObservations(module, Utils.gammaAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
-        long neutronAlarmCount = Utils.countObservations(module, Utils.neutronAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
-        long totalOccupancyCount = Utils.countObservations(module, null, start, end, RADHelper.DEF_OCCUPANCY);
+        long gammaNeutronAlarmCount = Utils.countObservationsForLanes(module, laneUIDs, Utils.gammaNeutronAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
+        long gammaAlarmCount = Utils.countObservationsForLanes(module, laneUIDs, Utils.gammaAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
+        long neutronAlarmCount = Utils.countObservationsForLanes(module, laneUIDs, Utils.neutronAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
+        long totalOccupancyCount = Utils.countObservationsForLanes(module, laneUIDs, null, start, end, RADHelper.DEF_OCCUPANCY);
 
-        long emlSuppressedCount = Utils.countObservations(module, Utils.emlSuppressedCQL, start, end, RADHelper.DEF_EML_ANALYSIS);
+        long emlSuppressedCount = Utils.countObservationsForLanes(module, laneUIDs, Utils.emlSuppressedCQL, start, end, RADHelper.DEF_EML_ANALYSIS);
 
         long totalAlarmingCount = gammaAlarmCount + neutronAlarmCount + gammaNeutronAlarmCount;
         long alarmOccupancyAverage = Utils.calculateAlarmingOccRate(totalAlarmingCount, totalOccupancyCount);
@@ -99,10 +103,10 @@ public class RDSReport extends Report {
         HashMap<String, String> faultCounts = new LinkedHashMap<>();
 
 
-        long tamperCount = Utils.countObservations(module, Utils.tamperCQL, start, end, RADHelper.DEF_TAMPER);
-        long gammaHighFaultCount = Utils.countObservations(module, Utils.gammaHighFaultCQL, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-        long gammaLowFaultCount = Utils.countObservations(module, Utils.gammaLowFaultCQL, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-        long neutronHighFaultCount = Utils.countObservations(module, Utils.neutronFaultCQL, start, end, RADHelper.DEF_NEUTRON,RADHelper.DEF_ALARM);
+        long tamperCount = Utils.countObservationsForLanes(module, laneUIDs, Utils.tamperCQL, start, end, RADHelper.DEF_TAMPER);
+        long gammaHighFaultCount = Utils.countObservationsForLanes(module, laneUIDs, Utils.gammaHighFaultCQL, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        long gammaLowFaultCount = Utils.countObservationsForLanes(module, laneUIDs, Utils.gammaLowFaultCQL, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        long neutronHighFaultCount = Utils.countObservationsForLanes(module, laneUIDs, Utils.neutronFaultCQL, start, end, RADHelper.DEF_NEUTRON,RADHelper.DEF_ALARM);
 //        long extendedOccupancyCount = Utils.countObservations(module, Utils.extendedOccPredicate, start, end, RADHelper.DEF_OCCUPANCY);
 //        long commsCount = Utils.countObservations(module, Utils.commsPredicate, start, end);
 //        long camCount = Utils.countObservations(module, Utils.cameraPredicate, start, end);
