@@ -118,6 +118,21 @@ public class StatisticsTests {
     }
 
     @Test
+    public void testControlScopesStatisticsToLaneUIDs() throws ExecutionException, InterruptedException {
+        var cmdData = statsControl.getCommandDescription().copy().createDataBlock();
+        cmdData.setTimeStamp(0, Instant.EPOCH);
+        cmdData.setTimeStamp(1, Instant.now());
+        cmdData.setStringValue(2, "urn:osh:system:lane:not-present");
+
+        var status = statsControl.submitCommand(new CommandData(1, cmdData)).get();
+        assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, status.getStatusCode());
+
+        var result = status.getResult().getInlineRecords().stream().findFirst().orElseThrow();
+        for (int i = 0; i < result.getAtomCount(); i++)
+            assertEquals(0, result.getLongValue(i));
+    }
+
+    @Test
     public void testControlWithNoTimes() throws ExecutionException, InterruptedException {
         var cmdDesc = statsControl.getCommandDescription().copy();
         var cmdData = cmdDesc.createDataBlock();

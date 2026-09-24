@@ -13,6 +13,7 @@ Click 'Add New Module' and select 'Lane System' from the list of available modul
   - Module Name: A unique name for the Lane, must be less than 12 characters
   - UniqueID: The platform's serial number, or a unique identifier, this will be used for all submodules and must be unique.
   - Auto Start: Check the box to start this module when OSH node is launched
+  - Operational View Keys: Add one or more workstation view keys (for example, `north-gate`). A lane can belong to multiple views. Leave empty to show the lane only in the unscoped view.
   - Delete Data on Lane Removal: Check the box to remove systems data from database if lane is deleted from node.
 
 **- Fixed Location:**

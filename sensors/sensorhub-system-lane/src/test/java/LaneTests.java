@@ -114,6 +114,40 @@ public class LaneTests {
     }
 
     @Test
+    public void testOperationalViewKeywordsArePublished() throws SensorHubException {
+        LaneConfig config = (LaneConfig) reg.createModuleConfig(new Descriptor());
+        config.name = "View Lane";
+        config.uniqueID = "view-test";
+        config.operationalViewKeys = List.of("secondary", "north-gate", "north-gate");
+
+        LaneSystem lane = (LaneSystem) reg.loadModule(config);
+        lane.init();
+
+        List<String> keywords = new ArrayList<>();
+        for (var keywordList : lane.getCurrentDescription().getKeywordsList())
+            keywords.addAll(keywordList.getKeywordList());
+
+        assertEquals(List.of("north-gate", "secondary"), config.operationalViewKeys);
+        assertTrue(keywords.contains("oscar:view:north-gate"));
+        assertTrue(keywords.contains("oscar:view:secondary"));
+    }
+
+    @Test
+    public void testInvalidOperationalViewKeyIsRejected() throws SensorHubException {
+        LaneConfig config = (LaneConfig) reg.createModuleConfig(new Descriptor());
+        config.name = "Bad View";
+        config.uniqueID = "bad-view-test";
+        config.operationalViewKeys = List.of("North Gate");
+
+        LaneSystem lane = (LaneSystem) reg.loadModule(config);
+        lane.init();
+        assertEquals(ModuleEvent.ModuleState.LOADED, lane.getCurrentState());
+        assertNotNull(lane.getCurrentError());
+        assertNotNull(lane.getCurrentError().getCause());
+        assertTrue(lane.getCurrentError().getCause().getMessage().contains("Operational view keys"));
+    }
+
+    @Test
     public void testSingleRapiscan() throws SensorHubException {
         var config = createLaneConfig(true, RPM_HOST, RAPISCAN_PORT);
         testLoadAndStart(config);

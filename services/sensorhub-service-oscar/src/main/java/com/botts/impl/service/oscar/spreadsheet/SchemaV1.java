@@ -12,6 +12,7 @@ public class SchemaV1 {
     public static final String AUTO_START = "AutoStart";
     public static final String LATITUDE = "Latitude";
     public static final String LONGITUDE = "Longitude";
+    public static final String OPERATIONAL_VIEWS = "OperationalViews";
 
     // RPM stuff
     public static final String RPM_TYPE = "RPMConfigType";
@@ -38,12 +39,29 @@ public class SchemaV1 {
     public static final String CAMERA_USERNAME_0 = "Username0";
     public static final String CAMERA_PASSWORD_0 = "Password0";
 
+    public static final String[] LEGACY_MAIN_HEADERS = {
+            "Name",
+            "UniqueID",
+            "AutoStart",
+            "Latitude",
+            "Longitude",
+            "RPMConfigType",
+            "RPMHost",
+            "RPMPort",
+            "AspectAddressStart",
+            "AspectAddressEnd",
+            "EMLEnabled",
+            "EMLCollimated",
+            "LaneWidth"
+    };
+
     public static final String[] MAIN_HEADERS = {
             "Name",
             "UniqueID",
             "AutoStart",
             "Latitude",
             "Longitude",
+            "OperationalViews",
             "RPMConfigType",
             "RPMHost",
             "RPMPort",

@@ -31,11 +31,16 @@ import org.vast.swe.SWEHelper;
 import org.vast.util.DateTime;
 
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
+import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import static com.botts.impl.service.oscar.Constants.REPORT_BUCKET;
 
@@ -128,7 +133,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             String filePath = null;
             IReportHandler reportHandler = null;
             try {
-                filePath = buildPath(type, start, end);
+                filePath = buildPath(type, start, end, laneUIDs);
                 reportHandler = getReportHandler(type, start, end, laneUIDs, eventType);
             } catch (DataStoreException e) {
                 module.getLogger().error("Failed to build report " + type, e);
@@ -168,11 +173,11 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
         if(type == ReportCmdType.LANE) {
             return out -> new LaneReport(out, start, end, laneUIDs, module);
         } else if (type == ReportCmdType.EVENT) {
-            return out -> new EventReport(out, start, end, eventType, module);
+            return out -> new EventReport(out, start, end, eventType, laneUIDs, module);
         } else if (type == ReportCmdType.ADJUDICATION) {
             return out -> new AdjudicationReport(out, start, end, laneUIDs, module);
         } else if (type == ReportCmdType.RDS_SITE) {
-            return out -> new RDSReport(out, start, end, module);
+            return out -> new RDSReport(out, start, end, laneUIDs, module);
         }
         return null;
     }
@@ -187,18 +192,40 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
         return bucketService.getBucketStore().getRelativeResourceURI(REPORT_BUCKET, filePath);
     }
 
-    private String buildPath(ReportCmdType type, Instant start, Instant end) {
+    private String buildPath(ReportCmdType type, Instant start, Instant end, String laneUIDs) {
 
         String startTime = DateTimeFormatter.ISO_INSTANT.format(start).replace(":", "-");
         String endTime = DateTimeFormatter.ISO_INSTANT.format(end).replace(":", "-");
 
+        String scope = buildScopeToken(laneUIDs);
+
         return String.format(
-                "%s_%s_%s_%s.pdf",
+                "%s_%s_%s_%s_%s.pdf",
                 module.getOSCARSystem().getNodeId(),
                 type.name().toLowerCase(),
+                scope,
                 startTime,
                 endTime
         ).toLowerCase();
+    }
+
+    private String buildScopeToken(String laneUIDs) {
+        if (laneUIDs == null || laneUIDs.isBlank() || laneUIDs.equals("NONE"))
+            return "all";
+
+        String canonicalScope = Arrays.stream(laneUIDs.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .sorted()
+                .collect(Collectors.joining(","));
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(canonicalScope.getBytes(StandardCharsets.UTF_8));
+            return "scope-" + java.util.HexFormat.of().formatHex(digest, 0, 8);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
     }
 
     // checks if a report file already exists in object store and only creates a new output if it doesnt exist
