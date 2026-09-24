@@ -67,16 +67,28 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
         // Make sure the stream is already open. (If the sensor has been previously started, then stopped, then the
         // stream won't be open.)
 
+        // Clear any status left by a previous run before attempting to open the
+        // source. Online is published only after both openStream() and startStream()
+        // complete successfully.
+        publishConnectionStatus(false);
         try {
             openStream();
+            configureVideoOutputAfterOpen();
+            configureStreamControlsAfterOpen();
+            if (streamInterfacesDeferred) {
+                registerRecoveredInterfaces();
+                streamInterfacesDeferred = false;
+            }
+
+            // Some preliminary data was read from the stream in doInit(), but this call makes it start processing all
+            // the frames.
+            startStream();
         } catch (SensorHubException e) {
+            discardFailedStream();
             scheduleReconnect(e);
             return;
         }
-
-        // Some preliminary data was read from the stream in doInit(), but this call makes it start processing all the
-        // frames.
-        startStream();
+        publishConnectionStatus(true);
 
         currentReconnect = 0;
         startStreamMonitor(mpegTsProcessor);
@@ -96,6 +108,7 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
     }
 
     void scheduleReconnect(Exception cause) {
+        publishConnectionStatus(false);
         final int attempt;
         final int maxAttempts;
         final long delayMillis;

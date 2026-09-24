@@ -1,4 +1,4 @@
-# Manuel d'administration et d'exploitation d'OSCAR 3.8.3
+# Manuel d'administration et d'exploitation d'OSCAR 4.0.0
 
 Ce manuel couvre la première utilisation et l'exploitation complète : certificat, connexion, plan géoréférencé, import/création des voies, adjudication et preuves, événements, statistiques nationales, rapports et fédération de nœuds.
 
@@ -32,7 +32,7 @@ L'interface d'administration sélectionne automatiquement le manuel correspondan
 
 Vous avez besoin :
 
-- d'un déploiement OSCAR 3.8.3 installé et démarré ;
+- d'un déploiement OSCAR 4.0.0 installé et démarré ;
 - de l'URL OSCAR, généralement `https://oscar.local/` sauf si un autre hôte a été choisi ;
 - d'un compte administrateur pour `/sensorhub/admin` ;
 - de l'image de site approuvée et des coordonnées des coins inférieur gauche et supérieur droit ;
@@ -248,13 +248,15 @@ Une ligne est ignorée si son `UniqueID` appartient déjà à un Système de voi
 
 ### 6.2 Schéma exact
 
-Les 13 premiers en-têtes sont obligatoires, sensibles à la casse et doivent être dans cet ordre exact :
+Le schéma actuel comporte 14 en-têtes principaux obligatoires, sensibles à la casse et dans cet ordre exact. `OperationalViews` est la sixième colonne :
 
 ```csv
-Name,UniqueID,AutoStart,Latitude,Longitude,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth
+Name,UniqueID,AutoStart,Latitude,Longitude,OperationalViews,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth
 ```
 
-Ajoutez ensuite un groupe de six colonnes par caméra, à partir de 0 et sans saut :
+L'import reste compatible avec l'ancien schéma à 13 en-têtes sans `OperationalViews` ; ces voies ne sont affectées à aucune vue opérationnelle. Les nouveaux exports utilisent toujours les 14 en-têtes. Avec l'en-tête actuel, chaque ligne doit contenir la cellule `OperationalViews`, même si sa valeur est vide.
+
+Incluez ensuite au moins un groupe de six colonnes de caméra. Utilisez un groupe `CameraType0` vide si la voie n'a aucune caméra ; les index supplémentaires doivent rester continus :
 
 ```csv
 CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0
@@ -271,6 +273,7 @@ Le code n'impose pas de nombre maximal de groupes séquentiels, mais le déploie
 | `UniqueID` | oui | Identifiant stable non réutilisable. Un suffixe simple devient une URN de voie. |
 | `AutoStart` | oui | `true` ou `false` ; seul `true`, sans distinction de casse, vaut vrai. |
 | `Latitude` / `Longitude` | ensemble | Degrés WGS 84. Laissez les deux vides pour omettre l'emplacement fixe. |
+| `OperationalViews` | non | Clés de vue de poste séparées par des points-virgules, par exemple `north-gate;secondary`. Chaque clé doit compter 1 à 63 lettres ASCII minuscules (`a`–`z`), chiffres ou tirets, sans tiret initial ni final. Laissez vide pour ne pas affecter la voie à une vue limitée. |
 | `RPMConfigType` | non | Vide, `Aspect`, `Rapiscan` ou `RS350`, sans distinction de casse. |
 | `RPMHost` | avec RPM | Adresse IP ou DNS du RPM. |
 | `RPMPort` | avec RPM | Port TCP entier. |
@@ -296,15 +299,15 @@ Le CSV n'expose pas la **Longueur du tampon vidéo** ; les caméras importées u
 Une voie Rapiscan avec une caméra Axis :
 
 ```csv
-Name,UniqueID,AutoStart,Latitude,Longitude,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0
-Lane01,lane01,true,35.8858,-84.2121,Rapiscan,192.0.2.10,1601,,,false,false,4.82,Axis,192.0.2.20,,H264,operator,replace-me
+Name,UniqueID,AutoStart,Latitude,Longitude,OperationalViews,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0
+Lane01,lane01,true,35.8858,-84.2121,north-gate,Rapiscan,192.0.2.10,1601,,,false,false,4.82,Axis,192.0.2.20,,H264,operator,replace-me
 ```
 
 Une voie Aspect avec deux caméras :
 
 ```csv
-Name,UniqueID,AutoStart,Latitude,Longitude,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0,CameraType1,CameraHost1,CameraPath1,Codec1,Username1,Password1
-Lane02,lane02,true,35.8859,-84.2119,Aspect,192.0.2.11,502,1,32,,,,Sony,192.0.2.21,,,operator,replace-me,Custom,192.0.2.22:8554,/stream1,,operator,replace-me
+Name,UniqueID,AutoStart,Latitude,Longitude,OperationalViews,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0,CameraType1,CameraHost1,CameraPath1,Codec1,Username1,Password1
+Lane02,lane02,true,35.8859,-84.2119,north-gate;secondary,Aspect,192.0.2.11,502,1,32,,,,Sony,192.0.2.21,,,operator,replace-me,Custom,192.0.2.22:8554,/stream1,,operator,replace-me
 ```
 
 Remplacez toutes les adresses et tous les identifiants. Empêchez le tableur de reformater identifiants, booléens ou coordonnées.
@@ -359,6 +362,7 @@ La liste varie selon les paquets installés. Pour une voie ordinaire, choisissez
 | ID unique | Identifiant stable obligatoire. `lane01` devient `urn:osh:system:lane:lane01` ; une URN complète est acceptée. Évitez espaces et réutilisation. |
 | Dernière mise à jour | Horodatage SensorML, normalement vide/géré par le système. |
 | Démarrage automatique | Démarre la voie au chargement. Activez après vérification. |
+| Clés de vue opérationnelle | Liste facultative des clés de poste autorisées à afficher cette voie. Ajoutez chaque clé séparément ; utilisez 1 à 63 lettres ASCII minuscules (`a`–`z`), chiffres ou tirets, sans tiret initial ni final. Laissez vide si la voie ne doit appartenir à aucune vue limitée. |
 | Supprimer les données avec la voie | Activé par défaut. La suppression de la voie efface ses données. Désactivez-le si l'historique doit être conservé. |
 | Informations de source de données | Métadonnées héritées facultatives, seulement si le modèle SensorML du site les exige. |
 
@@ -459,10 +463,13 @@ L'envoi ajoute un enregistrement sans modifier l'observation d'origine. Pour pre
 
 ![Liste des événements](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/27-event-list.png)
 
-**Événements** est l'historique de tous les nœuds locaux et fédérés configurés, pas seulement des alarmes en attente. Il affiche voie/nœud, ID d'occupation, début/fin, maxima gamma/neutron, état et présence d'une adjudication.
+**Événements** est l'historique de tous les nœuds locaux et fédérés configurés, pas seulement des alarmes en attente. Il affiche voie/nœud, ID d'occupation, début/fin, maxima gamma/neutron, état et présence d'une adjudication. Les filtres, décomptes, pages et la sélection groupée s'appliquent à l'ensemble complet des résultats correspondants côté serveur, pas seulement à la page visible.
 
 - **Colonnes** masque/affiche les champs, **Filtres** ouvre les filtres serveur et **Densité** règle l'espacement.
-- Début/fin acceptent **après** et **avant**. État accepte **Aucun**, **Gamma**, **Neutron**, **Gamma et Neutron**. Adjugé accepte **Oui/Non**. Un filtre revient à la première page.
+- Créez des groupes avec **Toutes les conditions (ET)** ou **Une condition au choix (OU)** et imbriquez-les si les deux logiques sont nécessaires. Jusqu'à 20 règles et trois niveaux de groupes sont admis. Les conditions de nœud et de voie choisissent les flux ; celles d'ID d'occupation, d'heure, de maxima gamma/neutron, d'état et d'adjudication sont envoyées au serveur pour chaque voie concernée. L'application revient à la première page.
+- Utilisez les opérateurs proposés pour chaque champ. Les heures acceptent avant, après et entre ; les nombres, des limites inclusives, entre et l'égalité ; l'état, Aucun, Gamma, Neutron ou Gamma et Neutron ; et l'adjudication, Oui/Non et vide/non vide.
+- Cochez séparément des alarmes non adjugées ou choisissez **Sélectionner toutes les alarmes filtrées** pour figer l'ensemble admissible au moment du chargement, y compris les autres pages. Vous pouvez ensuite décocher des lignes. L'adjudication groupée applique à la sélection un code, un état d'inspection secondaire, un ID véhicule facultatif et des notes, avec au plus six événements traités simultanément. Elle ne joint ni preuves ni choix d'isotopes ; utilisez les Détails de l'événement lorsque ceux-ci sont nécessaires.
+- Vérifiez le nombre et l'avertissement avant l'envoi. Les succès quittent la file d'alarmes ou apparaissent adjugés. Les échecs restent visibles et sélectionnés ; **Réessayer les échecs** ne relance qu'eux. Si OSCAR ne peut pas énumérer tout le résultat filtré, il ne sélectionne rien plutôt que d'adjuger silencieusement un sous-ensemble.
 - Résultats du plus récent, par pages de 15. Sélection = aperçu; double-clic ou **Détails** = page complète.
 - Un nœud fédéré indisponible peut rendre lignes/comptes incomplets; vérifiez la connexion avant d'interpréter zéro.
 
@@ -522,6 +529,46 @@ Supprimer avant envoi retire seulement l'élément en attente. Après télévers
 2. Choisissez zéro ou plusieurs isotopes. **Inconnu** exclut les isotopes nommés: Neptunium, Plutonium, Uranium-233/235/238, Américium, Baryum, Bismuth, Californium, Césium-134/137, Cobalt-57/60, Europium-152, Iridium, Manganèse, Sélénium, Sodium, Strontium, Fluor, Gallium, Iode-123/131, Indium, Palladium, Technétium, Xénon, Potassium, Radium et Thorium.
 3. Ajoutez les notes et choisissez inspection **Aucune**, **Demandée** ou **Terminée**.
 4. Sélectionnez **Envoyer**, relisez la confirmation complète puis **Confirmer et envoyer**. Vérifiez le succès et la nouvelle ligne. En cas d'échec, conservez le formulaire et corrigez nœud/flux de commande/téléversement avant de réessayer.
+
+### 8.6 Transférer une alarme par code QR dans un environnement isolé
+
+OSCAR peut placer un résumé compact d'alarme dans un seul QR sans service Internet. L'export contient le nœud et la voie d'origine, l'identité et les heures de l'événement, l'état et les maxima, les métadonnées compactes d'adjudication présentes, ainsi que les courbes gamma, neutron et seuil sous-échantillonnées. Il **n'inclut pas** la vidéo, les fichiers de preuve, les spectres ni tous les échantillons d'origine.
+
+Pour exporter :
+
+1. Ouvrez l'aperçu de l'alarme sur le tableau de bord ou **Détails de l'événement**, puis sélectionnez **Exporter l'alarme en QR**.
+2. Attendez la lecture des observations de l'intervalle. La boîte indique le nombre de points gamma/neutron exportés et d'origine.
+3. Faites scanner le code, utilisez **Télécharger l'image QR** pour un PNG, **Télécharger le fichier d'alarme** pour un `.oscar-alarm.json`, ou **Partager l'alarme**. Si le navigateur ne partage pas les fichiers, OSCAR le télécharge.
+
+L'échantillonnage conserve les deux extrémités, minima/maxima globaux, points gamma de part et d'autre des franchissements de seuil et minima/maxima locaux. Les valeurs sont arrondies à trois décimales. Le paquet conserve l'empreinte SHA-256 des séries complètes pour une comparaison ultérieure avec la source, mais les échantillons omis ne sont pas reconstructibles depuis le QR.
+
+Pour recevoir :
+
+1. Ouvrez **Transfert d'alarme** dans la navigation du Viewer.
+2. Utilisez **Démarrer le scan caméra**, **Scanner une image QR**, **Importer le fichier d'alarme**, ou collez le texte `OSCAR-ALARM:1:`. La caméra exige une autorisation et un contexte HTTPS sécurisé; l'image ou le fichier reste utilisable lorsque la caméra est interdite.
+3. OSCAR décompresse, applique les limites de taille et de données, vérifie l'empreinte SHA-256 de transfert et redessine les courbes sous-échantillonnées.
+4. Confirmez nœud, voie, occupation, heures, état et courbes, puis téléchargez ou partagez le fichier reçu uniquement si vous y êtes autorisé.
+
+> **Limite de sécurité.** Le paquet est comprimé et son intégrité est vérifiée, mais il n'est ni chiffré ni signé numériquement. L'empreinte détecte une corruption; elle n'identifie pas l'expéditeur, car une personne modifiant le contenu peut la recalculer. Considérez-le comme un aperçu portable, confirmez indépendamment sa source avant tout usage opérationnel et utilisez uniquement les supports et appareils autorisés.
+
+### 8.7 Surveiller l'État de santé
+
+Ouvrez **État de santé** avec l'icône de moniteur cardiaque dans la navigation ou accédez directement à `/health`. La page affiche une ligne pour chaque voie visible dans la portée actuelle ; `/health?view=<clé>` la limite à la vue opérationnelle affectée.
+
+- **Connexions** indique le RPM et chaque caméra configurée comme **En ligne**, **Hors ligne** ou **En attente**. En attente signifie qu'aucune valeur de connexion exploitable n'est encore arrivée et n'est pas considérée comme saine.
+- **État des défauts** affiche gamma élevé, gamma faible, neutron élevé, sabotage et occupation prolongée comme **Défaut**, **Normal** ou **En attente**. Une télémétrie absente ou en échec reste En attente ; elle n'est jamais considérée saine ni affichée comme normale.
+- **Occupation actuelle** utilise le flux canonique `occupancyStatus` du Système de voie pour afficher une durée stable avec les RPM Rapiscan, Aspect et RS350.
+- **Dernière mise à jour** utilise l'heure locale du navigateur pour la dernière mise à jour de connexion ou de défaut.
+
+Le seuil d'occupation prolongée est d'une minute par défaut. Entrez de 1 à 1440 minutes dans **Seuil d'occupation prolongée**. La valeur est enregistrée dans ce navigateur et réévalue immédiatement une occupation en cours; elle ne modifie ni les observations ni les rapports du serveur.
+
+Après la mise à niveau, confirmez que chaque Système de voie publie `occupancyStatus` et que chaque RPM et caméra FFmpeg publie son état de connexion. Arrêtez puis redémarrez une caméra de test autorisée et vérifiez Hors ligne puis En ligne. Confirmez qu'une télémétrie de défaut indisponible reste En attente ; testez gamma, neutron, sabotage et occupation longue uniquement selon les procédures matérielles approuvées du site.
+
+### 8.8 Utiliser un poste avec vue opérationnelle
+
+Ouvrez `https://<hote-oscar>/?view=<cle>` ou `https://<hote-oscar>/view/<cle>`. OSCAR conserve la clé pendant la navigation et limite les voies, événements, cartes, notifications, rapports, transferts d'alarme et l'État de santé aux voies affectées. L'URL racine non limitée charge toutes les voies. Les clés invalides et les vues sans voie échouent en mode fermé sans charger de données.
+
+Les vues opérationnelles séparent la présentation des postes; elles ne constituent pas une limite d'autorisation. Utilisez l'authentification OSCAR et les contrôles réseau lorsque l'accès doit être restreint.
 
 ## 9. Statistiques nationales
 
@@ -619,7 +666,10 @@ Avant de modifier conservation, base, chemin ou **Supprimer les données avec la
 - [ ] Vidéo en direct et enregistrée fonctionne, y compris après actualisation.
 - [ ] Détails s'ouvre sans exception côté client.
 - [ ] Une adjudication contrôlée peut être vérifiée et envoyée.
-- [ ] Les filtres Événements, l'actualisation Nationale et les rapports requis ont été testés.
+- [ ] Les filtres ET/OU imbriqués d'Événements, la sélection de tout le résultat filtré, une adjudication groupée contrôlée, l'actualisation Nationale et les rapports requis ont été testés.
+- [ ] Un QR d'alarme contrôlée s'exporte, se scanne/importe, passe le contrôle d'intégrité et redessine des courbes gamma/neutron plausibles.
+- [ ] **État de santé** répertorie toutes les voies attendues ; RPM et caméras affichent correctement En ligne/Hors ligne/En attente, et les tests autorisés gamma, neutron, sabotage et occupation prolongée d'une minute donnent l'état prévu.
+- [ ] L'URL non limitée affiche toutes les voies, et chaque URL approuvée `?view=<clé>` ou `/view/<clé>` n'affiche que ses voies affectées dans Tableau de bord, Événements, rapports, Transfert d'alarme et État de santé.
 - [ ] Chaque nœud fédéré a été revérifié après rechargement; aucun identifiant n'est stocké par le navigateur.
 
 ## 14. Dépannage
@@ -634,15 +684,21 @@ Avant de modifier conservation, base, chemin ou **Supprimer les données avec la
 | Tuiles OSM 403/bloquées | N'utilisez pas directement des serveurs bénévoles contrairement à leur politique. Configurez un fournisseur/proxy OSM approuvé ou utilisez Esri pendant la correction. |
 | CSV refusé | Vérifiez en-tête/ordre, groupes de six, index continus, nombre de cellules, nombres, cellules vides non citées et absence de virgules internes. |
 | Voie manquante après CSV | Cherchez un UniqueID déjà chargé, un nom trop long, des erreurs d'enfants et attendez le chargement asynchrone. |
+| Vue opérationnelle vide ou clé rejetée | Vérifiez que les **Clés de vue opérationnelle** de la voie contiennent exactement la clé en minuscules, appliquez et enregistrez globalement, redémarrez la voie si nécessaire, puis utilisez `?view=<clé>` ou `/view/<clé>`. Une affectation vide ne correspond jamais à une vue limitée. |
 | RPM ne démarre pas | Testez hôte, port, pare-feu, plage Aspect et disponibilité ; consultez l'erreur du pilote enfant. |
 | Caméra ne démarre pas | Testez RTSP/identifiants, retirez `rtsp://` de l'hôte, évitez un port en double, vérifiez codec Axis ou chemin Custom depuis l'hôte OSCAR. |
 | Vidéo perdue après actualisation | Vérifiez que la caméra et HLS restent démarrés et consultez les journaux. Actualiser ne doit pas imposer de recréer la voie. |
 | Événement sans média | Vérifiez voie disponible, flux sur l'intervalle, conservation et droits. |
+| Voie/appareil absent, En attente ou Hors ligne dans État de santé | Vérifiez que la voie appartient à la vue actuelle, que la voie et l'appareil enfant sont démarrés, et que le RPM ou la caméra FFmpeg publie son état de connexion. En attente signifie qu'aucun état exploitable n'est encore arrivé ; testez la connexion et examinez les journaux de l'enfant. |
+| L'occupation prolongée n'apparaît pas | Vérifiez que le Système de voie publie `occupancyStatus`, que l'entrée fichier quotidien/état du RPM signale l'entrée et la sortie, réglez un seuil de 1 à 1440 minutes dans ce navigateur et attendez que la durée stable le dépasse. |
+| L'adjudication groupée échoue partiellement | Gardez les lignes en échec sélectionnées, vérifiez la connexion voie/nœud et le flux de commande d'adjudication, puis choisissez **Réessayer les échecs**. Les succès ne sont pas renvoyés. |
 | Échec d'adjudication | Choisissez un code; vérifiez nœud/voie, flux de commande et téléversement. Ne renvoyez pas avant de connaître le premier résultat. |
 | WebID sans DRF/résultat | Vérifiez Full Spectrum, DRF, premier/arrière-plan et colonnes avertissement/erreur. La décision reste humaine. |
 | Nationale vide/zéro | Actualisez la plage et vérifiez commande statistique, données conservées et authentification du nœud. |
 | Rapport absent | Complétez nœud/type/plage et voie/type d'événement; vérifiez dates, commande et bucket `reports`. Une demande identique peut réutiliser un fichier. |
 | Nœud distant refusé après rechargement | La session exige un cookie valide; Basic exige de ressaisir les secrets. Vérifiez TLS, CORS, chemins, port et droits. |
+| QR d'alarme impossible à générer | Vérifiez la voie et les observations gamma/neutron conservées sur l'intervalle. Si un seul QR ne suffit pas, utilisez le fichier d'alarme téléchargeable. |
+| QR impossible à scanner/importer | Augmentez la luminosité ou utilisez le PNG à sa taille d'origine; sinon importez `.oscar-alarm.json`. Un échec d'intégrité impose un nouvel export, jamais le contournement du contrôle. |
 | Modifications perdues au redémarrage | Appliquez le formulaire, puis utilisez Enregistrer globalement. |
 
 Pour l'assistance, relevez version OSCAR, navigateur, voie/occupation, heure et fuseau, états et journaux nettoyés. Retirez mots de passe, jetons, clés privées et preuves sensibles.
@@ -657,4 +713,4 @@ Pour l'assistance, relevez version OSCAR, navigateur, voie/occupation, heure et 
 
 ---
 
-Référence du document : comportement du code OSCAR 3.8.3, revu le 2026-09-21. Si une version ultérieure change les champs ou procédures, mettez à jour ensemble le manuel canonique anglais et les trois traductions.
+Référence du document : comportement du code OSCAR 4.0.0, revu le 2026-09-24. Si une version ultérieure change les champs ou procédures, mettez à jour ensemble le manuel canonique anglais et les trois traductions.

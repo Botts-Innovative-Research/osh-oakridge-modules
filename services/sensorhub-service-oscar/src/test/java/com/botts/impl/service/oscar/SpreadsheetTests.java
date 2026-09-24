@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.Assert.*;
 
@@ -67,6 +68,35 @@ public class SpreadsheetTests {
         assertEquals(1, lane.laneOptionsConfig.ffmpegConfig.size());
         handler.loadModules(lanes);
         assertNotNull(lanes.get(0).location);
+    }
+
+    @Test
+    public void testLegacySpreadsheetDefaultsToUnscopedLane() throws IOException {
+        var lanes = parser.deserialize(readFile("1-camera.csv"));
+        assertTrue(lanes.get(0).operationalViewKeys.isEmpty());
+    }
+
+    @Test
+    public void testOperationalViewsRoundTrip() throws IOException {
+        var lanes = parser.deserialize(readFile("1-camera.csv"));
+        lanes.get(0).operationalViewKeys = List.of("north-gate", "secondary");
+
+        String serialized = parser.serialize(lanes);
+        assertTrue(serialized.lines().findFirst().orElseThrow().contains("OperationalViews"));
+
+        var roundTripped = parser.deserialize(serialized);
+        assertEquals(List.of("north-gate", "secondary"), roundTripped.get(0).operationalViewKeys);
+    }
+
+    @Test
+    public void testOperationalViewsRoundTripWithoutCameras() throws IOException {
+        var lanes = parser.deserialize(readFile("no-cameras.csv"));
+        lanes.get(0).operationalViewKeys = List.of("exit-lanes");
+
+        var roundTripped = parser.deserialize(parser.serialize(lanes));
+        assertEquals(List.of("exit-lanes"), roundTripped.get(0).operationalViewKeys);
+        var cameras = roundTripped.get(0).laneOptionsConfig.ffmpegConfig;
+        assertTrue(cameras == null || cameras.isEmpty());
     }
 
 

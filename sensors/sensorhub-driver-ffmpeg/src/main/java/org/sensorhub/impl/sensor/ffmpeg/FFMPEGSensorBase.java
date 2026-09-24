@@ -1,6 +1,7 @@
 package org.sensorhub.impl.sensor.ffmpeg;
 
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 
 import net.opengis.swe.v20.DataChoice;
@@ -9,11 +10,13 @@ import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.sensor.SensorException;
+import org.sensorhub.api.system.ISystemDriver;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.ffmpeg.common.SyncTime;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.ffmpeg.controls.FileControl;
 import org.sensorhub.impl.sensor.ffmpeg.controls.HLSControl;
+import org.sensorhub.impl.sensor.ffmpeg.outputs.ConnectionStatusOutput;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.Video;
 import org.sensorhub.mpegts.DeliveryMode;
@@ -54,9 +57,15 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
      */
     protected Video<FFMPEGconfigType> videoOutput;
 
+    /** Current upstream camera-stream connection state. */
+    protected ConnectionStatusOutput<FFMPEGconfigType> connectionStatusOutput;
+
     protected FileControl<FFMPEGconfigType> fileControl;
 
     protected HLSControl<FFMPEGconfigType> hlsControl;
+
+    /** True when video metadata was unavailable during init and must be registered after recovery. */
+    protected boolean streamInterfacesDeferred;
 
     /**
      * Keeps track of the times in the data stream so that we can put an accurate phenomenon time in the data blocks.
@@ -107,33 +116,33 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
         removeAllOutputs();
         removeAllControlInputs();
 
-        openStream();
-        if (mpegTsProcessor == null) {
-            logger.error("Could not open stream from data source");
-            return;
+        connectionStatusOutput = new ConnectionStatusOutput<>(this);
+        connectionStatusOutput.init();
+        addOutput(connectionStatusOutput, false);
+        streamInterfacesDeferred = false;
+        // Register a concrete initial state before touching the source. If opening the
+        // source fails, consumers must see Offline rather than retaining an old Online
+        // value or waiting indefinitely for the first connection-status observation.
+        publishConnectionStatus(false);
+
+        try {
+            openStream();
+        } catch (SensorHubException e) {
+            discardFailedStream();
+            if (!hasConfiguredSource())
+                throw e;
+
+            // An unavailable configured camera is a runtime connection state,
+            // not an invalid module definition. Complete initialization so the
+            // connection-status stream is registered and the start/reconnect
+            // lifecycle can recover without an operator reconfiguration.
+            logger.warn("Video input source is unavailable during initialization; starting Offline", e);
+            reportStatus("Video input source is unavailable. The camera will start Offline and reconnect automatically.");
+            streamInterfacesDeferred = config.output.useVideoFrames;
         }
 
-        if (config.output.useVideoFrames) {
-            if (videoOutput == null)
-                createVideoOutput(mpegTsProcessor.getVideoStreamFrameDimensions(), "h264");
-            addOutput(videoOutput, false);
-        } else {
-            videoOutput = null;
-        }
-
-        if (fileControl == null)
-            createFileControl();
-        addControlInput(fileControl);
-        addOutput(fileControl.getFileOutput(), false);
-
-        if (config.output.useHLS) {
-            if (hlsControl == null)
-                createHLSControl();
-            addControlInput(hlsControl);
-            addOutput(hlsControl.getFileOutput(), false);
-        } else {
-            hlsControl = null;
-        }
+        configureVideoOutputAfterOpen();
+        configureStreamControlsAfterOpen();
 
 
         // The non-on-demand subclass will override this method to also open up the stream to get video frame size.
@@ -150,6 +159,7 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 
     @Override
     protected void doStop() throws SensorHubException {
+        publishConnectionStatus(false);
         super.doStop();
         stopStream();
         shutdownExecutor();
@@ -178,6 +188,106 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
     }
 
     public MpegTsProcessor getProcessor() { return mpegTsProcessor; }
+
+    protected void publishConnectionStatus(boolean connected) {
+        if (connectionStatusOutput != null)
+            connectionStatusOutput.publish(connected);
+    }
+
+    /**
+     * Adds the frame output once source metadata is available. This may run
+     * during initialization or after a later successful reconnect.
+     */
+    protected void configureVideoOutputAfterOpen() throws SensorHubException {
+        if (mpegTsProcessor == null)
+            return;
+
+        if (config.output.useVideoFrames) {
+            if (videoOutput == null)
+                createVideoOutput(mpegTsProcessor.getVideoStreamFrameDimensions(), "h264");
+            if (!getOutputs().containsKey(videoOutput.getName()))
+                addOutput(videoOutput, false);
+        } else {
+            videoOutput = null;
+        }
+    }
+
+    /**
+     * Creates stream controls independently of the upstream connection. Keeping
+     * them registered while Offline lets commands fail cleanly instead of making
+     * the camera expose a different command schema until its first recovery.
+     */
+    protected void configureStreamControlsAfterOpen() {
+        if (fileControl == null)
+            createFileControl();
+        if (fileControl != null) {
+            if (!getCommandInputs().containsKey(fileControl.getName()))
+                addControlInput(fileControl);
+            if (!getOutputs().containsKey(fileControl.getFileOutput().getName()))
+                addOutput(fileControl.getFileOutput(), false);
+        }
+
+        if (config.output.useHLS) {
+            if (hlsControl == null)
+                createHLSControl();
+            if (hlsControl != null) {
+                if (!getCommandInputs().containsKey(hlsControl.getName()))
+                    addControlInput(hlsControl);
+                if (!getOutputs().containsKey(hlsControl.getFileOutput().getName()))
+                    addOutput(hlsControl.getFileOutput(), false);
+            }
+        } else {
+            hlsControl = null;
+        }
+    }
+
+    /**
+     * Refreshes the system registry after video metadata becomes available on a
+     * later start. addOutput() cannot register an output while the module is in
+     * STARTING state, so re-register the complete driver once the deferred video
+     * interface has been created.
+     */
+    protected void registerRecoveredInterfaces() throws SensorHubException {
+        if (!hasParentHub() || getParentHub().getSystemDriverRegistry() == null)
+            return;
+
+        try {
+            // Re-register from the top-level system. Registering an individual
+            // member replaces its handler without fully detaching the old
+            // datastream listeners, while refreshing the root performs the
+            // normal complete unregister/register cycle for the whole tree.
+            ISystemDriver registrationRoot = this;
+            while (registrationRoot.getParentSystem() != null)
+                registrationRoot = registrationRoot.getParentSystem();
+            getParentHub().getSystemDriverRegistry().register(registrationRoot).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new SensorHubException("Interrupted while registering recovered video outputs", e);
+        } catch (ExecutionException | RuntimeException e) {
+            throw new SensorHubException("Unable to register recovered video outputs", e);
+        }
+    }
+
+    protected void discardFailedStream() {
+        if (mpegTsProcessor == null)
+            return;
+
+        try {
+            mpegTsProcessor.closeStream();
+        } catch (Exception e) {
+            logger.debug("Could not close failed video input stream", e);
+        } finally {
+            mpegTsProcessor = null;
+        }
+    }
+
+    private boolean hasConfiguredSource() {
+        return config != null && config.connection != null
+                && ((config.connection.transportStreamPath != null
+                        && !config.connection.transportStreamPath.isBlank())
+                    || (config.connection.connectionString != null
+                        && !config.connection.connectionString.isBlank()));
+    }
 
     /**
      * Indicates whether commands can safely attach an output to the live input stream.

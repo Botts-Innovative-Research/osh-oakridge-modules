@@ -16,6 +16,7 @@ import com.botts.impl.system.lane.AdjudicationControl;
 import com.botts.impl.system.lane.Descriptor;
 import com.botts.impl.system.lane.LaneSystem;
 import com.botts.impl.system.lane.config.*;
+import com.botts.impl.system.lane.helpers.occupancy.OccupancyStatusOutput;
 import net.opengis.swe.v20.DataComponent;
 import org.junit.*;
 import org.junit.runners.MethodSorters;
@@ -111,6 +112,41 @@ public class LaneTests {
         boolean isStarted = lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
         Assert.assertTrue(isStarted);
         return lane;
+    }
+
+    @Test
+    public void testOperationalViewKeywordsArePublished() throws SensorHubException {
+        LaneConfig config = (LaneConfig) reg.createModuleConfig(new Descriptor());
+        config.name = "View Lane";
+        config.uniqueID = "view-test";
+        config.operationalViewKeys = List.of("secondary", "north-gate", "north-gate");
+
+        LaneSystem lane = (LaneSystem) reg.loadModule(config);
+        lane.init();
+
+        List<String> keywords = new ArrayList<>();
+        for (var keywordList : lane.getCurrentDescription().getKeywordsList())
+            keywords.addAll(keywordList.getKeywordList());
+
+        assertEquals(List.of("north-gate", "secondary"), config.operationalViewKeys);
+        assertTrue(keywords.contains("oscar:view:north-gate"));
+        assertTrue(keywords.contains("oscar:view:secondary"));
+        assertSame(lane.getOccupancyStatusOutput(), lane.getOutputs().get(OccupancyStatusOutput.NAME));
+    }
+
+    @Test
+    public void testInvalidOperationalViewKeyIsRejected() throws SensorHubException {
+        LaneConfig config = (LaneConfig) reg.createModuleConfig(new Descriptor());
+        config.name = "Bad View";
+        config.uniqueID = "bad-view-test";
+        config.operationalViewKeys = List.of("North Gate");
+
+        LaneSystem lane = (LaneSystem) reg.loadModule(config);
+        lane.init();
+        assertEquals(ModuleEvent.ModuleState.LOADED, lane.getCurrentState());
+        assertNotNull(lane.getCurrentError());
+        assertNotNull(lane.getCurrentError().getCause());
+        assertTrue(lane.getCurrentError().getCause().getMessage().contains("Operational view keys"));
     }
 
     @Test
