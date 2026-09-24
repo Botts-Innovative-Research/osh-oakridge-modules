@@ -1,4 +1,4 @@
-# Manual de administración y operación de OSCAR 3.8.3
+# Manual de administración y operación de OSCAR 3.9.1
 
 Este manual cubre el primer uso y la operación completa: certificado, acceso, plano georreferenciado, importación/creación de carriles, adjudicación y evidencias, eventos, estadísticas nacionales, informes y federación de nodos.
 
@@ -32,7 +32,7 @@ La interfaz de administración selecciona automáticamente la versión del manua
 
 Necesita:
 
-- un despliegue OSCAR 3.8.3 instalado y en ejecución;
+- un despliegue OSCAR 3.9.1 instalado y en ejecución;
 - la URL de OSCAR, normalmente `https://oscar.local/` salvo que se haya elegido otro host;
 - una cuenta administradora para `/sensorhub/admin`;
 - la imagen aprobada del sitio y la latitud/longitud de sus esquinas inferior izquierda y superior derecha;
@@ -524,6 +524,27 @@ Eliminar antes del envío solo quita el elemento pendiente. Tras subirlo, use la
 3. Añada notas y seleccione inspección **Ninguna**, **Solicitada** o **Completada**.
 4. Pulse **Enviar**, revise la confirmación completa y use **Confirmar y enviar**. Compruebe el mensaje de éxito y la fila nueva. Ante fallo, conserve el formulario y corrija nodo/flujo de control/carga antes de reintentar.
 
+### 8.6 Transferir una alarma mediante código QR en un entorno aislado
+
+OSCAR puede incluir un resumen compacto de la alarma en un solo código QR sin usar un servicio de Internet. La exportación contiene nodo y carril de origen, identidad y horas del evento, estado y máximos, metadatos compactos de adjudicación si existen, y datos reducidos de los gráficos gamma, neutrón y umbral. **No** contiene vídeo, archivos de evidencia, espectros ni todas las muestras originales.
+
+Para exportar:
+
+1. Abra la vista previa en el panel o **Detalles del evento** y pulse **Exportar alarma como QR**.
+2. Espere mientras OSCAR consulta las observaciones del intervalo. El diálogo indica los puntos gamma y neutrón exportados y originales.
+3. Permita que el receptor escanee el código, use **Descargar imagen QR** para obtener un PNG, **Descargar archivo de alarma** para guardar `.oscar-alarm.json`, o **Compartir alarma**. Si el navegador no puede compartir archivos, OSCAR descarga el archivo.
+
+El muestreo conserva extremos inicial/final, mínimos/máximos globales, los puntos gamma a ambos lados de cada cruce del umbral y mínimos/máximos locales. Los valores se redondean a tres decimales. El paquete guarda un resumen SHA-256 de las series completas para compararlas posteriormente con el origen, pero las muestras omitidas no pueden reconstruirse desde el QR.
+
+Para recibir:
+
+1. Abra **Transferencia de alarmas** en la navegación del Viewer.
+2. Use **Iniciar escaneo con cámara**, **Escanear imagen QR**, **Importar archivo de alarma** o pegue el texto `OSCAR-ALARM:1:`. La cámara exige permiso y HTTPS seguro; la importación por imagen/archivo funciona cuando la cámara está prohibida.
+3. OSCAR descomprime, aplica límites de tamaño y datos, verifica el resumen SHA-256 de transferencia y vuelve a dibujar los gráficos reducidos.
+4. Confirme nodo, carril, ocupación, horas, estado y gráficos; después descargue o comparta el archivo solo si está autorizado.
+
+> **Límite de seguridad.** El paquete está comprimido y comprueba integridad, pero no está cifrado ni firmado digitalmente. El resumen detecta daños; no identifica al remitente, pues quien cambie el contenido puede calcular otro. Trátelo como vista previa portátil, confirme independientemente su origen antes del uso operativo y transfiéralo solo mediante soportes y dispositivos autorizados.
+
 ## 9. Estadísticas nacionales
 
 ![Estadísticas nacionales](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/30-national-statistics.png)
@@ -621,6 +642,7 @@ Antes de cambiar retención, base de datos, ruta o **Eliminar datos al eliminar 
 - [ ] Detalles abre sin excepción de cliente.
 - [ ] Una adjudicación controlada puede revisarse y enviarse.
 - [ ] Se probaron filtros de Eventos, actualización Nacional e informes requeridos.
+- [ ] Un QR de alarma controlada se exporta, escanea/importa, supera la integridad y vuelve a dibujar curvas gamma/neutrón plausibles.
 - [ ] Se revisaron nodos federados tras recargar y no hay credenciales en almacenamiento del navegador.
 
 ## 14. Solución de problemas
@@ -644,6 +666,8 @@ Antes de cambiar retención, base de datos, ruta o **Eliminar datos al eliminar 
 | Nacional vacío/cero | Actualice el rango y compruebe control estadístico, datos retenidos y autenticación del nodo. |
 | Informe no generado | Complete nodo/tipo/rango y carril/tipo de evento; compruebe fechas, control y bucket `reports`. Una solicitud idéntica puede reutilizar archivo. |
 | Nodo remoto falla tras recargar | La sesión necesita cookie válida; Basic requiere reintroducir secretos. Compruebe TLS, CORS, rutas, puerto y permisos. |
+| No se genera el QR de alarma | Confirme carril disponible y observaciones gamma/neutrón retenidas en el intervalo. Si no cabe en un solo QR, use el archivo de alarma descargable. |
+| El QR no se escanea/importa | Aumente brillo o use el PNG a tamaño original; como alternativa importe `.oscar-alarm.json`. Un fallo de integridad exige una nueva exportación, no omitir la validación. |
 | Cambios desaparecen al reiniciar | Aplique el formulario y después pulse Guardar global. |
 
 Para soporte, registre versión OSCAR, navegador, carril/ocupación, hora y zona, estados y logs saneados. Elimine contraseñas, tokens, claves privadas y evidencias sensibles.
@@ -658,4 +682,4 @@ Para soporte, registre versión OSCAR, navegador, carril/ocupación, hora y zona
 
 ---
 
-Base del documento: comportamiento del código OSCAR 3.8.3, revisado el 2026-09-21. Si una versión posterior cambia campos o flujos, actualice conjuntamente el manual canónico en inglés y las tres traducciones.
+Base del documento: comportamiento del código OSCAR 3.9.1, revisado el 2026-09-24. Si una versión posterior cambia campos o flujos, actualice conjuntamente el manual canónico en inglés y las tres traducciones.
