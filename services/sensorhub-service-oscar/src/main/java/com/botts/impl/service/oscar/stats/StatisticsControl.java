@@ -1,6 +1,7 @@
 package com.botts.impl.service.oscar.stats;
 
 import com.botts.impl.service.oscar.OSCARSystem;
+import net.opengis.swe.v20.DataArray;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import org.sensorhub.api.command.*;
@@ -28,7 +29,10 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
         statsOutput = (StatisticsOutput) parentSensor.getOutputs().get(StatisticsOutput.NAME);
 
         RADHelper fac = new RADHelper();
-        resultDescription = fac.createCountStatistics();
+        // Same bucket shape as one of the four buckets inside the published
+        // siteStatistics observation, so custom-range responses carry the
+        // per-lane breakdown too.
+        resultDescription = fac.createBucketStatistics("Custom Range Total", "CustomCount");
         commandDescription = fac.createRecord()
                 .name(NAME)
                 .label(LABEL)
@@ -59,9 +63,14 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
 
             ICommandResult result;
             if (start != null) {
-                // TODO: Return result of createCountStatistics
+                Statistics stats = statsOutput.getStatsForRange(start, end);
+                // Size the per-lane array before allocating so the data block
+                // has the right number of trailing atoms.
+                ((DataArray) resultDescription.getComponent("byLane"))
+                        .updateSize(stats.getPerLane().size());
                 DataBlock resultData = resultDescription.createDataBlock();
-                statsOutput.populateDataBlock(resultData, 0, start, end);
+                resultDescription.setData(resultData);
+                statsOutput.populateBucket(resultData, 0, stats);
                 result = CommandResult.withData(resultData);
             } else {
                 // TODO: Call update for latest site statistics output, and return output observation id
