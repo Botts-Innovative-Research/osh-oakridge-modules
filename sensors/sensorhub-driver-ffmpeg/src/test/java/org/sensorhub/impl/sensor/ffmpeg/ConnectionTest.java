@@ -69,8 +69,10 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -293,7 +295,7 @@ public abstract class ConnectionTest {
         strategy = canvas.getBufferStrategy();
 
         if (mpegTsProcessor.hasVideoStream()) {
-            final Queue<AVPacket> inputPacketQueue = new ArrayDeque<>();
+            final BlockingQueue<AVPacket> inputPacketQueue = new LinkedBlockingQueue<>();
             Decoder decoder;
             SwScaler scaler; // Convert pixel format to rgb
             RgbFormatter rgbF = new RgbFormatter(dimensions[0], dimensions[1]);

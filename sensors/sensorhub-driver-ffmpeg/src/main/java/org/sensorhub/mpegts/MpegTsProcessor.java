@@ -345,7 +345,7 @@ public class MpegTsProcessor extends Thread {
     private boolean doTranscode = false;
 
     /** Decoder input crosses the demux and decoder threads; poll is an ownership transfer. */
-    private final Queue<AVPacket> decodeQueue = new ConcurrentLinkedQueue<>();
+    private final BlockingQueue<AVPacket> decodeQueue = new LinkedBlockingQueue<>();
 
     /** A native codec-parameter copy plus an immutable snapshot of the selected stream time base. */
     public record VideoStreamSnapshot(AVCodecParameters codecParameters,
