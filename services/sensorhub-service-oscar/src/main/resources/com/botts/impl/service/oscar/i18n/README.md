@@ -106,7 +106,7 @@ Use the language selector at the top of the administration interface or OSCAR Vi
 
 ### 3.2 Three actions that are easy to confuse
 
-- **Upload** immediately sends the selected file to OSCAR and, for CSV, starts importing new lanes.
+- **Upload** immediately sends the selected file to OSCAR and, for CSV, creates new lanes in the active in-memory module registry. It does not write the persisted module configuration.
 - **Apply Changes** commits the currently displayed module form and updates that module's runtime configuration.
 - **Save** in the administration header writes the complete module configuration so it survives a restart.
 
@@ -240,7 +240,8 @@ Bulk import is the preferred way to create many lanes. For an existing site, fir
 ![Successful CSV upload](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/16-csv-upload-success.png)
 
 4. Open **Sensors** and inspect every new lane and its generated RPM/camera submodules. Loading is asynchronous, so allow time for all rows to appear.
-5. Correct any per-lane values, use **Apply Changes**, and select global **Save** after validation.
+5. Correct any per-lane values, use **Apply Changes**, and select the global **Save** after validation. Until global Save succeeds, imported lanes exist only in memory and can disappear on restart.
+6. During the planned verification window, restart OSCAR with the supported deployment command, sign in again, and confirm that every expected lane and its RPM/camera children reappear under **Sensors**. Do not accept the import as complete until it passes this restart check.
 
 ![Imported lanes in Sensors](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/17-sensors-overview.png)
 
@@ -716,6 +717,7 @@ Before changing retention, database selection, storage path, or **Delete Data on
 | OSM tiles show 403/blocked | Do not point production traffic directly at volunteer OSM tiles in violation of tile policy. Use the deployment's approved OSM provider/proxy or select Esri while the tile-service configuration is corrected. |
 | CSV rejected | Compare the exact header/order, camera groups of six with sequential indexes, cell count on every row, numeric fields, and plain unquoted empty cells. Remove commas from values. |
 | CSV says success but a lane is missing | Check for an existing loaded lane with the same UniqueID, a name longer than 12 characters, device-child initialization errors, and whether asynchronous loading has finished. |
+| **Sensors** is empty after restart following CSV upload | The upload created in-memory modules, but the complete configuration was not persisted. Upload again if necessary, wait for every lane and child to appear, select the global **Save**, restart OSCAR, and verify **Sensors** again. If a 4.0.0 node still loses the lanes, check OSCAR logs and verify that `/var/lib/oscar/config.json` is owner-writable. |
 | Scoped operational view is empty or rejects its key | Confirm the lane's **Operational View Keys** contains the exact lowercase key, apply and globally save the configuration, restart the lane if required, and use `?view=<key>` or `/view/<key>`. A blank assignment never matches a scoped view. |
 | RPM does not start | Verify host reachability, exact TCP port, firewall, Aspect range, and device availability. Review the child driver status/error, not only the parent lane. |
 | Camera does not start | Verify RTSP reachability and credentials, omit `rtsp://` from host, include a needed port once, confirm Axis codec or Custom path, and test the generated endpoint from the OSCAR host. |

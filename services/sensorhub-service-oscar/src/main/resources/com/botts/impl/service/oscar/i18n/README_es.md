@@ -106,7 +106,7 @@ Use el selector de idioma de la parte superior de la administración o de OSCAR 
 
 ### 3.2 Tres acciones distintas
 
-- **Cargar** envía inmediatamente el archivo; en el caso del CSV, inicia la importación de carriles.
+- **Cargar** envía inmediatamente el archivo; en el caso del CSV, crea los carriles en el registro activo de módulos en memoria. No escribe la configuración persistente de los módulos.
 - **Aplicar cambios** confirma el formulario del módulo mostrado y actualiza su configuración en ejecución.
 - **Guardar** en el encabezado escribe la configuración completa para conservarla después de reiniciar.
 
@@ -240,7 +240,8 @@ La importación masiva es preferible para muchos carriles. En un sitio existente
 ![CSV cargado](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/16-csv-upload-success.png)
 
 4. Abra **Sensores** e inspeccione cada carril y sus submódulos RPM/cámara. La carga es asíncrona; espere a que aparezcan todas las filas.
-5. Corrija valores por carril, aplique cambios y use **Guardar** tras validar.
+5. Corrija valores por carril, aplique cambios y use **Guardar** globalmente tras validar. Hasta que el guardado global termine correctamente, los carriles importados existen solo en memoria y pueden desaparecer al reiniciar.
+6. Durante la ventana de verificación planificada, reinicie OSCAR con el comando admitido de despliegue, inicie sesión de nuevo y confirme que todos los carriles previstos y sus hijos RPM/cámara reaparecen en **Sensores**. No dé por terminada la importación hasta superar esta comprobación tras el reinicio.
 
 ![Carriles importados](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/17-sensors-overview.png)
 
@@ -685,6 +686,7 @@ Antes de cambiar retención, base de datos, ruta o **Eliminar datos al eliminar 
 | OSM 403/bloqueado | No use directamente servidores voluntarios incumpliendo su política. Configure proveedor/proxy OSM aprobado o use Esri mientras se corrige. |
 | CSV rechazado | Revise encabezado/orden, grupos de seis, índices secuenciales, número de celdas, numéricos, vacíos sin comillas y ausencia de comas internas. |
 | Falta un carril tras CSV | Busque UniqueID ya cargado, nombre mayor de 12, errores de hijos y espere la carga asíncrona. |
+| **Sensores** está vacío tras reiniciar después de cargar el CSV | La carga creó módulos en memoria, pero no se conservó la configuración completa. Vuelva a cargar si hace falta, espere a que aparezcan todos los carriles e hijos, pulse **Guardar** globalmente, reinicie OSCAR y compruebe otra vez **Sensores**. Si un nodo 4.0.0 sigue perdiendo los carriles, revise los logs de OSCAR y verifique que el propietario pueda escribir en `/var/lib/oscar/config.json`. |
 | Una vista operativa está vacía o rechaza su clave | Confirme que **Claves de vista operativa** del carril contiene exactamente la clave en minúsculas, aplique y guarde globalmente, reinicie el carril si procede y use `?view=<clave>` o `/view/<clave>`. Una asignación vacía nunca coincide con una vista delimitada. |
 | RPM no inicia | Pruebe alcance del host, puerto, cortafuegos, rango Aspect y disponibilidad; revise el error del hijo. |
 | Cámara no inicia | Pruebe RTSP/credenciales, quite `rtsp://` del host, no duplique puerto, confirme códec Axis o ruta Custom y pruebe desde el host OSCAR. |

@@ -106,7 +106,7 @@ Utilisez le sélecteur de langue en haut de l'administration ou d'OSCAR Viewer. 
 
 ### 3.2 Trois actions différentes
 
-- **Téléverser** envoie immédiatement le fichier ; pour le CSV, cela démarre l'importation des voies.
+- **Téléverser** envoie immédiatement le fichier ; pour le CSV, cela crée les voies dans le registre actif des modules en mémoire. Cette action n'écrit pas la configuration persistante des modules.
 - **Appliquer les modifications** valide le formulaire du module affiché et met à jour sa configuration en cours d'exécution.
 - **Enregistrer** dans l'en-tête écrit toute la configuration afin qu'elle survive à un redémarrage.
 
@@ -240,7 +240,8 @@ L'importation en masse est recommandée pour de nombreuses voies. Sur un site ex
 ![CSV téléversé](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/16-csv-upload-success.png)
 
 4. Ouvrez **Capteurs** et inspectez chaque voie et ses sous-modules RPM/caméra. Le chargement est asynchrone ; attendez l'apparition de toutes les lignes.
-5. Corrigez les valeurs par voie, appliquez les changements, puis enregistrez après validation.
+5. Corrigez les valeurs par voie, appliquez les changements, puis utilisez l'action globale **Enregistrer** après validation. Tant que cet enregistrement global n'a pas réussi, les voies importées n'existent qu'en mémoire et peuvent disparaître au redémarrage.
+6. Pendant la fenêtre de vérification planifiée, redémarrez OSCAR avec la commande de déploiement prise en charge, reconnectez-vous et vérifiez que toutes les voies attendues et leurs enfants RPM/caméra réapparaissent sous **Capteurs**. Ne considérez pas l'importation comme terminée avant la réussite de ce contrôle après redémarrage.
 
 ![Voies importées](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/17-sensors-overview.png)
 
@@ -684,6 +685,7 @@ Avant de modifier conservation, base, chemin ou **Supprimer les données avec la
 | Tuiles OSM 403/bloquées | N'utilisez pas directement des serveurs bénévoles contrairement à leur politique. Configurez un fournisseur/proxy OSM approuvé ou utilisez Esri pendant la correction. |
 | CSV refusé | Vérifiez en-tête/ordre, groupes de six, index continus, nombre de cellules, nombres, cellules vides non citées et absence de virgules internes. |
 | Voie manquante après CSV | Cherchez un UniqueID déjà chargé, un nom trop long, des erreurs d'enfants et attendez le chargement asynchrone. |
+| **Capteurs** est vide après un redémarrage suivant le téléversement du CSV | Le téléversement a créé des modules en mémoire, mais la configuration complète n'a pas été persistée. Téléversez de nouveau si nécessaire, attendez toutes les voies et tous les enfants, utilisez l'action globale **Enregistrer**, redémarrez OSCAR et vérifiez encore **Capteurs**. Si un nœud 4.0.0 perd toujours les voies, consultez les journaux OSCAR et vérifiez que le propriétaire peut écrire dans `/var/lib/oscar/config.json`. |
 | Vue opérationnelle vide ou clé rejetée | Vérifiez que les **Clés de vue opérationnelle** de la voie contiennent exactement la clé en minuscules, appliquez et enregistrez globalement, redémarrez la voie si nécessaire, puis utilisez `?view=<clé>` ou `/view/<clé>`. Une affectation vide ne correspond jamais à une vue limitée. |
 | RPM ne démarre pas | Testez hôte, port, pare-feu, plage Aspect et disponibilité ; consultez l'erreur du pilote enfant. |
 | Caméra ne démarre pas | Testez RTSP/identifiants, retirez `rtsp://` de l'hôte, évitez un port en double, vérifiez codec Axis ou chemin Custom depuis l'hôte OSCAR. |
