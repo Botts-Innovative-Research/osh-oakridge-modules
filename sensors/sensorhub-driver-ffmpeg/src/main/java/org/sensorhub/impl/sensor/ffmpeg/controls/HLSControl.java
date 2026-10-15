@@ -139,48 +139,34 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                         //fileOutput.publish(uri);
                     } catch (Exception e) {
                         logger.error("Exception while opening HLS output", e);
-                        hlsHandler.get().removeControl(fileName, this);
-                        try {
-                            bucketStore.deleteObject(VIDEO_BUCKET, fileName);
-                        } catch (Exception cleanupError) {
-                            logger.debug("Unable to remove incomplete HLS manifest {}", fileName, cleanupError);
-                        }
+                        cleanupHlsResources(fileName);
                         fileName = "";
                         commandStatus = false;
                         failureMessage = "Unable to start HLS stream: " + e.getMessage();
                     }
                 }
             } else if (selected.equals(CMD_END_STREAM)) {
-                if (!fileOutput.isWriting()) {
-                    commandStatus = false;
-                    failureMessage = "HLS stream is not active";
-                }
-                else {
-                    try {
+                String closingFileName = fileName;
+                try {
+                    if (!fileOutput.isWriting()) {
+                        commandStatus = false;
+                        failureMessage = "HLS stream is not active";
+                    } else {
                         this.fileOutput.closeFile();
-                        this.parentSensor.reportStatus("Closing video stream: " + fileName);
-                        hlsHandler.get().removeControl(fileName, this);
+                        this.parentSensor.reportStatus("Closing video stream: " + closingFileName);
                         commandStatus = true;
                         reportFileName = false;
-
-                        // File cleanup
-                        try {
-                            var fileNameNoExt = fileName.substring(0, fileName.lastIndexOf('.'));
-                            var filteredNames = bucketStore.listObjects(VIDEO_BUCKET).stream().filter(name -> {
-                                return name.contains(fileNameNoExt);
-                            }).toList();
-                            for (String hlsFile : filteredNames) {
-                                bucketStore.deleteObject(VIDEO_BUCKET, hlsFile);
-                            }
-                        } catch (Exception de) {
-                            logger.warn("Exception during HLS cleanup: ", de);
-                        }
-                        fileName = "";
-                    } catch (Exception e) {
-                        logger.error("Exception while closing HLS output", e);
-                        commandStatus = false;
-                        failureMessage = "Unable to stop HLS stream: " + e.getMessage();
                     }
+                } catch (Exception e) {
+                    logger.error("Exception while closing HLS output", e);
+                    commandStatus = false;
+                    failureMessage = "Unable to stop HLS stream: " + e.getMessage();
+                } finally {
+                    // FileOutput has already stopped writing even when trailer/close reports an
+                    // error. Always unregister the handler and remove manifest/segments so a
+                    // failed close cannot leave a stale active stream or partial artifacts.
+                    cleanupHlsResources(closingFileName);
+                    fileName = "";
                 }
             } else {
                 commandStatus = false;
@@ -203,6 +189,30 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                 }
             }
             return status.build();
+    }
+
+    private void cleanupHlsResources(String streamName) {
+        if (streamName == null || streamName.isBlank()) {
+            return;
+        }
+
+        HlsStreamHandler handler = hlsHandler.get();
+        if (handler != null) {
+            handler.removeControl(streamName, this);
+        }
+        try {
+            int extensionIndex = streamName.lastIndexOf('.');
+            String streamPrefix = extensionIndex > 0
+                    ? streamName.substring(0, extensionIndex) : streamName;
+            var matchingObjects = bucketStore.listObjects(VIDEO_BUCKET).stream()
+                    .filter(name -> name.startsWith(streamPrefix))
+                    .toList();
+            for (String hlsFile : matchingObjects) {
+                bucketStore.deleteObject(VIDEO_BUCKET, hlsFile);
+            }
+        } catch (Exception cleanupError) {
+            logger.warn("Exception during HLS cleanup for {}", streamName, cleanupError);
+        }
     }
 
     @Override

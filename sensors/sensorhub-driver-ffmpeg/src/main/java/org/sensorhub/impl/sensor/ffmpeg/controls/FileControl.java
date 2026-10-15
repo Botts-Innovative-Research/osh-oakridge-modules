@@ -175,6 +175,14 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                         fileName = "";
                     } catch (Exception e) {
                         getLogger().error("Exception while closing MP4 output", e);
+                        try {
+                            if (!fileName.isBlank()) {
+                                bucketStore.deleteObject(VIDEO_BUCKET, fileName);
+                            }
+                        } catch (Exception cleanupError) {
+                            getLogger().debug("Unable to remove incomplete MP4 output {}", fileName, cleanupError);
+                        }
+                        fileName = "";
                         commandStatus = false;
                         failureMessage = "Unable to stop video recording: " + e.getMessage();
                     }
