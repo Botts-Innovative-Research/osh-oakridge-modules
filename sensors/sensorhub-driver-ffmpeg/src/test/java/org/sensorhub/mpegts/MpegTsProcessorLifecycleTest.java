@@ -4,14 +4,18 @@ import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensor;
 
 import java.io.File;
+import java.nio.file.Paths;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -48,6 +52,48 @@ public class MpegTsProcessorLifecycleTest {
         assertFalse(processor.isStreamOpen());
         assertNull(processor.getVideoStreamSnapshot());
         processor.closeStream();
+    }
+
+    @Test
+    public void outputMetadataSnapshotDoesNotWaitForBlockingInputContext() throws Exception {
+        String fixture = Paths.get(FFMPEGSensor.class.getResource("sample-stream.ts").toURI())
+                .toString();
+        var processor = new MpegTsProcessor(fixture);
+        assertTrue(processor.openStream());
+
+        ExecutorService snapshotExecutor = Executors.newSingleThreadExecutor();
+        MpegTsProcessor.VideoStreamSnapshot snapshot = null;
+        try {
+            // Models av_read_frame() holding the input-context lock. Recording startup must obtain
+            // its owned codec metadata without waiting for that blocking read to finish.
+            synchronized (processor.contextLock) {
+                Future<MpegTsProcessor.VideoStreamSnapshot> snapshotFuture =
+                        snapshotExecutor.submit(processor::getVideoStreamSnapshot);
+                snapshot = snapshotFuture.get(5, TimeUnit.SECONDS);
+            }
+
+            assertNotNull(snapshot);
+            assertTrue(snapshot.codecParameters().codec_id() != AV_CODEC_ID_NONE);
+            assertTrue(snapshot.codecParameters().width() > 0);
+            assertTrue(snapshot.codecParameters().height() > 0);
+            assertTrue(snapshot.timeBaseNumerator() > 0);
+            assertTrue(snapshot.timeBaseDenominator() > 0);
+
+            avcodec_parameters_free(snapshot.codecParameters());
+            snapshot = null;
+            processor.closeStream();
+            assertNull("Closed streams must not expose cached output metadata",
+                    processor.getVideoStreamSnapshot());
+        } finally {
+            if (snapshot != null && snapshot.codecParameters() != null
+                    && !snapshot.codecParameters().isNull()) {
+                avcodec_parameters_free(snapshot.codecParameters());
+            }
+            snapshotExecutor.shutdownNow();
+            processor.closeStream();
+            assertFalse(processor.isStreamOpen());
+            assertNull(processor.getVideoStreamSnapshot());
+        }
     }
 
     @Test

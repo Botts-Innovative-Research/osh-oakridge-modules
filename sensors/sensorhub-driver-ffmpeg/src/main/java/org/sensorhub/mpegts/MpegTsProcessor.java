@@ -355,6 +355,92 @@ public class MpegTsProcessor extends Thread {
                                       int averageFrameRateNumerator,
                                       int averageFrameRateDenominator) {}
 
+    /**
+     * Owns the stream metadata needed by outputs independently of the blocking input context.
+     * The master codec-parameter copy is never returned directly; each caller receives another
+     * native copy that it owns and must free.
+     */
+    private static final class VideoStreamMetadataCache {
+        private AVCodecParameters codecParameters;
+        private int timeBaseNumerator;
+        private int timeBaseDenominator;
+        private long duration;
+        private int averageFrameRateNumerator;
+        private int averageFrameRateDenominator;
+
+        synchronized boolean replace(AVCodecParameters source,
+                                     int newTimeBaseNumerator,
+                                     int newTimeBaseDenominator,
+                                     long newDuration,
+                                     int newAverageFrameRateNumerator,
+                                     int newAverageFrameRateDenominator) {
+            if (source == null || source.isNull()
+                    || newTimeBaseNumerator <= 0 || newTimeBaseDenominator <= 0) {
+                return false;
+            }
+
+            AVCodecParameters replacement = avcodec.avcodec_parameters_alloc();
+            if (replacement == null || replacement.isNull()) {
+                return false;
+            }
+            int ret = avcodec.avcodec_parameters_copy(replacement, source);
+            if (ret < 0) {
+                avcodec.avcodec_parameters_free(replacement);
+                return false;
+            }
+
+            clearLocked();
+            codecParameters = replacement;
+            timeBaseNumerator = newTimeBaseNumerator;
+            timeBaseDenominator = newTimeBaseDenominator;
+            duration = newDuration;
+            averageFrameRateNumerator = newAverageFrameRateNumerator;
+            averageFrameRateDenominator = newAverageFrameRateDenominator;
+            return true;
+        }
+
+        synchronized VideoStreamSnapshot copy() {
+            if (codecParameters == null || codecParameters.isNull()) {
+                return null;
+            }
+
+            AVCodecParameters copy = avcodec.avcodec_parameters_alloc();
+            if (copy == null || copy.isNull()) {
+                return null;
+            }
+            int ret = avcodec.avcodec_parameters_copy(copy, codecParameters);
+            if (ret < 0) {
+                avcodec.avcodec_parameters_free(copy);
+                return null;
+            }
+            return new VideoStreamSnapshot(
+                    copy,
+                    timeBaseNumerator,
+                    timeBaseDenominator,
+                    duration,
+                    averageFrameRateNumerator,
+                    averageFrameRateDenominator);
+        }
+
+        synchronized void clear() {
+            clearLocked();
+        }
+
+        private void clearLocked() {
+            if (codecParameters != null && !codecParameters.isNull()) {
+                avcodec.avcodec_parameters_free(codecParameters);
+            }
+            codecParameters = null;
+            timeBaseNumerator = 0;
+            timeBaseDenominator = 0;
+            duration = 0;
+            averageFrameRateNumerator = 0;
+            averageFrameRateDenominator = 0;
+        }
+    }
+
+    private final VideoStreamMetadataCache videoStreamMetadata = new VideoStreamMetadataCache();
+
 
     /**
      * Constructor
@@ -428,6 +514,7 @@ public class MpegTsProcessor extends Thread {
                 logger.debug("openStream");
                 streamOpened = false;
                 videoStreamId = INVALID_STREAM_ID;
+                videoStreamMetadata.clear();
 
                 avformat.avformat_network_init();
 
@@ -457,8 +544,13 @@ public class MpegTsProcessor extends Thread {
 
                     } else if ((videoStreamId = findUsableVideoStreamId()) != INVALID_STREAM_ID) {
 
-                        streamOpened = true;
-                        logger.debug("Configured video stream opened");
+                        if (cacheVideoStreamSnapshotFromInput()) {
+                            streamOpened = true;
+                            logger.debug("Configured video stream opened");
+                        } else {
+                            videoStreamId = INVALID_STREAM_ID;
+                            logger.error("Could not retain video stream metadata for output files");
+                        }
 
                     } else {
                         logger.warn("Video stream metadata is incomplete; waiting for a reconnect instead of "
@@ -515,15 +607,13 @@ public class MpegTsProcessor extends Thread {
     }
 
     private void closeInputContext() {
-        if (avFormatContext == null)
-            return;
-
         try {
-            if (!avFormatContext.isNull()) {
+            if (avFormatContext != null && !avFormatContext.isNull()) {
                 avformat.avformat_close_input(avFormatContext);
             }
         } finally {
             avFormatContext = null;
+            videoStreamMetadata.clear();
         }
     }
 
@@ -542,65 +632,66 @@ public class MpegTsProcessor extends Thread {
     }
 
     /**
-     * Copies all metadata needed by an output while holding {@link #contextLock}. No borrowed
-     * AVStream or AVRational pointer escapes the input context, so a concurrent close cannot
-     * invalidate metadata after this method returns. The caller owns and must free codecParameters.
+     * Copies metadata from an independently owned cache populated before packet processing starts.
+     * This deliberately does not acquire {@link #contextLock}: {@code av_read_frame()} can block
+     * while holding that lock, and making a record command wait behind it can consume the entire
+     * occupancy before the output becomes writable. The caller owns and must free codecParameters.
      */
     public VideoStreamSnapshot getVideoStreamSnapshot() {
-        synchronized (contextLock) {
-            AVCodecParameters dst = null;
-            try {
-                if (!streamOpened || avFormatContext == null || avFormatContext.isNull()
-                        || videoStreamId < 0 || videoStreamId >= avFormatContext.nb_streams()) {
-                    return null;
-                }
-                AVCodecParameters src = avFormatContext.streams(videoStreamId).codecpar();
-                if (src == null) {
-                    logger.error("Video stream codec parameters are not available");
-                    return null;
-                }
-                dst = avcodec.avcodec_parameters_alloc();
-                if (dst == null) {
-                    logger.error("Could not allocate AVCodecParameters");
-                    return null;
-                }
-                int ret = avcodec.avcodec_parameters_copy(dst, src);
-                if (ret < 0) {
-                    avcodec.avcodec_parameters_free(dst);
-                    logger.error("AVCodecParameters failed: {}", ret);
-                    return null;
-                }
-                AVRational timeBase = avFormatContext.streams(videoStreamId).time_base();
-                if (timeBase == null || timeBase.num() <= 0 || timeBase.den() <= 0) {
-                    avcodec.avcodec_parameters_free(dst);
-                    logger.error("Video stream time base is not available");
-                    return null;
-                }
-                AVRational averageFrameRate = avFormatContext.streams(videoStreamId).avg_frame_rate();
-                int frameRateNumerator = averageFrameRate == null || averageFrameRate.isNull()
-                        ? 0 : averageFrameRate.num();
-                int frameRateDenominator = averageFrameRate == null || averageFrameRate.isNull()
-                        ? 0 : averageFrameRate.den();
-                long duration = resolveVideoDuration(
-                        avFormatContext.streams(videoStreamId).duration(),
-                        avFormatContext.duration(),
-                        timeBase.num(),
-                        timeBase.den());
-                return new VideoStreamSnapshot(
-                        dst,
-                        timeBase.num(),
-                        timeBase.den(),
-                        duration,
-                        frameRateNumerator,
-                        frameRateDenominator);
-            } catch (Exception e) {
-                if (dst != null && !dst.isNull()) {
-                    avcodec.avcodec_parameters_free(dst);
-                }
-                logger.error("Exception when copying video stream metadata", e);
-                return null;
-            }
+        if (!streamOpened) {
+            return null;
         }
+
+        VideoStreamSnapshot snapshot = videoStreamMetadata.copy();
+        // Preserve the input-context lifetime contract without taking its blocking lock. If close
+        // began while the cache was being copied, discard this owned copy instead of letting a new
+        // output start against a stream that is no longer open.
+        if (!streamOpened) {
+            if (snapshot != null && snapshot.codecParameters() != null
+                    && !snapshot.codecParameters().isNull()) {
+                avcodec.avcodec_parameters_free(snapshot.codecParameters());
+            }
+            return null;
+        }
+        if (snapshot == null && streamOpened) {
+            logger.error("Cached video stream metadata is not available");
+        }
+        return snapshot;
+    }
+
+    /** Called while the input context is stable, before the demux thread starts. */
+    private boolean cacheVideoStreamSnapshotFromInput() {
+        if (avFormatContext == null || avFormatContext.isNull()
+                || videoStreamId < 0 || videoStreamId >= avFormatContext.nb_streams()) {
+            return false;
+        }
+
+        AVStream stream = avFormatContext.streams(videoStreamId);
+        AVCodecParameters codecParameters = stream.codecpar();
+        AVRational timeBase = stream.time_base();
+        if (codecParameters == null || codecParameters.isNull()
+                || timeBase == null || timeBase.isNull()
+                || timeBase.num() <= 0 || timeBase.den() <= 0) {
+            return false;
+        }
+
+        AVRational averageFrameRate = stream.avg_frame_rate();
+        int frameRateNumerator = averageFrameRate == null || averageFrameRate.isNull()
+                ? 0 : averageFrameRate.num();
+        int frameRateDenominator = averageFrameRate == null || averageFrameRate.isNull()
+                ? 0 : averageFrameRate.den();
+        long duration = resolveVideoDuration(
+                stream.duration(),
+                avFormatContext.duration(),
+                timeBase.num(),
+                timeBase.den());
+        return videoStreamMetadata.replace(
+                codecParameters,
+                timeBase.num(),
+                timeBase.den(),
+                duration,
+                frameRateNumerator,
+                frameRateDenominator);
     }
 
     /**
@@ -1620,8 +1711,8 @@ public class MpegTsProcessor extends Thread {
         logger.debug("closeStream");
 
         synchronized (contextLock) {
-            closeInputContext();
             streamOpened = false;
+            closeInputContext();
         }
     }
 

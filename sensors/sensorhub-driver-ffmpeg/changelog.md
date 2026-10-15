@@ -13,6 +13,8 @@ All notable changes to this project will be documented in this file.
   partial output safely, and release native queues deterministically across reconnect and shutdown.
 - MP4 packet delivery now stays ordered with recording close, preventing healthy occupancy clips
   from being finalized before queued video packets are written.
+- Recording startup now reads an independently owned stream-metadata cache instead of waiting for
+  a blocking input read, preventing short occupancies from ending before MP4 output becomes active.
 - Non-H.264 transcoding now preserves rational frame rates such as `30000/1001`, flushes delayed
   decoder and encoder output at end of input, and reports codec failures instead of silently
   treating them as normal retry states.
