@@ -483,7 +483,31 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         return packetsDroppedBeforeInitialKeyFrame;
     }
 
+    /**
+     * Finalizes an output and requires at least one packet to have been written.
+     *
+     * <p>This is the recording-safe default: an empty MP4 (or other requested recording) is a
+     * failure rather than a successful file. Live HLS cancellation uses {@link #cancelFile()},
+     * because navigating away before the first keyframe is an expected cancellation rather than
+     * a failed recording.</p>
+     */
     public void closeFile() throws IOException {
+        closeFile(true);
+    }
+
+    /**
+     * Cancels a live output while allowing an intentionally empty result.
+     *
+     * <p>Asynchronous packet-write failures and native trailer/cleanup failures are still
+     * propagated. Only the synthetic "no packets" recording failure is suppressed.</p>
+     *
+     * @throws IOException when packet writing or native output cleanup failed
+     */
+    public void cancelFile() throws IOException {
+        closeFile(false);
+    }
+
+    private void closeFile(boolean requirePackets) throws IOException {
         synchronized (contextLock) {
             if (!isWriting()) {
                 return;
@@ -491,7 +515,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
             doFileWrite.set(false);
             IOException failure = writeFailure;
-            if (packetsWritten == 0 && failure == null) {
+            if (requirePackets && packetsWritten == 0 && failure == null) {
                 failure = new IOException("No video packets were received while recording");
             }
 

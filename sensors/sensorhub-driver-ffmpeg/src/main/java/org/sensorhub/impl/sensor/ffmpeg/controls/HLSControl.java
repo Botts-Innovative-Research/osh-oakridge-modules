@@ -165,7 +165,20 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                         commandStatus = false;
                         failureMessage = "HLS stream is not active";
                     } else {
-                        this.fileOutput.closeFile();
+                        // A user can navigate away before the first keyframe reaches the HLS
+                        // muxer. That is a successful cancellation, not an empty-recording
+                        // failure. Close at the listener's generation boundary so callbacks
+                        // accepted by this stream cannot leak into a rapid restart. Real write,
+                        // trailer, and native cleanup failures still propagate from cancelFile.
+                        var processor = this.parentSensor.getProcessor();
+                        if (processor == null) {
+                            this.fileOutput.cancelFile();
+                        } else {
+                            processor.executeAfterPendingVideoData(fileOutput, () -> {
+                                fileOutput.cancelFile();
+                                return null;
+                            });
+                        }
                         this.parentSensor.reportStatus("Closing video stream: " + closingFileName);
                         commandStatus = true;
                         reportFileName = false;

@@ -208,6 +208,7 @@ public abstract class ConnectionTest {
     public void testStreamProcessing() throws SensorHubException {
 
         MpegTsProcessor mpegTsProcessor = driver.mpegTsProcessor;
+        DataBufferListener testListener = null;
 
         //mpegTsProcessor.openStream();
 
@@ -215,7 +216,7 @@ public abstract class ConnectionTest {
 
         if (mpegTsProcessor.hasVideoStream()) {
 
-            var dblistener = new DataBufferListener() {
+            testListener = new DataBufferListener() {
 
                 @Override
                 public void onDataBuffer(DataBufferRecord record) {
@@ -230,7 +231,9 @@ public abstract class ConnectionTest {
                 public String getName() {return "test";}
             };
 
-            mpegTsProcessor.setVideoDataBufferListener(dblistener);
+            // Do not replace the sensor's registered FileOutput/HLS listeners. Clearing those
+            // shared listeners makes later recording tests depend on JUnit method order.
+            mpegTsProcessor.addVideoDataBufferListener(testListener);
         }
 
         //mpegTsProcessor.processStream();
@@ -244,9 +247,9 @@ public abstract class ConnectionTest {
             System.out.println(e);
 
         } finally {
-
-
-
+            if (testListener != null) {
+                mpegTsProcessor.removeVideoDataBufferListener(testListener);
+            }
             //mpegTsProcessor.closeStream();
         }
 
@@ -464,11 +467,52 @@ public abstract class ConnectionTest {
         var stopCommand = hlsControl.get().getCommandDescription().clone();
         stopCommand.renewDataBlock();
         ((Category) stopCommand.getComponent(0)).setValue(HLSControl.CMD_END_STREAM);
-        hlsControl.get().submitCommand(new CommandData.Builder()
+        var stopStatus = hlsControl.get().submitCommand(new CommandData.Builder()
                 .withCommandStream(BigId.NONE)
                 .withId(BigId.NONE)
                 .withParams(stopCommand.getData())
                 .build()).join();
+        assertEquals("Immediate HLS stop must accept cancellation before the first segment: "
+                        + stopStatus.getMessage(),
+                ICommandStatus.CommandStatusCode.ACCEPTED, stopStatus.getStatusCode());
+    }
+
+    @Test
+    public void failedHlsOutputIsReportedAndRemoved() {
+        Optional<IStreamingControlInterface> control = driver.getCommandInputs().values().stream()
+                .filter(c -> c instanceof HLSControl<?>).findFirst();
+        assertTrue("HLSControl not found", control.isPresent());
+        HLSControl<?> hlsControl = (HLSControl<?>) control.get();
+
+        var startCommand = hlsControl.getCommandDescription().clone();
+        startCommand.renewDataBlock();
+        ((Category) startCommand.getComponent(0)).setValue(HLSControl.CMD_START_STREAM);
+        var startStatus = hlsControl.submitCommand(new CommandData.Builder()
+                .withCommandStream(BigId.NONE)
+                .withId(BigId.NONE)
+                .withParams(startCommand.getData())
+                .build()).join();
+        assertEquals("HLS start command failed: " + startStatus.getMessage(),
+                ICommandStatus.CommandStatusCode.ACCEPTED, startStatus.getStatusCode());
+
+        String streamPath = startStatus.getResult().getInlineRecords().iterator().next()
+                .getStringValue();
+        hlsControl.getFileOutput().onDataBuffer(
+                new DataBufferRecord(Double.NaN, new byte[0], false));
+
+        var stopCommand = hlsControl.getCommandDescription().clone();
+        stopCommand.renewDataBlock();
+        ((Category) stopCommand.getComponent(0)).setValue(HLSControl.CMD_END_STREAM);
+        var stopStatus = hlsControl.submitCommand(new CommandData.Builder()
+                .withCommandStream(BigId.NONE)
+                .withId(BigId.NONE)
+                .withParams(stopCommand.getData())
+                .build()).join();
+
+        assertEquals("A real HLS packet-write failure must not be reported as a cancellation",
+                ICommandStatus.CommandStatusCode.FAILED, stopStatus.getStatusCode());
+        assertFalse("Failed HLS output was retained: " + streamPath,
+                Files.exists(tempDirectory.resolve(streamPath)));
     }
 
     @Test

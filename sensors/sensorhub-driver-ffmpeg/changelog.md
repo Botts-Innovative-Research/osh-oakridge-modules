@@ -16,6 +16,9 @@ All notable changes to this project will be documented in this file.
 - Live HLS now waits for the first H.264 keyframe, publishes playlists and segments atomically,
   and returns not-ready responses instead of exposing an empty manifest or a segment that begins
   mid-GOP. Authorized pre-manifest polling keeps the stream alive while preparation completes.
+- Cancelling HLS before its first keyframe now closes at the packet-listener generation boundary,
+  removes incomplete artifacts without reporting a false empty-recording failure, and still
+  propagates real packet-write, trailer, or native cleanup failures.
 - Recording startup now reads an independently owned stream-metadata cache instead of waiting for
   a blocking input read, preventing short occupancies from ending before MP4 output becomes active.
 - Non-H.264 transcoding now preserves rational frame rates such as `30000/1001`, flushes delayed
