@@ -17,8 +17,12 @@ import com.botts.impl.service.bucket.BucketService;
 import com.botts.impl.service.bucket.BucketServiceConfig;
 import net.opengis.swe.v20.Category;
 import net.opengis.swe.v20.DataChoice;
+import net.opengis.swe.v20.DataComponent;
+import org.bytedeco.ffmpeg.avcodec.AVCodec;
+import org.bytedeco.ffmpeg.avcodec.AVCodecContext;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avformat.AVFormatContext;
+import org.bytedeco.ffmpeg.avutil.AVFrame;
 import org.bytedeco.ffmpeg.global.avcodec;
 import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacpp.PointerPointer;
@@ -66,6 +70,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.Executors;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -666,26 +671,23 @@ public abstract class ConnectionTest {
     }
 
     @Test
-    public void testHlsFileOutput() throws SensorHubException {
-        //driver.start();
+    public void testHlsFileOutput() throws Exception {
         MpegTsProcessor mpegTsProcessor = driver.mpegTsProcessor;
-        //mpegTsProcessor.processStream();
 
         Optional<IStreamingControlInterface> fileControl = driver.getCommandInputs().values().stream().filter(c -> c instanceof HLSControl<?>).findFirst();
         if (fileControl.isPresent()) {
+            HLSControl<?> hlsControl = (HLSControl<?>) fileControl.get();
 
             // --------- Start Stream ---------
-            var struct = fileControl.get().getCommandDescription().clone();
+            var struct = hlsControl.getCommandDescription().clone();
             struct.renewDataBlock();
             ((Category)struct.getComponent(0)).setValue(HLSControl.CMD_START_STREAM);
 
-            var result = fileControl.get().submitCommand(new CommandData.Builder()
-                    .withCommandStream(BigId.NONE)
-                    .withId(BigId.NONE)
-                    .withParams(struct.getData())
-                    .build());
-
-            var startStatus = result.join();
+            // Submit and finish the start command from an inline packet observer immediately
+            // after the first non-key packet following an IDR. The demuxer cannot advance to the
+            // next packet until openFile returns, making this a deterministic mid-GOP start even
+            // for an unpaced test source.
+            var startStatus = startHlsMidGop(mpegTsProcessor, hlsControl, struct);
             assertEquals("HLS start command failed: " + startStatus.getMessage(),
                     ICommandStatus.CommandStatusCode.ACCEPTED, startStatus.getStatusCode());
             assertNotNull("HLS start command did not return a manifest", startStatus.getResult());
@@ -695,15 +697,20 @@ public abstract class ConnectionTest {
 
                 String filePath = commandOutputData.get().getStringValue();
                 Path manifestPath = tempDirectory.resolve(filePath);
+                if (Files.exists(manifestPath)) {
+                    assertTrue("HLS start exposed an empty placeholder manifest",
+                            Files.size(manifestPath) > 0);
+                }
                 Path segmentPath = waitForHlsSegment(manifestPath, 15_000L);
-                // A short MPEG-TS segment may start between infrequent IDRs and therefore cannot
-                // always expose dimensions in isolation. It must still parse and contain real,
-                // monotonic video packets; the MP4 assertion above requires full dimensions.
-                assertValidVideoFile(segmentPath, false);
+                assertTrue("HLS did not drop the mid-GOP packets preceding the next keyframe",
+                        hlsControl.getFileOutput().getPacketsDroppedBeforeInitialKeyFrame() > 0);
+                assertTrue("HLS manifest does not declare independent media segments",
+                        Files.readString(manifestPath).contains("#EXT-X-INDEPENDENT-SEGMENTS"));
+                assertIndependentlyDecodableHlsSegment(segmentPath);
             } finally {
                 // --------- End Stream ---------
                 ((Category)struct.getComponent(0)).setValue(HLSControl.CMD_END_STREAM);
-                var stopStatus = fileControl.get().submitCommand(new CommandData.Builder()
+                var stopStatus = hlsControl.submitCommand(new CommandData.Builder()
                         .withCommandStream(BigId.NONE)
                         .withId(BigId.NONE)
                         .withParams(struct.getData())
@@ -713,6 +720,155 @@ public abstract class ConnectionTest {
             }
         } else {
             fail("HLSControl not found");
+        }
+    }
+
+    private static ICommandStatus startHlsMidGop(
+            MpegTsProcessor processor, HLSControl<?> hlsControl, DataComponent startCommand) {
+        CountDownLatch startFinished = new CountDownLatch(1);
+        AtomicBoolean keySeen = new AtomicBoolean(false);
+        AtomicBoolean startSubmitted = new AtomicBoolean(false);
+        AtomicReference<ICommandStatus> startStatus = new AtomicReference<>();
+        AtomicReference<Throwable> startFailure = new AtomicReference<>();
+        DataBufferListener observer = new DataBufferListener() {
+            @Override
+            public void onDataBuffer(DataBufferRecord record) {
+                if (record.isKeyFrame()) {
+                    keySeen.set(true);
+                } else if (keySeen.get() && startSubmitted.compareAndSet(false, true)) {
+                    try {
+                        startStatus.set(hlsControl.submitCommand(new CommandData.Builder()
+                                .withCommandStream(BigId.NONE)
+                                .withId(BigId.NONE)
+                                .withParams(startCommand.getData().clone())
+                                .build()).join());
+                    } catch (Throwable e) {
+                        startFailure.set(e);
+                    } finally {
+                        startFinished.countDown();
+                    }
+                }
+            }
+
+            @Override
+            public boolean isWriting() {
+                return true;
+            }
+
+            @Override
+            public String getName() {
+                return "HlsMidGopObserver";
+            }
+        };
+
+        processor.addVideoDataBufferListener(observer, false);
+        try {
+            assertTrue("Timed out starting HLS from a non-key packet after an IDR",
+                    startFinished.await(5, TimeUnit.SECONDS));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while synchronizing the HLS mid-GOP start", e);
+        } finally {
+            processor.removeVideoDataBufferListener(observer);
+        }
+
+        if (startFailure.get() != null) {
+            throw new AssertionError("HLS mid-GOP start failed", startFailure.get());
+        }
+        assertNotNull("HLS mid-GOP start returned no status", startStatus.get());
+        return startStatus.get();
+    }
+
+    /**
+     * A standalone HLS fragment must carry dimensions/codec configuration, begin with a keyframe,
+     * and produce a decoded frame. Merely parsing transport packets is not sufficient: browsers
+     * can parse a mid-GOP fragment but remain permanently at 0:00 because it is not decodable.
+     */
+    private static void assertIndependentlyDecodableHlsSegment(Path segmentPath) {
+        AVFormatContext formatContext = new AVFormatContext(null);
+        AVCodecContext decoderContext = null;
+        AVPacket packet = null;
+        AVFrame frame = null;
+        int openRet = avformat_open_input(formatContext, segmentPath.toString(), null, null);
+        try {
+            assertTrue("FFmpeg could not open HLS segment (error " + openRet + "): " + segmentPath,
+                    openRet >= 0);
+            int infoRet = avformat_find_stream_info(formatContext, (PointerPointer<?>) null);
+            assertTrue("FFmpeg could not read HLS stream metadata (error " + infoRet + ")",
+                    infoRet >= 0);
+
+            int videoStreamIndex = -1;
+            for (int i = 0; i < formatContext.nb_streams(); i++) {
+                var codecParameters = formatContext.streams(i).codecpar();
+                if (codecParameters.codec_type() == AVMEDIA_TYPE_VIDEO) {
+                    assertTrue("HLS video width is missing", codecParameters.width() > 0);
+                    assertTrue("HLS video height is missing", codecParameters.height() > 0);
+                    assertTrue("HLS video codec is missing", codecParameters.codec_id() != AV_CODEC_ID_NONE);
+                    videoStreamIndex = i;
+
+                    AVCodec decoder = avcodec_find_decoder(codecParameters.codec_id());
+                    assertNotNull("No decoder is available for the HLS video codec", decoder);
+                    assertFalse("No decoder is available for the HLS video codec", decoder.isNull());
+                    decoderContext = avcodec_alloc_context3(decoder);
+                    assertNotNull("FFmpeg could not allocate an HLS decoder", decoderContext);
+                    assertFalse("FFmpeg could not allocate an HLS decoder", decoderContext.isNull());
+                    assertTrue("Could not copy HLS codec parameters into decoder",
+                            avcodec_parameters_to_context(decoderContext, codecParameters) >= 0);
+                    assertTrue("Could not open HLS video decoder",
+                            avcodec_open2(decoderContext, decoder, (PointerPointer<?>) null) >= 0);
+                    break;
+                }
+            }
+            assertTrue("HLS segment contains no video stream", videoStreamIndex >= 0);
+
+            packet = av_packet_alloc();
+            frame = av_frame_alloc();
+            assertNotNull("FFmpeg could not allocate an HLS validation packet", packet);
+            assertFalse("FFmpeg could not allocate an HLS validation packet", packet.isNull());
+            assertNotNull("FFmpeg could not allocate an HLS validation frame", frame);
+            assertFalse("FFmpeg could not allocate an HLS validation frame", frame.isNull());
+
+            boolean firstVideoPacket = true;
+            boolean decodedFrame = false;
+            while (!decodedFrame && av_read_frame(formatContext, packet) >= 0) {
+                if (packet.stream_index() == videoStreamIndex) {
+                    if (firstVideoPacket) {
+                        assertTrue("The first HLS video packet is not a keyframe",
+                                (packet.flags() & AV_PKT_FLAG_KEY) != 0);
+                        firstVideoPacket = false;
+                    }
+
+                    int sendRet = avcodec_send_packet(decoderContext, packet);
+                    assertTrue("HLS decoder rejected a packet (error " + sendRet + ")", sendRet >= 0);
+                    int receiveRet = avcodec_receive_frame(decoderContext, frame);
+                    if (receiveRet >= 0) {
+                        assertTrue("Decoded HLS frame width is missing", frame.width() > 0);
+                        assertTrue("Decoded HLS frame height is missing", frame.height() > 0);
+                        decodedFrame = true;
+                    } else {
+                        assertTrue("HLS decoder failed before producing a frame (error "
+                                        + receiveRet + ")",
+                                receiveRet == AVERROR_EAGAIN() || receiveRet == AVERROR_EOF);
+                    }
+                }
+                av_packet_unref(packet);
+            }
+
+            assertFalse("HLS segment contains no video packets", firstVideoPacket);
+            assertTrue("HLS segment did not decode a video frame", decodedFrame);
+        } finally {
+            if (frame != null && !frame.isNull()) {
+                av_frame_free(frame);
+            }
+            if (packet != null && !packet.isNull()) {
+                av_packet_free(packet);
+            }
+            if (decoderContext != null && !decoderContext.isNull()) {
+                avcodec_free_context(decoderContext);
+            }
+            if (formatContext != null && !formatContext.isNull()) {
+                avformat_close_input(formatContext);
+            }
         }
     }
 

@@ -62,5 +62,15 @@ public interface IBucketStore {
 
     String getResourceURI(String bucketName, String key) throws DataStoreException;
 
+    /**
+     * Returns a validated URI that an internal producer may use to create an object directly.
+     * The bucket and parent directories are prepared, but the object itself is deliberately not
+     * created. This prevents callers such as streaming muxers from exposing an empty placeholder
+     * before they have produced a complete resource.
+     */
+    default String getWritableResourceURI(String bucketName, String key) throws DataStoreException {
+        throw new DataStoreException("Direct writable resource URIs are not supported by this bucket store");
+    }
+
     String getRelativeResourceURI(String bucketName, String key) throws DataStoreException;
 }

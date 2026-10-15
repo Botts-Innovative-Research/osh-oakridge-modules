@@ -2,28 +2,25 @@ package org.sensorhub.impl.sensor.ffmpeg.controls;
 
 import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
-import com.botts.impl.service.bucket.BucketService;
-import com.botts.impl.service.bucket.BucketServlet;
 import net.opengis.swe.v20.*;
 import net.opengis.swe.v20.Boolean;
 import org.sensorhub.api.command.*;
 import org.sensorhub.api.datastore.DataStoreException;
-import org.sensorhub.api.service.IHttpServer;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.sensor.ffmpeg.controls.hls.HlsStreamHandler;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.FileOutput;
-import org.sensorhub.impl.service.HttpServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.swe.SWEHelper;
 
+import java.lang.ref.WeakReference;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Collections;
+import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicReference;
 
 public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractSensorControl<FFMPEGSensorBase<FFmpegConfigType>> implements FFmpegControl, IStreamingControlInterfaceWithResult {
     public static final String SENSOR_CONTROL_NAME = "ffmpegHlsControl";
@@ -35,9 +32,9 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
     public static final String VIDEO_BUCKET = "videos";
 
     private final IBucketStore bucketStore;
-    private final IBucketService bucketService;
-    private final HttpServer httpServer;
-    private static final AtomicReference<HlsStreamHandler> hlsHandler = new AtomicReference<>();
+    private final HlsStreamHandler hlsHandler;
+    private static final Map<IBucketService, WeakReference<HlsStreamHandler>> HLS_HANDLERS =
+            new WeakHashMap<>();
     DataRecord commandData;
     DataRecord resultData;
     String fileName = "";
@@ -52,18 +49,32 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
         this.fileOutput = fileOutput;
 
 
-        httpServer = sensor.getParentHub().getModuleRegistry().getModuleByType(HttpServer.class);
-        bucketService = sensor.getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
+        IBucketService bucketService = sensor.getParentHub().getModuleRegistry()
+                .getModuleByType(IBucketService.class);
         bucketStore = bucketService.getBucketStore();
-
-        if (hlsHandler.get() == null) {
-            hlsHandler.set(new HlsStreamHandler(bucketService));
-            bucketService.registerObjectHandler(hlsHandler.get());
-        }
+        hlsHandler = resolveHlsHandler(bucketService);
 
         boolean videosBucketExists = bucketStore.bucketExists(VIDEO_BUCKET);
         if (!videosBucketExists) {
             bucketStore.createBucket(VIDEO_BUCKET);
+        }
+    }
+
+    /**
+     * Resolves exactly one handler per live bucket-service instance. Weak keys and values avoid
+     * retaining a stopped hub/service through this process-wide registry, while synchronization
+     * makes initialization atomic when many camera modules are constructed concurrently.
+     */
+    static HlsStreamHandler resolveHlsHandler(IBucketService service) {
+        synchronized (HLS_HANDLERS) {
+            WeakReference<HlsStreamHandler> reference = HLS_HANDLERS.get(service);
+            HlsStreamHandler handler = reference != null ? reference.get() : null;
+            if (handler == null) {
+                handler = new HlsStreamHandler(service, VIDEO_BUCKET);
+                service.registerObjectHandler(handler);
+                HLS_HANDLERS.put(service, new WeakReference<>(handler));
+            }
+            return handler;
         }
     }
 
@@ -127,12 +138,14 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
                     filePath = Paths.get("streams", parentSensor.getUniqueIdentifier().replace(':', '-'), "live.m3u8");
                     fileName = filePath.toString();
                     try {
-                        //this.parentSensor.getProcessor().openFile(fileName);
-                        this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap()).close();
-                        String uri = bucketStore.getResourceURI(VIDEO_BUCKET, fileName);
-                        //bucketStore.deleteObject(VIDEO_BUCKET, fileName);
+                        // Remove artifacts left by an interrupted prior stream, then prepare a
+                        // validated filesystem target without creating a zero-byte manifest.
+                        // The HLS muxer publishes its first real playlist atomically after it has
+                        // completed a keyframe-aligned media segment.
+                        cleanupHlsResources(fileName);
+                        String uri = bucketStore.getWritableResourceURI(VIDEO_BUCKET, fileName);
                         this.fileOutput.openFile(uri);
-                        hlsHandler.get().addControl(fileName, this);
+                        hlsHandler.addControl(fileName, this);
                         this.parentSensor.reportStatus("Writing video stream: " + fileName);
                         reportFileName = true;
                         commandStatus = true;
@@ -179,14 +192,13 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
             if (failureMessage != null)
                 status.withMessage(failureMessage);
             if (commandStatus && reportFileName) {
-                try {
-                    resultData.renewDataBlock();
-                    resultData.getData().setStringValue(bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName));
-                    ICommandResult result = CommandResult.withData(resultData.getData());
-                    status.withResult(result);
-                } catch (DataStoreException e) {
-                    logger.error("Exception while getting stream URI", e);
-                }
+                // The manifest is intentionally absent until FFmpeg completes its first media
+                // segment, so an existence-checking URI lookup cannot be used here. The object
+                // key was already validated by getWritableResourceURI before the stream opened.
+                resultData.renewDataBlock();
+                resultData.getData().setStringValue(Paths.get(VIDEO_BUCKET, fileName).toString());
+                ICommandResult result = CommandResult.withData(resultData.getData());
+                status.withResult(result);
             }
             return status.build();
     }
@@ -196,10 +208,7 @@ public class HLSControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractS
             return;
         }
 
-        HlsStreamHandler handler = hlsHandler.get();
-        if (handler != null) {
-            handler.removeControl(streamName, this);
-        }
+        hlsHandler.removeControl(streamName, this);
         try {
             int extensionIndex = streamName.lastIndexOf('.');
             String streamPrefix = extensionIndex > 0

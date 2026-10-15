@@ -13,6 +13,9 @@ All notable changes to this project will be documented in this file.
   partial output safely, and release native queues deterministically across reconnect and shutdown.
 - MP4 packet delivery now stays ordered with recording close, preventing healthy occupancy clips
   from being finalized before queued video packets are written.
+- Live HLS now waits for the first H.264 keyframe, publishes playlists and segments atomically,
+  and returns not-ready responses instead of exposing an empty manifest or a segment that begins
+  mid-GOP. Authorized pre-manifest polling keeps the stream alive while preparation completes.
 - Recording startup now reads an independently owned stream-metadata cache instead of waiting for
   a blocking input read, preventing short occupancies from ending before MP4 output becomes active.
 - Non-H.264 transcoding now preserves rational frame rates such as `30000/1001`, flushes delayed

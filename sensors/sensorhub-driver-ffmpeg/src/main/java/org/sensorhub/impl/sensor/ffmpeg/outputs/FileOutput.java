@@ -61,6 +61,8 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     final int MAX_PACKET_QUEUE_SIZE = 1000;
     private final TimestampNormalizer timestampNormalizer = new TimestampNormalizer();
     private long packetsWritten;
+    private volatile long packetsDroppedBeforeInitialKeyFrame;
+    private boolean waitingForInitialKeyFrame;
     private boolean headerWritten;
     private volatile IOException writeFailure;
     private WriteCallback writeCallback;
@@ -146,6 +148,14 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                     return;
                 }
 
+                if (waitingForInitialKeyFrame && !record.isKeyFrame()) {
+                    packetsDroppedBeforeInitialKeyFrame++;
+                    return;
+                }
+                if (waitingForInitialKeyFrame) {
+                    waitingForInitialKeyFrame = false;
+                }
+
                 AVRational packetTimeBase = populatePacketTiming(avPacket, record);
                 normalizeAndRescalePacket(avPacket, packetTimeBase);
                 avPacket.stream_index(outputVideoStream.index());
@@ -201,6 +211,9 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 this.writeFailure = null;
                 this.headerWritten = false;
                 this.packetsWritten = 0;
+                this.packetsDroppedBeforeInitialKeyFrame = 0;
+                this.waitingForInitialKeyFrame = deliveryMode == DeliveryMode.LIVE_ONLY
+                        && fileName.endsWith(".m3u8");
                 this.timestampNormalizer.reset();
 
                 seekableBuffer = null;
@@ -452,7 +465,10 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         av_dict_set(options, "hls_time", "1", 0);
         //avutil.av_dict_set(options, "hls_segment_type", "ts", 0);
         //avutil.av_dict_set(options, "movflags", "faststart+default_base_moof", 0);
-        av_dict_set(options, "hls_flags", "delete_segments+append_list", 0);
+        // Publish only complete playlists/segments and promise independent segments only after
+        // FileOutput has admitted the first keyframe. Removing append_list also prevents a stale
+        // manifest from carrying media into a restarted stream.
+        av_dict_set(options, "hls_flags", "delete_segments+independent_segments+temp_file", 0);
         av_dict_set(options, "hls_segment_type", "mpegts", 0);
         av_dict_set(options, "use_localtime", "1", 0);
         av_dict_set(options, "max_delay", "0", 0);
@@ -460,6 +476,11 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         av_dict_set(options, "muxpreload", "0", 0);
         //av_dict_set(options, "hls_fmp4_init_filename", "init.mp4", 0);
         return options;
+    }
+
+    /** Number of live packets intentionally skipped while aligning a new HLS stream to an IDR. */
+    public long getPacketsDroppedBeforeInitialKeyFrame() {
+        return packetsDroppedBeforeInitialKeyFrame;
     }
 
     public void closeFile() throws IOException {
@@ -591,6 +612,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         }
 
         headerWritten = false;
+        waitingForInitialKeyFrame = false;
         return failure;
     }
 

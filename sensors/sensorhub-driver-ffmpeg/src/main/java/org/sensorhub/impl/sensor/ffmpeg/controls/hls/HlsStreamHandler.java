@@ -11,13 +11,12 @@ import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.sensor.ffmpeg.controls.HLSControl;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Paths;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -25,29 +24,60 @@ import java.util.regex.Pattern;
 public class HlsStreamHandler extends DefaultObjectHandler {
 
     private static final Pattern HLS_PATTERN = Pattern.compile(".*\\.(m3u8|ts)$");
-    private static final long STREAM_TIMEOUT_MS = 30000;
+    static final long STREAM_TIMEOUT_MS = 30000;
+    private static final long CLEANUP_INTERVAL_MS = 1000;
     private static final String M3U8_SUFFIX = ".m3u8";
 
-    private final Map<String, Long> activeStreams = new ConcurrentHashMap<>();
-    private final Map<String, HLSControl<?>> activeControls = new ConcurrentHashMap<>();
-    private final ScheduledExecutorService scheduler;
+    private final Map<String, ActiveStream> activeStreams = new ConcurrentHashMap<>();
+    private final String streamBucketName;
+
+    private record ActiveStream(HLSControl<?> control, long lastAccessMillis) {}
 
     public HlsStreamHandler(IBucketService service) {
+        this(service, HLSControl.VIDEO_BUCKET);
+    }
+
+    public HlsStreamHandler(IBucketService service, String streamBucketName) {
         super(service.getBucketStore());
-        scheduler = Executors.newSingleThreadScheduledExecutor();
-        scheduler.scheduleAtFixedRate(this::cleanupInactiveStreams, STREAM_TIMEOUT_MS, STREAM_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        this.streamBucketName = Objects.requireNonNull(streamBucketName, "streamBucketName");
+        if (!(service.getThreadPool() instanceof ScheduledExecutorService scheduler)) {
+            throw new IllegalStateException("Bucket service must be running with a scheduled executor");
+        }
+
+        // Use the bucket service's lifecycle-owned executor. BucketService shuts this executor
+        // down when the service stops, which also cancels this periodic task and releases its
+        // reference to the handler. A process-wide executor would retain stopped services.
+        scheduler.scheduleAtFixedRate(this::cleanupInactiveStreams,
+                CLEANUP_INTERVAL_MS, CLEANUP_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
     @Override
     public void doGet(RequestContext ctx) throws IOException, SecurityException {
         var bucketName = ctx.getBucketName();
         var objectKey = Paths.get(ctx.getObjectKey()).toString();
+        checkGetPermission(ctx, bucketName);
+
+        boolean manifestRequest = objectKey.endsWith(M3U8_SUFFIX);
+        if (manifestRequest) {
+            // A client polling while FFmpeg waits for its first keyframe is active even though
+            // there is intentionally no placeholder manifest to serve yet.
+            refreshManifestActivity(bucketName, objectKey, System.currentTimeMillis());
+        }
+
         boolean objectExists = bucketStore.objectExists(bucketName, objectKey);
-        var sec = ctx.getSecurityHandler();
-        sec.checkPermission(sec.getBucketPermission(bucketName).get);
 
         if (!objectExists)
             throw ServiceErrors.notFound(objectKey + " in bucket " + bucketName);
+
+        if (manifestRequest) {
+            try {
+                if (bucketStore.getObjectSize(bucketName, objectKey) == 0) {
+                    throw ServiceErrors.notFound(objectKey + " is not ready");
+                }
+            } catch (DataStoreException e) {
+                throw ServiceErrors.internalError(IBucketStore.FAILED_GET_OBJECT + bucketName);
+            }
+        }
 
         String mimeType;
         try {
@@ -61,28 +91,38 @@ public class HlsStreamHandler extends DefaultObjectHandler {
 
         try {
             ctx.getResponse().setContentType(mimeType);
-            InputStream objectData;
-            objectData = bucketStore.getObject(bucketName, objectKey);
-            objectData.transferTo(ctx.getResponse().getOutputStream());
-            objectData.close();
+            try (InputStream objectData = bucketStore.getObject(bucketName, objectKey)) {
+                objectData.transferTo(ctx.getResponse().getOutputStream());
+            }
         } catch (DataStoreException e) {
             throw ServiceErrors.internalError(IBucketStore.FAILED_GET_OBJECT + bucketName);
         }
+    }
 
-        // Should repeatedly request these
-        if (objectKey.endsWith(M3U8_SUFFIX))
-            activeStreams.put(objectKey, System.currentTimeMillis());
+    protected void checkGetPermission(RequestContext ctx, String bucketName) {
+        var sec = ctx.getSecurityHandler();
+        sec.checkPermission(sec.getBucketPermission(bucketName).get);
+    }
+
+    boolean refreshManifestActivity(String bucketName, String objectKey, long accessTime) {
+        if (!streamBucketName.equals(bucketName) || !objectKey.endsWith(M3U8_SUFFIX)) {
+            return false;
+        }
+
+        return activeStreams.computeIfPresent(objectKey,
+                (key, stream) -> new ActiveStream(stream.control(), accessTime)) != null;
     }
 
     // Called by ffmpeg hlscontrols
     public void addControl(String streamName, HLSControl<?> control) {
-        activeControls.put(streamName, control);
+        // Start the timeout at stream creation. A stream that is never requested must not run
+        // forever, while authorized manifest polling (including pre-manifest 404s) refreshes it.
+        activeStreams.put(streamName, new ActiveStream(control, System.currentTimeMillis()));
     }
 
     public void removeControl(String stream, HLSControl<?> control) {
-        if (activeControls.remove(stream, control)) {
-            activeStreams.remove(stream);
-        }
+        activeStreams.computeIfPresent(stream,
+                (key, activeStream) -> activeStream.control() == control ? null : activeStream);
     }
 
     private void stopStream(HLSControl<?> control) {
@@ -94,15 +134,28 @@ public class HlsStreamHandler extends DefaultObjectHandler {
         }
     }
 
-    private void cleanupInactiveStreams() {
-        // Remove active streams after timeout
-        activeStreams.entrySet().removeIf(entry -> {
-            if (System.currentTimeMillis() - entry.getValue() > STREAM_TIMEOUT_MS) {
-                stopStream(activeControls.remove(entry.getKey())); // Remove the corresponding control and stop its stream
-                return true;
+    void cleanupInactiveStreams(long now) {
+        for (var entry : activeStreams.entrySet()) {
+            if (now - entry.getValue().lastAccessMillis() >= STREAM_TIMEOUT_MS
+                    && activeStreams.remove(entry.getKey(), entry.getValue())) {
+                // Conditional removal ensures a manifest request racing this cleanup pass can
+                // atomically replace the activity record without having its stream stopped.
+                stopStream(entry.getValue().control());
             }
-            return false;
-        });
+        }
+    }
+
+    private void cleanupInactiveStreams() {
+        cleanupInactiveStreams(System.currentTimeMillis());
+    }
+
+    boolean isActiveStream(String streamName) {
+        return activeStreams.containsKey(streamName);
+    }
+
+    long getLastAccessMillis(String streamName) {
+        ActiveStream stream = activeStreams.get(streamName);
+        return stream != null ? stream.lastAccessMillis() : -1L;
     }
 
     @Override
