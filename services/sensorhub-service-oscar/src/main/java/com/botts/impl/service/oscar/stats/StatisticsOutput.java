@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.Set;
+import java.util.Collection;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
@@ -188,7 +189,11 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
      * Populates the data block with statistics for the given time range.
      */
     public int populateDataBlock(DataBlock dataBlock, int i, Instant start, Instant end) {
-        Statistics stats = getStats(start, end);
+        return populateDataBlock(dataBlock, i, start, end, Set.of());
+    }
+
+    public int populateDataBlock(DataBlock dataBlock, int i, Instant start, Instant end, Collection<String> laneUIDs) {
+        Statistics stats = getStats(start, end, laneUIDs);
         return populateDataBlockWithStats(dataBlock, i, stats);
     }
 
@@ -208,18 +213,22 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
      * Gets statistics by fetching from database
      */
     protected Statistics getStats(Instant start, Instant end) {
-        long numOccupancies = countObservations(database, null, start, end, RADHelper.DEF_OCCUPANCY);
-        long numGammaAlarms = countObservations(database, gammaAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
-        long numNeutronAlarms = countObservations(database, neutronAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
-        long numGammaNeutronAlarms = countObservations(database, gammaNeutronAlarmCQL, start, end, RADHelper.DEF_OCCUPANCY);
-        long numGammaFaults = countObservations(database, gammaFaultCQL, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-        long numNeutronFaults = countObservations(database, neutronFaultCQL, start, end, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
-        long numTampers = countObservations(database, tamperCQL, start, end, RADHelper.DEF_TAMPER);
-        long numFaults = countObservations(database, faultCQL, start, end, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
+        return getStats(start, end, Set.of());
+    }
+
+    protected Statistics getStats(Instant start, Instant end, Collection<String> laneUIDs) {
+        long numOccupancies = countObservations(database, null, start, end, laneUIDs, RADHelper.DEF_OCCUPANCY);
+        long numGammaAlarms = countObservations(database, gammaAlarmCQL, start, end, laneUIDs, RADHelper.DEF_OCCUPANCY);
+        long numNeutronAlarms = countObservations(database, neutronAlarmCQL, start, end, laneUIDs, RADHelper.DEF_OCCUPANCY);
+        long numGammaNeutronAlarms = countObservations(database, gammaNeutronAlarmCQL, start, end, laneUIDs, RADHelper.DEF_OCCUPANCY);
+        long numGammaFaults = countObservations(database, gammaFaultCQL, start, end, laneUIDs, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        long numNeutronFaults = countObservations(database, neutronFaultCQL, start, end, laneUIDs, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
+        long numTampers = countObservations(database, tamperCQL, start, end, laneUIDs, RADHelper.DEF_TAMPER);
+        long numFaults = countObservations(database, faultCQL, start, end, laneUIDs, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
 
         // RS350 alarm counts from raw AlarmOutput (uses alarmCategoryCode observed property)
-        long numRS350GammaAlarms = countObservations(database, rs350GammaAlarmCQL, start, end, DEF_ALARM_CATEGORY);
-        long numRS350NeutronAlarms = countObservations(database, rs350NeutronAlarmCQL, start, end, DEF_ALARM_CATEGORY);
+        long numRS350GammaAlarms = countObservations(database, rs350GammaAlarmCQL, start, end, laneUIDs, DEF_ALARM_CATEGORY);
+        long numRS350NeutronAlarms = countObservations(database, rs350NeutronAlarmCQL, start, end, laneUIDs, DEF_ALARM_CATEGORY);
         numGammaAlarms += numRS350GammaAlarms;
         numNeutronAlarms += numRS350NeutronAlarms;
         numOccupancies += numRS350GammaAlarms + numRS350NeutronAlarms;
@@ -239,9 +248,17 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     /**
      * Counts observations from database (used by external callers like submitCommand).
      */
-    private long countObservations(IObsSystemDatabase database, String cqlValue, Instant begin, Instant end, String... observedProperty) {
+    private long countObservations(IObsSystemDatabase database, String cqlValue, Instant begin, Instant end,
+                                   Collection<String> laneUIDs, String... observedProperty) {
         var dsFilterBuilder = new DataStreamFilter.Builder()
                 .withObservedProperties(observedProperty);
+
+        if (laneUIDs != null && !laneUIDs.isEmpty()) {
+            dsFilterBuilder.withSystems()
+                    .withUniqueIDs(laneUIDs.toArray(String[]::new))
+                    .includeMembers(true)
+                    .done();
+        }
 
         var dsFilter = dsFilterBuilder.build();
 
