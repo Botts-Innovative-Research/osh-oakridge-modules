@@ -558,13 +558,15 @@ Para recibir:
 Abra **Estado de salud** mediante el icono de monitor cardíaco de la navegación o vaya directamente a `/health`. La página muestra una fila por cada carril visible en el ámbito actual; `/health?view=<clave>` la limita a la vista operativa asignada.
 
 - **Conexiones** indica el RPM y cada cámara configurada como **En línea**, **Sin conexión** o **Esperando**. Esperando significa que todavía no llegó un valor de conexión utilizable y no se considera saludable.
-- **Estado de fallas** muestra gamma alta, gamma baja, neutrón alto, manipulación y ocupación prolongada como **Fallo**, **Normal** o **Esperando**. La telemetría ausente o fallida permanece en Esperando; nunca se considera saludable ni se muestra como normal.
+- **Estado de fallas** muestra gamma alta, gamma baja, neutrón alto, manipulación y ocupación prolongada como **Fallo**, **Normal** o **Desconocido**. La telemetría ausente o fallida permanece en **Desconocido**; nunca se considera saludable ni se muestra como normal.
 - **Ocupación actual** usa el flujo canónico `occupancyStatus` del Sistema de carril para mostrar un tiempo estable con RPM Rapiscan, Aspect y RS350.
 - **Última actualización** usa la hora local del navegador para la actualización más reciente de conexión o falla.
 
 La ocupación prolongada usa un minuto de forma predeterminada. Introduzca de 1 a 1440 minutos en **Umbral de ocupación prolongada**. El valor se guarda en ese navegador y reevalúa de inmediato una ocupación en curso; no modifica observaciones ni informes del servidor.
 
-Después de actualizar, confirme que cada Sistema de carril publica `occupancyStatus` y que cada RPM y cámara FFmpeg publica su conexión. Detenga y reinicie una cámara de prueba autorizada y compruebe Sin conexión y luego En línea. Confirme que la telemetría de fallas no disponible permanece en Esperando; pruebe gamma, neutrón, manipulación y ocupación larga solo conforme al procedimiento aprobado del sitio.
+Los mensajes de manipulación de Rapiscan informan transiciones, no una instantánea que se repite periódicamente. La [guía de mantenimiento Rapiscan del DOE/PNNL](https://d5.pnnl.gov/sites/default/files/2023-02/RPM_Maint_Guide_Drawings.pdf) especifica que el RPM envía `TT` una sola vez al abrirse una puerta supervisada o producirse un fallo de alimentación, y `TC` una sola vez al cerrarse la puerta o restablecerse la alimentación. Por tanto, al usar una base de datos nueva o establecer una conexión nueva, la ausencia de una observación de manipulación significa **Desconocido**; nunca deduzca **Normal** de un RPM **En línea**. Un emulador de prueba puede enviar la línea válida del protocolo `TC,111111,111111,111111,111111` después de aceptar una conexión de cliente solo cuando sabe que el estado simulado de sus puertas y alimentación es normal.
+
+Después de actualizar, confirme que cada Sistema de carril publica `occupancyStatus` y que cada RPM y cámara FFmpeg publica su conexión. Detenga y reinicie una cámara de prueba autorizada y compruebe Sin conexión y luego En línea. Confirme que la telemetría de fallas no disponible permanece en Desconocido; pruebe gamma, neutrón, manipulación y ocupación larga solo conforme al procedimiento aprobado del sitio.
 
 ### 8.8 Usar una estación con vista operativa
 
@@ -670,7 +672,7 @@ Antes de cambiar retención, base de datos, ruta o **Eliminar datos al eliminar 
 - [ ] Una adjudicación controlada puede revisarse y enviarse.
 - [ ] Se probaron filtros anidados Y/O de Eventos, selección de todo el resultado filtrado, una adjudicación masiva controlada, actualización Nacional e informes requeridos.
 - [ ] Un QR de alarma controlada se exporta, escanea/importa, supera la integridad y vuelve a dibujar curvas gamma/neutrón plausibles.
-- [ ] **Estado de salud** enumera todos los carriles previstos; RPM y cámaras muestran correctamente En línea/Sin conexión/Esperando, y pruebas aprobadas de gamma, neutrón, manipulación y ocupación prolongada de un minuto producen el estado previsto.
+- [ ] **Estado de salud** enumera todos los carriles previstos; RPM y cámaras muestran correctamente En línea/Sin conexión/Esperando, las fallas muestran correctamente Fallo/Normal/Desconocido y las pruebas aprobadas de gamma, neutrón, manipulación y ocupación prolongada de un minuto producen el estado previsto.
 - [ ] La URL sin ámbito muestra todos los carriles, y cada URL aprobada `?view=<clave>` o `/view/<clave>` muestra solo sus carriles asignados en Panel, Eventos, informes, Transferencia de alarmas y Estado de salud.
 - [ ] Se revisaron nodos federados tras recargar y no hay credenciales en almacenamiento del navegador.
 
@@ -692,7 +694,8 @@ Antes de cambiar retención, base de datos, ruta o **Eliminar datos al eliminar 
 | Cámara no inicia | Pruebe RTSP/credenciales, quite `rtsp://` del host, no duplique puerto, confirme códec Axis o ruta Custom y pruebe desde el host OSCAR. |
 | Vídeo falla al recargar | Confirme cámara e HLS iniciados y revise logs. Recargar no debe exigir recrear el carril. |
 | Evento sin medios | Confirme carril disponible, flujos en el intervalo, retención y permisos. |
-| Falta un carril/dispositivo en Estado de salud, o aparece Esperando/Sin conexión | Confirme que el carril pertenece a la vista actual, que el carril y el dispositivo hijo están iniciados y que el RPM o la cámara FFmpeg publica el estado de conexión. Esperando indica que aún no llegó un estado utilizable; pruebe conectividad y revise los logs del hijo. |
+| Falta un carril/dispositivo en Estado de salud, o su conexión aparece Esperando/Sin conexión | Confirme que el carril pertenece a la vista actual, que el carril y el dispositivo hijo están iniciados y que el RPM o la cámara FFmpeg publica el estado de conexión. Esperando se aplica a la telemetría de conexión e indica que aún no llegó un valor de conexión utilizable; pruebe conectividad y revise los logs del hijo. |
+| Una falla o el estado de manipulación aparece como Desconocido | Confirme que existe su flujo de datos y que su última observación se puede leer. `TT` y `TC` de Rapiscan son eventos de transición únicos, por lo que la indicación puede permanecer en Desconocido con una base de datos o conexión nueva hasta que el hardware informe una transición; En línea no significa que el estado de manipulación sea Normal. En un emulador de prueba cuyo estado simulado de puertas y alimentación se sabe que es normal, emita `TC,111111,111111,111111,111111` después de aceptar la conexión del cliente. |
 | No aparece la ocupación prolongada | Confirme que el Sistema de carril publica `occupancyStatus`, verifique que la entrada de archivo diario/estado del RPM informa inicio y fin, configure entre 1 y 1440 minutos en este navegador y espere a que el tiempo estable supere el umbral. |
 | La adjudicación masiva falla parcialmente | Mantenga seleccionadas las filas fallidas, revise la conectividad del carril/nodo y el flujo de control de adjudicación, y pulse **Reintentar fallidos**. Las filas correctas no se vuelven a enviar. |
 | Falla la adjudicación | Seleccione código; compruebe nodo/carril, flujo de control y carga de evidencias. No repita hasta conocer el resultado original. |

@@ -572,13 +572,15 @@ To receive:
 Open **Status of Health** with the heart-monitor icon in the Viewer navigation or go directly to `/health`. The page displays one row for every lane visible in the current scope; `/health?view=<key>` limits it to the assigned operational view.
 
 - **Connections** reports the RPM and each configured camera as **Online**, **Offline**, or **Waiting**. Waiting means no usable current connection value has arrived and is not counted as healthy.
-- **Fault status** reports gamma high, gamma low, neutron high, tamper, and extended occupancy as **Fault**, **Clear**, or **Waiting**. Missing or failed telemetry stays Waiting and is never counted as healthy or shown as clear.
+- **Fault status** reports gamma high, gamma low, neutron high, tamper, and extended occupancy as **Fault**, **Clear**, or **Unknown**. Missing or failed telemetry stays Unknown and is never counted as healthy or shown as clear.
 - **Current occupancy** uses the Lane System's canonical `occupancyStatus` stream to show a stable elapsed time across Rapiscan, Aspect, and RS350 RPMs.
 - **Last update** is the browser-local time of the latest connection or fault update for that row.
 
 Extended occupancy defaults to one minute. Enter a value from 1 through 1440 minutes in **Extended occupancy threshold**. The setting is saved in that browser and immediately re-evaluates an occupancy already in progress; it does not alter server observations or reports.
 
-After upgrading, confirm that each Lane System publishes `occupancyStatus` and each RPM and FFmpeg camera publishes connection status. Stop and restart an approved test camera and verify Offline then Online. Confirm unavailable fault telemetry remains Waiting, then exercise gamma, neutron, tamper, and long-occupancy tests only under the site's approved hardware procedures.
+Rapiscan tamper messages report transitions rather than a periodically repeated snapshot. The [DOE/PNNL Rapiscan maintenance guide](https://d5.pnnl.gov/sites/default/files/2023-02/RPM_Maint_Guide_Drawings.pdf) specifies that the RPM sends `TT` once when a monitored door or power condition enters tamper and `TC` once when the condition clears. After a new database or connection, no tamper observation therefore means **Unknown**; never infer **Clear** from an **Online** RPM. A test emulator may send the protocol-valid line `TC,111111,111111,111111,111111` after accepting a client connection only when its own modeled door and power state is known to be clear.
+
+After upgrading, confirm that each Lane System publishes `occupancyStatus` and each RPM and FFmpeg camera publishes connection status. Stop and restart an approved test camera and verify Offline then Online. Confirm unavailable fault telemetry remains Unknown, then exercise gamma, neutron, tamper, and long-occupancy tests only under the site's approved hardware procedures.
 
 ### 8.8 Use an operational-view workstation
 
@@ -701,7 +703,7 @@ Before changing retention, database selection, storage path, or **Delete Data on
 - [ ] A controlled test adjudication can be reviewed and submitted under site procedure.
 - [ ] Nested AND/OR Events filters, all-filtered-result selection, a controlled bulk adjudication, National refresh, and each required report type were tested.
 - [ ] A controlled alarm QR exports, scans/imports on the receiving device, passes integrity verification, and redraws plausible gamma/neutron curves.
-- [ ] **Status of Health** lists every expected lane; RPM and cameras show Online/Offline/Waiting correctly, and approved gamma, neutron, tamper, and one-minute extended-occupancy tests produce the expected state.
+- [ ] **Status of Health** lists every expected lane; RPM and cameras show Online/Offline/Waiting correctly, faults show Fault/Clear/Unknown correctly, and approved gamma, neutron, tamper, and one-minute extended-occupancy tests produce the expected state.
 - [ ] The unscoped URL shows all lanes, and each approved `?view=<key>` or `/view/<key>` URL shows only its assigned lanes across Dashboard, Events, reports, alarm transfer, and Status of Health.
 - [ ] Every federated node was rechecked after a browser reload; no credential was found in browser storage.
 
@@ -723,7 +725,8 @@ Before changing retention, database selection, storage path, or **Delete Data on
 | Camera does not start | Verify RTSP reachability and credentials, omit `rtsp://` from host, include a needed port once, confirm Axis codec or Custom path, and test the generated endpoint from the OSCAR host. |
 | Video appears initially but not after refresh | Verify the camera child and HLS output remain Started and inspect server/browser logs. Refresh should not require re-creating the lane. |
 | Event Details has no media | Confirm the event belongs to an available lane, required datastreams exist for its time range, retained video has not been deleted/decimated beyond need, and the user has permission. |
-| Status of Health lane/device is missing, Waiting, or Offline | Confirm the lane is in the current view, the lane and device child are running, and the RPM or FFmpeg camera publishes connection status. Waiting means no usable status has arrived; test reachability and inspect child logs before treating it as healthy. |
+| Status of Health lane/device is missing, or its connection is Waiting or Offline | Confirm the lane is in the current view, the lane and device child are running, and the RPM or FFmpeg camera publishes connection status. Waiting applies to connection telemetry and means no usable connection value has arrived; test reachability and inspect child logs before treating it as healthy. |
+| A fault or tamper status is Unknown | Confirm its datastream exists and has a readable latest observation. Rapiscan `TT` and `TC` are one-time transition events, so a fresh database or connection may remain Unknown until the hardware reports a transition; Online does not mean tamper Clear. For a test emulator whose modeled door and power state is known to be clear, emit `TC,111111,111111,111111,111111` after accepting the client connection. |
 | Extended occupancy does not appear | Confirm the Lane System publishes `occupancyStatus`, verify the RPM's daily-file/status input reports entry and exit, set a 1–1440 minute threshold in this browser, and wait until the stable elapsed time exceeds it. |
 | Bulk adjudication partly fails | Keep the failed rows selected, review lane/node connectivity and the adjudication control stream, then use **Retry failed**. Successful rows are not resubmitted. |
 | Adjudication fails | Confirm a code was selected, the lane/node is reachable, the adjudication control stream exists, and any evidence upload completed. Do not repeatedly submit until the original result is known. |
