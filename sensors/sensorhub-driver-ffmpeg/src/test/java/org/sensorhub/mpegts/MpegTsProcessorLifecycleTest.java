@@ -6,11 +6,20 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.bytedeco.ffmpeg.global.avcodec.*;
 import static org.bytedeco.ffmpeg.global.avutil.AV_NOPTS_VALUE;
+import static org.bytedeco.ffmpeg.global.avutil.av_make_q;
 import static org.junit.Assert.*;
 
 public class MpegTsProcessorLifecycleTest {
@@ -75,6 +84,174 @@ public class MpegTsProcessorLifecycleTest {
                 MpegTsProcessor.resolveVideoDuration(123_456L, 10_000_000L, 1, 90_000));
         assertEquals(0L,
                 MpegTsProcessor.resolveVideoDuration(0, 0, 1, 90_000));
+    }
+
+    @Test
+    public void closeBoundaryDrainsAcceptedCallbacksAndRejectsStalePackets() throws Exception {
+        var processor = new MpegTsProcessor("unused");
+        var writing = new AtomicBoolean(true);
+        var delivered = new ConcurrentLinkedQueue<Integer>();
+        var firstCallbackEntered = new CountDownLatch(1);
+        var releaseFirstCallback = new CountDownLatch(1);
+        var closeActionEntered = new CountDownLatch(1);
+        var releaseCloseAction = new CountDownLatch(1);
+        var newGenerationDelivered = new CountDownLatch(1);
+        var listener = new DataBufferListener() {
+            @Override
+            public void onDataBuffer(DataBufferRecord record) {
+                if (!writing.get()) {
+                    return;
+                }
+                int marker = record.getDataBuffer()[0];
+                delivered.add(marker);
+                if (marker == 1) {
+                    firstCallbackEntered.countDown();
+                    try {
+                        assertTrue(releaseFirstCallback.await(5, TimeUnit.SECONDS));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError(e);
+                    }
+                } else if (marker == 4) {
+                    newGenerationDelivered.countDown();
+                }
+            }
+
+            @Override public boolean isWriting() { return writing.get(); }
+            @Override public String getName() { return "ORDERED-FILE-OUTPUT-TEST"; }
+            @Override public DeliveryMode getDeliveryMode() { return DeliveryMode.BUFFERED; }
+        };
+        var closeExecutor = Executors.newSingleThreadExecutor();
+
+        processor.addVideoDataBufferListener(listener);
+        try {
+            processor.notifyVideoDataBufferListeners(record(1), EnumSet.of(DeliveryMode.BUFFERED));
+            assertTrue(firstCallbackEntered.await(5, TimeUnit.SECONDS));
+            processor.notifyVideoDataBufferListeners(record(2), EnumSet.of(DeliveryMode.BUFFERED));
+
+            var closeResult = closeExecutor.submit(() -> processor.executeAfterPendingVideoData(listener, () -> {
+                closeActionEntered.countDown();
+                assertTrue(releaseCloseAction.await(5, TimeUnit.SECONDS));
+                writing.set(false);
+                return List.copyOf(delivered);
+            }));
+
+            releaseFirstCallback.countDown();
+            assertTrue(closeActionEntered.await(5, TimeUnit.SECONDS));
+
+            // This callback is accepted while close is at the executor boundary, but it belongs to
+            // the old generation and must not be allowed into the next recording.
+            processor.notifyVideoDataBufferListeners(record(3), EnumSet.of(DeliveryMode.BUFFERED));
+            releaseCloseAction.countDown();
+            assertEquals(List.of(1, 2), closeResult.get(5, TimeUnit.SECONDS));
+
+            writing.set(true);
+            processor.notifyVideoDataBufferListeners(record(4), EnumSet.of(DeliveryMode.BUFFERED));
+            assertTrue(newGenerationDelivered.await(5, TimeUnit.SECONDS));
+            assertEquals(List.of(1, 2, 4), List.copyOf(delivered));
+        } finally {
+            releaseFirstCallback.countDown();
+            releaseCloseAction.countDown();
+            closeExecutor.shutdownNow();
+            processor.clearVideoDataBufferListeners();
+        }
+    }
+
+    @Test
+    public void closeBoundaryDrainsFinitePreRollBeforeClosing() throws Exception {
+        var processor = new MpegTsProcessor("unused");
+        var writing = new AtomicBoolean(false);
+        var events = new CopyOnWriteArrayList<Integer>();
+        var firstCallbackEntered = new CountDownLatch(1);
+        var releaseFirstCallback = new CountDownLatch(1);
+        var listener = new DataBufferListener() {
+            @Override
+            public void onDataBuffer(DataBufferRecord record) {
+                if (!writing.get()) {
+                    return;
+                }
+                int marker = record.getDataBuffer()[0];
+                events.add(marker);
+                if (marker == 1) {
+                    firstCallbackEntered.countDown();
+                    try {
+                        assertTrue(releaseFirstCallback.await(5, TimeUnit.SECONDS));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError(e);
+                    }
+                }
+            }
+
+            @Override public boolean isWriting() { return writing.get(); }
+            @Override public String getName() { return "BUFFERED-CLOSE-TEST"; }
+            @Override public DeliveryMode getDeliveryMode() { return DeliveryMode.BUFFERED; }
+        };
+        var closeExecutor = Executors.newSingleThreadExecutor();
+
+        processor.setFrameBuffer(4);
+        processor.addVideoDataBufferListener(listener);
+        try {
+            for (int marker = 1; marker <= 3; marker++) {
+                queueMarker(processor, marker);
+            }
+
+            writing.set(true);
+            var closeResult = closeExecutor.submit(() -> processor.executeAfterPendingVideoData(listener, () -> {
+                events.add(-1);
+                writing.set(false);
+                return List.copyOf(events);
+            }));
+
+            assertTrue(firstCallbackEntered.await(5, TimeUnit.SECONDS));
+            assertFalse("Close must wait behind every detached pre-roll callback", closeResult.isDone());
+
+            // These packets arrive after the cutoff. They must be retained in the rotated queue,
+            // not extend this close indefinitely or leak into the clip being finalized.
+            queueMarker(processor, 4);
+            queueMarker(processor, 5);
+            releaseFirstCallback.countDown();
+
+            assertEquals(List.of(1, 2, 3, -1), closeResult.get(5, TimeUnit.SECONDS));
+
+            writing.set(true);
+            var nextCloseResult = closeExecutor.submit(() -> processor.executeAfterPendingVideoData(listener, () -> {
+                events.add(-2);
+                writing.set(false);
+                return List.copyOf(events);
+            }));
+            assertEquals(List.of(1, 2, 3, -1, 4, 5, -2),
+                    nextCloseResult.get(5, TimeUnit.SECONDS));
+        } finally {
+            releaseFirstCallback.countDown();
+            closeExecutor.shutdownNow();
+            processor.shutdownExecutors();
+        }
+    }
+
+    private static DataBufferRecord record(int marker) {
+        return new DataBufferRecord(0.0, new byte[] {(byte) marker}, true);
+    }
+
+    private static AVPacket markerPacket(int marker) {
+        AVPacket packet = av_packet_alloc();
+        assertNotNull(packet);
+        assertEquals(0, av_new_packet(packet, 1));
+        packet.data().position(0).put(new byte[] {(byte) marker}, 0, 1);
+        packet.pts(marker);
+        packet.dts(marker);
+        packet.duration(1);
+        packet.time_base(av_make_q(1, 1_000));
+        return packet;
+    }
+
+    private static void queueMarker(MpegTsProcessor processor, int marker) {
+        AVPacket packet = markerPacket(marker);
+        try {
+            processor.submitPacketToFrameQueue(packet);
+        } finally {
+            av_packet_free(packet);
+        }
     }
 
     @Test

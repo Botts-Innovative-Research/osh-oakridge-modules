@@ -134,19 +134,90 @@ public class MpegTsProcessor extends Thread {
      * Keeping the executor here rather than in a side map means it can never go missing while a
      * packet is being dispatched to the listener it belongs to.
      */
-    private record Subscription(DataBufferListener listener, DeliveryMode mode, ExecutorService executor) {
+    private static final class Subscription {
+        private final DataBufferListener listener;
+        private final DeliveryMode mode;
+        private final ExecutorService executor;
+        private final Object submissionLock = new Object();
+        private volatile long generation;
+
+        Subscription(DataBufferListener listener, DeliveryMode mode, ExecutorService executor) {
+            this.listener = listener;
+            this.mode = mode;
+            this.executor = executor;
+        }
+
+        DataBufferListener listener() {
+            return listener;
+        }
+
+        DeliveryMode mode() {
+            return mode;
+        }
 
         void deliver(DataBufferRecord record) {
-            if (executor == null) {
-                listener.onDataBuffer(record);
-            } else {
-                executor.submit(() -> listener.onDataBuffer(record));
+            long attemptedGeneration = generation;
+            synchronized (submissionLock) {
+                if (generation != attemptedGeneration || !listener.isWriting()) {
+                    return;
+                }
+                if (executor == null) {
+                    listener.onDataBuffer(record);
+                    return;
+                }
+
+                long acceptedGeneration = generation;
+                executor.submit(() -> {
+                    // A callback accepted after a close boundary must not leak into a recording
+                    // opened later on the same output.
+                    if (generation == acceptedGeneration) {
+                        listener.onDataBuffer(record);
+                    }
+                });
             }
         }
 
+        <T> T executeAfterPending(Callable<T> action) throws Exception {
+            if (executor == null) {
+                synchronized (submissionLock) {
+                    try {
+                        return action.call();
+                    } finally {
+                        generation++;
+                    }
+                }
+            }
+
+            Future<T> result;
+            synchronized (submissionLock) {
+                result = executor.submit(() -> {
+                    try {
+                        return action.call();
+                    } finally {
+                        // Work submitted after this boundary captured the previous generation and
+                        // is discarded instead of being written to a subsequent recording.
+                        generation++;
+                    }
+                });
+            }
+
+            return MpegTsProcessor.awaitFuture(result);
+        }
+
         void shutdown() {
-            if (executor != null) {
-                executor.shutdownNow();
+            synchronized (submissionLock) {
+                generation++;
+                if (executor != null) {
+                    cancelQueuedTasks(executor.shutdownNow());
+                }
+            }
+        }
+
+        private static void cancelQueuedTasks(List<Runnable> queuedTasks) {
+            for (Runnable task : queuedTasks) {
+                if (task instanceof Future<?> future) {
+                    future.cancel(false);
+                }
             }
         }
     }
@@ -174,6 +245,12 @@ public class MpegTsProcessor extends Thread {
     private int fileFrameQueueMax;
 
     private boolean isSubmittingFrameQueue;
+
+    /** Routes packets arriving after a recording cutoff into the next pre-roll queue. */
+    private boolean bufferedCloseInProgress;
+
+    /** Terminal guard preventing a concurrent close from recreating executors during teardown. */
+    private boolean executorsShuttingDown;
 
     private ExecutorService frameQueueSubmitter;
 
@@ -808,6 +885,114 @@ public class MpegTsProcessor extends Thread {
     }
 
     /**
+     * Executes an action after every packet already accepted for the requested listener. Buffered
+     * replay is drained first, then the action is placed on the listener's own executor. This
+     * provides a close boundary without moving file I/O onto the demux thread.
+     *
+     * <p>Packets accepted after the boundary are tagged with the prior listener generation and
+     * discarded. They therefore cannot leak into a later recording if it opens before all stale
+     * callbacks have left the executor queue.</p>
+     */
+    public <T> T executeAfterPendingVideoData(
+            DataBufferListener videoDataBufferListener, Callable<T> action) throws Exception {
+        Objects.requireNonNull(videoDataBufferListener, "videoDataBufferListener");
+        Objects.requireNonNull(action, "action");
+
+        Subscription target = null;
+        for (var subscription : videoSubscriptions) {
+            if (subscription.listener() == videoDataBufferListener) {
+                target = subscription;
+                break;
+            }
+        }
+
+        // A stopped processor has already removed and shut down its subscriptions. There can be
+        // no pending callbacks to order in that state, but the caller still needs to close its
+        // output resources.
+        if (target == null) {
+            return action.call();
+        }
+
+        if (target.mode() != DeliveryMode.BUFFERED) {
+            return target.executeAfterPending(action);
+        }
+
+        Future<T> bufferedBoundary = null;
+        Queue<AVPacket> closingQueue;
+        synchronized (frameQueueLock) {
+            // This is the recording cutoff. The finite old queue belongs to the recording being
+            // closed; packets arriving from now on are retained in a fresh pre-roll queue.
+            bufferedCloseInProgress = true;
+            closingQueue = fileFrameQueue;
+            if (fileFrameQueue != null) {
+                fileFrameQueue = new ArrayDeque<>(fileFrameQueueMax);
+            }
+
+            boolean replayPending = isSubmittingFrameQueue
+                    || (closingQueue != null && !closingQueue.isEmpty());
+            if (replayPending) {
+                Subscription orderedTarget = target;
+                Queue<AVPacket> finiteQueue = closingQueue;
+                try {
+                    ensureFrameQueueSubmitterLocked();
+                    bufferedBoundary = frameQueueSubmitter.submit(() -> {
+                        try {
+                            drainDetachedFrameQueue(finiteQueue);
+                            return orderedTarget.executeAfterPending(action);
+                        } finally {
+                            drainAndFreeFrameQueue(finiteQueue);
+                        }
+                    });
+                } catch (RejectedExecutionException e) {
+                    bufferedCloseInProgress = false;
+                    drainAndFreeFrameQueue(closingQueue);
+                    throw e;
+                }
+            }
+        }
+
+        try {
+            if (bufferedBoundary != null) {
+                return awaitFuture(bufferedBoundary);
+            }
+            return target.executeAfterPending(action);
+        } finally {
+            drainAndFreeFrameQueue(closingQueue);
+            synchronized (frameQueueLock) {
+                bufferedCloseInProgress = false;
+            }
+        }
+    }
+
+    private static <T> T awaitFuture(Future<T> future) throws Exception {
+        boolean interrupted = false;
+        try {
+            while (true) {
+                try {
+                    return future.get();
+                } catch (InterruptedException e) {
+                    // Leaving while the boundary is still live would let fallback cleanup race
+                    // the queued close action. Finish the boundary, then restore interruption.
+                    interrupted = true;
+                } catch (ExecutionException e) {
+                    Throwable cause = e.getCause();
+                    if (cause instanceof Exception exception) {
+                        throw exception;
+                    }
+                    if (cause instanceof Error error) {
+                        throw error;
+                    }
+                    throw new IllegalStateException("Video delivery boundary failed", cause);
+                }
+            }
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    /**
      * Hands a record to every registered listener that asked for one of the given delivery modes
      * and is currently writing.
      * <p>
@@ -819,6 +1004,8 @@ public class MpegTsProcessor extends Thread {
     protected void notifyVideoDataBufferListeners(DataBufferRecord dataRecord, Set<DeliveryMode> targetModes) {
         DataBufferRecord dataClone = null;
         for (var subscription : videoSubscriptions) {
+            // This unlocked check avoids cloning every packet while outputs are idle. Admission is
+            // checked again atomically inside Subscription.deliver(); this is only a fast path.
             if (!targetModes.contains(subscription.mode()) || !subscription.listener().isWriting()) {
                 continue;
             }
@@ -973,23 +1160,34 @@ public class MpegTsProcessor extends Thread {
     }
 
     private void deliverVideoPacket(AVPacket packet) {
-        boolean isWriting = hasWritingListener();
-        boolean bufferedListenerIsWriting = hasWritingListener(DeliveryMode.BUFFERED);
-        if (bufferedListenerIsWriting) {
-            if (!hasBufferedFramesOrReplay()) {
-                submitPacketToListeners(packet, ALL_MODES);
+        boolean liveListenersDelivered = false;
+        synchronized (frameQueueLock) {
+            boolean bufferedListenerIsWriting = hasWritingListener(DeliveryMode.BUFFERED);
+            if (bufferedListenerIsWriting && !bufferedCloseInProgress) {
+                boolean replayPending = isSubmittingFrameQueue
+                        || (fileFrameQueue != null && !fileFrameQueue.isEmpty());
+                if (!replayPending) {
+                    // Holding frameQueueLock through listener enqueue makes this packet either
+                    // wholly before or wholly after the close cutoff.
+                    submitPacketToListeners(packet, ALL_MODES);
+                    liveListenersDelivered = true;
+                } else {
+                    // BUFFERED listeners receive both pre-roll and subsequent packets in order
+                    // from this explicit queue. LIVE listeners remain current.
+                    submitPacketToFrameQueueLocked(packet);
+                    if (!isSubmittingFrameQueue) {
+                        startFrameQueueSubmissionLocked(fileFrameQueue);
+                    }
+                }
             } else {
-                // BUFFERED listeners receive both pre-roll and subsequent packets in order from
-                // the replay queue. LIVE listeners remain current.
-                submitPacketToListeners(packet, LIVE_MODES);
-                submitPacketToFrameQueue(packet);
-                submitFrameQueueToListenersAsync();
+                // No recording is active, or a close cutoff has already rotated the queue. Retain
+                // this packet only as pre-roll for the next recording.
+                submitPacketToFrameQueueLocked(packet);
             }
-        } else {
-            if (isWriting) {
-                submitPacketToListeners(packet, LIVE_MODES);
-            }
-            submitPacketToFrameQueue(packet);
+        }
+
+        if (!liveListenersDelivered && hasWritingListener(DeliveryMode.LIVE_ONLY)) {
+            submitPacketToListeners(packet, LIVE_MODES);
         }
     }
 
@@ -1000,26 +1198,26 @@ public class MpegTsProcessor extends Thread {
                 : presentationTime * timeBaseUnits;
     }
 
-    private void submitFrameQueueToListenersAsync() {
-        synchronized (frameQueueLock) {
-            if (isSubmittingFrameQueue || fileFrameQueue == null || fileFrameQueue.isEmpty()) {
-                return;
-            }
-            if (!hasWritingListener(DeliveryMode.BUFFERED)) {
-                return;
-            }
+    /** Starts replay while {@link #frameQueueLock} is held. */
+    private void startFrameQueueSubmissionLocked(Queue<AVPacket> replayQueue) {
+        ensureFrameQueueSubmitterLocked();
+        isSubmittingFrameQueue = true;
+        try {
+            frameQueueSubmitter.submit(() -> drainFrameQueueToListeners(replayQueue));
+        } catch (RejectedExecutionException e) {
+            isSubmittingFrameQueue = false;
+            logger.debug("Frame buffer replay executor is shutting down", e);
+        }
+    }
 
-            if (frameQueueSubmitter == null || frameQueueSubmitter.isShutdown()) {
-                frameQueueSubmitter = Executors.newSingleThreadExecutor(
-                        new ListenerThreadFactory(WORKER_THREAD_NAME, "FrameQueueSubmit"));
-            }
-            isSubmittingFrameQueue = true;
-            try {
-                frameQueueSubmitter.submit(this::drainFrameQueueToListeners);
-            } catch (RejectedExecutionException e) {
-                isSubmittingFrameQueue = false;
-                logger.debug("Frame buffer replay executor is shutting down", e);
-            }
+    /** Creates the replay executor while {@link #frameQueueLock} is held. */
+    private void ensureFrameQueueSubmitterLocked() {
+        if (executorsShuttingDown) {
+            throw new RejectedExecutionException("Video processor executors are shutting down");
+        }
+        if (frameQueueSubmitter == null || frameQueueSubmitter.isShutdown()) {
+            frameQueueSubmitter = Executors.newSingleThreadExecutor(
+                    new ListenerThreadFactory(WORKER_THREAD_NAME, "FrameQueueSubmit"));
         }
     }
 
@@ -1027,17 +1225,17 @@ public class MpegTsProcessor extends Thread {
      * Polling transfers native ownership from the queue to this worker. The packet is removed while
      * holding frameQueueLock and is always freed exactly once by this method.
      */
-    private void drainFrameQueueToListeners() {
+    private void drainFrameQueueToListeners(Queue<AVPacket> replayQueue) {
         try {
             while (true) {
                 AVPacket packet;
                 synchronized (frameQueueLock) {
-                    if (!isSubmittingFrameQueue || fileFrameQueue == null
+                    if (!isSubmittingFrameQueue
                             || !hasWritingListener(DeliveryMode.BUFFERED)) {
                         isSubmittingFrameQueue = false;
                         return;
                     }
-                    packet = fileFrameQueue.poll();
+                    packet = replayQueue.poll();
                     if (packet == null) {
                         isSubmittingFrameQueue = false;
                         return;
@@ -1058,7 +1256,32 @@ public class MpegTsProcessor extends Thread {
         }
     }
 
-    private void shutdownExecutors() {
+    /** Drains the finite queue detached at a close cutoff. */
+    private void drainDetachedFrameQueue(Queue<AVPacket> queue) {
+        if (queue == null) {
+            return;
+        }
+        AVPacket packet;
+        while (true) {
+            synchronized (frameQueueLock) {
+                packet = queue.poll();
+            }
+            if (packet == null) {
+                return;
+            }
+            try {
+                submitPacketToListeners(packet, BUFFERED_MODES);
+            } finally {
+                av_packet_free(packet);
+            }
+        }
+    }
+
+    void shutdownExecutors() {
+        synchronized (frameQueueLock) {
+            executorsShuttingDown = true;
+        }
+
         // Stop the producer and consumer before joining either one. Stopping the encoder first
         // while the decoder is still producing leaves orphaned native frames in their shared
         // queue. Interrupt also releases an idle worker immediately.
@@ -1108,7 +1331,14 @@ public class MpegTsProcessor extends Thread {
             submitter = frameQueueSubmitter;
         }
         if (submitter != null) {
-            submitter.shutdownNow();
+            Subscription.cancelQueuedTasks(submitter.shutdownNow());
+        }
+
+        // Cancel listener work before waiting for a frame-boundary worker that may itself be
+        // waiting for a listener action. Canceled FutureTasks wake every boundary waiter.
+        clearVideoDataBufferListeners();
+
+        if (submitter != null) {
             try {
                 if (!submitter.awaitTermination(5, TimeUnit.SECONDS)) {
                     logger.warn("Timed out waiting for frame buffer replay to stop");
@@ -1118,8 +1348,6 @@ public class MpegTsProcessor extends Thread {
             }
         }
 
-        clearVideoDataBufferListeners();
-
         synchronized (frameQueueLock) {
             frameQueueSubmitter = null;
             drainAndFreeFrameQueueLocked();
@@ -1127,26 +1355,30 @@ public class MpegTsProcessor extends Thread {
         }
     }
 
-    private void submitPacketToFrameQueue(AVPacket avPacket) {
+    void submitPacketToFrameQueue(AVPacket avPacket) {
+        synchronized (frameQueueLock) {
+            submitPacketToFrameQueueLocked(avPacket);
+        }
+    }
+
+    private void submitPacketToFrameQueueLocked(AVPacket avPacket) {
+        if (fileFrameQueue == null || fileFrameQueueMax <= 0) {
+            return;
+        }
+
         AVPacket newPacket = avcodec.av_packet_clone(avPacket);
         if (newPacket == null || newPacket.isNull()) {
             logger.error("Could not clone a packet for the frame buffer");
             return;
         }
 
-        synchronized (frameQueueLock) {
-            if (fileFrameQueue == null || fileFrameQueueMax <= 0) {
-                av_packet_free(newPacket);
-                return;
+        while (fileFrameQueue.size() >= fileFrameQueueMax) {
+            AVPacket evictedPacket = fileFrameQueue.poll();
+            if (evictedPacket != null) {
+                av_packet_free(evictedPacket);
             }
-            while (fileFrameQueue.size() >= fileFrameQueueMax) {
-                AVPacket evictedPacket = fileFrameQueue.poll();
-                if (evictedPacket != null) {
-                    av_packet_free(evictedPacket);
-                }
-            }
-            fileFrameQueue.add(newPacket);
         }
+        fileFrameQueue.add(newPacket);
     }
 
     private boolean isFrameBufferEnabled() {
@@ -1155,18 +1387,22 @@ public class MpegTsProcessor extends Thread {
         }
     }
 
-    private boolean hasBufferedFramesOrReplay() {
-        synchronized (frameQueueLock) {
-            return isSubmittingFrameQueue || (fileFrameQueue != null && !fileFrameQueue.isEmpty());
-        }
+    private void drainAndFreeFrameQueueLocked() {
+        drainAndFreeFrameQueue(fileFrameQueue);
     }
 
-    private void drainAndFreeFrameQueueLocked() {
-        if (fileFrameQueue == null) {
+    private void drainAndFreeFrameQueue(Queue<AVPacket> queue) {
+        if (queue == null) {
             return;
         }
-        AVPacket packet;
-        while ((packet = fileFrameQueue.poll()) != null) {
+        while (true) {
+            AVPacket packet;
+            synchronized (frameQueueLock) {
+                packet = queue.poll();
+            }
+            if (packet == null) {
+                return;
+            }
             av_packet_free(packet);
         }
     }

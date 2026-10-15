@@ -161,7 +161,15 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                 else {
                     boolean saveFile = ((Boolean) selected).getValue();
                     try {
-                        this.fileOutput.closeFile();
+                        var processor = this.parentSensor.getProcessor();
+                        if (processor == null) {
+                            this.fileOutput.closeFile();
+                        } else {
+                            processor.executeAfterPendingVideoData(fileOutput, () -> {
+                                fileOutput.closeFile();
+                                return null;
+                            });
+                        }
 
                         // Delete file if we do not want to save
                         if (!saveFile) {
@@ -174,6 +182,16 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                         }
                         fileName = "";
                     } catch (Exception e) {
+                        // A concurrent processor shutdown can reject or cancel the ordered close
+                        // boundary. Always release the native output context before deleting its
+                        // incomplete bucket object.
+                        if (fileOutput.isWriting()) {
+                            try {
+                                fileOutput.closeFile();
+                            } catch (Exception cleanupError) {
+                                e.addSuppressed(cleanupError);
+                            }
+                        }
                         getLogger().error("Exception while closing MP4 output", e);
                         try {
                             if (!fileName.isBlank()) {
