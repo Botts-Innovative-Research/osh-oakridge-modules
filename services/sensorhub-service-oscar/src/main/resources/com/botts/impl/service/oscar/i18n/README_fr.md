@@ -573,6 +573,14 @@ Ouvrez `https://<hote-oscar>/?view=<cle>` ou `https://<hote-oscar>/view/<cle>`. 
 
 Les vues opérationnelles séparent la présentation des postes; elles ne constituent pas une limite d'autorisation. Utilisez l'authentification OSCAR et les contrôles réseau lorsque l'accès doit être restreint.
 
+### 8.9 Afficher la vidéo en direct d'une voie
+
+Ouvrez les **Détails de la voie** pour une voie dotée d'une caméra configurée. Le panneau affiche d'abord **Préparation de la vidéo en direct… en attente d’une image clé.** pendant qu'OSCAR crée une liste de lecture HLS décodable. Avec une caméra conforme, la lecture commence normalement dans l'intervalle entre images clés de la caméra — une à deux secondes — auquel s'ajoute la latence normale du réseau et du navigateur.
+
+La caméra doit fournir une vidéo H.264 avec un GOP fermé et une image IDR/clé toutes les une à deux secondes. Un GOP ouvert ou plus long peut retarder le démarrage ou empêcher le décodage indépendant du premier segment.
+
+Si la récupération automatique limitée est épuisée, le panneau affiche **La vidéo en direct n’a pas pu être lue.** Vérifiez que la caméra et le réseau sont accessibles, puis sélectionnez **Réessayer**. Cette action arrête la tentative précédente et en lance une nouvelle ; elle ne nécessite ni réinitialisation ni redémarrage d'OSCAR, ni réimportation des voies, ni suppression de l'état de l'application ou des volumes Docker.
+
 ## 9. Statistiques nationales
 
 ![Statistiques nationales](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/30-national-statistics.png)

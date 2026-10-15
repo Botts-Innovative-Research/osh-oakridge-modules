@@ -574,6 +574,14 @@ Abra `https://<host-oscar>/?view=<clave>` o `https://<host-oscar>/view/<clave>`.
 
 Las vistas operativas separan la presentación de estaciones; no son un límite de autorización. Use autenticación OSCAR y controles de red cuando deba restringirse el acceso.
 
+### 8.9 Ver el vídeo en directo de un carril
+
+Abra **Detalles del carril** para un carril que tenga una cámara configurada. Al principio, el panel muestra **Preparando el vídeo en directo… esperando un fotograma clave.** mientras OSCAR crea una lista de reproducción HLS decodificable. Con una cámara compatible, la reproducción suele comenzar dentro del intervalo entre fotogramas clave de la cámara —de uno a dos segundos— más la latencia normal de la red y del navegador.
+
+La cámara debe proporcionar vídeo H.264 con un GOP cerrado y un fotograma IDR/clave cada uno o dos segundos. Un GOP abierto o más largo puede retrasar el inicio o impedir que el primer segmento se decodifique de forma independiente.
+
+Si se agota la recuperación automática limitada, el panel muestra **No se pudo reproducir el vídeo en directo.** Compruebe que la cámara y la red estén disponibles y seleccione **Reintentar**. Este botón detiene el intento anterior e inicia uno nuevo; no requiere restablecer ni reiniciar OSCAR, volver a importar carriles ni eliminar el estado de la aplicación o los volúmenes de Docker.
+
 ## 9. Estadísticas nacionales
 
 ![Estadísticas nacionales](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/30-national-statistics.png)

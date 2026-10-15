@@ -588,6 +588,14 @@ Open `https://<oscar-host>/?view=<key>` or `https://<oscar-host>/view/<key>`. OS
 
 Operational views separate workstation presentation; they are not an authorization boundary. Use OSCAR authentication and network controls when access itself must be restricted.
 
+### 8.9 View live lane video
+
+Open **Lane Details** for a lane with a configured camera. The panel initially shows **Preparing live video… waiting for a keyframe.** while OSCAR creates a decodable HLS playlist. With a compliant camera, playback normally begins within the camera's keyframe interval—one to two seconds—plus ordinary network and browser latency.
+
+The camera must provide H.264 with a closed GOP and an IDR/keyframe every one to two seconds. A longer or open GOP can delay startup or prevent the first segment from decoding independently.
+
+If bounded automatic recovery is exhausted, the panel shows **Live video could not be played.** Check that the camera and network are reachable, then select **Retry**. Retry stops the previous stream attempt and starts a fresh one; it does not require resetting or restarting OSCAR, re-importing lanes, or deleting application state or Docker volumes.
+
 ## 9. National statistics
 
 ![National statistics](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/30-national-statistics.png)
