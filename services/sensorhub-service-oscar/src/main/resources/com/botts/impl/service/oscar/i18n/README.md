@@ -477,6 +477,7 @@ Submitting creates an adjudication record; it does not alter the original detect
 
 The **Events** page is the historical list across configured local and federated nodes. It includes all occupancies, not only active unadjudicated alarms. Each row shows the lane and parent node, occupancy ID, start/end time, maximum gamma and neutron count rates, alarm status, and whether an adjudication exists.
 
+- Use **Find event by UUID** to paste the durable event identifier from Event Details, a PDF, or an alarm transfer. OSCAR performs an exact observation lookup rather than requiring a filter chain, then opens that event directly. The identifier is OSCAR's public encoded observation ID; it is labeled Event UUID for operators but is not required to have RFC-4122 UUID punctuation.
 - **Columns** shows/hides optional columns; **Filters** opens server-side filters; **Density** changes row spacing. Filters, counts, pages, and bulk selection apply to the complete matching server-side result set, not only the currently visible page.
 - Build filter groups with **All conditions (AND)** or **Any condition (OR)**, and nest groups when a workflow needs both. Up to 20 rules and three group levels are supported. Node and lane conditions choose the streams to query; occupancy ID, time, gamma/neutron maxima, alarm status, and adjudication conditions are sent to the server for each applicable lane. Applying a filter returns to page 1.
 - Use the operators offered for each field. Times support before, after, and between; numeric values support inclusive limits, between, and exact match; status supports None, Gamma, Neutron, or Gamma & Neutron; adjudication supports Yes/No and empty/not empty.
@@ -492,7 +493,7 @@ The **Events** page is the historical list across configured local and federated
 
 The page can include:
 
-- lane, occupancy, time, alarm status, speed, and other captured fields;
+- Event UUID plus lane, occupancy, time, alarm status, speed, and other captured fields;
 - gamma, threshold, neutron, and supported RS-350 charts;
 - recorded video for the event window;
 - WebID analysis results and the complete logged-adjudication history;
@@ -501,7 +502,9 @@ The page can include:
 - vehicle ID, notes, secondary-inspection status, and adjudication code; and
 - **Export as PDF** for the rendered event report.
 
-Use **Back** to return to the originating list. **CPS** and **NSIGMA** select the gamma chart presentation when both are supported. The video arrows move through camera recordings. **Export as PDF** invokes the browser print dialog for the currently rendered Event Details page; choose the browser's PDF destination to save it. This is separate from the server-generated reports in section 10.
+Use **Copy UUID** when another operator needs to search for the same event. **Copy direct link** creates a node-qualified URL that opens the event without replaying the Events filters; the active operational-view key is retained. A direct link succeeds only while the source observation is retained, the configured node remains reachable, and the current operational view authorizes that lane. OSCAR fails closed when the identifier belongs to a non-occupancy stream or a lane outside the active view.
+
+Use **Back** to return to the originating list. **CPS** and **NSIGMA** select the gamma chart presentation when both are supported. The video arrows move through camera recordings. **Export as PDF** invokes the browser print dialog for the currently rendered Event Details page; choose the browser's PDF destination to save it. The visible Event UUID is included in that PDF. For a just-arrived live event, PDF and QR export remain unavailable while OSCAR resolves the stored Event UUID; if automatic resolution fails, select **Retry** or reopen the event from **Events**. This is separate from the server-generated reports in section 10.
 
 Available data depends on detector type, camera health, retention, event age, user permissions, and WebID connectivity. A missing panel is not proof that the event had no data; verify the lane, stream, camera, and retention status.
 
@@ -548,7 +551,7 @@ Use site procedure—not convenience—to choose a code.
 
 ### 8.6 Transfer an alarm by QR code in an air-gapped environment
 
-OSCAR can package a compact alarm summary in one QR code without contacting an Internet service. The export includes source node and lane, event identity and times, status and maxima, compact adjudication metadata when present, and downsampled gamma, neutron, and threshold chart data. It does **not** include video, evidence files, spectra, or every original chart sample.
+OSCAR can package a compact alarm summary in one QR code without contacting an Internet service. The export includes source node and lane, the Event UUID and human-readable occupancy ID, event times, status and maxima, compact adjudication metadata when present, and downsampled gamma, neutron, and threshold chart data. It does **not** include video, evidence files, spectra, or every original chart sample. New exports require a resolved Event UUID; imported legacy version-1 packages without one remain readable and are labeled accordingly.
 
 To export:
 
@@ -563,7 +566,7 @@ To receive:
 1. Open **Alarm Transfer** from the Viewer navigation.
 2. Use **Start camera scan**, **Scan QR image**, **Import alarm file**, or paste the `OSCAR-ALARM:1:` transport text. Camera scanning requires browser permission and a secure HTTPS context; image/file import remains available when camera access is prohibited.
 3. OSCAR decompresses the package, enforces size and chart-data limits, verifies its SHA-256 transfer digest, and redraws the downsampled charts.
-4. Confirm the node, lane, occupancy, times, status, and charts, then download or share the received alarm file if authorized.
+4. Confirm the node, lane, Event UUID, occupancy, times, status, and charts, then download or share the received alarm file if authorized. The UUID can locate the original only on an OSCAR system that still retains and authorizes that source observation; importing the package does not create a new server event.
 
 > **Security boundary.** The package is compressed and integrity-checked, but it is neither encrypted nor digitally signed. The digest detects corruption; it does not identify the sender because a person who changes the content can compute a new digest. Treat imported data as a portable preview, independently confirm its source before operational use, and transfer it only through media and devices approved by site policy.
 
@@ -758,4 +761,4 @@ When collecting support data, record the OSCAR version, browser, affected lane/o
 
 ---
 
-Document baseline: OSCAR 4.0.0 source behavior, reviewed 2026-09-24. If a later release changes fields or workflows, update the English canonical manual and all three translations together.
+Document baseline: OSCAR 4.0.0 source behavior, reviewed 2026-10-16. If a later release changes fields or workflows, update the English canonical manual and all three translations together.

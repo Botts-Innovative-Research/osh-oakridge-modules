@@ -466,6 +466,7 @@ L'envoi ajoute un enregistrement sans modifier l'observation d'origine. Pour pre
 
 **Événements** est l'historique de tous les nœuds locaux et fédérés configurés, pas seulement des alarmes en attente. Il affiche voie/nœud, ID d'occupation, début/fin, maxima gamma/neutron, état et présence d'une adjudication. Les filtres, décomptes, pages et la sélection groupée s'appliquent à l'ensemble complet des résultats correspondants côté serveur, pas seulement à la page visible.
 
+- Utilisez **Rechercher un événement par UUID** pour coller l'identifiant durable affiché dans les Détails de l'événement, un PDF ou un transfert d'alarme. OSCAR recherche exactement cette observation et ouvre l'événement sans reconstruire une suite de filtres. Il s'agit de l'ID public codé de l'observation OSCAR ; il est présenté comme UUID de l'événement aux opérateurs mais n'est pas tenu d'utiliser la ponctuation RFC-4122.
 - **Colonnes** masque/affiche les champs, **Filtres** ouvre les filtres serveur et **Densité** règle l'espacement.
 - Créez des groupes avec **Toutes les conditions (ET)** ou **Une condition au choix (OU)** et imbriquez-les si les deux logiques sont nécessaires. Jusqu'à 20 règles et trois niveaux de groupes sont admis. Les conditions de nœud et de voie choisissent les flux ; celles d'ID d'occupation, d'heure, de maxima gamma/neutron, d'état et d'adjudication sont envoyées au serveur pour chaque voie concernée. L'application revient à la première page.
 - Utilisez les opérateurs proposés pour chaque champ. Les heures acceptent avant, après et entre ; les nombres, des limites inclusives, entre et l'égalité ; l'état, Aucun, Gamma, Neutron ou Gamma et Neutron ; et l'adjudication, Oui/Non et vide/non vide.
@@ -480,7 +481,7 @@ L'envoi ajoute un enregistrement sans modifier l'observation d'origine. Pour pre
 
 La page peut contenir :
 
-- voie, occupation, heures, alarme, vitesse et autres champs ;
+- UUID de l'événement, voie, occupation, heures, alarme, vitesse et autres champs ;
 - graphiques gamma, seuil, neutrons et RS-350 pris en charge ;
 - vidéo enregistrée pendant l'événement ;
 - données diverses et adjudications précédentes ;
@@ -489,7 +490,9 @@ La page peut contenir :
 - ID véhicule, notes, inspection secondaire et code ; et
 - **Exporter en PDF**.
 
-**Retour** revient à la liste. **CPS/NSIGMA** choisit la présentation gamma prise en charge; les flèches parcourent les vidéos. **Exporter en PDF** ouvre l'impression navigateur de la page rendue; cela diffère des rapports serveur de la section 10.
+Utilisez **Copier l'UUID** pour permettre à un autre opérateur de rechercher le même événement. **Copier le lien direct** crée une URL qualifiée par le nœud qui ouvre l'événement sans répéter les filtres et conserve la vue opérationnelle active. Le lien fonctionne seulement tant que l'observation est conservée, que le nœud reste joignable et que la vue actuelle autorise cette voie. OSCAR rejette les identifiants d'un autre flux ou d'une voie hors périmètre.
+
+**Retour** revient à la liste. **CPS/NSIGMA** choisit la présentation gamma prise en charge; les flèches parcourent les vidéos. **Exporter en PDF** ouvre l'impression navigateur de la page rendue et inclut l'UUID visible. Pour un événement en direct qui vient d'arriver, les exports PDF et QR restent indisponibles pendant qu'OSCAR résout l'UUID enregistré ; si la résolution automatique échoue, sélectionnez **Réessayer** ou rouvrez l'événement depuis **Événements**. Cela diffère des rapports serveur de la section 10.
 
 Les données disponibles dépendent du détecteur, de la caméra, de la conservation, de l'ancienneté, des droits et de WebID. Un panneau vide ne prouve pas l'absence de données: vérifiez voie, flux, caméra et conservation.
 
@@ -533,7 +536,7 @@ Supprimer avant envoi retire seulement l'élément en attente. Après télévers
 
 ### 8.6 Transférer une alarme par code QR dans un environnement isolé
 
-OSCAR peut placer un résumé compact d'alarme dans un seul QR sans service Internet. L'export contient le nœud et la voie d'origine, l'identité et les heures de l'événement, l'état et les maxima, les métadonnées compactes d'adjudication présentes, ainsi que les courbes gamma, neutron et seuil sous-échantillonnées. Il **n'inclut pas** la vidéo, les fichiers de preuve, les spectres ni tous les échantillons d'origine.
+OSCAR peut placer un résumé compact d'alarme dans un seul QR sans service Internet. L'export contient le nœud et la voie d'origine, l'UUID de l'événement et l'ID d'occupation lisible, les heures, l'état et les maxima, les métadonnées compactes d'adjudication présentes, ainsi que les courbes gamma, neutron et seuil sous-échantillonnées. Il **n'inclut pas** la vidéo, les fichiers de preuve, les spectres ni tous les échantillons d'origine. Les nouveaux exports exigent un UUID résolu ; les anciens paquets version 1 qui n'en contiennent pas restent lisibles et sont signalés comme tels.
 
 Pour exporter :
 
@@ -548,7 +551,7 @@ Pour recevoir :
 1. Ouvrez **Transfert d'alarme** dans la navigation du Viewer.
 2. Utilisez **Démarrer le scan caméra**, **Scanner une image QR**, **Importer le fichier d'alarme**, ou collez le texte `OSCAR-ALARM:1:`. La caméra exige une autorisation et un contexte HTTPS sécurisé; l'image ou le fichier reste utilisable lorsque la caméra est interdite.
 3. OSCAR décompresse, applique les limites de taille et de données, vérifie l'empreinte SHA-256 de transfert et redessine les courbes sous-échantillonnées.
-4. Confirmez nœud, voie, occupation, heures, état et courbes, puis téléchargez ou partagez le fichier reçu uniquement si vous y êtes autorisé.
+4. Confirmez nœud, voie, UUID de l'événement, occupation, heures, état et courbes, puis téléchargez ou partagez le fichier reçu uniquement si vous y êtes autorisé. L'UUID ne retrouve l'original que sur un système OSCAR qui conserve encore cette observation et en autorise l'accès ; l'import du paquet ne crée pas un nouvel événement serveur.
 
 > **Limite de sécurité.** Le paquet est comprimé et son intégrité est vérifiée, mais il n'est ni chiffré ni signé numériquement. L'empreinte détecte une corruption; elle n'identifie pas l'expéditeur, car une personne modifiant le contenu peut la recalculer. Considérez-le comme un aperçu portable, confirmez indépendamment sa source avant tout usage opérationnel et utilisez uniquement les supports et appareils autorisés.
 
@@ -726,4 +729,4 @@ Pour l'assistance, relevez version OSCAR, navigateur, voie/occupation, heure et 
 
 ---
 
-Référence du document : comportement du code OSCAR 4.0.0, revu le 2026-09-24. Si une version ultérieure change les champs ou procédures, mettez à jour ensemble le manuel canonique anglais et les trois traductions.
+Référence du document : comportement du code OSCAR 4.0.0, revu le 2026-10-16. Si une version ultérieure change les champs ou procédures, mettez à jour ensemble le manuel canonique anglais et les trois traductions.

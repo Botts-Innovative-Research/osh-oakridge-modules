@@ -466,6 +466,7 @@ El envío añade un registro de adjudicación; no modifica la observación del d
 
 **Eventos** es el historial de todos los nodos locales y federados configurados, no solo alarmas pendientes. Muestra carril/nodo, ID de ocupación, inicio/fin, máximos gamma/neutrón, estado y si existe adjudicación. Los filtros, recuentos, páginas y la selección masiva se aplican al conjunto completo de resultados coincidentes en el servidor, no solo a la página visible.
 
+- Use **Buscar evento por UUID** para pegar el identificador permanente mostrado en Detalles del evento, un PDF o una transferencia de alarma. OSCAR consulta exactamente esa observación y abre el evento sin reconstruir una cadena de filtros. Es el ID público codificado de la observación OSCAR; se presenta como UUID del evento para los operadores, pero no tiene que usar la puntuación RFC-4122.
 - **Columnas** muestra u oculta campos; **Filtros** abre filtros del servidor; **Densidad** cambia el espaciado.
 - Cree grupos con **Todas las condiciones (Y)** o **Cualquier condición (O)** y anide grupos cuando necesite ambas lógicas. Se admiten hasta 20 reglas y tres niveles de grupos. Las condiciones de nodo y carril eligen los flujos; las de ID de ocupación, tiempo, máximos gamma/neutrón, estado y adjudicación se envían al servidor para cada carril aplicable. Al aplicar, se vuelve a la primera página.
 - Use los operadores ofrecidos para cada campo. Las horas admiten antes, después y entre; los números, límites inclusivos, entre e igualdad; el estado, Ninguno, Gamma, Neutrón o Gamma y Neutrón; y la adjudicación, Sí/No y vacío/no vacío.
@@ -481,7 +482,7 @@ El envío añade un registro de adjudicación; no modifica la observación del d
 
 La página puede incluir:
 
-- carril, ocupación, horas, alarma, velocidad y otros campos;
+- UUID del evento, carril, ocupación, horas, alarma, velocidad y otros campos;
 - gráficos gamma, umbral, neutrones y RS-350 compatibles;
 - vídeo grabado durante el evento;
 - datos varios y adjudicaciones anteriores;
@@ -490,7 +491,9 @@ La página puede incluir:
 - ID de vehículo, notas, inspección secundaria y código; y
 - **Exportar como PDF**.
 
-**Atrás** vuelve a la lista. **CPS/NSIGMA** cambia la presentación gamma compatible; las flechas recorren vídeos. **Exportar como PDF** abre la impresión del navegador para la página renderizada; es distinto de los informes del servidor de la sección 10.
+Use **Copiar UUID** para que otro operador pueda buscar el mismo evento. **Copiar enlace directo** crea una URL con el nodo que abre el evento sin repetir los filtros y conserva la vista operativa activa. El enlace funciona solo mientras se conserve la observación, el nodo siga accesible y la vista actual autorice el carril. OSCAR rechaza identificadores de otros flujos o de carriles fuera del ámbito.
+
+**Atrás** vuelve a la lista. **CPS/NSIGMA** cambia la presentación gamma compatible; las flechas recorren vídeos. **Exportar como PDF** abre la impresión del navegador para la página renderizada e incluye el UUID visible. Para un evento en directo recién recibido, la exportación PDF y QR permanece deshabilitada mientras OSCAR resuelve el UUID almacenado; si falla la resolución automática, seleccione **Reintentar** o vuelva a abrir el evento desde **Eventos**. Es distinto de los informes del servidor de la sección 10.
 
 La disponibilidad depende del detector, cámara, retención, antigüedad, permisos y conectividad WebID. Un panel vacío no demuestra ausencia de datos: compruebe carril, flujo, cámara y retención.
 
@@ -534,7 +537,7 @@ Eliminar antes del envío solo quita el elemento pendiente. Tras subirlo, use la
 
 ### 8.6 Transferir una alarma mediante código QR en un entorno aislado
 
-OSCAR puede incluir un resumen compacto de la alarma en un solo código QR sin usar un servicio de Internet. La exportación contiene nodo y carril de origen, identidad y horas del evento, estado y máximos, metadatos compactos de adjudicación si existen, y datos reducidos de los gráficos gamma, neutrón y umbral. **No** contiene vídeo, archivos de evidencia, espectros ni todas las muestras originales.
+OSCAR puede incluir un resumen compacto de la alarma en un solo código QR sin usar un servicio de Internet. La exportación contiene nodo y carril de origen, UUID del evento e ID de ocupación legible, horas, estado y máximos, metadatos compactos de adjudicación si existen, y datos reducidos de los gráficos gamma, neutrón y umbral. **No** contiene vídeo, archivos de evidencia, espectros ni todas las muestras originales. Las exportaciones nuevas requieren un UUID resuelto; los paquetes heredados de versión 1 que no lo contienen siguen siendo legibles y se identifican como tales.
 
 Para exportar:
 
@@ -549,7 +552,7 @@ Para recibir:
 1. Abra **Transferencia de alarmas** en la navegación del Viewer.
 2. Use **Iniciar escaneo con cámara**, **Escanear imagen QR**, **Importar archivo de alarma** o pegue el texto `OSCAR-ALARM:1:`. La cámara exige permiso y HTTPS seguro; la importación por imagen/archivo funciona cuando la cámara está prohibida.
 3. OSCAR descomprime, aplica límites de tamaño y datos, verifica el resumen SHA-256 de transferencia y vuelve a dibujar los gráficos reducidos.
-4. Confirme nodo, carril, ocupación, horas, estado y gráficos; después descargue o comparta el archivo solo si está autorizado.
+4. Confirme nodo, carril, UUID del evento, ocupación, horas, estado y gráficos; después descargue o comparta el archivo solo si está autorizado. El UUID solo localiza el original en un sistema OSCAR que todavía conserve y autorice esa observación; importar el paquete no crea un evento nuevo en el servidor.
 
 > **Límite de seguridad.** El paquete está comprimido y comprueba integridad, pero no está cifrado ni firmado digitalmente. El resumen detecta daños; no identifica al remitente, pues quien cambie el contenido puede calcular otro. Trátelo como vista previa portátil, confirme independientemente su origen antes del uso operativo y transfiéralo solo mediante soportes y dispositivos autorizados.
 
@@ -727,4 +730,4 @@ Para soporte, registre versión OSCAR, navegador, carril/ocupación, hora y zona
 
 ---
 
-Base del documento: comportamiento del código OSCAR 4.0.0, revisado el 2026-09-24. Si una versión posterior cambia campos o flujos, actualice conjuntamente el manual canónico en inglés y las tres traducciones.
+Base del documento: comportamiento del código OSCAR 4.0.0, revisado el 2026-10-16. Si una versión posterior cambia campos o flujos, actualice conjuntamente el manual canónico en inglés y las tres traducciones.
