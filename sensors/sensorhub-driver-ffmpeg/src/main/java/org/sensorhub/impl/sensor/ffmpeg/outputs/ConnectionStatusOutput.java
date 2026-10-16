@@ -72,6 +72,6 @@ public class ConnectionStatusOutput<FFMPEGConfigType extends FFMPEGConfig>
 
     @Override
     public double getAverageSamplingPeriod() {
-        return 0;
+        return FFMPEGSensorBase.CONNECTION_STATUS_HEARTBEAT_PERIOD_SECONDS;
     }
 }

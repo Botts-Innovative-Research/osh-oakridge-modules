@@ -5,11 +5,17 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.api.data.IStreamingDataInterface;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 import org.sensorhub.impl.utils.rad.RADHelper;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ScheduledFuture;
+
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -57,6 +63,8 @@ public class FFMPEGSensorReconnectTest {
         assertSame(sensor.connectionStatusOutput, output);
         assertEquals(RADHelper.getRadUri("ConnectionStatus"),
                 output.getRecordDescription().getComponent("isConnected").getDefinition());
+        assertEquals(FFMPEGSensorBase.CONNECTION_STATUS_HEARTBEAT_PERIOD_SECONDS,
+                output.getAverageSamplingPeriod(), 0.0);
         assertTrue("Stream controls must be configured even while the camera is Offline",
                 sensor.streamControlConfigurationAttempted);
         assertConnectionStatus(false);
@@ -123,6 +131,43 @@ public class FFMPEGSensorReconnectTest {
         sensor.publishConnectionStatus(true);
         sensor.doStop();
         assertConnectionStatus(false);
+    }
+
+    @Test
+    public void connectionStatusHeartbeatRepublishesCurrentState() throws SensorHubException {
+        initializeWithUnavailableSource();
+        IStreamingDataInterface output = sensor.getOutputs().get(CONNECTION_STATUS_OUTPUT);
+        List<Boolean> emittedStates = new ArrayList<>();
+        output.registerListener(event -> {
+            if (event instanceof DataEvent) {
+                DataEvent dataEvent = (DataEvent) event;
+                emittedStates.add(dataEvent.getRecords()[0].getBooleanValue(1));
+            }
+        });
+
+        sensor.publishConnectionStatus(true);
+        sensor.publishConnectionStatusHeartbeat();
+        sensor.publishConnectionStatus(false);
+        sensor.publishConnectionStatusHeartbeat();
+
+        assertEquals(List.of(true, true, false, false), emittedStates);
+        assertConnectionStatus(false);
+    }
+
+    @Test
+    public void connectionStatusHeartbeatStartsOnceAndStopsWithReconnectLifecycle() {
+        sensor.enableReconnect();
+        assertTrue(sensor.isConnectionStatusHeartbeatPending());
+        ScheduledFuture<?> scheduledHeartbeat = sensor.getConnectionStatusHeartbeatTask();
+
+        sensor.enableReconnect();
+        assertTrue(sensor.isConnectionStatusHeartbeatPending());
+        assertSame("Repeated enable must not create another heartbeat task",
+                scheduledHeartbeat, sensor.getConnectionStatusHeartbeatTask());
+
+        sensor.disableReconnect();
+        assertFalse(sensor.isConnectionStatusHeartbeatPending());
+        assertTrue("Disabling reconnect must cancel the heartbeat task", scheduledHeartbeat.isCancelled());
     }
 
     private void initializeWithUnavailableSource() throws SensorHubException {

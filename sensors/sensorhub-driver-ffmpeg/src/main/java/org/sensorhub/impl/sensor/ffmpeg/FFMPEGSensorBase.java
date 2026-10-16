@@ -34,6 +34,10 @@ import org.vast.util.Asserts;
  *   subclasses have slightly different config, so we have to parameterize it.
  */
 public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> extends AbstractSensorModule<FFMPEGconfigType> {
+
+    /** Period used both by the scheduler and the output metadata. */
+    public static final long CONNECTION_STATUS_HEARTBEAT_PERIOD_SECONDS = 30;
+
 	/** Debug logger */
     private static final Logger logger = LoggerFactory.getLogger(FFMPEGSensorBase.class);
 
@@ -59,6 +63,12 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 
     /** Current upstream camera-stream connection state. */
     protected ConnectionStatusOutput<FFMPEGconfigType> connectionStatusOutput;
+
+    /** Serializes lifecycle transitions with heartbeat snapshots and publication. */
+    private final Object connectionStatusLock = new Object();
+
+    /** Last state published by the connection-status output. Guarded by {@link #connectionStatusLock}. */
+    private boolean lastConnectionStatus;
 
     protected FileControl<FFMPEGconfigType> fileControl;
 
@@ -190,8 +200,22 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
     public MpegTsProcessor getProcessor() { return mpegTsProcessor; }
 
     protected void publishConnectionStatus(boolean connected) {
-        if (connectionStatusOutput != null)
-            connectionStatusOutput.publish(connected);
+        synchronized (connectionStatusLock) {
+            lastConnectionStatus = connected;
+            if (connectionStatusOutput != null)
+                connectionStatusOutput.publish(connected);
+        }
+    }
+
+    /**
+     * Republishes the current connection state so retention policies can
+     * distinguish a live, unchanged camera connection from a stale publisher.
+     */
+    protected void publishConnectionStatusHeartbeat() {
+        synchronized (connectionStatusLock) {
+            if (connectionStatusOutput != null)
+                connectionStatusOutput.publish(lastConnectionStatus);
+        }
     }
 
     /**

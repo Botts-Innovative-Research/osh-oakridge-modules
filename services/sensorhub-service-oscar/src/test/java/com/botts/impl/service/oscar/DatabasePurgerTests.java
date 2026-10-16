@@ -11,8 +11,10 @@ import org.junit.Before;
 import org.junit.Test;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.data.DataStreamInfo;
+import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.data.ObsData;
 import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.feature.FeatureId;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabase;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
@@ -55,6 +57,7 @@ public class DatabasePurgerTests {
     private static final String SYSTEM_UID = "urn:osh:test:sensor:lane1";
     private static final String EXPECTED_LANE_ID = "lane1";
     private static final String OUTPUT_DAILY_FILE = "dailyFile";
+    private static final String OUTPUT_CONNECTION_STATUS = "connectionStatus";
     private static final String DAILY_FILES_BUCKET = "dailyfiles";
 
     private MVObsSystemDatabase database;
@@ -180,6 +183,27 @@ public class DatabasePurgerTests {
                 0, bucketStore.getNumObjects(DAILY_FILES_BUCKET));
     }
 
+    @Test
+    public void testConnectionStatusPurgeKeepsRecentHeartbeat() throws Exception {
+        BigId sysId = addSystem();
+        BigId dsId = addConnectionStatusDataStream(sysId);
+        Instant now = Instant.now();
+        addConnectionStatusObservation(dsId, now.minusSeconds(2 * 60 * 60), false);
+        addConnectionStatusObservation(dsId, now.minusSeconds(30), true);
+
+        DatabasePurger purger = new DatabasePurger(database, bucketStore, 30);
+        purger.purgeOldConnectionStatus();
+
+        List<IObsData> remaining = database.getObservationStore()
+                .select(new ObsFilter.Builder()
+                        .withDataStreams(dsId)
+                        .build())
+                .toList();
+        assertEquals("Expired connection history should be removed", 1, remaining.size());
+        assertTrue("The recent Online heartbeat must remain queryable",
+                remaining.get(0).getResult().getBooleanValue(1));
+    }
+
     // ==================== Helper Methods ====================
 
     private BigId addSystem() throws DataStoreException {
@@ -214,6 +238,47 @@ public class DatabasePurgerTests {
                 .withRecordEncoding(new TextEncodingImpl())
                 .build();
         return database.getDataStreamStore().add(dsInfo).getInternalID();
+    }
+
+    private DataComponent createConnectionStatusStruct() {
+        RADHelper radHelper = new RADHelper();
+        var samplingTime = radHelper.createPrecisionTimeStamp();
+        var isConnected = radHelper.createBoolean()
+                .name("isConnected")
+                .label("Is Connected")
+                .definition(RADHelper.getRadUri("ConnectionStatus"))
+                .build();
+        return radHelper.createRecord()
+                .name(OUTPUT_CONNECTION_STATUS)
+                .label("Connection Status")
+                .updatable(true)
+                .addField(samplingTime.getName(), samplingTime)
+                .addField(isConnected.getName(), isConnected)
+                .build();
+    }
+
+    private BigId addConnectionStatusDataStream(BigId sysId) throws DataStoreException {
+        DataComponent recordStruct = createConnectionStatusStruct();
+        var dsInfo = new DataStreamInfo.Builder()
+                .withName(OUTPUT_CONNECTION_STATUS)
+                .withSystem(new FeatureId(sysId, SYSTEM_UID))
+                .withRecordDescription(recordStruct)
+                .withRecordEncoding(new TextEncodingImpl())
+                .build();
+        return database.getDataStreamStore().add(dsInfo).getInternalID();
+    }
+
+    private void addConnectionStatusObservation(BigId dsId, Instant timestamp, boolean connected) {
+        DataComponent recordStruct = createConnectionStatusStruct();
+        DataBlock block = recordStruct.createDataBlock();
+        block.setTimeStamp(0, timestamp);
+        block.setBooleanValue(1, connected);
+        ObsData obs = new ObsData.Builder()
+                .withDataStream(dsId)
+                .withPhenomenonTime(timestamp)
+                .withResult(block)
+                .build();
+        database.getObservationStore().add(obs);
     }
 
     private void addDailyFileObservations(BigId dsId, Instant yesterdayStart, List<String> messages) {
