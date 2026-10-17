@@ -6,6 +6,7 @@ import org.junit.rules.TemporaryFolder;
 import org.sensorhub.mpegts.MpegTsProcessor;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -156,23 +157,19 @@ public class VideoRetentionSafetyTest {
         }
     }
 
-    private static Path bundledH264Fixture() {
+    private static Path bundledH264Fixture() throws URISyntaxException {
         String configuredFixture = System.getenv("H264_RETENTION_TEST_FILE");
         if (configuredFixture != null && Files.isRegularFile(Path.of(configuredFixture))) {
             return Path.of(configuredFixture);
         }
 
-        Path parentBuildFixture = Path.of(
-                "include/osh-oakridge-modules/sensors/sensorhub-driver-ffmpeg/src/test/resources/"
-                        + "org/sensorhub/impl/sensor/ffmpeg/sample-stream.ts").toAbsolutePath();
-        if (Files.isRegularFile(parentBuildFixture)) {
-            return parentBuildFixture;
-        }
-
-        Path moduleBuildFixture = Path.of(
-                "sensors/sensorhub-driver-ffmpeg/src/test/resources/"
-                        + "org/sensorhub/impl/sensor/ffmpeg/sample-stream.ts").toAbsolutePath();
-        assertTrue("Bundled H.264 retention fixture is missing", Files.isRegularFile(moduleBuildFixture));
-        return moduleBuildFixture;
+        var fixtureResource = VideoRetentionSafetyTest.class.getResource(
+                "/org/sensorhub/impl/sensor/ffmpeg/sample-stream.ts");
+        assertNotNull("Bundled H.264 retention fixture is missing", fixtureResource);
+        assertEquals("Bundled H.264 retention fixture must be a file resource",
+                "file", fixtureResource.getProtocol());
+        Path fixture = Path.of(fixtureResource.toURI());
+        assertTrue("Bundled H.264 retention fixture is missing", Files.isRegularFile(fixture));
+        return fixture;
     }
 }

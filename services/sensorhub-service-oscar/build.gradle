@@ -20,6 +20,16 @@ dependencies {
     testImplementation 'org.sensorhub:sensorhub-service-consys:' + oshCoreVersion
 }
 
+// Reuse the deterministic H.264 transport-stream fixture maintained by the
+// FFmpeg driver tests.  Adding it to this module's test resources keeps the
+// retention tests independent of Gradle's current working directory without
+// duplicating a multi-megabyte binary in the repository.
+sourceSets {
+    test {
+        resources.srcDir project(':sensorhub-driver-ffmpeg').file('src/test/resources')
+    }
+}
+
 // add info to OSGi manifest
 osgi {
     manifest {

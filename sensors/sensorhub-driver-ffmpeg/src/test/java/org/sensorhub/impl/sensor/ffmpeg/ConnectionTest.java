@@ -153,8 +153,14 @@ public abstract class ConnectionTest {
 
     @AfterClass
     public static void cleanupClass() throws Exception {
-        driver.stop();
+        if (driver != null) {
+            driver.stop();
+        }
         driver = null;
+
+        if (bucketService == null) {
+            return;
+        }
 
         var store = bucketService.getBucketStore();
         var files = store.listObjects("videos");
