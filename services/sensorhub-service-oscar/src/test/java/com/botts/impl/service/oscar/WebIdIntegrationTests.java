@@ -66,9 +66,14 @@ public class WebIdIntegrationTests {
 
     private static final Logger log = LoggerFactory.getLogger(WebIdIntegrationTests.class);
 
-    private static final String RPM_HOST = "100.94.197.23";
-//    private static final String RPM_HOST = System.getenv("RPM_HOST"); //"192.168.1.211";
-    private static final int RPM_PORT = 1601;
+    private static final String RUN_EXTERNAL_TESTS_ENV = "OSCAR_RUN_WEBID_EXTERNAL_TESTS";
+    private static final String RPM_HOST_ENV = "OSCAR_WEBID_TEST_RPM_HOST";
+    private static final String RPM_PORT_ENV = "OSCAR_WEBID_TEST_RPM_PORT";
+    private static final String RPM_START_TIMEOUT_ENV = "OSCAR_WEBID_TEST_RPM_START_TIMEOUT_MS";
+    private static final String WEBID_API_URL_ENV = "OSCAR_WEBID_TEST_API_URL";
+    private static final int DEFAULT_RPM_PORT = 1601;
+    private static final long DEFAULT_RPM_START_TIMEOUT_MS = 10_000L;
+    private static final String DEFAULT_WEBID_API_URL = "https://full-spectrum.sandia.gov/api/v1";
     private static final String DB_PATH = "webid_test.dat";
     private static final String BUCKET_ROOT = "webid_test_bucket";
     private static final String TEST_BUCKET = "webid-uploads";
@@ -84,7 +89,7 @@ public class WebIdIntegrationTests {
         hub = new SensorHub();
         hub.start();
         reg = hub.getModuleRegistry();
-        webIdClient = new WebIdClient("https://full-spectrum.sandia.gov/api/v1");
+        webIdClient = new WebIdClient(environmentOrDefault(WEBID_API_URL_ENV, DEFAULT_WEBID_API_URL));
     }
 
     @After
@@ -109,6 +114,51 @@ public class WebIdIntegrationTests {
 
     // ==================== Helper Methods ====================
 
+    private static void requireExternalIntegration() {
+        Assume.assumeTrue(
+                "Requires an explicitly configured live WebID/RPM integration environment; see the repository README",
+                Boolean.parseBoolean(System.getenv(RUN_EXTERNAL_TESTS_ENV)));
+    }
+
+    private static String requiredEnvironment(String name) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank())
+            throw new IllegalStateException(name + " must be set when live WebID integration tests are enabled");
+        return value;
+    }
+
+    private static String environmentOrDefault(String name, String defaultValue) {
+        String value = System.getenv(name);
+        return value == null || value.isBlank() ? defaultValue : value;
+    }
+
+    private static int integerEnvironmentOrDefault(String name, int defaultValue) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank())
+            return defaultValue;
+
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException(name + " must be an integer", e);
+        }
+    }
+
+    private static long positiveLongEnvironmentOrDefault(String name, long defaultValue) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank())
+            return defaultValue;
+
+        try {
+            long parsed = Long.parseLong(value);
+            if (parsed <= 0)
+                throw new IllegalStateException(name + " must be greater than zero");
+            return parsed;
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException(name + " must be an integer", e);
+        }
+    }
+
     private SystemDriverDatabase loadAndStartDB() throws SensorHubException {
         var config = (SystemDriverDatabaseConfig) reg.createModuleConfig(new SystemDriverDatabaseDescriptor());
         var dbConfig = (MVObsSystemDatabaseConfig) reg.createModuleConfig(new MVObsSystemDatabaseDescriptor());
@@ -124,8 +174,8 @@ public class WebIdIntegrationTests {
         LaneConfig config = (LaneConfig) reg.createModuleConfig(new Descriptor());
         config.laneOptionsConfig = new LaneOptionsConfig();
         config.laneOptionsConfig.rpmConfig = new RapiscanRPMConfig();
-        config.laneOptionsConfig.rpmConfig.remoteHost = RPM_HOST;
-        config.laneOptionsConfig.rpmConfig.remotePort = RPM_PORT;
+        config.laneOptionsConfig.rpmConfig.remoteHost = requiredEnvironment(RPM_HOST_ENV);
+        config.laneOptionsConfig.rpmConfig.remotePort = integerEnvironmentOrDefault(RPM_PORT_ENV, DEFAULT_RPM_PORT);
         config.uniqueID = "test-lane-webid";
         config.name = "WebID Lane";
         config.laneOptionsConfig.ffmpegConfig = new ArrayList<>();
@@ -134,9 +184,9 @@ public class WebIdIntegrationTests {
 
     private LaneSystem loadAndStartLane(LaneConfig config) throws SensorHubException {
         LaneSystem lane = (LaneSystem) reg.loadModule(config);
-        reg.startModule(lane.getLocalID());
-        boolean isStarted = lane.waitForState(ModuleEvent.ModuleState.STARTED, 10000);
-        assertTrue("Lane should start successfully", isStarted);
+        reg.startModule(
+                lane.getLocalID(),
+                positiveLongEnvironmentOrDefault(RPM_START_TIMEOUT_ENV, DEFAULT_RPM_START_TIMEOUT_MS));
         return lane;
     }
 
@@ -286,6 +336,8 @@ public class WebIdIntegrationTests {
 
     @Test
     public void test01_WebIdAnalysisWithN42File() throws IOException, InterruptedException {
+        requireExternalIntegration();
+
         WebIdRequest request = new WebIdRequest.Builder()
                 .foreground(WebIdIntegrationTests.class.getResourceAsStream("/webid/n42/ex_I131_DetectiveEX.n42"))
                 .drf("Detective-EX")
@@ -464,6 +516,8 @@ public class WebIdIntegrationTests {
 
     @Test
     public void test07_HttpUploadWithWebIdEnabled() throws SensorHubException, IOException, InterruptedException {
+        requireExternalIntegration();
+
         // Full integration test: HTTP upload with webIdEnabled=true
 
         // Setup infrastructure
@@ -559,6 +613,8 @@ public class WebIdIntegrationTests {
 
     @Test
     public void test08_HttpMultipartUploadWithWebIdEnabled() throws SensorHubException, IOException, InterruptedException {
+        requireExternalIntegration();
+
         // Test multipart POST upload with webIdEnabled=true
 
         // Setup infrastructure
@@ -621,6 +677,8 @@ public class WebIdIntegrationTests {
 
     @Test
     public void test10_FullAdjudicationWithWebIdWorkflow() throws SensorHubException, IOException, InterruptedException, ExecutionException {
+        requireExternalIntegration();
+
         // Complete workflow: upload n42 file with WebID, then submit adjudication
 
         // Setup infrastructure

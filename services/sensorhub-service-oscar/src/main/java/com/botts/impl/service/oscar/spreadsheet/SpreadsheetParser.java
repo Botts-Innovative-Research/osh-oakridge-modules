@@ -22,13 +22,19 @@ public class SpreadsheetParser {
     }
 
     public void validateHeader(String headerLine) throws IllegalArgumentException {
+        if (headerLine == null)
+            throw new IllegalArgumentException("Spreadsheet must include a header row");
+
         String[] values = headerLine.split(DELIMITER, -1);
 
-        int baseLength = schema.getHeaders().size();
-        int extraLength = values.length - baseLength;
+        boolean currentSchema = values.length > 5 && Objects.equals(values[5], SchemaV1.OPERATIONAL_VIEWS);
+        String[] mainHeaders = currentSchema ? SchemaV1.MAIN_HEADERS : SchemaV1.LEGACY_MAIN_HEADERS;
+
+        int cameraColumnCount = values.length - mainHeaders.length;
 
         // Ensure extra headers in groups of 6
-        if (extraLength < 0 || extraLength % SchemaV1.CAMERA_HEADERS.length != 0) {
+        if (cameraColumnCount < SchemaV1.CAMERA_HEADERS.length
+                || cameraColumnCount % SchemaV1.CAMERA_HEADERS.length != 0) {
             throw new IllegalArgumentException(
                     "Extra cameras must be configured as " +
                             "[CameraTypeX, CameraHostX, CameraPathX, CodecX, UsernameX, PasswordX] " +
@@ -37,20 +43,20 @@ public class SpreadsheetParser {
         }
 
         // Validate fixed headers
-        for (int i = 0; i < SchemaV1.MAIN_HEADERS.length; i++) {
+        for (int i = 0; i < mainHeaders.length; i++) {
             String current = values[i];
-            String expected = SchemaV1.MAIN_HEADERS[i];
+            String expected = mainHeaders[i];
             if (!Objects.equals(current, expected)) {
                 throw new IllegalArgumentException("Expected: " + expected + " Got: " + current);
             }
         }
 
         // Validate camera headers
-        int numExtraGroups = extraLength / SchemaV1.CAMERA_HEADERS.length;
-        for (int camIndex = 0; camIndex < numExtraGroups; camIndex++) {
+        int numCameraGroups = cameraColumnCount / SchemaV1.CAMERA_HEADERS.length;
+        for (int camIndex = 0; camIndex < numCameraGroups; camIndex++) {
             for (int j = 0; j < SchemaV1.CAMERA_HEADERS.length; j++) {
                 String expected = SchemaV1.CAMERA_HEADERS[j].replace("0", String.valueOf(camIndex));
-                String actual = values[SchemaV1.MAIN_HEADERS.length + camIndex * SchemaV1.CAMERA_HEADERS.length + j];
+                String actual = values[mainHeaders.length + camIndex * SchemaV1.CAMERA_HEADERS.length + j];
                 if (!Objects.equals(expected, actual)) {
                     throw new IllegalArgumentException(
                             "Expected camera header: " + expected + " Got: " + actual
@@ -102,6 +108,15 @@ public class SpreadsheetParser {
         laneConfig.name = row.get(SchemaV1.NAME);
         laneConfig.uniqueID = row.get(SchemaV1.UID);
         laneConfig.autoStart = Boolean.parseBoolean(row.get(SchemaV1.AUTO_START));
+
+        String operationalViews = row.get(SchemaV1.OPERATIONAL_VIEWS);
+        if (operationalViews != null && !operationalViews.isBlank()) {
+            laneConfig.operationalViewKeys = Arrays.stream(operationalViews.split(";"))
+                    .map(String::trim)
+                    .filter(value -> !value.isBlank())
+                    .distinct()
+                    .toList();
+        }
 
         if (!row.get(SchemaV1.LATITUDE).isBlank() && !row.get(SchemaV1.LONGITUDE).isBlank()) {
             PositionConfig.LLALocation location = new PositionConfig.LLALocation();
@@ -207,10 +222,12 @@ public class SpreadsheetParser {
 
 
     public String serialize(Collection<LaneConfig> lanes) {
-        int maxCameras = lanes.stream()
-                .mapToInt(lane -> lane.laneOptionsConfig.ffmpegConfig == null ? 0 : lane.laneOptionsConfig.ffmpegConfig.size())
+        int maxCameras = Math.max(1, lanes.stream()
+                .mapToInt(lane -> lane.laneOptionsConfig == null || lane.laneOptionsConfig.ffmpegConfig == null
+                        ? 0
+                        : lane.laneOptionsConfig.ffmpegConfig.size())
                 .max()
-                .orElse(0);
+                .orElse(0));
 
         StringBuilder builder = new StringBuilder()
                 .append(String.join(DELIMITER, schema.getHeaders(maxCameras)))
@@ -238,8 +255,13 @@ public class SpreadsheetParser {
         } else
             addNullsToRow(r, 2);
 
+        addToRow(r, String.join(";", lane.operationalViewKeys == null ? List.of() : lane.operationalViewKeys));
+
         var opts = lane.laneOptionsConfig;
-        var rpm = opts.rpmConfig;
+        var rpm = opts == null ? null : opts.rpmConfig;
+        List<FFMpegConfig> cameras = opts == null || opts.ffmpegConfig == null
+                ? List.of()
+                : opts.ffmpegConfig;
         if (rpm != null) {
             if (rpm instanceof AspectRPMConfig aspect) {
                 addToRow(r, "Aspect");
@@ -275,8 +297,8 @@ public class SpreadsheetParser {
 
         // Add header and vals for default camera
         for (int i = 0; i < maxCameras; i++) {
-            if (opts.ffmpegConfig.size() > i) {
-                var cam = opts.ffmpegConfig.get(i);
+            if (cameras.size() > i) {
+                var cam = cameras.get(i);
 
                 if (cam instanceof CustomCameraConfig custom) {
                     addToRow(r, "Custom");

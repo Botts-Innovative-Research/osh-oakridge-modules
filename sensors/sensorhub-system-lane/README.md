@@ -13,6 +13,7 @@ Click 'Add New Module' and select 'Lane System' from the list of available modul
   - Module Name: A unique name for the Lane, must be less than 12 characters
   - UniqueID: The platform's serial number, or a unique identifier, this will be used for all submodules and must be unique.
   - Auto Start: Check the box to start this module when OSH node is launched
+  - Operational View Keys: Add one or more workstation view keys (for example, `north-gate`). A lane can belong to multiple views. Leave empty to show the lane only in the unscoped view.
   - Delete Data on Lane Removal: Check the box to remove systems data from database if lane is deleted from node.
 
 **- Fixed Location:**
@@ -40,3 +41,17 @@ Click 'Add New Module' and select 'Lane System' from the list of available modul
         - Stream Codec:
       - **Custom (Specific):**
         - Stream Path: Enter everything that comes after your camera's `ip.ip.ip.ip:port` (e.g., `/lane04_cam`).
+
+## Tests
+
+The default lane-module test suite is self-contained. Adjudication is tested with a local H2 system-driver database and an inserted occupancy, so it does not need a live RPM.
+
+The four tests that start real Rapiscan or Aspect drivers are skipped unless explicitly enabled. Run them only against an authorized test RPM or emulator:
+
+```sh
+OSCAR_RUN_RPM_HARDWARE_TESTS=true \
+RPM_HOST=192.0.2.10 \
+../../gradlew :sensorhub-system-lane:test --tests LaneTests
+```
+
+`testSingleRapiscan` connects to port `1601`, `testSingleAspect` connects to port `502`, and the two multi-Rapiscan tests require endpoints on ports `1601` through `1624`. These tests no longer depend on an external camera stream.

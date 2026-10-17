@@ -2,6 +2,7 @@ package com.botts.impl.system.lane.helpers.occupancy.state;
 
 import net.opengis.swe.v20.DataComponent;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BooleanSupplier;
@@ -98,18 +99,27 @@ public abstract class StateManager {
         //transitionMap.put(state, transitions);
     }
 
-    public void updateDailyFile(DataComponent dailyFile) {
+    /**
+     * Applies one RPM daily-file sample.
+     *
+     * @return {@code true} when the sample contained a recognized occupancy
+     * state, or {@code false} when it was empty, malformed, or unrelated to an
+     * occupancy transition
+     */
+    public boolean updateDailyFile(DataComponent dailyFile) {
         lock.lock();
         try {
             this.dailyFile = dailyFile;
-            parseDailyFile();
+            if (!parseDailyFile())
+                return false;
             stateActionMap.get(currentState).run();
+            return true;
         } finally {
             lock.unlock();
         }
     }
 
-    protected abstract void parseDailyFile();
+    protected abstract boolean parseDailyFile();
 
     protected void transitionToState(State newState) {
         notifyStateTransition(currentState, newState);
@@ -123,6 +133,8 @@ public abstract class StateManager {
     }
 
     public State getCurrentState() { return currentState; }
+    public boolean hasActiveOccupancy() { return currentState != State.NON_OCCUPANCY; }
+    public Instant getOccupancyStartTimeHint() { return null; }
     public void addListener(IStateListener listener) { listeners.add(listener); }
     public void removeListener(IStateListener listener) { listeners.remove(listener); }
     public void clearListeners() { listeners.clear(); }

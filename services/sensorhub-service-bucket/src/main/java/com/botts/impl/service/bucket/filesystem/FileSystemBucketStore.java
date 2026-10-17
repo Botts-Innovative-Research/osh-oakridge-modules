@@ -347,6 +347,24 @@ public class FileSystemBucketStore implements IBucketStore {
     }
 
     @Override
+    public String getWritableResourceURI(String bucketName, String key) throws DataStoreException {
+        if (!bucketExists(bucketName))
+            throw new DataStoreException(BUCKET_NOT_FOUND);
+
+        try {
+            UploadPolicy.validateUpload(key, Map.of());
+            Path bucketPath = getBucketPath(bucketName).toRealPath();
+            Path objectPath = resolveObjectPath(bucketName, key);
+            Path parent = objectPath.getParent();
+            if (parent != null && !Files.exists(parent))
+                createObjectParentDirectories(bucketPath, parent);
+            return objectPath.toString();
+        } catch (IOException e) {
+            throw new DataStoreException(FAILED_PUT_OBJECT + bucketName, e);
+        }
+    }
+
+    @Override
     public String getRelativeResourceURI(String bucketName, String key) throws DataStoreException {
         if (!bucketExists(bucketName))
             throw new DataStoreException(BUCKET_NOT_FOUND);
