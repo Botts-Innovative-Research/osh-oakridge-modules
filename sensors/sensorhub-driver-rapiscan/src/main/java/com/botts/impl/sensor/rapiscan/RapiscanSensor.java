@@ -221,6 +221,12 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
         connection.waitForConnection();
 
+        // A newly established RPM connection starts from a known, non-tamper
+        // baseline. Publish it before the reader starts so a TT received from
+        // the RPM immediately afterwards always wins. doStart() also runs
+        // after RobustConnection reconnects the module.
+        getTamperOutput().onConnected();
+
         try{
             initMsgHandler();
         }catch(IOException e){

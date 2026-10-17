@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class RapiscanThreadPoolManager {
 
     private static final Logger logger = LoggerFactory.getLogger(RapiscanThreadPoolManager.class);
+    private static final int MAX_MESSAGE_READERS = 100;
     private static volatile RapiscanThreadPoolManager instance;
     private static final Object lock = new Object();
 
@@ -24,9 +25,9 @@ public class RapiscanThreadPoolManager {
 
         messageReaderPool = new ThreadPoolExecutor(
                 0,
-                50,
+                MAX_MESSAGE_READERS,
                 60L, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(),
+                new SynchronousQueue<>(),
                 new NamedThreadFactory("Rapiscan-MessageReader")
         );
 
@@ -45,7 +46,7 @@ public class RapiscanThreadPoolManager {
         );
 
         logger.info("RapiscanThreadPoolManager initialized with {} processors", availableProcessors);
-        logger.info("Message reader pool: 0-100 threads");
+        logger.info("Message reader pool: 0-{} threads", MAX_MESSAGE_READERS);
         logger.info("Heartbeat pool: {} threads", Math.min(10, availableProcessors));
         logger.info("Processing pool: {}-{} threads", availableProcessors, availableProcessors * 2);
     }
