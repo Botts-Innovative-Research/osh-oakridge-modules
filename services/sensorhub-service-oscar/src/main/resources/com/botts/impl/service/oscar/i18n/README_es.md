@@ -1,4 +1,4 @@
-# Manual de administración y operación de OSCAR 4.0.0
+# Manual de administración y operación de OSCAR 3.9.1
 
 Este manual cubre el primer uso y la operación completa: certificado, acceso, plano georreferenciado, importación/creación de carriles, adjudicación y evidencias, eventos, estadísticas nacionales, informes y federación de nodos.
 
@@ -32,7 +32,7 @@ La interfaz de administración selecciona automáticamente la versión del manua
 
 Necesita:
 
-- un despliegue OSCAR 4.0.0 instalado y en ejecución;
+- un despliegue OSCAR 3.9.1 instalado y en ejecución;
 - la URL de OSCAR, normalmente `https://oscar.local/` salvo que se haya elegido otro host;
 - una cuenta administradora para `/sensorhub/admin`;
 - la imagen aprobada del sitio y la latitud/longitud de sus esquinas inferior izquierda y superior derecha;
@@ -699,7 +699,7 @@ Antes de cambiar retención, base de datos, ruta o **Eliminar datos al eliminar 
 | OSM 403/bloqueado | No use directamente servidores voluntarios incumpliendo su política. Configure proveedor/proxy OSM aprobado o use Esri mientras se corrige. |
 | CSV rechazado | Revise encabezado/orden, grupos de seis, índices secuenciales, número de celdas, numéricos, vacíos sin comillas y ausencia de comas internas. |
 | Falta un carril tras CSV | Busque UniqueID ya cargado, nombre mayor de 12, errores de hijos y espere la carga asíncrona. |
-| **Sensores** está vacío tras reiniciar después de cargar el CSV | La carga creó módulos en memoria, pero no se conservó la configuración completa. Vuelva a cargar si hace falta, espere a que aparezcan todos los carriles e hijos, pulse **Guardar** globalmente, reinicie OSCAR y compruebe otra vez **Sensores**. Si un nodo 4.0.0 sigue perdiendo los carriles, revise los logs de OSCAR y verifique que el propietario pueda escribir en `/var/lib/oscar/config.json`. |
+| **Sensores** está vacío tras reiniciar después de cargar el CSV | La carga creó módulos en memoria, pero no se conservó la configuración completa. Vuelva a cargar si hace falta, espere a que aparezcan todos los carriles e hijos, pulse **Guardar** globalmente, reinicie OSCAR y compruebe otra vez **Sensores**. Si un nodo 3.9.1 sigue perdiendo los carriles, revise los logs de OSCAR y verifique que el propietario pueda escribir en `/var/lib/oscar/config.json`. |
 | Una vista operativa está vacía o rechaza su clave | Confirme que **Claves de vista operativa** del carril contiene exactamente la clave en minúsculas, aplique y guarde globalmente, reinicie el carril si procede y use `?view=<clave>` o `/view/<clave>`. Una asignación vacía nunca coincide con una vista delimitada. |
 | RPM no inicia | Pruebe alcance del host, puerto, cortafuegos, rango Aspect y disponibilidad; revise el error del hijo. |
 | Cámara no inicia | Pruebe RTSP/credenciales, quite `rtsp://` del host, no duplique puerto, confirme códec Axis o ruta Custom y pruebe desde el host OSCAR. |
@@ -730,4 +730,4 @@ Para soporte, registre versión OSCAR, navegador, carril/ocupación, hora y zona
 
 ---
 
-Base del documento: comportamiento del código OSCAR 4.0.0, revisado el 2026-10-16. Si una versión posterior cambia campos o flujos, actualice conjuntamente el manual canónico en inglés y las tres traducciones.
+Base del documento: comportamiento del código OSCAR 3.9.1, revisado el 2026-10-16. Si una versión posterior cambia campos o flujos, actualice conjuntamente el manual canónico en inglés y las tres traducciones.

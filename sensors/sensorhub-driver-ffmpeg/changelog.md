@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Changed
-- **Breaking API change for OSCAR 4.0.0:** `MpegTsProcessor.getAvStream()` was removed because
+- **Internal integration change for OSCAR 3.9.1:** `MpegTsProcessor.getAvStream()` was removed because
   it returned a borrowed native `AVStream` pointer that could become invalid during reconnect or
   shutdown. Integrations must call `getVideoStreamSnapshot()` instead and free the snapshot's
   owned `codecParameters()` with `avcodec_parameters_free` when finished. Time-base, duration, and
