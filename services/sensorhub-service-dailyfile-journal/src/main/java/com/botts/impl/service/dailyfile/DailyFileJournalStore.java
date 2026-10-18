@@ -25,6 +25,8 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
@@ -36,6 +38,8 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
@@ -43,12 +47,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.PriorityQueue;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.CRC32C;
 
 /**
@@ -71,6 +77,8 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     static final int LIFECYCLE_MAINTENANCE_DAY_LIMIT = 16;
     static final long LIFECYCLE_MAINTENANCE_INTERVAL_MILLIS = 60_000;
     static final int MAX_METADATA_BYTES = 64 * 1024;
+    static final int MAX_CONFIRMATION_SET_BYTES = 64 * 1024 * 1024;
+    static final int MAX_CONFIRMATION_SET_RECEIPTS = 250_000;
     static final int MAX_IDENTIFIER_BYTES = 4 * 1024;
     static final String DELETION_STAGING_PREFIX = ".deleting-";
     static final DateTimeFormatter LEGACY_TIME = DateTimeFormatter
@@ -81,6 +89,7 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     private final Path segmentsDirectory;
     private final Path ledgerDirectory;
     private final Path backupConfirmationDirectory;
+    private final Path backupConfirmationSetDirectory;
     private final Path observationPurgeCheckpointDirectory;
     private final Path publicationDirectory;
     private final ZoneId zoneId;
@@ -95,6 +104,9 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     private final Clock clock;
     private final Logger log;
     private final Map<String, LaneState> lanes = new ConcurrentHashMap<>();
+    private final Map<String, ConfirmationSetIndex> confirmationSetIndexes =
+            new ConcurrentHashMap<>();
+    private final AtomicInteger confirmationSetMarkerLoads = new AtomicInteger();
     private final ScheduledExecutorService forceScheduler;
     private final ScheduledExecutorService lifecycleScheduler;
     private final Object lifecycleLock = new Object();
@@ -139,12 +151,14 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
         this.segmentsDirectory = journalDirectory.resolve("segments");
         this.ledgerDirectory = journalDirectory.resolve("ledger");
         this.backupConfirmationDirectory = journalDirectory.resolve("backup-confirmations");
+        this.backupConfirmationSetDirectory = backupConfirmationDirectory.resolve(".sets");
         this.observationPurgeCheckpointDirectory = journalDirectory.resolve(
                 "observation-purge-checkpoints");
 
         createConfinedDirectories(this.rootDirectory, segmentsDirectory);
         createConfinedDirectories(this.rootDirectory, ledgerDirectory);
         createConfinedDirectories(this.rootDirectory, backupConfirmationDirectory);
+        createConfinedDirectories(backupConfirmationDirectory, backupConfirmationSetDirectory);
         createConfinedDirectories(this.rootDirectory, observationPurgeCheckpointDirectory);
         createConfinedDirectories(this.rootDirectory, publicationDirectory);
         validateOrInitializeJournalMetadata();
@@ -270,6 +284,16 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
                                 String publishedSha256, String backupReference,
                                 List<SealedSegmentIdentity> backedUpSegments)
             throws IOException {
+        PreparedBackupConfirmation prepared = preparePublishedBackupConfirmation(laneId,
+                startInclusive, endExclusive, publishedSha256, backupReference,
+                backedUpSegments);
+        commitPreparedBackupConfirmations("direct-" + UUID.randomUUID(), List.of(prepared));
+    }
+
+    PreparedBackupConfirmation preparePublishedBackupConfirmation(
+            String laneId, Instant startInclusive, Instant endExclusive,
+            String publishedSha256, String backupReference,
+            List<SealedSegmentIdentity> backedUpSegments) throws IOException {
         String checkedLaneId = requireLaneId(laneId);
         if (publishedSha256 == null || !publishedSha256.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("publishedSha256 must be a lowercase SHA-256 digest");
@@ -294,19 +318,228 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
             throw new IOException("Backup sealed-segment inventory does not match live lane/day");
         if (liveSegments.isEmpty())
             throw new IOException("Backup confirmation requires at least one sealed segment");
-        String json = "{\n"
-                + "  \"schemaVersion\":1,\n"
-                + "  \"laneId\":\"" + jsonEscape(checkedLaneId) + "\",\n"
-                + "  \"day\":\"" + day + "\",\n"
-                + "  \"windowStartInclusive\":\"" + startInclusive + "\",\n"
-                + "  \"windowEndExclusive\":\"" + endExclusive + "\",\n"
-                + "  \"sha256\":\"" + publishedSha256 + "\",\n"
-                + "  \"backupReference\":\"" + jsonEscape(backupReference) + "\",\n"
-                + "  \"sealedSegments\":" + sealedSegmentInventoryJson(liveSegments) + ",\n"
-                + "  \"confirmedAt\":\"" + clock.instant() + "\"\n"
-                + "}\n";
-        atomicWrite(backupConfirmationPath(checkedLaneId, day),
-                json.getBytes(StandardCharsets.UTF_8));
+        return new PreparedBackupConfirmation(backupConfirmationPath(checkedLaneId, day),
+                checkedLaneId, day, startInclusive, endExclusive, publishedSha256,
+                backupReference, List.copyOf(liveSegments));
+    }
+
+    void commitPreparedBackupConfirmations(String confirmationSet,
+                                            List<PreparedBackupConfirmation> confirmations)
+            throws IOException {
+        if (confirmationSet == null
+                || !confirmationSet.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}"))
+            throw new IOException("Backup confirmation set ID is invalid");
+        Objects.requireNonNull(confirmations, "confirmations");
+        if (confirmations.isEmpty())
+            return;
+        List<PreparedBackupConfirmation> ordered = new ArrayList<>(confirmations);
+        Set<Path> uniqueTargets = new HashSet<>();
+        for (PreparedBackupConfirmation prepared : ordered) {
+            Path target = prepared.target().toAbsolutePath().normalize();
+            if (!target.startsWith(backupConfirmationDirectory)
+                    || target.startsWith(backupConfirmationSetDirectory)
+                    || !target.getFileName().toString().endsWith(".json")
+                    || !uniqueTargets.add(target))
+                throw new IOException("Backup confirmation set has an invalid or duplicate target");
+        }
+        ordered.sort(Comparator.comparing(value -> confirmationRelativePath(value.target())));
+        if (ordered.size() > MAX_CONFIRMATION_SET_RECEIPTS)
+            throw new IOException("Backup confirmation set has too many receipts");
+        Path marker = confirmationSetMarkerPath(confirmationSet);
+        if (Files.exists(marker, LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("Backup confirmation set is already committed: "
+                    + confirmationSet);
+        Instant confirmedAt = clock.instant();
+        List<CommittedConfirmation> committed = new ArrayList<>(ordered.size());
+        for (PreparedBackupConfirmation prepared : ordered) {
+            byte[] receipt = prepared.json(confirmationSet, confirmedAt)
+                    .getBytes(StandardCharsets.UTF_8);
+            committed.add(new CommittedConfirmation(prepared.target(),
+                    confirmationRelativePath(prepared.target()), sha256(receipt), receipt));
+        }
+        StringBuilder markerJson = new StringBuilder("{\n")
+                .append("  \"schemaVersion\":1,\n")
+                .append("  \"format\":\"oscar-dailyfile-backup-confirmation-set\",\n")
+                .append("  \"confirmationSet\":\"").append(jsonEscape(confirmationSet))
+                .append("\",\n")
+                .append("  \"receiptCount\":").append(ordered.size()).append(",\n")
+                .append("  \"committedAt\":\"").append(confirmedAt).append("\",\n")
+                .append("  \"receipts\":[\n");
+        for (int index = 0; index < committed.size(); index++) {
+            CommittedConfirmation receipt = committed.get(index);
+            markerJson.append("    {\"path\":\"").append(jsonEscape(receipt.path()))
+                    .append("\",\"sha256\":\"").append(receipt.sha256()).append("\"}");
+            if (index + 1 < committed.size())
+                markerJson.append(',');
+            markerJson.append('\n');
+        }
+        markerJson.append("  ]\n}\n");
+        byte[] markerBytes = markerJson.toString().getBytes(StandardCharsets.UTF_8);
+        if (markerBytes.length > MAX_CONFIRMATION_SET_BYTES)
+            throw new IOException("Backup confirmation set marker exceeds its safety limit");
+        // Every receipt is durable before the one atomic marker that makes the complete set
+        // visible to retention. A crash or write failure before that marker is therefore safe:
+        // uncommitted receipts cannot authorize deletion.
+        for (CommittedConfirmation receipt : committed)
+            atomicWrite(receipt.target(), receipt.contents());
+        atomicWriteNew(marker, markerBytes);
+    }
+
+    private String confirmationRelativePath(Path target) {
+        return backupConfirmationDirectory.relativize(target.toAbsolutePath().normalize())
+                .toString().replace('\\', '/');
+    }
+
+    private Path confirmationSetMarkerPath(String confirmationSet) {
+        return backupConfirmationSetDirectory.resolve(confirmationSet + ".json");
+    }
+
+    private boolean isConfirmationSetCommitted(Path confirmation, JsonObject receipt)
+            throws IOException {
+        if (!receipt.has("confirmationSet"))
+            return false;
+        String confirmationSet = requiredText(receipt, "confirmationSet");
+        if (!confirmationSet.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}"))
+            return false;
+        ConfirmationSetIndex index = confirmationSetIndex(confirmationSet);
+        String relative = confirmationRelativePath(confirmation);
+        String expectedSha256 = index.receiptSha256().get(relative);
+        return expectedSha256 != null && expectedSha256.equals(sha256(confirmation));
+    }
+
+    ConfirmationSetIndex confirmationSetIndex(String confirmationSet) throws IOException {
+        Path marker = confirmationSetMarkerPath(confirmationSet);
+        ConfirmationSetIndex cached = confirmationSetIndexes.get(confirmationSet);
+        if (cached != null) {
+            if (cached.markerIdentity().equals(confirmationSetMarkerIdentity(marker)))
+                return cached;
+            confirmationSetIndexes.remove(confirmationSet, cached);
+            throw new IOException("Immutable backup confirmation set marker changed");
+        }
+        synchronized (confirmationSetIndexes) {
+            cached = confirmationSetIndexes.get(confirmationSet);
+            if (cached != null) {
+                if (cached.markerIdentity().equals(confirmationSetMarkerIdentity(marker)))
+                    return cached;
+                confirmationSetIndexes.remove(confirmationSet, cached);
+                throw new IOException("Immutable backup confirmation set marker changed");
+            }
+            ConfirmationSetIndex loaded = readConfirmationSetIndex(confirmationSet, marker);
+            confirmationSetIndexes.put(confirmationSet, loaded);
+            confirmationSetMarkerLoads.incrementAndGet();
+            return loaded;
+        }
+    }
+
+    private ConfirmationSetIndex readConfirmationSetIndex(String confirmationSet, Path markerPath)
+            throws IOException {
+        ConfirmationSetMarkerIdentity before = confirmationSetMarkerIdentity(markerPath);
+        JsonObject marker = readJsonObject(markerPath,
+                "backup confirmation set marker", MAX_CONFIRMATION_SET_BYTES);
+        if (requiredLong(marker, "schemaVersion") != 1
+                || !"oscar-dailyfile-backup-confirmation-set".equals(
+                requiredText(marker, "format"))
+                || !confirmationSet.equals(requiredText(marker, "confirmationSet")))
+            throw new IOException("Backup confirmation set marker identity is invalid");
+        JsonElement receiptList = marker.get("receipts");
+        if (receiptList == null || !receiptList.isJsonArray())
+            throw new IOException("Backup confirmation set receipt index is missing");
+        JsonArray receipts = receiptList.getAsJsonArray();
+        long advertisedCount = requiredLong(marker, "receiptCount");
+        if (advertisedCount <= 0 || advertisedCount != receipts.size()
+                || receipts.size() > MAX_CONFIRMATION_SET_RECEIPTS)
+            throw new IOException("Backup confirmation set receipt count is invalid");
+        Map<String, String> receiptSha256 = new HashMap<>(receipts.size());
+        String previousPath = null;
+        for (JsonElement element : receipts) {
+            if (!element.isJsonObject())
+                throw new IOException("Backup confirmation set receipt entry is invalid");
+            JsonObject member = element.getAsJsonObject();
+            String relative = requiredText(member, "path");
+            String expectedSha256 = requiredText(member, "sha256");
+            if (!relative.matches("[A-Za-z0-9._-]+/[0-9]{4}-[0-9]{2}-[0-9]{2}\\.json")
+                    || !expectedSha256.matches("[0-9a-f]{64}")
+                    || (previousPath != null && previousPath.compareTo(relative) >= 0))
+                throw new IOException("Backup confirmation set receipt index is invalid at "
+                        + relative);
+            if (receiptSha256.put(relative, expectedSha256) != null)
+                throw new IOException("Backup confirmation set contains a duplicate receipt");
+            previousPath = relative;
+        }
+        ConfirmationSetMarkerIdentity after = confirmationSetMarkerIdentity(markerPath);
+        if (!before.equals(after))
+            throw new IOException("Backup confirmation set marker changed while being read");
+        return new ConfirmationSetIndex(Map.copyOf(receiptSha256), after);
+    }
+
+    private static ConfirmationSetMarkerIdentity confirmationSetMarkerIdentity(Path marker)
+            throws IOException {
+        BasicFileAttributes attributes = Files.readAttributes(marker,
+                BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        if (!attributes.isRegularFile() || attributes.isSymbolicLink()
+                || Files.isSymbolicLink(marker))
+            throw new IOException("Backup confirmation set marker is linked or non-regular");
+        Object key = attributes.fileKey();
+        return new ConfirmationSetMarkerIdentity(key == null ? "" : key.toString(),
+                attributes.size(), attributes.lastModifiedTime());
+    }
+
+    int confirmationSetMarkerLoadCount() {
+        return confirmationSetMarkerLoads.get();
+    }
+
+    private static String sha256(byte[] contents) {
+        return HexFormat.of().formatHex(sha256Digest().digest(contents));
+    }
+
+    record CommittedConfirmation(Path target, String path, String sha256, byte[] contents) {
+        CommittedConfirmation {
+            contents = contents.clone();
+        }
+
+        @Override
+        public byte[] contents() {
+            return contents.clone();
+        }
+    }
+
+    record ConfirmationSetIndex(Map<String, String> receiptSha256,
+                                ConfirmationSetMarkerIdentity markerIdentity) {
+    }
+
+    record ConfirmationSetMarkerIdentity(String fileKey, long size, FileTime lastModifiedTime) {
+    }
+
+    record PreparedBackupConfirmation(Path target, String laneId, LocalDate day,
+                                      Instant startInclusive, Instant endExclusive,
+                                      String publishedSha256, String backupReference,
+                                      List<SealedSegmentIdentity> sealedSegments) {
+        PreparedBackupConfirmation {
+            Objects.requireNonNull(target, "target");
+            Objects.requireNonNull(laneId, "laneId");
+            Objects.requireNonNull(day, "day");
+            Objects.requireNonNull(startInclusive, "startInclusive");
+            Objects.requireNonNull(endExclusive, "endExclusive");
+            Objects.requireNonNull(publishedSha256, "publishedSha256");
+            Objects.requireNonNull(backupReference, "backupReference");
+            sealedSegments = List.copyOf(sealedSegments);
+        }
+
+        String json(String confirmationSet, Instant confirmedAt) {
+            return "{\n"
+                    + "  \"schemaVersion\":1,\n"
+                    + "  \"laneId\":\"" + jsonEscape(laneId) + "\",\n"
+                    + "  \"day\":\"" + day + "\",\n"
+                    + "  \"windowStartInclusive\":\"" + startInclusive + "\",\n"
+                    + "  \"windowEndExclusive\":\"" + endExclusive + "\",\n"
+                    + "  \"sha256\":\"" + publishedSha256 + "\",\n"
+                    + "  \"backupReference\":\"" + jsonEscape(backupReference) + "\",\n"
+                    + "  \"confirmationSet\":\"" + jsonEscape(confirmationSet) + "\",\n"
+                    + "  \"sealedSegments\":"
+                    + sealedSegmentInventoryJson(sealedSegments) + ",\n"
+                    + "  \"confirmedAt\":\"" + confirmedAt + "\"\n"
+                    + "}\n";
+        }
     }
 
     @Override
@@ -333,7 +566,8 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
             List<SealedSegmentIdentity> confirmedSegments = parseSealedSegmentInventory(json);
             List<SealedSegmentIdentity> liveSegments = sealedSegmentInventory(
                     segmentDayDirectory(checkedLaneId, day));
-            return checkedLaneId.equals(requiredText(json, "laneId"))
+            return isConfirmationSetCommitted(confirmation, json)
+                    && checkedLaneId.equals(requiredText(json, "laneId"))
                     && startInclusive.toString().equals(requiredText(json, "windowStartInclusive"))
                     && endExclusive.toString().equals(requiredText(json, "windowEndExclusive"))
                     && checksum.equals(requiredText(json, "sha256"))
@@ -646,17 +880,22 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     }
 
     private static JsonObject readJsonObject(Path path, String description) throws IOException {
+        return readJsonObject(path, description, MAX_METADATA_BYTES);
+    }
+
+    private static JsonObject readJsonObject(Path path, String description, int maxBytes)
+            throws IOException {
         if (!isRegularFileNoFollow(path))
             throw new IOException("Missing, linked, or non-regular " + description + ": " + path);
         long advertisedSize = fileSizeNoFollow(path);
-        if (advertisedSize <= 0 || advertisedSize > MAX_METADATA_BYTES)
+        if (advertisedSize <= 0 || advertisedSize > maxBytes)
             throw new IOException("Invalid " + description + " size: " + advertisedSize);
         byte[] contents;
         try (InputStream input = Files.newInputStream(path, StandardOpenOption.READ,
                 LinkOption.NOFOLLOW_LINKS)) {
-            contents = input.readNBytes(MAX_METADATA_BYTES + 1);
+            contents = input.readNBytes(maxBytes + 1);
         }
-        if (contents.length == 0 || contents.length > MAX_METADATA_BYTES)
+        if (contents.length == 0 || contents.length > maxBytes)
             throw new IOException("Invalid " + description + " size: " + contents.length);
         try {
             JsonElement parsed = JsonParser.parseString(new String(contents,
@@ -1472,6 +1711,34 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
             throw e;
         }
         forceDirectory(target.getParent());
+    }
+
+    private static void atomicWriteNew(Path target, byte[] contents) throws IOException {
+        if (Files.exists(target, LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("Refusing to replace existing immutable journal artifact "
+                    + target);
+        Path parent = target.getParent();
+        if (parent == null || !Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(parent))
+            throw new IOException("Refusing to write through a linked or missing directory: "
+                    + parent);
+        Path partial = target.resolveSibling("." + target.getFileName() + ".partial-"
+                + UUID.randomUUID());
+        try (FileChannel channel = FileChannel.open(partial, StandardOpenOption.CREATE_NEW,
+                StandardOpenOption.WRITE)) {
+            writeFully(channel, ByteBuffer.wrap(contents));
+            channel.force(true);
+        } catch (IOException e) {
+            Files.deleteIfExists(partial);
+            throw e;
+        }
+        try {
+            atomicMoveNew(partial, target);
+        } catch (IOException e) {
+            Files.deleteIfExists(partial);
+            throw e;
+        }
+        forceDirectory(parent);
     }
 
     private static void atomicMoveNew(Path source, Path target) throws IOException {

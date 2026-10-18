@@ -101,9 +101,17 @@ checks and has been atomically marked `VERIFIED`, the backup workflow runs the o
 CLI against its securely extracted `oscar-state` snapshot. The CLI requires exact equality between
 snapshot and stopped live state for every sealed segment name, byte count, and SHA-256; it also
 validates the published CSV, manifest, and ledger. It rejects linked, open, missing, extra, or
-changed entries and writes the exact immutable segment inventory plus the authenticated backup ID
-and state-archive hash. The journal recomputes that inventory immediately before pruning, so a late
-old-day segment invalidates the receipt. Only a matching receipt and elapsed
+changed entries. All lane/day candidates are validated before any receipt is written. The CLI then
+writes the exact immutable segment inventories with the authenticated backup ID and state-archive
+hash, flushes them, and atomically publishes one confirmation-set marker last. That immutable marker
+enumerates the exact relative path and SHA-256 of every member; receipts created without this 3.9.2
+set protocol, absent from the index, or changed afterward cannot authorize pruning. A late validation
+error, write failure, or interruption therefore cannot expose a partially confirmed set. The marker
+index is parsed and bounded once per running store, while each retention check revalidates the
+marker's no-follow file identity and hashes only its current small receipt. Deleting or replacing a
+loaded marker fails closed without repeated whole-set filesystem scans. The journal recomputes each segment
+inventory immediately before pruning, so a late old-day segment also invalidates the receipt. Only a matching
+committed receipt and elapsed
 `sealedJournalRetentionDays` permit removal. A value of `0` disables segment pruning. CSVs,
 manifests, ledgers, confirmations, and purge checkpoints remain application state.
 

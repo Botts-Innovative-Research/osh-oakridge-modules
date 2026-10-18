@@ -18,6 +18,7 @@ import java.time.LocalDate;
 import java.time.Clock;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -79,7 +80,7 @@ public final class DailyFileBackupConfirmationCli {
         String backupReference = "oscar-backup:" + backupId
                 + "/oscar-state.tar.gz#sha256=" + oscarStateSha256;
 
-        int confirmed = 0;
+        List<DailyFileJournalStore.PreparedBackupConfirmation> prepared = new ArrayList<>();
         try (DailyFileJournalStore live = new DailyFileJournalStore(liveStorage, config,
                 Clock.systemUTC(), LoggerFactory.getLogger(DailyFileBackupConfirmationCli.class), false);
              DirectoryStream<Path> laneLedgers = Files.newDirectoryStream(ledgers)) {
@@ -128,15 +129,15 @@ public final class DailyFileBackupConfirmationCli {
                         String checksum = DailyFileJournalStore.sha256(csv);
                         validatePublicationJson(ledgerJson, readObject(manifest), laneId, day,
                                 window, csvName, manifestName, checksum, Files.size(csv));
-                        live.confirmPublishedBackup(laneId, window.startInclusive(),
-                                window.endExclusive(), checksum, backupReference,
-                                snapshotInventory);
-                        confirmed++;
+                        prepared.add(live.preparePublishedBackupConfirmation(laneId,
+                                window.startInclusive(), window.endExclusive(), checksum,
+                                backupReference, snapshotInventory));
                     }
                 }
             }
+            live.commitPreparedBackupConfirmations(backupId, prepared);
         }
-        return confirmed;
+        return prepared.size();
     }
 
     private static DailyFileJournalServiceConfig readConfig(Path configPath) throws IOException {

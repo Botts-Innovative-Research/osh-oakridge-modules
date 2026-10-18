@@ -445,6 +445,179 @@ public class DailyFileJournalStoreTest {
     }
 
     @Test
+    public void confirmationSetWriteFailureCannotPartiallyAuthorizePruning() throws Exception {
+        String firstLane = "lane-a-confirmation-set";
+        String secondLane = "lane-z-confirmation-set";
+        Instant timestamp = clock.instant();
+        LocalDate day = LocalDate.ofInstant(timestamp, NEW_YORK);
+        DailyFileJournalStore.DayWindow window =
+                DailyFileJournalStore.DayWindow.forDate(day, NEW_YORK);
+
+        try (DailyFileJournalStore store = newStore()) {
+            store.openWriter(firstLane).append("first", timestamp);
+            store.openWriter(secondLane).append("second", timestamp.plusMillis(1));
+            clock.set(window.endExclusive().plusSeconds(1));
+            store.sealCompletedDays(clock.instant());
+
+            Path firstDay = laneDirectory(firstLane).resolve(day.toString());
+            Path secondDay = laneDirectory(secondLane).resolve(day.toString());
+            DailyFileJournalStore.PreparedBackupConfirmation first =
+                    store.preparePublishedBackupConfirmation(firstLane,
+                            window.startInclusive(), window.endExclusive(),
+                            DailyFileJournalStore.sha256(publishedFile(firstLane, day)),
+                            "oscar-backup:verified-first",
+                            DailyFileJournalStore.sealedSegmentInventory(firstDay));
+            DailyFileJournalStore.PreparedBackupConfirmation second =
+                    store.preparePublishedBackupConfirmation(secondLane,
+                            window.startInclusive(), window.endExclusive(),
+                            DailyFileJournalStore.sha256(publishedFile(secondLane, day)),
+                            "oscar-backup:verified-first",
+                            DailyFileJournalStore.sealedSegmentInventory(secondDay));
+
+            Path blockedParent = second.target().getParent();
+            Files.delete(blockedParent);
+            Files.writeString(blockedParent, "not-a-directory", StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE_NEW);
+            assertThrows(IOException.class, () -> store.commitPreparedBackupConfirmations(
+                    "verified-first", List.of(first, second)));
+
+            assertTrue("The fixture must fail after at least one receipt was made durable",
+                    Files.isRegularFile(first.target()));
+            assertFalse(Files.exists(root.resolve(
+                    ".dailyfile-journal/backup-confirmations/.sets/verified-first.json")));
+            assertFalse("An uncommitted receipt must never authorize pruning",
+                    store.isBackupConfirmed(firstLane,
+                            window.startInclusive(), window.endExclusive()));
+            assertFalse(store.isBackupConfirmed(secondLane,
+                    window.startInclusive(), window.endExclusive()));
+        }
+    }
+
+    @Test
+    public void confirmationSetBindsEveryReceiptAndRejectsUncommittedFormats() throws Exception {
+        String firstLane = "lane-bound-first";
+        String secondLane = "lane-bound-second";
+        String forgedLane = "lane-bound-forged";
+        Instant timestamp = clock.instant();
+        LocalDate day = LocalDate.ofInstant(timestamp, NEW_YORK);
+        DailyFileJournalStore.DayWindow window =
+                DailyFileJournalStore.DayWindow.forDate(day, NEW_YORK);
+
+        try (DailyFileJournalStore store = newStore()) {
+            for (String lane : List.of(firstLane, secondLane, forgedLane))
+                store.openWriter(lane).append(lane, timestamp);
+            clock.set(window.endExclusive().plusSeconds(1));
+            store.sealCompletedDays(clock.instant());
+
+            DailyFileJournalStore.PreparedBackupConfirmation first = prepareConfirmation(
+                    store, firstLane, day, window, "oscar-backup:bound-set");
+            DailyFileJournalStore.PreparedBackupConfirmation second = prepareConfirmation(
+                    store, secondLane, day, window, "oscar-backup:bound-set");
+            DailyFileJournalStore.PreparedBackupConfirmation forged = prepareConfirmation(
+                    store, forgedLane, day, window, "oscar-backup:bound-set");
+            store.commitPreparedBackupConfirmations("bound-set", List.of(first, second));
+            assertTrue(store.isBackupConfirmed(firstLane,
+                    window.startInclusive(), window.endExclusive()));
+            assertTrue(store.isBackupConfirmed(secondLane,
+                    window.startInclusive(), window.endExclusive()));
+
+            String oldFormat = forged.json("unused-set", clock.instant())
+                    .replace("  \"confirmationSet\":\"unused-set\",\n", "");
+            Files.writeString(forged.target(), oldFormat, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE_NEW);
+            assertFalse("A receipt without a committed confirmation set is never trusted",
+                    store.isBackupConfirmed(forgedLane,
+                            window.startInclusive(), window.endExclusive()));
+
+            Files.writeString(forged.target(), forged.json("bound-set", clock.instant()),
+                    StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING);
+            assertFalse("Copying a valid set ID cannot forge set membership",
+                    store.isBackupConfirmed(forgedLane,
+                            window.startInclusive(), window.endExclusive()));
+
+            Files.delete(second.target());
+            assertTrue("An immutable set index keeps an independently valid member usable",
+                    store.isBackupConfirmed(firstLane,
+                            window.startInclusive(), window.endExclusive()));
+            assertFalse(store.isBackupConfirmed(secondLane,
+                    window.startInclusive(), window.endExclusive()));
+
+            Files.delete(first.target().getParent().getParent()
+                    .resolve(".sets/bound-set.json"));
+            assertFalse("A cached index must fail closed when its commit marker disappears",
+                    store.isBackupConfirmed(firstLane,
+                            window.startInclusive(), window.endExclusive()));
+        }
+    }
+
+    private DailyFileJournalStore.PreparedBackupConfirmation prepareConfirmation(
+            DailyFileJournalStore store, String lane, LocalDate day,
+            DailyFileJournalStore.DayWindow window, String backupReference) throws IOException {
+        return store.preparePublishedBackupConfirmation(lane,
+                window.startInclusive(), window.endExclusive(),
+                DailyFileJournalStore.sha256(publishedFile(lane, day)), backupReference,
+                DailyFileJournalStore.sealedSegmentInventory(
+                        laneDirectory(lane).resolve(day.toString())));
+    }
+
+    @Test
+    public void largeConfirmationSetIndexIsParsedOnlyOncePerStore() throws Exception {
+        String lane = "lane-scale-confirmation-set";
+        Instant timestamp = clock.instant();
+        LocalDate day = LocalDate.ofInstant(timestamp, NEW_YORK);
+        DailyFileJournalStore.DayWindow window =
+                DailyFileJournalStore.DayWindow.forDate(day, NEW_YORK);
+
+        try (DailyFileJournalStore store = newStore()) {
+            store.openWriter(lane).append("scale", timestamp);
+            clock.set(window.endExclusive().plusSeconds(1));
+            store.sealCompletedDays(clock.instant());
+            DailyFileJournalStore.PreparedBackupConfirmation prepared = prepareConfirmation(
+                    store, lane, day, window, "oscar-backup:scale-set");
+            store.commitPreparedBackupConfirmations("scale-set", List.of(prepared));
+
+            Path confirmationRoot = prepared.target().getParent().getParent();
+            String currentPath = confirmationRoot.relativize(prepared.target())
+                    .toString().replace('\\', '/');
+            String currentSha = DailyFileJournalStore.sha256(prepared.target());
+            List<String> members = new java.util.ArrayList<>(18_000);
+            for (int index = 0; index < 17_999; index++) {
+                members.add(String.format("bulk%05d/2026-01-01.json|%s", index,
+                        "a".repeat(64)));
+            }
+            members.add(currentPath + "|" + currentSha);
+            members.sort(String::compareTo);
+            StringBuilder marker = new StringBuilder("{\n")
+                    .append("  \"schemaVersion\":1,\n")
+                    .append("  \"format\":\"oscar-dailyfile-backup-confirmation-set\",\n")
+                    .append("  \"confirmationSet\":\"scale-set\",\n")
+                    .append("  \"receiptCount\":18000,\n")
+                    .append("  \"committedAt\":\"").append(clock.instant()).append("\",\n")
+                    .append("  \"receipts\":[\n");
+            for (int index = 0; index < members.size(); index++) {
+                String[] member = members.get(index).split("\\|", 2);
+                marker.append("    {\"path\":\"").append(member[0])
+                        .append("\",\"sha256\":\"").append(member[1]).append("\"}");
+                if (index + 1 < members.size())
+                    marker.append(',');
+                marker.append('\n');
+            }
+            marker.append("  ]\n}\n");
+            Files.writeString(confirmationRoot.resolve(".sets/scale-set.json"), marker,
+                    StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING);
+
+            assertEquals(18_000,
+                    store.confirmationSetIndex("scale-set").receiptSha256().size());
+            for (int pass = 0; pass < 32; pass++) {
+                assertTrue(store.isBackupConfirmed(lane,
+                        window.startInclusive(), window.endExclusive()));
+            }
+            assertEquals("A large immutable marker must not be reparsed for every lane/day",
+                    1, store.confirmationSetMarkerLoadCount());
+        }
+    }
+
+    @Test
     public void interruptedSealedJournalDeletionResumesWithoutRepublishingPartialDay()
             throws Exception {
         config.sealedJournalRetentionDays = 1;
@@ -610,6 +783,7 @@ public class DailyFileJournalStoreTest {
                 """, StandardCharsets.UTF_8);
 
         String laneId = "urn:oscar:lane:backup-cli";
+        String secondLaneId = "urn:oscar:lane:backup-cli-second";
         Instant timestamp = clock.instant();
         LocalDate day = LocalDate.ofInstant(timestamp, NEW_YORK);
         DailyFileJournalStore.DayWindow window =
@@ -617,6 +791,7 @@ public class DailyFileJournalStoreTest {
         try (DailyFileJournalStore live = new DailyFileJournalStore(liveStorage, cliConfig,
                 clock, LoggerFactory.getLogger(getClass()), false)) {
             live.openWriter(laneId).append("captured", timestamp);
+            live.openWriter(secondLaneId).append("captured-second", timestamp.plusMillis(1));
             clock.set(window.endExclusive().plusSeconds(1));
             live.sealCompletedDays(clock.instant());
         }
@@ -638,23 +813,48 @@ public class DailyFileJournalStoreTest {
                 () -> DailyFileBackupConfirmationCli.confirmVerifiedSnapshot(
                         liveState, snapshotState, "20261017T120000Z-0123abcd", archiveHash));
         assertTrue(mismatch.getMessage().contains("inventory differs"));
+        Path confirmationRoot = liveStorage.resolve(
+                ".dailyfile-journal/backup-confirmations");
+        Path confirmation = confirmationRoot.resolve(DailyFileJournalStore.directoryId(laneId))
+                .resolve(day + ".json");
+        Path secondConfirmation = confirmationRoot.resolve(
+                DailyFileJournalStore.directoryId(secondLaneId)).resolve(day + ".json");
+        Path confirmationSet = confirmationRoot.resolve(
+                ".sets/20261017T120000Z-0123abcd.json");
+        assertFalse("A mismatch in any lane must leave every confirmation uncommitted",
+                Files.exists(confirmation));
+        assertFalse(Files.exists(secondConfirmation));
+        assertFalse(Files.exists(confirmationSet));
         Files.delete(lateSegment);
 
-        assertEquals(1, DailyFileBackupConfirmationCli.confirmVerifiedSnapshot(
+        assertEquals(2, DailyFileBackupConfirmationCli.confirmVerifiedSnapshot(
                 liveState, snapshotState, "20261017T120000Z-0123abcd", archiveHash));
         try (DailyFileJournalStore reopened = new DailyFileJournalStore(liveStorage, cliConfig,
                 clock, LoggerFactory.getLogger(getClass()), false)) {
             assertTrue(reopened.isBackupConfirmed(laneId,
                     window.startInclusive(), window.endExclusive()));
+            assertTrue(reopened.isBackupConfirmed(secondLaneId,
+                    window.startInclusive(), window.endExclusive()));
         }
 
-        Path confirmation = liveStorage.resolve(".dailyfile-journal/backup-confirmations")
-                .resolve(DailyFileJournalStore.directoryId(laneId)).resolve(day + ".json");
+        assertTrue(Files.isRegularFile(confirmationSet));
         assertTrue(Files.readString(confirmation).contains(
                 "oscar-backup:20261017T120000Z-0123abcd/oscar-state.tar.gz#sha256="
                         + archiveHash));
+        Files.delete(confirmationSet);
+        try (DailyFileJournalStore reopened = new DailyFileJournalStore(liveStorage, cliConfig,
+                clock, LoggerFactory.getLogger(getClass()), false)) {
+            assertFalse("Receipts cannot authorize pruning without the atomic set marker",
+                    reopened.isBackupConfirmed(laneId,
+                            window.startInclusive(), window.endExclusive()));
+            assertFalse(reopened.isBackupConfirmed(secondLaneId,
+                    window.startInclusive(), window.endExclusive()));
+        }
+        assertEquals(2, DailyFileBackupConfirmationCli.confirmVerifiedSnapshot(
+                liveState, snapshotState, "20261017T120000Z-0123abcd", archiveHash));
 
         Files.delete(confirmation);
+        Files.delete(secondConfirmation);
         Path snapshotDay = snapshotState.resolve("files/.dailyfile-journal/segments")
                 .resolve(DailyFileJournalStore.directoryId(laneId)).resolve(day.toString());
         try (var paths = Files.walk(snapshotDay)) {
@@ -666,8 +866,19 @@ public class DailyFileJournalStoreTest {
                 }
             });
         }
+        Path secondSnapshotDay = snapshotState.resolve("files/.dailyfile-journal/segments")
+                .resolve(DailyFileJournalStore.directoryId(secondLaneId)).resolve(day.toString());
+        try (var paths = Files.walk(secondSnapshotDay)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.delete(path);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
         assertEquals(0, DailyFileBackupConfirmationCli.confirmVerifiedSnapshot(
-                liveState, snapshotState, "20261017T120000Z-0123abcd", archiveHash));
+                liveState, snapshotState, "20261017T120000Z-0123abce", archiveHash));
         assertFalse("A backup without the sealed source segments must not authorize pruning",
                 Files.exists(confirmation));
     }
