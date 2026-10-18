@@ -656,6 +656,15 @@ immuable et de manifeste SHA-256. La conservation de la base ne doit jamais remp
 La maintenance des états de connexion et le nettoyage, contrôlé par manifeste, des observations
 `dailyFile` historiques se poursuivent indépendamment.
 
+Chaque nouvel enregistrement d'occupation est lié à la voie, la caméra, l'horodatage d'occupation
+et la génération immuable exacts. Les commandes caméra s'exécutent dans l'ordre, le nom source
+porte un suffixe de génération et seul le chemin validé d'une fermeture réussie est joint à
+l'alarme. Les enregistrements hors alarme, périmés, en échec, expirés ou tardifs non publiés, ainsi
+que les fichiers partiels masqués, sont supprimés au lieu d'être réutilisés par un événement
+ultérieur. Un chemin vide, dupliqué ou associé au mauvais événement ou à la mauvaise caméra, ou un
+nouveau fichier orphelin, est un défaut d'intégrité bloquant la version ; ne corrigez pas la base en
+devinant un nom de fichier.
+
 Chaque vidéo d'alarme ancienne et éligible devient exactement cinq JPEG décodables séparément
 (première image, quart, milieu, trois quarts et dernière image). La source est conservée pendant le
 délai de retour arrière et après tout échec ; les événements anciens ou non convertis gardent la
@@ -764,4 +773,4 @@ Pour l'assistance, relevez version OSCAR, navigateur, voie/occupation, heure et 
 
 ---
 
-Référence du document : comportement du code OSCAR 3.9.2, revu le 2026-10-17. Si une version ultérieure change les champs ou procédures, mettez à jour ensemble le manuel canonique anglais et les trois traductions.
+Référence du document : comportement du code OSCAR 3.9.2, revu le 2026-10-18. Si une version ultérieure change les champs ou procédures, mettez à jour ensemble le manuel canonique anglais et les trois traductions.

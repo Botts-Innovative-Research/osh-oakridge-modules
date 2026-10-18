@@ -4,6 +4,20 @@ OSCAR retains an additive still-image representation of an occupancy clip. The o
 observation's legacy `videoPaths` field is unchanged, so older clients can continue to use the
 source video while newer clients use the event media API.
 
+## Source-recording ownership
+
+New source MP4s use `clips/{camera-token}/{timestamp}-g{generation}.mp4`. Start, close, and cancel
+commands are serialized in a bounded FIFO for each camera, and only the validated path returned by
+the matching successful close may enter `videoPaths`. The lane service binds that result to the
+exact occupancy start time, lifecycle epoch, lane, camera, and recording generation; it never
+selects a file by directory order, timestamp proximity, or a mutable current-filename field.
+
+Non-alarm, stopped, superseded, timed-out, failed, or otherwise unpublished recordings are canceled
+or removed. A close that completes after its occupancy was invalidated remains observed so its
+validated final path is deleted. Publication uses a no-replace final link: a collision preserves
+the pre-existing immutable clip, while a failure after this attempt created a final link reports
+that owned path for cleanup. Hidden partial files are never API-visible and are deleted directly.
+
 ## Media-set contract
 
 A media set is keyed by all three stable identities:

@@ -689,6 +689,13 @@ parsing where possible and publishes the completed day as an immutable legacy CS
 manifest. Database retention must never be used as a substitute for this journal. Connection-state
 maintenance and manifest-gated cleanup of legacy `dailyFile` observations continue independently.
 
+Each new occupancy recording is bound to its exact lane, camera, occupancy timestamp, and immutable
+recording generation. Camera commands run in order, source names include a generation suffix, and
+only a validated successful close path is attached to the alarm. Non-alarm, stale, failed, timed-out,
+or late unpublished recordings and hidden partial files are removed instead of being reused by a
+later event. Treat a clip attached to the wrong event/camera, a duplicate/blank path, or a new orphan
+as a release-blocking integrity fault rather than repairing the database by guessing a filename.
+
 Eligible aging alarm clips become exactly five independently decodable JPEGs (first, quarter,
 middle, three-quarter, last). The source video remains through the rollback grace and on every
 conversion failure; old or unconverted events retain legacy playback. Storage-pressure cleanup can
@@ -797,4 +804,4 @@ When collecting support data, record the OSCAR version, browser, affected lane/o
 
 ---
 
-Document baseline: OSCAR 3.9.2 source behavior, reviewed 2026-10-17. If a later release changes fields or workflows, update the English canonical manual and all three translations together.
+Document baseline: OSCAR 3.9.2 source behavior, reviewed 2026-10-18. If a later release changes fields or workflows, update the English canonical manual and all three translations together.

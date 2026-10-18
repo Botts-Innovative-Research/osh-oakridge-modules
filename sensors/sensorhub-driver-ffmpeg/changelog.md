@@ -27,6 +27,9 @@ All notable changes to this project will be documented in this file.
 - Video-retention compaction validates an actually decoded frame before a backup-protected,
   durable replacement; missing stream durations fall back to container metadata, truly unknown
   durations preserve the source, and timed-out workers defer cleanup until native processing stops.
+- Occupancy MP4 commands now execute in a bounded per-camera FIFO, publish only an exact validated
+  generation-qualified path, cancel non-alarm output, and remove hidden partial or late unpublished
+  output without replacing or deleting an older immutable recording on a name collision.
 
 ## [2.1.0] - 2025-10-14
 

@@ -657,6 +657,14 @@ manifiesto SHA-256. La retención de la base de datos nunca debe sustituir este 
 mantenimiento del estado de conexión y la limpieza, validada por manifiesto, de observaciones
 `dailyFile` heredadas continúan por separado.
 
+Cada nueva grabación de ocupación queda vinculada al carril, la cámara, la marca de tiempo de la
+ocupación y la generación inmutable exactos. Las órdenes de cámara se ejecutan en orden, el nombre
+fuente incluye un sufijo de generación y solo se adjunta a la alarma la ruta validada de un cierre
+correcto. Las grabaciones que no son alarmas, obsoletas, fallidas, agotadas o tardías sin publicar,
+y los archivos parciales ocultos, se eliminan en vez de reutilizarse en un evento posterior. Una
+ruta vacía, duplicada o asociada al evento o cámara equivocados, o un nuevo archivo huérfano, es un
+fallo de integridad que bloquea la versión; no repare la base adivinando un nombre de archivo.
+
 Cada vídeo de alarma apto y antiguo se convierte en exactamente cinco JPEG decodificables de forma
 independiente (primero, cuarto, centro, tres cuartos y último). El vídeo fuente se conserva durante
 el plazo de reversión y ante cualquier fallo; los eventos antiguos o no convertidos mantienen la
@@ -765,4 +773,4 @@ Para soporte, registre versión OSCAR, navegador, carril/ocupación, hora y zona
 
 ---
 
-Base del documento: comportamiento del código OSCAR 3.9.2, revisado el 2026-10-17. Si una versión posterior cambia campos o flujos, actualice conjuntamente el manual canónico en inglés y las tres traducciones.
+Base del documento: comportamiento del código OSCAR 3.9.2, revisado el 2026-10-18. Si una versión posterior cambia campos o flujos, actualice conjuntamente el manual canónico en inglés y las tres traducciones.
