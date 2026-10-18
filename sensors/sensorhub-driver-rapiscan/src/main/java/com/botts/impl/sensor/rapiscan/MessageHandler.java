@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MessageHandler {
+    private static final long STOP_TIMEOUT_MILLIS = 2_000L;
 
     private final RapiscanSensor parentSensor;
 
@@ -101,7 +102,7 @@ public class MessageHandler {
                             break;
                         }
 
-                        if (msgLine == null || !isRunning.get()) {
+                        if (msgLine == null) {
                             break;
                         }
                         if (msgLine.isEmpty())
@@ -174,7 +175,7 @@ public class MessageHandler {
         }
     }
 
-    public synchronized void stop() {
+    public synchronized void requestStop() {
         if (!hasStarted.get()) {
             return;
         }
@@ -182,21 +183,37 @@ public class MessageHandler {
         parentSensor.getLogger().debug("Stopping MessageHandler for sensor {}", parentSensor.getUniqueIdentifier());
         isRunning.set(false);
         closeInput();
+    }
 
+    public synchronized void awaitStop() throws IOException {
+        if (!hasStarted.get())
+            return;
+
+        long deadlineNanos = System.nanoTime()
+                + TimeUnit.MILLISECONDS.toNanos(STOP_TIMEOUT_MILLIS);
         try {
-            if (!readerStopped.await(5, TimeUnit.SECONDS)) {
-                if (messageReaderFuture != null) {
-                    messageReaderFuture.cancel(true);
-                }
-                parentSensor.getLogger().warn("Message reader did not stop within timeout");
+            long gracefulNanos = TimeUnit.MILLISECONDS.toNanos(STOP_TIMEOUT_MILLIS / 2);
+            if (!readerStopped.await(gracefulNanos, TimeUnit.NANOSECONDS) &&
+                    messageReaderFuture != null) {
+                messageReaderFuture.cancel(true);
             }
+            long remaining = deadlineNanos - System.nanoTime();
+            if (readerStopped.getCount() != 0 &&
+                    (remaining <= 0 || !readerStopped.await(remaining, TimeUnit.NANOSECONDS)))
+                throw new IOException("Rapiscan message reader did not stop within "
+                        + STOP_TIMEOUT_MILLIS + " ms");
         } catch (InterruptedException e) {
             if (messageReaderFuture != null) {
                 messageReaderFuture.cancel(true);
             }
             Thread.currentThread().interrupt();
-            parentSensor.getLogger().warn("Interrupted while stopping message reader");
+            throw new IOException("Interrupted while stopping Rapiscan message reader", e);
         }
+    }
+
+    public void stop() throws IOException {
+        requestStop();
+        awaitStop();
     }
 
     public int[] getGammaForegroundCountsPerSecond() {

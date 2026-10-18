@@ -49,8 +49,7 @@ public class DailyFileJournalService extends AbstractModule<DailyFileJournalServ
 
     @Override
     public DailyFileWriterHandle openWriter(String laneId) throws IOException {
-        ensureInitialized();
-        return store.openWriter(laneId);
+        return requireStore().openWriter(laneId);
     }
 
     @Override
@@ -71,45 +70,45 @@ public class DailyFileJournalService extends AbstractModule<DailyFileJournalServ
 
     @Override
     public boolean isPublished(String laneId, Instant startInclusive, Instant endExclusive) {
-        return store != null && store.isPublished(laneId, startInclusive, endExclusive);
+        DailyFileJournalStore activeStore = store;
+        return activeStore != null && activeStore.isPublished(laneId, startInclusive, endExclusive);
     }
 
     @Override
     public void confirmPublishedBackup(String laneId, Instant startInclusive, Instant endExclusive,
                                        String publishedSha256, String backupReference)
             throws IOException {
-        ensureInitialized();
-        store.confirmPublishedBackup(laneId, startInclusive, endExclusive, publishedSha256,
+        requireStore().confirmPublishedBackup(laneId, startInclusive, endExclusive, publishedSha256,
                 backupReference);
     }
 
     @Override
     public boolean isBackupConfirmed(String laneId, Instant startInclusive,
                                      Instant endExclusive) {
-        return store != null && store.isBackupConfirmed(laneId, startInclusive, endExclusive);
+        DailyFileJournalStore activeStore = store;
+        return activeStore != null && activeStore.isBackupConfirmed(laneId, startInclusive, endExclusive);
     }
 
     @Override
     public Optional<LocalDate> readObservationPurgeCheckpoint(String feedId) throws IOException {
-        ensureInitialized();
-        return store.readObservationPurgeCheckpoint(feedId);
+        return requireStore().readObservationPurgeCheckpoint(feedId);
     }
 
     @Override
     public void writeObservationPurgeCheckpoint(String feedId, LocalDate processedThrough)
             throws IOException {
-        ensureInitialized();
-        store.writeObservationPurgeCheckpoint(feedId, processedThrough);
+        requireStore().writeObservationPurgeCheckpoint(feedId, processedThrough);
     }
 
     @Override
     public Optional<LocalDate> findEarliestJournalDay(String laneId) throws IOException {
-        ensureInitialized();
-        return store.findEarliestJournalDay(laneId);
+        return requireStore().findEarliestJournalDay(laneId);
     }
 
-    private void ensureInitialized() throws IOException {
-        if (store == null)
+    private DailyFileJournalStore requireStore() throws IOException {
+        DailyFileJournalStore activeStore = store;
+        if (activeStore == null)
             throw new IOException("Daily-file journal is not initialized");
+        return activeStore;
     }
 }

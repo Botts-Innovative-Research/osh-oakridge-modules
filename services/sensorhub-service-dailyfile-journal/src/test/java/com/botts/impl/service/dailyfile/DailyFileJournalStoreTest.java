@@ -8,6 +8,7 @@ import org.sensorhub.impl.utils.rad.dailyfile.DailyFileWriterHandle;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
@@ -33,6 +34,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -836,6 +838,122 @@ public class DailyFileJournalStoreTest {
             release.countDown();
             assertTrue(DailyFileJournalStore.shutdownSchedulersBounded(
                     scheduler, null, 2_000));
+        }
+    }
+
+    @Test
+    public void serviceShutdownDrainsActiveWriterHandlesBeforeClosingLanes() throws Exception {
+        Instant timestamp = clock.instant();
+        LocalDate day = LocalDate.ofInstant(timestamp, NEW_YORK);
+        DailyFileJournalStore store = new DailyFileJournalStore(
+                root, config, LoggerFactory.getLogger(getClass()));
+        DailyFileWriterHandle writer = store.openWriter("lane-shutdown-drain");
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<?> close = executor.submit(() -> {
+            try {
+                store.close();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        try {
+            boolean closingObserved = false;
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+            while (System.nanoTime() < deadline) {
+                try (DailyFileWriterHandle probe = store.openWriter("lane-shutdown-probe")) {
+                    // Closing has not claimed the writer gate yet; release the probe immediately.
+                } catch (IOException e) {
+                    closingObserved = e.getMessage().contains("closing");
+                    if (closingObserved)
+                        break;
+                    throw e;
+                }
+                Thread.yield();
+            }
+            assertTrue("The service close must stop admitting new writers", closingObserved);
+            assertFalse("The store must wait for the active sensor writer", close.isDone());
+
+            writer.append("last-record-before-stop", timestamp);
+            writer.close();
+            close.get(2, TimeUnit.SECONDS);
+        } finally {
+            try {
+                writer.close();
+            } finally {
+                executor.shutdownNow();
+                if (!close.isDone())
+                    close.get(2, TimeUnit.SECONDS);
+            }
+        }
+
+        clock.set(day.plusDays(1).atStartOfDay(NEW_YORK).toInstant().plusSeconds(1));
+        try (DailyFileJournalStore recovered = newStore()) {
+            recovered.sealCompletedDays(clock.instant());
+        }
+        assertTrue(Files.readString(publishedFile("lane-shutdown-drain", day))
+                .startsWith("last-record-before-stop,"));
+    }
+
+    @Test
+    public void timedOutWriterDrainCanBeRetriedWithoutLosingFinalRecord() throws Exception {
+        Instant timestamp = clock.instant();
+        LocalDate day = LocalDate.ofInstant(timestamp, NEW_YORK);
+        DailyFileJournalStore store = new DailyFileJournalStore(
+                root, config, LoggerFactory.getLogger(getClass()));
+        DailyFileWriterHandle writer = store.openWriter("lane-shutdown-retry");
+
+        IOException timeout = assertThrows(IOException.class, () -> store.closeWithin(50));
+        assertTrue(timeout.getMessage().contains("writers did not close"));
+        assertTrue("A timed-out writer drain must retain periodic fsync",
+                store.maintenanceSchedulersRunning());
+        writer.append("record-after-first-close-attempt", timestamp);
+        writer.close();
+        store.closeWithin(2_000);
+        assertThrows(IOException.class, () -> store.openWriter("lane-shutdown-retry"));
+
+        clock.set(day.plusDays(1).atStartOfDay(NEW_YORK).toInstant().plusSeconds(1));
+        try (DailyFileJournalStore recovered = newStore()) {
+            recovered.sealCompletedDays(clock.instant());
+        }
+        assertTrue(Files.readString(publishedFile("lane-shutdown-retry", day))
+                .startsWith("record-after-first-close-attempt,"));
+    }
+
+    @Test
+    public void writerAdmissionContentionRespectsCloseDeadline() throws Exception {
+        DailyFileJournalStore store = new DailyFileJournalStore(
+                root, config, LoggerFactory.getLogger(getClass()));
+        Field field = DailyFileJournalStore.class.getDeclaredField("writerHandleLock");
+        field.setAccessible(true);
+        ReentrantLock writerGate = (ReentrantLock) field.get(store);
+        CountDownLatch acquired = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<?> holder = executor.submit(() -> {
+            writerGate.lock();
+            try {
+                acquired.countDown();
+                release.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                writerGate.unlock();
+            }
+        });
+        try {
+            assertTrue(acquired.await(1, TimeUnit.SECONDS));
+            long started = System.nanoTime();
+            IOException timeout = assertThrows(IOException.class,
+                    () -> store.closeWithin(75));
+            long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+            assertTrue(timeout.getMessage().contains("writer admission"));
+            assertTrue("Close must not wait indefinitely for the writer admission lock",
+                    elapsedMillis < 1_000L);
+        } finally {
+            release.countDown();
+            holder.get(1, TimeUnit.SECONDS);
+            executor.shutdownNow();
+            store.closeWithin(2_000);
         }
     }
 

@@ -55,6 +55,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.CRC32C;
 
@@ -103,6 +104,7 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     private final Duration maxSegmentAge;
     private final int maxRecordBytes;
     private final int sealedJournalRetentionDays;
+    private final boolean trackWriterLeases;
     private final Clock clock;
     private final Logger log;
     private final Map<String, LaneState> lanes = new ConcurrentHashMap<>();
@@ -114,6 +116,10 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     private final ScheduledExecutorService lifecycleScheduler;
     private final ReentrantLock closeLock = new ReentrantLock();
     private final ReentrantLock lifecycleLock = new ReentrantLock();
+    private final ReentrantLock writerHandleLock = new ReentrantLock();
+    private final Condition noOpenWriterHandles = writerHandleLock.newCondition();
+    private int openWriterHandles;
+    private final AtomicBoolean closing = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
     private boolean closeComplete;
     private String recoveryMaintenanceCursor = "";
@@ -121,16 +127,24 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
 
     public DailyFileJournalStore(Path rootDirectory, DailyFileJournalServiceConfig config, Logger log)
             throws IOException {
-        this(rootDirectory, config, Clock.systemUTC(), log, true);
+        this(rootDirectory, config, Clock.systemUTC(), log, true, true);
+    }
+
+    /** Offline/test constructor; callers must close all handles before closing the store. */
+    DailyFileJournalStore(Path rootDirectory, DailyFileJournalServiceConfig config, Clock clock,
+                          Logger log, boolean startScheduler) throws IOException {
+        this(rootDirectory, config, clock, log, startScheduler, false);
     }
 
     DailyFileJournalStore(Path rootDirectory, DailyFileJournalServiceConfig config, Clock clock,
-                          Logger log, boolean startScheduler) throws IOException {
+                          Logger log, boolean startScheduler, boolean trackWriterLeases)
+            throws IOException {
         this.rootDirectory = initializeRoot(rootDirectory);
         durableDirectoryEntries.add(this.rootDirectory);
         Objects.requireNonNull(config, "config");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.log = Objects.requireNonNull(log, "log");
+        this.trackWriterLeases = trackWriterLeases;
         this.zoneId = ZoneId.of(Objects.requireNonNull(config.zoneId, "zoneId"));
         this.observationMode = config.dailyFileObservationMode != null
                 ? config.dailyFileObservationMode : DailyFileObservationMode.FULL;
@@ -195,24 +209,33 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     @Override
     public DailyFileWriterHandle openWriter(String laneId) throws IOException {
         String checkedLaneId = requireLaneId(laneId);
-        lifecycleLock.lock();
+        writerHandleLock.lock();
         try {
-            ensureOpen();
-            LaneState state;
+            if (closing.get() || closed.get())
+                throw new IOException("Daily-file journal is closing");
+            lifecycleLock.lock();
             try {
-                state = lanes.computeIfAbsent(checkedLaneId, id -> {
-                    try {
-                        return new LaneState(id);
-                    } catch (IOException e) {
-                        throw new LaneInitializationException(e);
-                    }
-                });
-            } catch (LaneInitializationException e) {
-                throw e.ioException;
+                ensureOpen();
+                LaneState state;
+                try {
+                    state = lanes.computeIfAbsent(checkedLaneId, id -> {
+                        try {
+                            return new LaneState(id);
+                        } catch (IOException e) {
+                            throw new LaneInitializationException(e);
+                        }
+                    });
+                } catch (LaneInitializationException e) {
+                    throw e.ioException;
+                }
+                if (trackWriterLeases)
+                    openWriterHandles++;
+                return new WriterHandle(state, trackWriterLeases);
+            } finally {
+                lifecycleLock.unlock();
             }
-            return new WriterHandle(state);
         } finally {
-            lifecycleLock.unlock();
+            writerHandleLock.unlock();
         }
     }
 
@@ -939,8 +962,14 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
 
     @Override
     public void close() throws IOException {
+        closeWithin(CLOSE_TIMEOUT_MILLIS);
+    }
+
+    void closeWithin(long timeoutMillis) throws IOException {
+        if (timeoutMillis < 0)
+            throw new IllegalArgumentException("timeoutMillis must not be negative");
         long deadlineNanos = System.nanoTime()
-                + TimeUnit.MILLISECONDS.toNanos(CLOSE_TIMEOUT_MILLIS);
+                + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
         boolean closeLocked;
         try {
             closeLocked = tryLockUntil(closeLock, deadlineNanos);
@@ -953,10 +982,36 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
         try {
             if (closeComplete)
                 return;
-            closed.set(true);
+            boolean writerGateLocked;
+            try {
+                writerGateLocked = tryLockUntil(writerHandleLock, deadlineNanos);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while closing daily-file writer admission", e);
+            }
+            if (!writerGateLocked)
+                throw new IOException("Timed out closing daily-file writer admission");
+            try {
+                closing.set(true);
+            } finally {
+                writerHandleLock.unlock();
+            }
+            try {
+                if (!awaitWriterHandlesUntil(deadlineNanos))
+                    throw new IOException("Daily-file journal writers did not close within "
+                            + timeoutMillis + " ms");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while waiting for daily-file writers", e);
+            }
+            // Keep periodic force and lifecycle maintenance alive while admitted writers
+            // drain. If that drain times out, the remaining handles are still usable and
+            // retain their configured time-based fsync guarantee even though no new handle
+            // can enter through the closing gate.
             if (!shutdownSchedulersUntil(lifecycleScheduler, forceScheduler, deadlineNanos))
                 throw new IOException("Daily-file journal schedulers did not terminate within "
-                        + CLOSE_TIMEOUT_MILLIS + " ms");
+                        + timeoutMillis + " ms");
+            closed.set(true);
 
             IOException failure = null;
             boolean lifecycleLocked;
@@ -1040,6 +1095,27 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
             throws InterruptedException {
         long remaining = deadlineNanos - System.nanoTime();
         return remaining > 0 && lock.tryLock(remaining, TimeUnit.NANOSECONDS);
+    }
+
+    private boolean awaitWriterHandlesUntil(long deadlineNanos) throws InterruptedException {
+        if (!tryLockUntil(writerHandleLock, deadlineNanos))
+            return false;
+        try {
+            while (openWriterHandles != 0) {
+                long remaining = deadlineNanos - System.nanoTime();
+                if (remaining <= 0)
+                    return false;
+                noOpenWriterHandles.awaitNanos(remaining);
+            }
+            return true;
+        } finally {
+            writerHandleLock.unlock();
+        }
+    }
+
+    boolean maintenanceSchedulersRunning() {
+        return forceScheduler != null && lifecycleScheduler != null
+                && !forceScheduler.isShutdown() && !lifecycleScheduler.isShutdown();
     }
 
     private void periodicMaintenance() {
@@ -2275,10 +2351,12 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
 
     private final class WriterHandle implements DailyFileWriterHandle {
         private final LaneState lane;
+        private final boolean shutdownLease;
         private final AtomicBoolean handleClosed = new AtomicBoolean();
 
-        private WriterHandle(LaneState lane) {
+        private WriterHandle(LaneState lane, boolean shutdownLease) {
             this.lane = lane;
+            this.shutdownLease = shutdownLease;
         }
 
         @Override
@@ -2287,23 +2365,37 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
         }
 
         @Override
-        public void append(DailyFileRecord record) throws IOException {
+        public synchronized void append(DailyFileRecord record) throws IOException {
             if (handleClosed.get())
                 throw new IOException("Daily-file writer handle is closed");
             lane.append(Objects.requireNonNull(record, "record"));
         }
 
         @Override
-        public void flush() throws IOException {
+        public synchronized void flush() throws IOException {
             if (handleClosed.get())
                 throw new IOException("Daily-file writer handle is closed");
             lane.force();
         }
 
         @Override
-        public void close() throws IOException {
-            if (handleClosed.compareAndSet(false, true))
+        public synchronized void close() throws IOException {
+            if (!handleClosed.compareAndSet(false, true))
+                return;
+            try {
                 lane.force();
+            } finally {
+                if (shutdownLease) {
+                    writerHandleLock.lock();
+                    try {
+                        openWriterHandles--;
+                        if (openWriterHandles == 0)
+                            noOpenWriterHandles.signalAll();
+                    } finally {
+                        writerHandleLock.unlock();
+                    }
+                }
+            }
         }
     }
 

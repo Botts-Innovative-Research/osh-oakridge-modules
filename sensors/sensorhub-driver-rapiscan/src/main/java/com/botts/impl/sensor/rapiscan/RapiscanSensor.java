@@ -277,7 +277,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     }
 
     @Override
-    public void doStop() {
+    public void doStop() throws SensorHubException {
         logger.info("Stopping RapiscanSensor {}...", getUniqueIdentifier());
 
         isRunning = false;
@@ -287,20 +287,17 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
             heartbeatFuture = null;
         }
 
-        if (messageHandler != null) {
-            try {
-                messageHandler.stop();
-            } catch (Exception e) {
-                logger.error("Error stopping message handler", e);
-            }
-            messageHandler = null;
-        }
+        MessageHandler activeHandler = messageHandler;
+        if (activeHandler != null)
+            activeHandler.requestStop();
 
+        SensorHubException stopFailure = null;
         if (connection != null) {
             try {
                 connection.cancel();
             } catch (Exception e) {
-                logger.error("Error canceling connection", e);
+                stopFailure = new SensorHubException(
+                        "Unable to cancel the Rapiscan connection", e);
             }
         }
 
@@ -310,23 +307,60 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                     commProviderModule.stop();
                 }
             } catch (Exception e) {
-                logger.error("Error stopping comm module", e);
+                SensorHubException providerFailure = new SensorHubException(
+                        "Unable to stop the Rapiscan communication provider", e);
+                if (stopFailure == null)
+                    stopFailure = providerFailure;
+                else
+                    stopFailure.addSuppressed(providerFailure);
             } finally {
                 commProviderModule = null;
             }
         }
 
-        if (dailyFileJournal != null) {
+        boolean sourceStopped = true;
+        if (activeHandler != null) {
             try {
-                dailyFileJournal.close();
+                activeHandler.awaitStop();
+                messageHandler = null;
             } catch (IOException e) {
-                logger.error("Error closing daily-file journal writer", e);
-            } finally {
-                dailyFileJournal = null;
+                sourceStopped = false;
+                SensorHubException readerFailure = new SensorHubException(
+                        "Rapiscan reader did not stop before journal close", e);
+                if (stopFailure == null)
+                    stopFailure = readerFailure;
+                else
+                    stopFailure.addSuppressed(readerFailure);
             }
         }
 
-        RapiscanThreadPoolManager.getInstance().unregisterSensor();
+        if (sourceStopped && dailyFileJournal != null) {
+            try {
+                dailyFileJournal.close();
+                dailyFileJournal = null;
+            } catch (IOException e) {
+                SensorHubException writerFailure = new SensorHubException(
+                        "Unable to close the Rapiscan daily-file writer", e);
+                if (stopFailure == null)
+                    stopFailure = writerFailure;
+                else
+                    stopFailure.addSuppressed(writerFailure);
+            }
+        }
+
+        try {
+            RapiscanThreadPoolManager.getInstance().unregisterSensor();
+        } catch (RuntimeException e) {
+            SensorHubException unregisterFailure = new SensorHubException(
+                    "Unable to unregister the Rapiscan sensor", e);
+            if (stopFailure == null)
+                stopFailure = unregisterFailure;
+            else
+                stopFailure.addSuppressed(unregisterFailure);
+        }
+
+        if (stopFailure != null)
+            throw stopFailure;
 
         logger.info("RapiscanSensor {} stopped successfully", getUniqueIdentifier());
     }

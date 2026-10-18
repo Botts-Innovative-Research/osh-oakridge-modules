@@ -13,6 +13,8 @@ import java.io.StringWriter;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.LinkedList;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static java.lang.Thread.sleep;
 
@@ -25,6 +27,8 @@ import static java.lang.Thread.sleep;
 public class MessageHandler {
     private final AspectSensor parentSensor;
     private static final Logger log = LoggerFactory.getLogger(MessageHandler.class);
+    private static final long STOP_TIMEOUT_MILLIS = 2_000L;
+    private final AtomicBoolean stopRequested = new AtomicBoolean();
     Thread thread;
 
     int occupancyCount = -1;
@@ -74,7 +78,7 @@ public class MessageHandler {
                 timer = 0;
 
                 MonitorRegisters monitorRegisters = new MonitorRegisters(parentSensor.commProviderModule.getConnection(), 100, 21);
-                while (!Thread.currentThread().isInterrupted()) {
+                while (!stopRequested.get() && !Thread.currentThread().isInterrupted()) {
                     timer += timeSinceLastMessage;
                     timeSinceLastMessage = System.currentTimeMillis() - timeOfLastMessage;
                     timeOfLastMessage = System.currentTimeMillis();
@@ -130,9 +134,12 @@ public class MessageHandler {
 
                 }
             } catch (Exception e) {
-                StringWriter stringWriter = new StringWriter();
-                e.printStackTrace(new PrintWriter(stringWriter));
-                log.error("Error in worker thread: {} due to exception: {}", Thread.currentThread().getName(), stringWriter);
+                if (!stopRequested.get() && !Thread.currentThread().isInterrupted()) {
+                    StringWriter stringWriter = new StringWriter();
+                    e.printStackTrace(new PrintWriter(stringWriter));
+                    log.error("Error in worker thread: {} due to exception: {}",
+                            Thread.currentThread().getName(), stringWriter);
+                }
             }
 
         }, "Aspect-Reader-" + parentSensor.getUniqueIdentifier());
@@ -184,11 +191,38 @@ public class MessageHandler {
                 || elapsedMillis >= (scan ? SCAN_INTERVAL_MS : BACKGROUND_INTERVAL_MS);
     }
 
-    public void stop() {
+    public void requestStop() {
+        stopRequested.set(true);
+    }
+
+    public void awaitStop() throws IOException {
         Thread current = thread;
+        if (current == null)
+            return;
+        long deadlineNanos = System.nanoTime()
+                + TimeUnit.MILLISECONDS.toNanos(STOP_TIMEOUT_MILLIS);
+        try {
+            // Give a source read or durable append a chance to finish after the
+            // provider is closed. Interrupt only as the bounded fallback.
+            current.join(STOP_TIMEOUT_MILLIS / 2);
+            if (current.isAlive())
+                current.interrupt();
+            long remaining = deadlineNanos - System.nanoTime();
+            if (current.isAlive() && remaining > 0)
+                current.join(Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remaining)));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while stopping Aspect reader", e);
+        }
+        if (current.isAlive())
+            throw new IOException("Aspect reader did not stop within "
+                    + STOP_TIMEOUT_MILLIS + " ms");
         thread = null;
-        if (current != null)
-            current.interrupt();
+    }
+
+    public void stop() throws IOException {
+        requestStop();
+        awaitStop();
     }
 
     private boolean checkScan(MonitorRegisters monitorRegisters) {

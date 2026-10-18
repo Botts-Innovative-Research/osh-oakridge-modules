@@ -2,12 +2,19 @@ package com.botts.impl.sensor.aspect;
 
 import com.botts.impl.sensor.aspect.output.DailyFileOutput;
 import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
+import com.botts.impl.sensor.aspect.comm.IModbusTCPCommProvider;
 import org.junit.Test;
 import org.mockito.InOrder;
+import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.utils.rad.dailyfile.DailyFileJournalConnection;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertEquals;
@@ -107,6 +114,80 @@ public class MessageHandlerJournalTest {
                 MessageHandler.shouldPublishDailyFile(true, 1L, true));
         org.junit.Assert.assertFalse("Ordinary scan samples remain cadence-limited",
                 MessageHandler.shouldPublishDailyFile(true, 1L, false));
+    }
+
+    @Test
+    public void stopWaitsForFinalAppendBeforeWriterClose() throws Exception {
+        DailyFileJournalConnection journal = mock(DailyFileJournalConnection.class);
+        MessageHandler handler = new MessageHandler(mock(AspectSensor.class));
+        CountDownLatch appendEntered = new CountDownLatch(1);
+        CountDownLatch releaseAppend = new CountDownLatch(1);
+        Thread worker = new Thread(() -> {
+            appendEntered.countDown();
+            boolean released = false;
+            while (!released) {
+                try {
+                    released = releaseAppend.await(30, TimeUnit.SECONDS);
+                } catch (InterruptedException ignored) {
+                    // A filesystem force already in progress is not cancelled
+                    // by the reader interrupt; stop must join it.
+                }
+            }
+            try {
+                journal.append(GENERATED_LINE, RECEIVED_AT);
+            } catch (IOException error) {
+                throw new RuntimeException(error);
+            }
+        }, "aspect-final-append-test");
+        handler.thread = worker;
+        worker.start();
+        org.junit.Assert.assertTrue(appendEntered.await(1, TimeUnit.SECONDS));
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<?> stop = executor.submit(() -> {
+            try {
+                handler.stop();
+            } catch (IOException error) {
+                throw new RuntimeException(error);
+            }
+        });
+        try {
+            Thread.sleep(100L);
+            org.junit.Assert.assertFalse("stop must wait for the final append worker", stop.isDone());
+            releaseAppend.countDown();
+            stop.get(2, TimeUnit.SECONDS);
+            journal.close();
+        } finally {
+            releaseAppend.countDown();
+            executor.shutdownNow();
+        }
+
+        InOrder order = inOrder(journal);
+        order.verify(journal).append(GENERATED_LINE, RECEIVED_AT);
+        order.verify(journal).close();
+    }
+
+    @Test
+    public void sensorMarksReaderStoppingBeforeTransportAndClosesWriterAfterDrain()
+            throws Exception {
+        AspectSensor sensor = new AspectSensor();
+        MessageHandler handler = mock(MessageHandler.class);
+        RobustConnection connection = mock(RobustConnection.class);
+        IModbusTCPCommProvider<?> provider = mock(IModbusTCPCommProvider.class);
+        DailyFileJournalConnection journal = mock(DailyFileJournalConnection.class);
+        sensor.messageHandler = handler;
+        sensor.connection = connection;
+        sensor.commProviderModule = provider;
+        sensor.dailyFileJournal = journal;
+
+        sensor.doStop();
+
+        InOrder order = inOrder(handler, connection, provider, journal);
+        order.verify(handler).requestStop();
+        order.verify(connection).cancel();
+        order.verify(provider).stop();
+        order.verify(handler).awaitStop();
+        order.verify(journal).close();
     }
 
     private static MonitorRegisters registers() {

@@ -62,10 +62,21 @@ Each newly created managed directory entry is made durable by forcing its parent
 uses it. Directory-force permission failures remain fail-visible on POSIX filesystems; only the
 known Windows inability to open directories as file channels uses the platform fallback.
 
-Service close has a five-second total bound for scheduler quiescence and waiting on concurrent
-active-lane work. A task that does not quiesce within that bound produces an explicit close failure
-rather than an unbounded stop wait. The module retains the failed store so cleanup can be retried;
-it releases ownership only after every lane closes successfully.
+Service close has a five-second total bound for active sensor-writer drain, scheduler quiescence,
+and concurrent active-lane work. Stop first prevents new writers, while existing driver handles may
+append and force their final record. The periodic force scheduler remains active during that drain,
+so a timed-out writer does not silently lose time-based fsync protection. Only after every handle
+closes does the store stop its schedulers, reject appends, and force/close every lane. A writer or
+task that does not quiesce within the bound makes module shutdown fail visibly rather than report a
+clean stop or wait forever; the process must then be treated as not cleanly stopped.
+
+Rapiscan, RS350, and Aspect mark their readers as stopping before they close the input source, then
+join the corresponding source worker within a two-second driver bound before closing the writer
+handle. This ordering suppresses expected transport-close errors and lets an append already inside
+durable I/O finish before the handle releases its service lease. A source worker that does not
+terminate fails module stop visibly and keeps the writer attached; the driver never reports a clean
+stop by closing the journal underneath a live reader. RS350 closes its writer as soon as source
+capture has drained, independently of deferred WebID/notifier shutdown.
 
 ## Day boundary and publication
 

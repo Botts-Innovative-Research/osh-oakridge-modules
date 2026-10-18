@@ -2,10 +2,13 @@ package com.botts.impl.sensor.rs350;
 
 import org.junit.Test;
 import org.mockito.InOrder;
+import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.utils.rad.dailyfile.DailyFileJournalConnection;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 import static org.junit.Assert.assertEquals;
@@ -72,5 +75,55 @@ public class MessageHandlerJournalTest {
 
         assertEquals("normalized", normalized);
         verify(normalizer).apply(RAW);
+    }
+
+    @Test
+    public void workerJoinCompletesFinalAppendBeforeWriterClose() throws Exception {
+        DailyFileJournalConnection journal = mock(DailyFileJournalConnection.class);
+        CountDownLatch workerStarted = new CountDownLatch(1);
+        Thread worker = new Thread(() -> {
+            workerStarted.countDown();
+            try {
+                Thread.sleep(30_000L);
+            } catch (InterruptedException expected) {
+                try {
+                    journal.append(RAW, RECEIVED_AT);
+                } catch (IOException error) {
+                    throw new RuntimeException(error);
+                }
+            }
+        }, "rs350-final-append-test");
+        worker.start();
+        org.junit.Assert.assertTrue(workerStarted.await(1, TimeUnit.SECONDS));
+
+        worker.interrupt();
+        MessageHandler.awaitStopped(worker,
+                System.nanoTime() + TimeUnit.SECONDS.toNanos(2), "test worker");
+        journal.close();
+
+        InOrder order = inOrder(journal);
+        order.verify(journal).append(RAW, RECEIVED_AT);
+        order.verify(journal).close();
+    }
+
+    @Test
+    public void sensorReleasesWriterBeforeReportingAncillaryStopFailure() throws Exception {
+        MessageHandler handler = mock(MessageHandler.class);
+        DailyFileJournalConnection journal = mock(DailyFileJournalConnection.class);
+        IOException ancillaryFailure = new IOException("deferred WebID worker stuck");
+        doThrow(ancillaryFailure).when(handler).awaitAncillaryStopped();
+        RS350Sensor sensor = new RS350Sensor();
+        sensor.messageHandler = handler;
+        sensor.dailyFileJournal = journal;
+
+        SensorHubException thrown = assertThrows(SensorHubException.class, sensor::doStop);
+
+        assertSame(ancillaryFailure, thrown.getCause());
+        InOrder order = inOrder(handler, journal);
+        order.verify(handler).requestStop();
+        order.verify(handler).awaitSourceStopped();
+        order.verify(journal).close();
+        order.verify(handler).awaitAncillaryStopped();
+        org.junit.Assert.assertNull(sensor.dailyFileJournal);
     }
 }

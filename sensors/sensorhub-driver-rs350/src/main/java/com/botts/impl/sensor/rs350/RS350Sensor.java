@@ -154,6 +154,9 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
     @Override
     protected void doStop() throws SensorHubException {
         isRunning = false;
+        MessageHandler activeHandler = messageHandler;
+        if (activeHandler != null)
+            activeHandler.requestStop();
         if(tcpConnectionThread != null)
             tcpConnectionThread = null;
 
@@ -177,18 +180,41 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
             }
         }
 
-        if (messageHandler != null)
-            messageHandler.stopProcessing();
+        if (activeHandler != null) {
+            try {
+                activeHandler.awaitSourceStopped();
+            } catch (IOException e) {
+                throw new SensorHubException(
+                        "RS350 source reader did not stop before journal close", e);
+            }
+        }
 
+        SensorHubException stopFailure = null;
         if (dailyFileJournal != null) {
             try {
                 dailyFileJournal.close();
-            } catch (IOException e) {
-                logger.error("Error closing daily-file journal writer", e);
-            } finally {
                 dailyFileJournal = null;
+            } catch (IOException e) {
+                stopFailure = new SensorHubException(
+                        "Unable to close the RS350 daily-file writer", e);
             }
         }
+
+        if (activeHandler != null) {
+            try {
+                activeHandler.awaitAncillaryStopped();
+                messageHandler = null;
+            } catch (IOException e) {
+                SensorHubException ancillaryFailure = new SensorHubException(
+                        "RS350 ancillary workers did not stop", e);
+                if (stopFailure == null)
+                    stopFailure = ancillaryFailure;
+                else
+                    stopFailure.addSuppressed(ancillaryFailure);
+            }
+        }
+        if (stopFailure != null)
+            throw stopFailure;
     }
 
     private void connectDailyFileJournal() throws SensorHubException {

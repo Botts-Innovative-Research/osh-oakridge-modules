@@ -76,7 +76,7 @@ public class MessageHandlerTest {
     }
 
     @Test
-    public void receivedDailyTimestampIsExactOccupancyStartCorrelationKey() {
+    public void receivedDailyTimestampIsExactOccupancyStartCorrelationKey() throws Exception {
         var sensor = new RecordingSensor();
         sensor.setConfiguration(new RapiscanConfig());
         var handler = new MessageHandler(new ByteArrayInputStream(new byte[0]), sensor);

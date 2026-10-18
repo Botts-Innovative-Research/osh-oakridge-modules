@@ -36,6 +36,7 @@ import java.util.function.Function;
 public class MessageHandler {
 
     private static final Logger log = LoggerFactory.getLogger(MessageHandler.class);
+    private static final long STOP_TIMEOUT_MILLIS = 2_000L;
     final LinkedList<String> messageQueue = new LinkedList<>();
     private final AbstractSensorModule<?> sensorModule;
     WebIdAnalyzer webIdAnalyzer;
@@ -76,6 +77,7 @@ public class MessageHandler {
     //private final ArrayList<N42Output> n42Listeners = new ArrayList<>();
 
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
+    private volatile long stopDeadlineNanos;
 
     // The RS350 occupancy is created by the Rs350OutputToOccupancy process module
     // ~10 seconds after an alarm fires (see OCCUPANCY_INTERVAL_MS in that class).
@@ -173,8 +175,8 @@ public class MessageHandler {
                     //n42Listeners.forEach(listener -> listener.onNewMessage(currentMessage));
 
                 } catch (InterruptedException e) {
-
-                    throw new RuntimeException(e);
+                    Thread.currentThread().interrupt();
+                    return;
                 }
             }
 
@@ -209,7 +211,8 @@ public class MessageHandler {
                     }
                 }
                 catch (Exception e){
-                    log.error("Error reading message: " + e, e);
+                    if (isProcessing.get())
+                        log.error("Error reading message: " + e, e);
                 }
             }
 
@@ -280,7 +283,11 @@ public class MessageHandler {
         alarmListeners.add(listener);
     }
 
-    public void stopProcessing() {
+    public synchronized void requestStop() {
+        if (stopDeadlineNanos == 0L) {
+            stopDeadlineNanos = System.nanoTime()
+                    + TimeUnit.MILLISECONDS.toNanos(STOP_TIMEOUT_MILLIS);
+        }
 
         synchronized (isProcessing) {
 
@@ -291,20 +298,59 @@ public class MessageHandler {
         } catch (IOException e) {
             log.debug("Error closing RS350 message stream", e);
         }
-        messageReader.interrupt();
         messageNotifier.interrupt();
         synchronized (messageQueue) {
             messageQueue.notifyAll();
         }
 
-        webIdScheduler.shutdown();
+        // Deferred WebID work is not source capture and must not hold an RPM
+        // writer lease open during application shutdown.
+        webIdScheduler.shutdownNow();
+    }
+
+    public void awaitSourceStopped() throws IOException {
+        requestStop();
         try {
-            if (!webIdScheduler.awaitTermination(WEBID_PUBLISH_DELAY_SECONDS + 5, TimeUnit.SECONDS)) {
-                webIdScheduler.shutdownNow();
+            awaitStopped(messageReader, stopDeadlineNanos, "RS350 message reader");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while stopping RS350 message reader", e);
+        }
+    }
+
+    public void awaitAncillaryStopped() throws IOException {
+        requestStop();
+        try {
+            awaitStopped(messageNotifier, stopDeadlineNanos, "RS350 message notifier");
+            if (!webIdScheduler.isTerminated()) {
+                long remaining = stopDeadlineNanos - System.nanoTime();
+                if (remaining <= 0 ||
+                        !webIdScheduler.awaitTermination(remaining, TimeUnit.NANOSECONDS))
+                    throw new IOException("RS350 deferred WebID worker did not stop within "
+                            + STOP_TIMEOUT_MILLIS + " ms");
             }
         } catch (InterruptedException e) {
             webIdScheduler.shutdownNow();
             Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while stopping RS350 ancillary workers", e);
+        }
+    }
+
+    public void stopProcessing() throws IOException {
+        requestStop();
+        awaitSourceStopped();
+        awaitAncillaryStopped();
+    }
+
+    static void awaitStopped(Thread worker, long deadlineNanos, String description)
+            throws InterruptedException, IOException {
+        while (worker.isAlive()) {
+            long remaining = deadlineNanos - System.nanoTime();
+            if (remaining <= 0)
+                throw new IOException(description + " did not stop within "
+                        + STOP_TIMEOUT_MILLIS + " ms");
+            long millis = Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remaining));
+            worker.join(millis);
         }
     }
 
