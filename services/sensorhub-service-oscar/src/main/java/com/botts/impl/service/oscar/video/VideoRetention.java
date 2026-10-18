@@ -131,8 +131,8 @@ public class VideoRetention {
             return;
         }
 
-        hasStarted = true;
         retentionQuery.start();
+        hasStarted = true;
     }
 
     private boolean deleteOccupancyVideo(SlidingOccupancyQuery.OccupancyRecord record) {
@@ -332,12 +332,16 @@ public class VideoRetention {
     }
 
     public synchronized void stop() {
+        stop(STOP_JOIN_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+    }
+
+    public synchronized void stop(long timeout, java.util.concurrent.TimeUnit unit) {
         if (!hasStarted) {
             return;
         }
 
+        retentionQuery.stop(timeout, unit);
         hasStarted = false;
-        retentionQuery.stop();
     }
 
     /**

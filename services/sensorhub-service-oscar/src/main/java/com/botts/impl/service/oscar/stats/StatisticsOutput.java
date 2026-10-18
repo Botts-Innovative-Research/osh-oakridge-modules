@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
 public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
     public static final String NAME = "siteStatistics";
+    private static final long DEFAULT_STOP_TIMEOUT_MILLIS = 5_000L;
 
     public static String gammaNeutronAlarmCQL = "gammaAlarm = true AND neutronAlarm = true";
     public static String gammaAlarmCQL = "gammaAlarm = true AND neutronAlarm = false";
@@ -52,6 +53,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     private final DataEncoding recommendedEncoding;
     private final int samplingPeriod;
 
+    private final Object lifecycleMonitor = new Object();
     private ScheduledExecutorService service;
     private final IObsSystemDatabase database;
     private Map<String, Set<BigId>> observedPropertyToDataStreamIds;
@@ -99,14 +101,44 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     }
 
     public void start() {
-        if (service == null || service.isShutdown())
-            service = Executors.newSingleThreadScheduledExecutor();
-        service.scheduleAtFixedRate(this::publishLatestStatistics, 0L, samplingPeriod, TimeUnit.MINUTES);
+        synchronized (lifecycleMonitor) {
+            if (service != null && !service.isTerminated())
+                return;
+            service = Executors.newSingleThreadScheduledExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "OSCAR-statistics");
+                thread.setDaemon(true);
+                return thread;
+            });
+            service.scheduleAtFixedRate(this::publishLatestStatistics, 0L,
+                    samplingPeriod, TimeUnit.MINUTES);
+        }
     }
 
     public void stop() {
-        if (service != null) {
-            service.shutdown();
+        stop(DEFAULT_STOP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+    }
+
+    public void stop(long timeout, TimeUnit unit) {
+        java.util.Objects.requireNonNull(unit, "unit");
+        if (timeout <= 0)
+            throw new IllegalArgumentException("Statistics stop timeout must be positive");
+        synchronized (lifecycleMonitor) {
+            ScheduledExecutorService stopping = service;
+            if (stopping == null)
+                return;
+            stopping.shutdownNow();
+            boolean terminated;
+            try {
+                terminated = stopping.awaitTermination(timeout, unit);
+            } catch (InterruptedException error) {
+                stopping.shutdownNow();
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(
+                        "Interrupted while waiting for statistics output to stop", error);
+            }
+            if (!terminated)
+                throw new IllegalStateException(
+                        "Statistics output worker did not terminate within the stop deadline");
             service = null;
         }
     }

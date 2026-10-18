@@ -193,4 +193,62 @@ public class RetentionCursorTest {
             query.stop();
         }
     }
+
+    @Test
+    public void timedOutStopIsTruthfulAndSuccessfulRetryLeavesNoWorker() throws Exception {
+        ISensorHub hub = (ISensorHub) Proxy.newProxyInstance(
+                ISensorHub.class.getClassLoader(), new Class<?>[]{ISensorHub.class},
+                (proxy, method, arguments) -> null);
+        RetentionScanCheckpoint atEpoch = RetentionScanCheckpoint.at(Instant.EPOCH, Instant.EPOCH);
+        SlidingOccupancyQuery.CursorStore cursorStore = new SlidingOccupancyQuery.CursorStore() {
+            @Override public Optional<RetentionScanCheckpoint> read() { return Optional.of(atEpoch); }
+            @Override public void write(RetentionScanCheckpoint checkpoint) { }
+            @Override public Optional<RetentionReconciliationCheckpoint> readReconciliation() {
+                return Optional.empty();
+            }
+            @Override public void writeReconciliation(RetentionReconciliationCheckpoint checkpoint) { }
+            @Override public boolean isProcessed(String observationId) { return false; }
+            @Override public void markProcessed(RetentionProcessedObservation marker) { }
+        };
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch exited = new CountDownLatch(1);
+        AtomicInteger mutations = new AtomicInteger();
+        SlidingOccupancyQuery query = new SlidingOccupancyQuery(hub, Duration.ofDays(1),
+                ignored -> true, Duration.ZERO, Duration.ofDays(1), cursorStore, () -> {
+                    started.countDown();
+                    awaitIgnoringInterrupts(release);
+                    mutations.incrementAndGet();
+                    exited.countDown();
+                }, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC), Duration.ZERO,
+                Duration.ofDays(1));
+
+        query.start();
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+        assertThrows(IllegalStateException.class,
+                () -> query.stop(100, TimeUnit.MILLISECONDS));
+        assertThrows("An unverified old generation must prevent restart",
+                IllegalStateException.class, query::start);
+
+        release.countDown();
+        assertTrue(exited.await(1, TimeUnit.SECONDS));
+        query.stop(1, TimeUnit.SECONDS);
+        int stableMutations = mutations.get();
+        Thread.sleep(50L);
+        assertEquals(stableMutations, mutations.get());
+    }
+
+    private static void awaitIgnoringInterrupts(CountDownLatch latch) {
+        boolean interrupted = false;
+        while (true) {
+            try {
+                latch.await();
+                break;
+            } catch (InterruptedException ignored) {
+                interrupted = true;
+            }
+        }
+        if (interrupted)
+            Thread.interrupted();
+    }
 }

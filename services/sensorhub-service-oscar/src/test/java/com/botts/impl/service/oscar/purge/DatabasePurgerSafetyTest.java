@@ -310,7 +310,7 @@ public class DatabasePurgerSafetyTest {
         DatabasePurger purger = new DatabasePurger(database, bucketStore, 0, journal,
                 ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true, 10) {
             @Override
-            public void purgeOldConnectionStatus() {
+            void purgeOldConnectionStatusWithinScope() {
                 throw new IllegalStateException("fixture connection-status failure");
             }
         };
@@ -412,7 +412,7 @@ public class DatabasePurgerSafetyTest {
             }
 
             @Override
-            public void purgeOldConnectionStatus() {
+            void purgeOldConnectionStatusWithinScope() {
                 int run = runCount.incrementAndGet();
                 if (run > 1) {
                     secondStarted.countDown();
@@ -469,7 +469,7 @@ public class DatabasePurgerSafetyTest {
             }
 
             @Override
-            public void purgeOldConnectionStatus() {
+            void purgeOldConnectionStatusWithinScope() {
                 started.countDown();
                 awaitIgnoringInterrupts(allowExit);
                 mutationCount.incrementAndGet();
@@ -518,7 +518,7 @@ public class DatabasePurgerSafetyTest {
             }
 
             @Override
-            public void purgeOldConnectionStatus() {
+            void purgeOldConnectionStatusWithinScope() {
                 started.countDown();
                 try {
                     new CountDownLatch(1).await();
@@ -542,12 +542,174 @@ public class DatabasePurgerSafetyTest {
                 org.sensorhub.api.common.SensorHubException.class, purger::start);
     }
 
+    @Test
+    public void everyDirectMaintenanceEntryOwnsExactlyOneCancellableScope() {
+        AtomicInteger opened = new AtomicInteger();
+        AtomicInteger closed = new AtomicInteger();
+        DatabasePurger purger = new DatabasePurger(database, bucketStore, 0, null,
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true) {
+            @Override
+            ICancellableDataStore.CancellableOperation beginCancellableDataStoreOperation() {
+                opened.incrementAndGet();
+                return new ICancellableDataStore.CancellableOperation() {
+                    @Override public void cancel() { }
+                    @Override public boolean isCancellationRequested() { return false; }
+                    @Override public void close() { closed.incrementAndGet(); }
+                };
+            }
+        };
+
+        purger.purgeOldConnectionStatus();
+        purger.exportAndPurgeDailyFileData();
+        purger.purgeNonOccupancyData();
+        purger.exportAndPurgeDailyFileData(
+                DatabasePurger.previousCompletedDayWindow(NOW, ZoneOffset.UTC));
+
+        assertEquals("Nested daily-file helpers must reuse the owning scope", 4, opened.get());
+        assertEquals(4, closed.get());
+    }
+
+    @Test
+    public void stopCancelsAndWaitsForDirectAdministrativeMaintenance() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch cancellationReleasedWorker = new CountDownLatch(1);
+        CountDownLatch exited = new CountDownLatch(1);
+        AtomicInteger cancellationCount = new AtomicInteger();
+        AtomicInteger mutations = new AtomicInteger();
+        DatabasePurger purger = new DatabasePurger(database, bucketStore, 0, null,
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true) {
+            @Override
+            ICancellableDataStore.CancellableOperation beginCancellableDataStoreOperation() {
+                return new TestCancellationOperation(cancellationCount,
+                        cancellationReleasedWorker);
+            }
+
+            @Override
+            void purgeOldConnectionStatusWithinScope() {
+                started.countDown();
+                awaitIgnoringInterrupts(cancellationReleasedWorker);
+                if (cancellationCount.get() == 0)
+                    mutations.incrementAndGet();
+                exited.countDown();
+            }
+        };
+
+        Thread adminCall = new Thread(purger::purgeOldConnectionStatus,
+                "fixture-direct-purge");
+        adminCall.start();
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+        purger.stop(1, TimeUnit.SECONDS);
+        adminCall.join(1_000L);
+
+        assertFalse("Successful stop must leave no direct maintenance thread", adminCall.isAlive());
+        assertTrue(exited.await(1, TimeUnit.SECONDS));
+        assertEquals(1, cancellationCount.get());
+        assertEquals(0, mutations.get());
+        int stableMutations = mutations.get();
+        Thread.sleep(50L);
+        assertEquals(stableMutations, mutations.get());
+    }
+
+    @Test
+    public void cancellationAndWorkerShareOneMonotonicStopDeadline() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch releaseWorker = new CountDownLatch(1);
+        CountDownLatch exited = new CountDownLatch(1);
+        DatabasePurger purger = new DatabasePurger(database, bucketStore, 0, null,
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true) {
+            @Override
+            ICancellableDataStore.CancellableOperation beginCancellableDataStoreOperation() {
+                return new ICancellableDataStore.CancellableOperation() {
+                    @Override
+                    public void cancel() {
+                        sleepIgnoringInterrupts(70L);
+                        releaseWorker.countDown();
+                    }
+
+                    @Override public boolean isCancellationRequested() { return false; }
+                    @Override public void close() { }
+                };
+            }
+
+            @Override
+            void purgeOldConnectionStatusWithinScope() {
+                started.countDown();
+                awaitIgnoringInterrupts(releaseWorker);
+                sleepIgnoringInterrupts(80L);
+                exited.countDown();
+            }
+        };
+
+        Thread adminCall = new Thread(purger::purgeOldConnectionStatus,
+                "fixture-deadline-purge");
+        adminCall.start();
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+        long stopStarted = System.nanoTime();
+        assertThrows(org.sensorhub.api.common.SensorHubException.class,
+                () -> purger.stop(100, TimeUnit.MILLISECONDS));
+        long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - stopStarted);
+        assertTrue("Cancellation must not receive a second full timeout: " + elapsedMillis,
+                elapsedMillis < 250L);
+
+        assertTrue(exited.await(1, TimeUnit.SECONDS));
+        adminCall.join(1_000L);
+        purger.stop(1, TimeUnit.SECONDS);
+    }
+
+    @Test
+    public void scopeCloseFailureIsStickyAndCanNeverBecomeSuccessfulStop() {
+        AtomicInteger closeAttempts = new AtomicInteger();
+        DatabasePurger purger = new DatabasePurger(database, bucketStore, 0, null,
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true) {
+            @Override
+            ICancellableDataStore.CancellableOperation beginCancellableDataStoreOperation() {
+                return new ICancellableDataStore.CancellableOperation() {
+                    @Override public void cancel() { }
+                    @Override public boolean isCancellationRequested() { return false; }
+
+                    @Override
+                    public void close() {
+                        closeAttempts.incrementAndGet();
+                        throw new IllegalStateException("fixture scope-close failure");
+                    }
+                };
+            }
+        };
+
+        assertThrows(IllegalStateException.class, purger::purgeOldConnectionStatus);
+        assertEquals(1, closeAttempts.get());
+        assertThrows(org.sensorhub.api.common.SensorHubException.class,
+                () -> purger.stop(50, TimeUnit.MILLISECONDS));
+        assertThrows("Repeated stop cannot erase the failed close",
+                org.sensorhub.api.common.SensorHubException.class,
+                () -> purger.stop(50, TimeUnit.MILLISECONDS));
+        assertThrows("A failed scope owner must be recreated",
+                org.sensorhub.api.common.SensorHubException.class, purger::start);
+    }
+
     private static void awaitIgnoringInterrupts(CountDownLatch latch) {
         boolean interrupted = false;
         while (true) {
             try {
                 latch.await();
                 break;
+            } catch (InterruptedException ignored) {
+                interrupted = true;
+            }
+        }
+        if (interrupted)
+            Thread.interrupted();
+    }
+
+    private static void sleepIgnoringInterrupts(long millis) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis);
+        boolean interrupted = false;
+        while (true) {
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0)
+                break;
+            try {
+                TimeUnit.NANOSECONDS.sleep(remaining);
             } catch (InterruptedException ignored) {
                 interrupted = true;
             }

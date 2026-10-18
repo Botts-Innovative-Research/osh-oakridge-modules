@@ -43,6 +43,7 @@ import java.util.stream.Stream;
 public final class SlidingOccupancyQuery {
     private static final Logger logger = LoggerFactory.getLogger(SlidingOccupancyQuery.class);
     private static final Instant RETENTION_EPOCH = Instant.EPOCH;
+    private static final long DEFAULT_STOP_TIMEOUT_MILLIS = 5_000L;
 
     private final Duration batchWindowLength;
     private final Duration retentionOffset;
@@ -115,8 +116,11 @@ public final class SlidingOccupancyQuery {
     public synchronized void start() {
         if (future != null && !future.isDone())
             return;
-        if (executor != null)
-            executor.shutdownNow();
+        if (executor != null && !executor.isTerminated())
+            throw new IllegalStateException(
+                    "Video-retention worker from the previous generation has not terminated");
+        executor = null;
+        future = null;
         executor = newExecutor();
         long delayMillis = Math.max(1_000L, batchWindowLength.toMillis());
         // Fixed delay prevents a slow catch-up cycle from building an immediate fixed-rate backlog.
@@ -347,25 +351,37 @@ public final class SlidingOccupancyQuery {
         return maximum(RETENTION_EPOCH, subtractClamped(processedThrough, overlap));
     }
 
-    public synchronized void stop() {
+    public void stop() {
+        stop(DEFAULT_STOP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+    }
+
+    public synchronized void stop(long timeout, TimeUnit unit) {
+        java.util.Objects.requireNonNull(unit, "unit");
+        if (timeout <= 0)
+            throw new IllegalArgumentException("Video-retention stop timeout must be positive");
         if (future != null)
-            future.cancel(false);
-        future = null;
+            future.cancel(true);
         ScheduledExecutorService stopping = executor;
-        executor = null;
-        if (stopping == null)
+        if (stopping == null) {
+            future = null;
             return;
-        stopping.shutdown();
+        }
+        stopping.shutdownNow();
+        boolean terminated;
         try {
-            if (!stopping.awaitTermination(10, TimeUnit.SECONDS)) {
-                logger.warn("Timed out waiting for occupancy retention thread to stop");
-                stopping.shutdownNow();
-            }
+            terminated = stopping.awaitTermination(timeout, unit);
         } catch (InterruptedException e) {
-            logger.warn("Interrupted while waiting for occupancy retention thread to stop", e);
             stopping.shutdownNow();
             Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "Interrupted while waiting for occupancy retention thread to stop", e);
         }
+        if (!terminated)
+            throw new IllegalStateException(
+                    "Occupancy retention worker did not terminate within the stop deadline");
+        if (executor == stopping)
+            executor = null;
+        future = null;
     }
 
     private static Duration duration(TemporalAmount amount, String field) {

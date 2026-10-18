@@ -18,10 +18,13 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class StoragePressureRetention {
+    private static final long DEFAULT_STOP_TIMEOUT_MILLIS = 5_000L;
     private final StoragePressureRetentionConfig config;
     private final Logger log;
     private final Path storagePath;
     private final MediaSetStore mediaStore;
+    private final Object lifecycleMonitor = new Object();
+    private final Object cleanupMonitor = new Object();
     private ScheduledExecutorService scheduler;
 
     public StoragePressureRetention(IBucketStore bucketStore, StoragePressureRetentionConfig config, Logger log) {
@@ -45,25 +48,56 @@ public class StoragePressureRetention {
         this.storagePath = Path.of(config.storagePath).toAbsolutePath().normalize();
     }
 
-    public synchronized void start() {
-        if (scheduler != null)
-            return;
-        scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread thread = new Thread(r, "OSCAR-storage-pressure-retention");
-            thread.setDaemon(true);
-            return thread;
-        });
-        scheduler.scheduleWithFixedDelay(this::runSafely, 0, config.checkPeriodMinutes, TimeUnit.MINUTES);
+    public void start() {
+        synchronized (lifecycleMonitor) {
+            if (scheduler != null && !scheduler.isTerminated())
+                return;
+            scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread thread = new Thread(r, "OSCAR-storage-pressure-retention");
+                thread.setDaemon(true);
+                return thread;
+            });
+            scheduler.scheduleWithFixedDelay(this::runSafely, 0,
+                    config.checkPeriodMinutes, TimeUnit.MINUTES);
+        }
     }
 
-    public synchronized void stop() {
-        if (scheduler == null)
-            return;
-        scheduler.shutdownNow();
-        scheduler = null;
+    public void stop() {
+        stop(DEFAULT_STOP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
     }
 
-    synchronized void cleanupIfNeeded() throws IOException, DataStoreException {
+    public void stop(long timeout, TimeUnit unit) {
+        java.util.Objects.requireNonNull(unit, "unit");
+        if (timeout <= 0)
+            throw new IllegalArgumentException("Storage-pressure stop timeout must be positive");
+        synchronized (lifecycleMonitor) {
+            ScheduledExecutorService stopping = scheduler;
+            if (stopping == null)
+                return;
+            stopping.shutdownNow();
+            boolean terminated;
+            try {
+                terminated = stopping.awaitTermination(timeout, unit);
+            } catch (InterruptedException error) {
+                stopping.shutdownNow();
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(
+                        "Interrupted while waiting for storage-pressure retention to stop", error);
+            }
+            if (!terminated)
+                throw new IllegalStateException(
+                        "Storage-pressure retention worker did not terminate within the stop deadline");
+            scheduler = null;
+        }
+    }
+
+    void cleanupIfNeeded() throws IOException, DataStoreException {
+        synchronized (cleanupMonitor) {
+            cleanupIfNeededWithinLock();
+        }
+    }
+
+    private void cleanupIfNeededWithinLock() throws IOException, DataStoreException {
         Files.createDirectories(storagePath);
         FileStore fileStore = Files.getFileStore(storagePath);
         StorageUsage usage = readUsage(fileStore);
@@ -83,7 +117,8 @@ public class StoragePressureRetention {
         long freedBytes = 0;
         int deletedObjects = 0;
         int inspected = 0;
-        while (inspected < config.maximumMediaSetsPerCycle && freedBytes < bytesToFree) {
+        while (!Thread.currentThread().isInterrupted()
+                && inspected < config.maximumMediaSetsPerCycle && freedBytes < bytesToFree) {
             Optional<MediaSetStore.PressureQueueEntry> next = mediaStore.inspectPressureHead();
             if (next.isEmpty() || next.get().sequence() >= cycleTail)
                 break;

@@ -20,8 +20,13 @@ import javax.imageio.ImageIO;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 public class StoragePressureRetentionTest {
@@ -271,6 +276,67 @@ public class StoragePressureRetentionTest {
                 paths.sorted((left, right) -> right.compareTo(left)).forEach(path -> path.toFile().delete());
             }
         }
+    }
+
+    @Test
+    public void stopFailsTruthfullyUntilActivePressureCleanupTerminates() throws Exception {
+        Path root = Files.createTempDirectory("oscar-pressure-stop-");
+        try {
+            FileSystemBucketStore store = new FileSystemBucketStore(root);
+            MediaSetStore mediaStore = new MediaSetStore(store);
+            StoragePressureRetentionConfig config = new StoragePressureRetentionConfig();
+            config.triggerUsagePercent = 95;
+            config.targetUsagePercent = 90;
+            config.minimumObjectAgeMinutes = 0;
+            config.maximumMediaSetsPerCycle = 1;
+            config.checkPeriodMinutes = 60;
+            config.storagePath = root.toString();
+            CountDownLatch started = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            CountDownLatch exited = new CountDownLatch(1);
+            AtomicInteger mutations = new AtomicInteger();
+            StoragePressureRetention retention = new StoragePressureRetention(
+                    store, mediaStore, config,
+                    LoggerFactory.getLogger(StoragePressureRetentionTest.class)) {
+                @Override
+                void cleanupIfNeeded() {
+                    started.countDown();
+                    awaitIgnoringInterrupts(release);
+                    mutations.incrementAndGet();
+                    exited.countDown();
+                }
+            };
+
+            retention.start();
+            assertTrue(started.await(2, TimeUnit.SECONDS));
+            assertThrows(IllegalStateException.class,
+                    () -> retention.stop(100, TimeUnit.MILLISECONDS));
+            release.countDown();
+            assertTrue(exited.await(1, TimeUnit.SECONDS));
+            retention.stop(1, TimeUnit.SECONDS);
+            int stableMutations = mutations.get();
+            Thread.sleep(50L);
+            assertEquals(stableMutations, mutations.get());
+        } finally {
+            try (var paths = Files.walk(root)) {
+                paths.sorted((left, right) -> right.compareTo(left))
+                        .forEach(path -> path.toFile().delete());
+            }
+        }
+    }
+
+    private static void awaitIgnoringInterrupts(CountDownLatch latch) {
+        boolean interrupted = false;
+        while (true) {
+            try {
+                latch.await();
+                break;
+            } catch (InterruptedException ignored) {
+                interrupted = true;
+            }
+        }
+        if (interrupted)
+            Thread.interrupted();
     }
 
     private static void put(FileSystemBucketStore store, String bucket, String key, String value) throws Exception {

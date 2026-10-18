@@ -14,6 +14,7 @@ import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.TemporalFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.module.ModuleEvent;
@@ -28,8 +29,11 @@ import org.vast.data.DataBlockMixed;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.*;
 
@@ -85,6 +89,71 @@ public class StatisticsTests {
         for (int i = 0; i < 10; i++) {
             statsOutput.start();
             statsOutput.stop();
+        }
+    }
+
+    @Test
+    public void statisticsStopIsTruthfulAndLeavesNoPublishingWorker() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch exited = new CountDownLatch(1);
+        AtomicInteger publications = new AtomicInteger();
+        StatisticsOutput blocking = new BlockingStatisticsOutput(
+                (OSCARSystem) statsOutput.getParentProducer(),
+                hub.getDatabaseRegistry().getFederatedDatabase(), started, release, exited,
+                publications);
+
+        blocking.start();
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+        assertThrows(IllegalStateException.class,
+                () -> blocking.stop(100, TimeUnit.MILLISECONDS));
+        release.countDown();
+        assertTrue(exited.await(1, TimeUnit.SECONDS));
+        blocking.stop(1, TimeUnit.SECONDS);
+        int stablePublications = publications.get();
+        Thread.sleep(50L);
+        assertEquals(stablePublications, publications.get());
+    }
+
+    private static void awaitIgnoringInterrupts(CountDownLatch latch) {
+        boolean interrupted = false;
+        while (true) {
+            try {
+                latch.await();
+                break;
+            } catch (InterruptedException ignored) {
+                interrupted = true;
+            }
+        }
+        if (interrupted)
+            Thread.interrupted();
+    }
+
+    private static final class BlockingStatisticsOutput extends StatisticsOutput {
+        private final CountDownLatch started;
+        private final CountDownLatch release;
+        private final CountDownLatch exited;
+        private final AtomicInteger publications;
+
+        private BlockingStatisticsOutput(OSCARSystem parent,
+                                         IObsSystemDatabase database,
+                                         CountDownLatch started,
+                                         CountDownLatch release,
+                                         CountDownLatch exited,
+                                         AtomicInteger publications) {
+            super(parent, database, 60);
+            this.started = started;
+            this.release = release;
+            this.exited = exited;
+            this.publications = publications;
+        }
+
+        @Override
+        public void publishLatestStatistics() {
+            started.countDown();
+            awaitIgnoringInterrupts(release);
+            publications.incrementAndGet();
+            exited.countDown();
         }
     }
 

@@ -45,6 +45,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> implements IWebIdProvider {
+    static final long STOP_BUDGET_NANOS = TimeUnit.SECONDS.toNanos(8);
 
     SiteInfoOutput siteInfoOutput;
     RequestReportControl reportControl;
@@ -201,32 +202,87 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
 
     @Override
     protected void doStop() throws SensorHubException {
-        super.doStop();
+        long deadline = System.nanoTime() + STOP_BUDGET_NANOS;
+        SensorHubException failure = null;
+        failure = runStopStep(failure, "base OSCAR module", this::stopBaseModule);
+        failure = runStopStep(failure, "statistics output",
+                () -> stopStatisticsOutput(deadline));
+        failure = runStopStep(failure, "database purger",
+                () -> stopDatabasePurger(deadline));
+        failure = runStopStep(failure, "video retention",
+                () -> stopVideoRetention(deadline));
+        failure = runStopStep(failure, "storage-pressure retention",
+                () -> stopStoragePressureRetention(deadline));
+        failure = runStopStep(failure, "Web ID object handler", this::unregisterWebIdHandler);
+        failure = runStopStep(failure, "retained-media object handler", this::unregisterMediaHandler);
+        if (failure != null)
+            throw failure;
+    }
+
+    private SensorHubException runStopStep(SensorHubException aggregate,
+                                           String description,
+                                           StopAction action) {
         try {
-            statsOutput.stop();
-        } catch (Exception ex) {
-            getLogger().error("Could not stop stats output", ex);
+            action.run();
+            return aggregate;
+        } catch (Throwable error) {
+            getLogger().error("Could not stop {}", description, error);
+            SensorHubException stepFailure = new SensorHubException(
+                    "Could not stop " + description, error);
+            if (aggregate == null)
+                return stepFailure;
+            aggregate.addSuppressed(stepFailure);
+            return aggregate;
         }
+    }
 
-        if (databasePurger != null) {
-            databasePurger.stop();
-            databasePurger = null;
-        }
+    void stopBaseModule() throws SensorHubException {
+        super.doStop();
+    }
 
+    void stopStatisticsOutput(long deadline) {
+        if (statsOutput != null)
+            statsOutput.stop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
+    }
+
+    void stopDatabasePurger(long deadline) throws SensorHubException {
+        if (databasePurger == null)
+            return;
+        databasePurger.stop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
+        databasePurger = null;
+    }
+
+    void stopVideoRetention(long deadline) {
         if (videoRetention != null)
-            videoRetention.stop();
+            videoRetention.stop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
+    }
 
+    void stopStoragePressureRetention(long deadline) {
         if (storagePressureRetention != null)
-            storagePressureRetention.stop();
+            storagePressureRetention.stop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
+    }
 
-        if (webIdResourceHandler != null) {
-            bucketService.unregisterObjectHandler(webIdResourceHandler);
-            webIdResourceHandler = null;
-        }
-        if (mediaResourceHandler != null) {
-            bucketService.unregisterObjectHandler(mediaResourceHandler);
-            mediaResourceHandler = null;
-        }
+    private static long remainingStopNanos(long deadline) {
+        return Math.max(1L, deadline - System.nanoTime());
+    }
+
+    void unregisterWebIdHandler() {
+        if (webIdResourceHandler == null)
+            return;
+        bucketService.unregisterObjectHandler(webIdResourceHandler);
+        webIdResourceHandler = null;
+    }
+
+    void unregisterMediaHandler() {
+        if (mediaResourceHandler == null)
+            return;
+        bucketService.unregisterObjectHandler(mediaResourceHandler);
+        mediaResourceHandler = null;
+    }
+
+    @FunctionalInterface
+    private interface StopAction {
+        void run() throws Exception;
     }
 
     private MediaSetStore createMediaStore() throws SensorHubException {

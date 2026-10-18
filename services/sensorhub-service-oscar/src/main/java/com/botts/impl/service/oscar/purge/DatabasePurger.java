@@ -51,9 +51,11 @@ public class DatabasePurger {
     private volatile ScheduledExecutorService scheduler;
     private volatile ScheduledFuture<?> hourlyPurgeTask;
     private volatile ScheduledFuture<?> dailyExportTask;
-    private final AtomicReference<ICancellableDataStore.CancellableOperation> activeDataStoreOperation =
-            new AtomicReference<>();
-    private final AtomicReference<RuntimeException> stopCancellationFailure = new AtomicReference<>();
+    private final Object maintenanceMonitor = new Object();
+    private final Set<MaintenanceWork> activeMaintenance = new HashSet<>();
+    private final ThreadLocal<Boolean> maintenanceScope =
+            ThreadLocal.withInitial(() -> Boolean.FALSE);
+    private final AtomicReference<RuntimeException> unsafeStopFailure = new AtomicReference<>();
     private volatile boolean stopRequested;
 
     private final int occupancyBufferSeconds;
@@ -134,14 +136,19 @@ public class DatabasePurger {
     }
 
     public void start() throws SensorHubException {
-        if (stopCancellationFailure.get() != null)
+        if (unsafeStopFailure.get() != null)
             throw new SensorHubException(
-                    "Database purger cannot restart after a failed datastore cancellation; recreate the module");
+                    "Database purger cannot restart after unsafe datastore cleanup; recreate the module",
+                    unsafeStopFailure.get());
         ScheduledExecutorService previousScheduler = scheduler;
         if (previousScheduler != null && !previousScheduler.isTerminated())
             throw new SensorHubException("Database purger is already running or has not terminated");
 
-        stopRequested = false;
+        synchronized (maintenanceMonitor) {
+            if (!activeMaintenance.isEmpty())
+                throw new SensorHubException("Database purger still has active maintenance work");
+            stopRequested = false;
+        }
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "OSCAR-database-purger");
             t.setDaemon(true);
@@ -174,15 +181,27 @@ public class DatabasePurger {
         stop(STOP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
     }
 
-    void stop(long timeout, TimeUnit unit) throws SensorHubException {
+    public void stop(long timeout, TimeUnit unit) throws SensorHubException {
         Objects.requireNonNull(unit, "unit");
         if (timeout <= 0)
             throw new IllegalArgumentException("Database purger stop timeout must be positive");
 
-        log.info("Stopping database purger...");
-        stopRequested = true;
+        long requestedNanos = unit.toNanos(timeout);
+        long maximumNanos = TimeUnit.MILLISECONDS.toNanos(STOP_TIMEOUT_MILLIS);
+        long budgetNanos = Math.min(requestedNanos, maximumNanos);
+        if (budgetNanos <= 0)
+            budgetNanos = 1;
+        long deadline = System.nanoTime() + budgetNanos;
 
-        RuntimeException cancellationFailure = cancelActiveDataStoreOperation();
+        log.info("Stopping database purger...");
+        List<MaintenanceWork> workToCancel;
+        synchronized (maintenanceMonitor) {
+            stopRequested = true;
+            workToCancel = new ArrayList<>(activeMaintenance);
+        }
+        // Driver cancellation can block while a cancel request is delivered. Initiate it on a
+        // daemon helper so this module-registry thread retains one bounded stop deadline.
+        workToCancel.forEach(MaintenanceWork::requestCancellation);
 
         if (hourlyPurgeTask != null)
             hourlyPurgeTask.cancel(true);
@@ -190,63 +209,88 @@ public class DatabasePurger {
             dailyExportTask.cancel(true);
 
         ScheduledExecutorService activeScheduler = scheduler;
-        if (activeScheduler == null || activeScheduler.isTerminated()) {
-            clearSchedulerReferences(activeScheduler);
-            throwIfCancellationFailed(cancellationFailure);
-            log.info("Database purger stopped");
-            return;
-        }
-
-        activeScheduler.shutdownNow();
+        if (activeScheduler != null && !activeScheduler.isTerminated())
+            activeScheduler.shutdownNow();
         boolean terminated;
         try {
-            terminated = activeScheduler.awaitTermination(timeout, unit);
+            terminated = awaitMaintenanceShutdown(activeScheduler, deadline);
         } catch (InterruptedException e) {
-            cancelActiveDataStoreOperation();
-            activeScheduler.shutdownNow();
+            requestCancellationForActiveMaintenance();
+            if (activeScheduler != null)
+                activeScheduler.shutdownNow();
             Thread.currentThread().interrupt();
             throw new SensorHubException("Interrupted while stopping database purger", e);
         }
 
         if (!terminated) {
-            RuntimeException retryFailure = cancelActiveDataStoreOperation();
+            requestCancellationForActiveMaintenance();
+            int activeCount;
+            synchronized (maintenanceMonitor) {
+                activeCount = activeMaintenance.size();
+            }
             SensorHubException failure = new SensorHubException(
-                    "Database purger worker did not terminate within " +
-                            unit.toMillis(timeout) + " ms; refusing to report a successful stop");
-            if (cancellationFailure != null)
-                failure.addSuppressed(cancellationFailure);
-            if (retryFailure != null && retryFailure != cancellationFailure)
-                failure.addSuppressed(retryFailure);
+                    "Database purger did not stop within its single " +
+                            TimeUnit.NANOSECONDS.toMillis(budgetNanos) +
+                            " ms deadline (active maintenance=" + activeCount +
+                            ", schedulerTerminated=" +
+                            (activeScheduler == null || activeScheduler.isTerminated()) +
+                            "); refusing to report a successful stop");
+            RuntimeException unsafeFailure = unsafeStopFailure.get();
+            if (unsafeFailure != null)
+                failure.addSuppressed(unsafeFailure);
             throw failure;
         }
 
         clearSchedulerReferences(activeScheduler);
-        throwIfCancellationFailed(cancellationFailure);
+        throwIfUnsafeStop();
         log.info("Database purger stopped");
     }
 
-    private void throwIfCancellationFailed(RuntimeException currentFailure)
-            throws SensorHubException {
-        RuntimeException failure = currentFailure != null
-                ? currentFailure : stopCancellationFailure.get();
+    private boolean awaitMaintenanceShutdown(ScheduledExecutorService activeScheduler,
+                                             long deadline) throws InterruptedException {
+        while (true) {
+            boolean schedulerTerminated = activeScheduler == null || activeScheduler.isTerminated();
+            boolean maintenanceTerminated;
+            synchronized (maintenanceMonitor) {
+                maintenanceTerminated = activeMaintenance.isEmpty();
+            }
+            if (schedulerTerminated && maintenanceTerminated)
+                return true;
+
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0)
+                return false;
+            long slice = Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(50));
+            if (!schedulerTerminated) {
+                activeScheduler.awaitTermination(slice, TimeUnit.NANOSECONDS);
+            } else {
+                synchronized (maintenanceMonitor) {
+                    if (!activeMaintenance.isEmpty())
+                        TimeUnit.NANOSECONDS.timedWait(maintenanceMonitor, slice);
+                }
+            }
+        }
+    }
+
+    private void throwIfUnsafeStop() throws SensorHubException {
+        RuntimeException failure = unsafeStopFailure.get();
         if (failure != null)
             throw new SensorHubException(
-                    "Database purger worker terminated, but datastore cancellation failed; " +
+                    "Database purger workers terminated, but datastore cancellation or scope cleanup failed; " +
                             "refusing to report a successful stop", failure);
     }
 
-    private RuntimeException cancelActiveDataStoreOperation() {
-        ICancellableDataStore.CancellableOperation operation = activeDataStoreOperation.get();
-        if (operation == null)
-            return null;
-        try {
-            operation.cancel();
-            return null;
-        } catch (RuntimeException error) {
-            stopCancellationFailure.compareAndSet(null, error);
-            log.warn("Could not cancel the active database-purge operation cleanly", error);
-            return error;
+    private void requestCancellationForActiveMaintenance() {
+        List<MaintenanceWork> snapshot;
+        synchronized (maintenanceMonitor) {
+            snapshot = new ArrayList<>(activeMaintenance);
         }
+        snapshot.forEach(MaintenanceWork::requestCancellation);
+    }
+
+    private void latchUnsafeStopFailure(RuntimeException failure, String description) {
+        unsafeStopFailure.compareAndSet(null, failure);
+        log.warn(description, failure);
     }
 
     private void clearSchedulerReferences(ScheduledExecutorService stoppedScheduler) {
@@ -326,28 +370,154 @@ public class DatabasePurger {
     }
 
     private void runCancellableMaintenance(Runnable maintenance) {
+        if (Boolean.TRUE.equals(maintenanceScope.get())) {
+            maintenance.run();
+            return;
+        }
         if (shouldStopPurge())
             return;
 
-        ICancellableDataStore.CancellableOperation operation = beginCancellableDataStoreOperation();
-        if (operation == null) {
-            maintenance.run();
-            return;
-        }
-        if (!activeDataStoreOperation.compareAndSet(null, operation)) {
-            operation.close();
-            throw new IllegalStateException("Another cancellable database-purge operation is active");
+        MaintenanceWork work;
+        synchronized (maintenanceMonitor) {
+            if (stopRequested || unsafeStopFailure.get() != null)
+                return;
+            work = new MaintenanceWork();
+            activeMaintenance.add(work);
         }
 
-        try (operation) {
+        ICancellableDataStore.CancellableOperation operation = null;
+        boolean operationAttached = false;
+        boolean scopeClosed = true;
+        Throwable primaryFailure = null;
+        Throwable closeFailure = null;
+        try {
+            try {
+                operation = beginCancellableDataStoreOperation();
+            } catch (RuntimeException | Error error) {
+                latchUnsafeStopFailure(asRuntimeFailure(error,
+                                "Datastore operation-scope creation failed"),
+                        "Could not begin a database-purge operation scope cleanly");
+                throw error;
+            }
+            work.attachOperation(operation);
+            operationAttached = true;
+            maintenanceScope.set(Boolean.TRUE);
             if (shouldStopPurge()) {
-                operation.cancel();
+                work.requestCancellation();
                 return;
             }
             maintenance.run();
+        } catch (RuntimeException | Error error) {
+            primaryFailure = error;
+            throw error;
         } finally {
-            activeDataStoreOperation.compareAndSet(operation, null);
+            maintenanceScope.remove();
+            if (!operationAttached)
+                work.attachOperation(null);
+            if (operation != null) {
+                try {
+                    operation.close();
+                } catch (RuntimeException | Error error) {
+                    scopeClosed = false;
+                    closeFailure = error;
+                    latchUnsafeStopFailure(asRuntimeFailure(error,
+                                    "Datastore operation-scope cleanup failed"),
+                            "Could not close a database-purge operation scope cleanly");
+                }
+            }
+            work.workerFinished(scopeClosed);
+            if (closeFailure != null) {
+                if (primaryFailure != null)
+                    primaryFailure.addSuppressed(closeFailure);
+                else if (closeFailure instanceof RuntimeException runtime)
+                    throw runtime;
+                else
+                    throw (Error) closeFailure;
+            }
         }
+    }
+
+    private final class MaintenanceWork {
+        private ICancellableDataStore.CancellableOperation operation;
+        private boolean operationAttached;
+        private boolean cancellationRequested;
+        private boolean cancellationComplete = true;
+        private boolean cancellationStarted;
+        private boolean workerComplete;
+        private boolean scopeClosed;
+
+        void attachOperation(ICancellableDataStore.CancellableOperation attachedOperation) {
+            synchronized (maintenanceMonitor) {
+                if (operationAttached)
+                    return;
+                operation = attachedOperation;
+                operationAttached = true;
+                if (cancellationRequested && operation != null)
+                    startCancellationLocked();
+                else if (cancellationRequested)
+                    cancellationComplete = true;
+                removeIfCompleteLocked();
+            }
+        }
+
+        void requestCancellation() {
+            synchronized (maintenanceMonitor) {
+                cancellationRequested = true;
+                if (operationAttached) {
+                    if (operation != null)
+                        startCancellationLocked();
+                    else
+                        cancellationComplete = true;
+                } else
+                    cancellationComplete = false;
+                removeIfCompleteLocked();
+            }
+        }
+
+        private void startCancellationLocked() {
+            if (cancellationStarted)
+                return;
+            cancellationStarted = true;
+            cancellationComplete = false;
+            Thread cancellationThread = new Thread(() -> {
+                try {
+                    operation.cancel();
+                } catch (Throwable error) {
+                    RuntimeException failure = asRuntimeFailure(error,
+                            "Datastore cancellation failed");
+                    latchUnsafeStopFailure(failure,
+                            "Could not cancel an active database-purge operation cleanly");
+                } finally {
+                    synchronized (maintenanceMonitor) {
+                        cancellationComplete = true;
+                        removeIfCompleteLocked();
+                    }
+                }
+            }, "OSCAR-database-purger-cancel");
+            cancellationThread.setDaemon(true);
+            cancellationThread.start();
+        }
+
+        void workerFinished(boolean closedCleanly) {
+            synchronized (maintenanceMonitor) {
+                workerComplete = true;
+                scopeClosed = closedCleanly;
+                removeIfCompleteLocked();
+            }
+        }
+
+        private void removeIfCompleteLocked() {
+            if (workerComplete && scopeClosed
+                    && (!cancellationRequested || cancellationComplete)) {
+                activeMaintenance.remove(this);
+                maintenanceMonitor.notifyAll();
+            }
+        }
+    }
+
+    private static RuntimeException asRuntimeFailure(Throwable failure, String message) {
+        return failure instanceof RuntimeException runtime
+                ? runtime : new IllegalStateException(message, failure);
     }
 
     ICancellableDataStore.CancellableOperation beginCancellableDataStoreOperation() {
@@ -357,7 +527,8 @@ public class DatabasePurger {
     }
 
     private boolean shouldStopPurge() {
-        return stopRequested || Thread.currentThread().isInterrupted();
+        return stopRequested || unsafeStopFailure.get() != null
+                || Thread.currentThread().isInterrupted();
     }
 
     private void scheduleNextDailyExport() {
@@ -497,6 +668,10 @@ public class DatabasePurger {
     }
 
     public void purgeOldConnectionStatus() {
+        runCancellableMaintenance(this::purgeOldConnectionStatusWithinScope);
+    }
+
+    void purgeOldConnectionStatusWithinScope() {
         if (shouldStopPurge())
             return;
         Set<BigId> ids = getDataStreamIdsByOutputNames(OUTPUT_CONNECTION_STATUS);
@@ -521,11 +696,16 @@ public class DatabasePurger {
      * invocation from overlapping the scheduled single-threaded task.
      */
     public synchronized void exportAndPurgeDailyFileData() {
+        runCancellableMaintenance(this::exportAndPurgeDailyFileDataWithinScope);
+    }
+
+    private void exportAndPurgeDailyFileDataWithinScope() {
         if (journalService == null) {
             // Compatibility fallback for installations that have not enabled the durable journal.
             // Such installs retain the historical one-day behavior because they have nowhere safe
             // to store a restart checkpoint.
-            exportAndPurgeDailyFileData(previousCompletedDayWindow(clock.instant(), dailyFileZone));
+            exportAndPurgeDailyFileDataWithinScope(
+                    previousCompletedDayWindow(clock.instant(), dailyFileZone));
             return;
         }
 
@@ -598,6 +778,10 @@ public class DatabasePurger {
     }
 
     synchronized void exportAndPurgeDailyFileData(DayWindow window) {
+        runCancellableMaintenance(() -> exportAndPurgeDailyFileDataWithinScope(window));
+    }
+
+    private void exportAndPurgeDailyFileDataWithinScope(DayWindow window) {
         log.info("Exporting and purging Daily File data for immutable window [{}, {})",
                 window.startInclusive, window.endExclusive);
         Map<BigId, IDataStreamInfo> streams = getDataStreamEntriesByOutputNames(OUTPUT_DAILY_FILE);
@@ -713,6 +897,10 @@ public class DatabasePurger {
     }
 
     public void purgeNonOccupancyData() {
+        runCancellableMaintenance(this::purgeNonOccupancyDataWithinScope);
+    }
+
+    private void purgeNonOccupancyDataWithinScope() {
         log.info("Purging data outside occupancy windows...");
 
         Map<String, List<TimeExtent>> windowsByLane = getOccupancyWindowsByLane();
