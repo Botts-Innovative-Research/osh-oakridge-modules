@@ -9,6 +9,7 @@ import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileJournalConnection;
 import org.sensorhub.impl.utils.rad.webid.WebIdAnalyzer;
 import org.sensorhub.impl.utils.rad.webid.WebIdRequestContext;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
@@ -21,6 +22,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -29,6 +31,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
 public class MessageHandler {
 
@@ -39,6 +42,7 @@ public class MessageHandler {
     boolean hasAlarm = false;
     String laneUID;
     IBucketStore bucketStore;
+    private final DailyFileJournalConnection dailyFileJournal;
 
     RADHelper radHelper = new RADHelper();
 
@@ -118,7 +122,8 @@ public class MessageHandler {
                             sb.append(c);
                         }
 
-                        String n42Message = sb.toString().replaceAll("\\<\\?xml(.+?)\\?\\>", "").trim();
+                        String n42Message = journalBeforeParsing(sb.toString(), Instant.now(),
+                                dailyFileJournal, MessageHandler::normalizeN42Message);
 
                         synchronized (messageQueue) {
 
@@ -135,7 +140,12 @@ public class MessageHandler {
                     }
                 }
             } catch (IOException exception) {
-
+                if (isProcessing.get())
+                    log.error("RS350 message reader stopped after an I/O failure", exception);
+                isProcessing.set(false);
+                synchronized (messageQueue) {
+                    messageQueue.notifyAll();
+                }
             }
         }
     });
@@ -211,16 +221,47 @@ public class MessageHandler {
     });
 
     public MessageHandler(WebIdAnalyzer webIdAnalyzer, InputStream msgIn, String messageDelimiter, AbstractSensorModule<?> parentSensor) {
+        this(webIdAnalyzer, msgIn, messageDelimiter, parentSensor, null);
+    }
+
+    public MessageHandler(WebIdAnalyzer webIdAnalyzer, InputStream msgIn, String messageDelimiter,
+                          AbstractSensorModule<?> parentSensor,
+                          DailyFileJournalConnection dailyFileJournal) {
         this.sensorModule = parentSensor;
         this.webIdAnalyzer = webIdAnalyzer;
         this.msgIn = msgIn;
         this.messageDelimiter = messageDelimiter;
+        this.dailyFileJournal = dailyFileJournal;
         laneUID = parentSensor.getParentSystemUID();
         var bucketService = parentSensor.getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
         bucketStore = bucketService.getBucketStore();
 
         this.messageReader.start();
         this.messageNotifier.start();
+    }
+
+    /**
+     * Captures the exact framed payload before any normalization or parser sees it.
+     * Package visibility provides a deterministic test seam around this durability
+     * boundary without starting the driver's reader/notifier threads.
+     */
+    static String journalBeforeParsing(String rawN42Message, Instant receivedAt,
+                                       DailyFileJournalConnection journal,
+                                       Function<String, String> normalizer) throws IOException {
+        if (journal != null) {
+            try {
+                journal.append(rawN42Message, receivedAt);
+            } catch (IOException e) {
+                log.error("Unable to append raw RS350 payload to daily-file journal", e);
+                if (journal.isRequired())
+                    throw e;
+            }
+        }
+        return normalizer.apply(rawN42Message);
+    }
+
+    private static String normalizeN42Message(String rawN42Message) {
+        return rawN42Message.replaceAll("\\<\\?xml(.+?)\\?\\>", "").trim();
     }
 
     public void addStatusListener(StatusListener listener) {
@@ -244,6 +285,16 @@ public class MessageHandler {
         synchronized (isProcessing) {
 
             isProcessing.set(false);
+        }
+        try {
+            msgIn.close();
+        } catch (IOException e) {
+            log.debug("Error closing RS350 message stream", e);
+        }
+        messageReader.interrupt();
+        messageNotifier.interrupt();
+        synchronized (messageQueue) {
+            messageQueue.notifyAll();
         }
 
         webIdScheduler.shutdown();

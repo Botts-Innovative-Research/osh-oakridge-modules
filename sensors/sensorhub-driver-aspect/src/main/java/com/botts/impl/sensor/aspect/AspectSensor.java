@@ -20,6 +20,7 @@ import com.ghgande.j2mod.modbus.ModbusException;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileJournalConnection;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +41,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     IModbusTCPCommProvider<?> commProviderModule;
 
     MessageHandler messageHandler;
+    DailyFileJournalConnection dailyFileJournal;
 
     GammaOutput gammaOutput;
     NeutronOutput neutronOutput;
@@ -165,6 +167,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     protected void doStart() throws SensorHubException {
 
         connection.waitForConnection();
+        connectDailyFileJournal();
 
         try{
             initMsgHandler();
@@ -185,8 +188,10 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     @Override
     public void doStop() {
         isRunning = false;
-        if(tcpConnectionThread != null)
+        if(tcpConnectionThread != null) {
+            tcpConnectionThread.interrupt();
             tcpConnectionThread = null;
+        }
         // cancel reconnection loop
         if(connection != null){
             connection.cancel();
@@ -203,12 +208,34 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
             }
         }
 
-        // unsubscribe from message handler
         if (messageHandler != null) {
+            messageHandler.stop();
             messageHandler = null;
         }
 
+        if (dailyFileJournal != null) {
+            try {
+                dailyFileJournal.close();
+            } catch (IOException e) {
+                log.error("Error closing daily-file journal writer", e);
+            } finally {
+                dailyFileJournal = null;
+            }
+        }
+    }
 
+    private void connectDailyFileJournal() throws SensorHubException {
+        if (dailyFileJournal != null)
+            return;
+        String laneId = getParentSystemUID();
+        if (laneId == null || laneId.isBlank())
+            laneId = "urn:oscar:lane:" + config.laneId;
+        dailyFileJournal = DailyFileJournalConnection.connect(getParentHub(), laneId,
+                config.dailyFileJournal, getLogger());
+    }
+
+    DailyFileJournalConnection getDailyFileJournal() {
+        return dailyFileJournal;
     }
 
     public void checkConnection(){

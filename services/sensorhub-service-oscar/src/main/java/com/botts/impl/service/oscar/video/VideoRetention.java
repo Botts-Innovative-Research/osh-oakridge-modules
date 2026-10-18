@@ -1,6 +1,12 @@
 package com.botts.impl.service.oscar.video;
 
 import com.botts.api.service.bucket.IBucketStore;
+import com.botts.impl.service.oscar.media.MediaIdentityResolver;
+import com.botts.impl.service.oscar.media.MediaMaintenanceCheckpoint;
+import com.botts.impl.service.oscar.media.MediaMaintenanceJob;
+import com.botts.impl.service.oscar.media.MediaManifest;
+import com.botts.impl.service.oscar.media.MediaSetStore;
+import com.botts.impl.service.oscar.media.RetainedMediaBackend;
 import org.bytedeco.ffmpeg.avcodec.AVCodec;
 import org.bytedeco.ffmpeg.avcodec.AVCodecContext;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
@@ -10,7 +16,6 @@ import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacpp.PointerPointer;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.datastore.DataStoreException;
-import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.mpegts.MpegTsProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +29,9 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.temporal.TemporalAmount;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -41,17 +49,67 @@ public class VideoRetention {
     private static final int DEFAULT_VIDEO_DURATION_MS = 100_000;
     private static final long STOP_JOIN_TIMEOUT_MS = 5_000L;
     private static final int FFMPEG_EAGAIN = -11;
+    private static final int MAX_EMPTY_MAINTENANCE_SHARDS_PER_SWEEP = 16;
+    private static final Duration HELD_MEDIA_RECHECK_DELAY = Duration.ofHours(1);
 
     final IBucketStore bucketStore;
     volatile boolean hasStarted = false;
     int frameCount;
+    private final MediaSetStore mediaStore;
+    private final RetainedMediaBackend retainedMediaBackend;
+    private final MediaIdentityResolver identityResolver;
+    private final int maintenanceWorkLimit;
 
     SlidingOccupancyQuery retentionQuery;
 
     public VideoRetention(ISensorHub hub, IBucketStore bucketStore, TemporalAmount queryPeriod,
                           TemporalAmount retentionTimeOffset, int frameCount) {
+        this(hub, bucketStore, queryPeriod, retentionTimeOffset, frameCount, 85,
+                Duration.ofHours(24), Duration.ofHours(6), 200,
+                Duration.ofHours(24), Duration.ofHours(24));
+    }
+
+    public VideoRetention(ISensorHub hub, IBucketStore bucketStore, TemporalAmount queryPeriod,
+                          TemporalAmount retentionTimeOffset, int frameCount, int jpegQuality,
+                          Duration rollbackGrace) {
+        this(hub, bucketStore, queryPeriod, retentionTimeOffset, frameCount, jpegQuality,
+                rollbackGrace, Duration.ofHours(6), 200,
+                Duration.ofHours(24), Duration.ofHours(24));
+    }
+
+    public VideoRetention(ISensorHub hub, IBucketStore bucketStore, TemporalAmount queryPeriod,
+                          TemporalAmount retentionTimeOffset, int frameCount, int jpegQuality,
+                          Duration rollbackGrace, Duration maximumCatchUp,
+                          int maintenanceWorkLimit) {
+        this(hub, bucketStore, queryPeriod, retentionTimeOffset, frameCount, jpegQuality,
+                rollbackGrace, maximumCatchUp, maintenanceWorkLimit,
+                Duration.ofHours(24), Duration.ofHours(24));
+    }
+
+    public VideoRetention(ISensorHub hub, IBucketStore bucketStore, TemporalAmount queryPeriod,
+                          TemporalAmount retentionTimeOffset, int frameCount, int jpegQuality,
+                          Duration rollbackGrace, Duration maximumCatchUp,
+                          int maintenanceWorkLimit, Duration lateArrivalOverlap,
+                          Duration reconciliationCatchUp) {
         this.bucketStore = bucketStore;
         this.frameCount = frameCount;
+        if (maximumCatchUp == null || maximumCatchUp.isZero() || maximumCatchUp.isNegative())
+            throw new IllegalArgumentException("Maximum retention catch-up must be positive");
+        if (maintenanceWorkLimit < 3)
+            throw new IllegalArgumentException("Media maintenance work limit must be at least three");
+        this.maintenanceWorkLimit = maintenanceWorkLimit;
+
+        if (frameCount != 0 && frameCount != MediaManifest.RETAINED_FRAME_COUNT)
+            throw new IllegalArgumentException(
+                    "Retained media requires exactly five frames; zero selects legacy deletion");
+        try {
+            this.mediaStore = new MediaSetStore(bucketStore);
+        } catch (DataStoreException e) {
+            throw new IllegalStateException("Unable to initialize the retained-media catalog", e);
+        }
+        this.retainedMediaBackend = new RetainedMediaBackend(bucketStore, mediaStore, jpegQuality,
+                rollbackGrace, logger);
+        this.identityResolver = new MediaIdentityResolver(hub);
 
         SlidingOccupancyQuery.QueryAction queryAction = frameCount > 0
                 ? this::decimateOccupancyVideo : this::deleteOccupancyVideo;
@@ -59,7 +117,12 @@ public class VideoRetention {
         retentionQuery = new SlidingOccupancyQuery(hub,
                 queryPeriod,
                 queryAction,
-                retentionTimeOffset);
+                retentionTimeOffset,
+                maximumCatchUp,
+                mediaStore,
+                frameCount > 0 ? this::runMaintenanceCycle : null,
+                lateArrivalOverlap,
+                reconciliationCatchUp);
     }
 
     public synchronized void start() {
@@ -72,42 +135,200 @@ public class VideoRetention {
         retentionQuery.start();
     }
 
-    private boolean deleteOccupancyVideo(Occupancy occupancy) {
-        for (String videoFile : occupancy.getVideoPaths()) {
+    private boolean deleteOccupancyVideo(SlidingOccupancyQuery.OccupancyRecord record) {
+        boolean succeeded = true;
+        for (String videoFile : record.occupancy().getVideoPaths()) {
             logger.info("deleting, {}", videoFile);
             if (!bucketStore.objectExists("", videoFile)) {
                 logger.info("Video file {} does not exist or has already been deleted", videoFile);
-                return false;
+                continue;
             }
             try {
                 bucketStore.deleteObject("", videoFile);
             } catch (DataStoreException e) {
                 logger.info("Failed to delete video file {}", videoFile, e);
-                return false;
+                succeeded = false;
             }
         }
-        return true;
+        return succeeded;
     }
 
-    private boolean decimateOccupancyVideo(Occupancy occupancy) {
-        for (String videoFile : occupancy.getVideoPaths()) {
-            logger.info("decimating, {}", videoFile);
-            if (!bucketStore.objectExists("", videoFile)) {
-                logger.info("Video file {} does not exist", videoFile);
-                continue;
-            }
+    private boolean decimateOccupancyVideo(SlidingOccupancyQuery.OccupancyRecord record) {
+        boolean durablyAccepted = true;
+        for (String videoFile : record.occupancy().getVideoPaths()) {
             try {
-                if (!decimate(bucketStore.getResourceURI("", videoFile))) {
-                    logger.info("Video file was not decimated; it was already below one frame per second "
-                            + "or processing failed: {}", videoFile);
-                    return false;
+                String cameraUid = identityResolver.cameraUid(videoFile);
+                MediaSetStore.Identity identity = new MediaSetStore.Identity(
+                        record.eventId(), record.laneUid(), cameraUid);
+                if (!retainedMediaBackend.process(identity, videoFile)
+                        && !mediaStore.maintenanceExists(MediaMaintenanceJob.Kind.RETRY, identity)
+                        && !mediaStore.maintenanceExists(
+                        MediaMaintenanceJob.Kind.SOURCE_LIFECYCLE, identity)) {
+                    // No durable retry or lifecycle marker exists. Keep the current query window
+                    // uncheckpointed so it is replayed after the storage failure is repaired.
+                    durablyAccepted = false;
                 }
-            } catch (DataStoreException e) {
-                logger.warn("Failed to decimate video file {}", videoFile, e);
-                continue;
+            } catch (RuntimeException e) {
+                logger.warn("Unable to schedule retained media for event {} and source {}",
+                        record.eventId(), videoFile, e);
+                durablyAccepted = false;
             }
         }
-        return true;
+        // Per-media-set success/failure lives in the durable ledger. One malformed or transiently
+        // failing clip must not starve older observations in the same sliding query.
+        return durablyAccepted;
+    }
+
+    private void runMaintenanceCycle() throws IOException {
+        Instant now = Instant.now();
+        MediaMaintenanceCheckpoint checkpoint = mediaStore.readMaintenanceCheckpoint()
+                .orElseGet(() -> initializeMaintenanceCheckpoint(now));
+        int catalogLimit = Math.max(1, maintenanceWorkLimit / 3);
+        int lifecycleLimit = Math.max(1, (maintenanceWorkLimit - catalogLimit) / 2);
+        int retryLimit = Math.max(1, maintenanceWorkLimit - catalogLimit - lifecycleLimit);
+
+        sweepCommittedCatalog(catalogLimit);
+        checkpoint = checkpoint.withCatalog("", Instant.now());
+        mediaStore.writeMaintenanceCheckpoint(checkpoint);
+
+        MaintenanceSweep lifecycle = sweepMaintenance(
+                MediaMaintenanceJob.Kind.SOURCE_LIFECYCLE,
+                checkpoint.lifecycleCursor(), lifecycleLimit, now);
+        checkpoint = checkpoint.withLifecycle(lifecycle.cursor(), Instant.now());
+        mediaStore.writeMaintenanceCheckpoint(checkpoint);
+
+        MaintenanceSweep retry = sweepMaintenance(MediaMaintenanceJob.Kind.RETRY,
+                checkpoint.retryCursor(), retryLimit, now);
+        checkpoint = checkpoint.withRetry(retry.cursor(), Instant.now());
+        mediaStore.writeMaintenanceCheckpoint(checkpoint);
+    }
+
+    private void sweepCommittedCatalog(int entryLimit) throws IOException {
+        // Freeze the tail so each live member is reconciled at most once per cycle. Queue reads are
+        // direct-addressed; neither work nor memory grows with the number of retained manifests.
+        long cycleTail = mediaStore.catalogQueueTail();
+        int inspected = 0;
+        while (inspected < entryLimit) {
+            var next = mediaStore.inspectCatalogHead();
+            if (next.isEmpty() || next.get().sequence() >= cycleTail)
+                return;
+            MediaSetStore.CatalogQueueEntry queueEntry = next.get();
+            inspected++;
+            if (queueEntry.job().isEmpty() || !queueEntry.currentMembership()) {
+                mediaStore.completeCatalogEntry(queueEntry);
+                continue;
+            }
+
+            MediaSetStore.Identity identity = queueEntry.job().get().identity();
+            var found = mediaStore.findManifest(identity);
+            if (found.isEmpty()) {
+                mediaStore.completeCatalogEntry(queueEntry);
+                continue;
+            }
+            MediaManifest manifest = found.get();
+            MediaSetStore.ManifestEntry manifestEntry = new MediaSetStore.ManifestEntry(
+                    mediaStore.manifestKey(identity), manifest);
+            if (manifest.lifecycleState() == MediaManifest.LifecycleState.DELETING
+                    || mediaStore.isTerminallyDeleted(identity)) {
+                // A failed destructive delete leaves both manifest and current queue membership.
+                // The exception aborts this cycle without advancing the durable head.
+                mediaStore.deleteMediaSet(manifestEntry);
+                if (mediaStore.findManifest(identity).isEmpty())
+                    mediaStore.completeCatalogEntry(queueEntry);
+                else
+                    mediaStore.deferCatalogEntry(queueEntry);
+            } else {
+                mediaStore.reconcileCommittedManifest(manifestEntry, Instant.now());
+                mediaStore.deferCatalogEntry(queueEntry);
+            }
+        }
+    }
+
+    private MediaMaintenanceCheckpoint initializeMaintenanceCheckpoint(Instant now) {
+        MediaMaintenanceCheckpoint checkpoint = MediaMaintenanceCheckpoint.initial(now);
+        try {
+            // Persist initialization before any queue item is inspected. A restart resumes the
+            // same bounded sharded walk instead of restarting an untracked catalog sweep.
+            mediaStore.writeMaintenanceCheckpoint(checkpoint);
+            return checkpoint;
+        } catch (IOException e) {
+            throw new IllegalStateException("Unable to initialize media maintenance checkpoint", e);
+        }
+    }
+
+    private MaintenanceSweep sweepMaintenance(MediaMaintenanceJob.Kind kind,
+                                               MediaMaintenanceCheckpoint.Cursor initial,
+                                               int entryLimit, Instant now) throws IOException {
+        MediaMaintenanceCheckpoint.Cursor cursor = initial;
+        int inspected = 0;
+        int completedShards = 0;
+        while (inspected < entryLimit
+                && completedShards < MAX_EMPTY_MAINTENANCE_SHARDS_PER_SWEEP) {
+            int requested = entryLimit - inspected;
+            List<MediaSetStore.MaintenanceEntry> entries = mediaStore.listMaintenance(
+                    kind, cursor.shard(), cursor.afterKey(), requested);
+            if (entries.isEmpty()) {
+                cursor = nextShard(cursor.shard());
+                completedShards++;
+                continue;
+            }
+
+            for (MediaSetStore.MaintenanceEntry entry : entries) {
+                inspected++;
+                MediaMaintenanceJob job = entry.job();
+                if (!job.dueAt().isAfter(now))
+                    processMaintenanceJob(job);
+                cursor = new MediaMaintenanceCheckpoint.Cursor(cursor.shard(), entry.key());
+                if (inspected >= entryLimit)
+                    break;
+            }
+
+            if (entries.size() < requested) {
+                cursor = nextShard(cursor.shard());
+                completedShards++;
+            }
+        }
+        return new MaintenanceSweep(cursor, inspected);
+    }
+
+    private void processMaintenanceJob(MediaMaintenanceJob job) throws IOException {
+        MediaSetStore.Identity identity = job.identity();
+        boolean succeeded = retainedMediaBackend.process(identity, job.sourceObjectKey());
+        if (!succeeded)
+            return; // writeLedger has refreshed the stable RETRY index entry with backoff.
+
+        if (job.kind() == MediaMaintenanceJob.Kind.RETRY) {
+            mediaStore.removeMaintenance(job.kind(), identity);
+            return;
+        }
+
+        var manifest = mediaStore.findManifest(identity);
+        if (manifest.isEmpty()
+                || manifest.get().source().state() == MediaManifest.SourceState.DELETED
+                || manifest.get().lifecycleState() == MediaManifest.LifecycleState.DELETING
+                || manifest.get().lifecycleState() == MediaManifest.LifecycleState.DELETED) {
+            mediaStore.removeMaintenance(job.kind(), identity);
+        } else if (manifest.get().isHeld()
+                || manifest.get().lifecycleState() == MediaManifest.LifecycleState.HELD) {
+            mediaStore.enqueueMaintenance(new MediaMaintenanceJob(
+                    MediaMaintenanceJob.CURRENT_SCHEMA_VERSION,
+                    MediaMaintenanceJob.Kind.SOURCE_LIFECYCLE,
+                    job.eventId(), job.laneUid(), job.cameraUid(), job.sourceObjectKey(),
+                    Instant.now().plus(HELD_MEDIA_RECHECK_DELAY), job.attempts()));
+        }
+        // Not-yet-due sources keep their stable lifecycle entry. HELD sets are moved one hour
+        // forward so a long-running hold cannot trigger expensive hash verification every wrap.
+    }
+
+    private static MediaMaintenanceCheckpoint.Cursor nextShard(int current) {
+        return new MediaMaintenanceCheckpoint.Cursor(
+                (current + 1) % MediaMaintenanceCheckpoint.SHARD_COUNT, "");
+    }
+
+    private record MaintenanceSweep(MediaMaintenanceCheckpoint.Cursor cursor, int inspected) {}
+
+    public MediaSetStore getMediaStore() {
+        return mediaStore;
     }
 
     public synchronized void stop() {

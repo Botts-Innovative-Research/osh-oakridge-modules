@@ -118,6 +118,12 @@ public class MessageHandlerTest {
         public void onNewMessage(String csvString) {
             // The routing behavior is under test, not persistence.
         }
+
+        @Override
+        public void onNewMessage(String csvString, java.time.Instant timestamp) {
+            // The production reader deliberately supplies the journal timestamp to the legacy
+            // observation too, so midnight partitioning cannot split one received record.
+        }
     }
 
     private static class BlockingInputStream extends InputStream {

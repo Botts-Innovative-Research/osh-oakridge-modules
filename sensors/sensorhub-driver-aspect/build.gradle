@@ -6,6 +6,7 @@ dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     implementation project(':sensorhub-utils-rad')
     testImplementation('junit:junit:4.13.1')
+    testImplementation('org.mockito:mockito-core:3.12.4')
     implementation('junit:junit:4.13.1')
     implementation('com.ghgande:j2mod:2.5.5')
 }

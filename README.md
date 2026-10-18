@@ -2,7 +2,7 @@
 
 ## OSCAR operator documentation
 
-The complete OSCAR 3.9.1 administration and operations manual is available in every supported language:
+The complete OSCAR 3.9.2 administration and operations manual is available in every supported language:
 
 - [English](services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README.md)
 - [Español](services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_es.md)
@@ -10,6 +10,19 @@ The complete OSCAR 3.9.1 administration and operations manual is available in ev
 - [Ελληνικά](services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_el.md)
 
 The administration UI selects the matching manual in the OSCAR Service Module's README tab. Training screenshots used by all four manuals are maintained under [`docs/oscar-operator-manual/images`](docs/oscar-operator-manual/images).
+
+The versioned five-JPEG retention contract, crash-safety rules, and Viewer API are documented in
+[`docs/retained-media-v1.md`](docs/retained-media-v1.md).
+
+The durable RPM journal, immutable legacy daily-file format, recovery procedure, configuration,
+and operator checks are documented in
+[`docs/daily-file-journal-v1.md`](docs/daily-file-journal-v1.md).
+
+OSCAR 3.9.2 uses the tiered PostgreSQL/Parquet database, required direct daily-file journal, and
+exact-five JPEG retained-media implementation in this repository. Deployment-level archive,
+retention-hold, portable-export, coordinated-backup, restore, and deletion commands are documented
+in the matching 3.9.2 `osh-oakridge-buildnode` release under `documentation/`; operators must use
+those supported launchers instead of deleting cataloged files or database rows directly.
 
 ## Tests
 

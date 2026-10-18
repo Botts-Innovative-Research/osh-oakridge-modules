@@ -24,6 +24,7 @@ import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.comm.RobustIPConnection;
 import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileJournalConnection;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,6 +49,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     // Utilities
     private MessageHandler messageHandler;
     private EMLService emlService;
+    private DailyFileJournalConnection dailyFileJournal;
 
     // Connection
     private ICommProvider<?> commProviderModule;
@@ -152,6 +154,23 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         messageHandler = new MessageHandler(msgIn, this);
     }
 
+    private void connectDailyFileJournal() throws SensorHubException {
+        if (dailyFileJournal != null)
+            return;
+        // Lightweight lifecycle tests and specialized embedders may start a sensor before a
+        // persisted module configuration is attached. Preserve that established start contract;
+        // normal configured modules still use the fail-closed journal policy below.
+        if (config == null) {
+            getLogger().debug("Skipping daily-file journal binding because no sensor configuration is attached");
+            return;
+        }
+        String laneId = getParentSystemUID();
+        if (laneId == null || laneId.isBlank())
+            laneId = "urn:oscar:lane:" + config.laneID;
+        dailyFileJournal = DailyFileJournalConnection.connect(getParentHub(), laneId,
+                config.dailyFileJournal, getLogger());
+    }
+
     public void createEMLOutputs(){
         emlContextualOutput = new EMLContextualOutput(this);
         addOutput(emlContextualOutput, false);
@@ -220,6 +239,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     protected void doStart() throws SensorHubException {
 
         connection.waitForConnection();
+        connectDailyFileJournal();
 
         // A newly established RPM connection starts from a known, non-tamper
         // baseline. Publish it before the reader starts so a TT received from
@@ -296,6 +316,16 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
             }
         }
 
+        if (dailyFileJournal != null) {
+            try {
+                dailyFileJournal.close();
+            } catch (IOException e) {
+                logger.error("Error closing daily-file journal writer", e);
+            } finally {
+                dailyFileJournal = null;
+            }
+        }
+
         RapiscanThreadPoolManager.getInstance().unregisterSensor();
 
         logger.info("RapiscanSensor {} stopped successfully", getUniqueIdentifier());
@@ -359,6 +389,10 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     public DailyFileOutput getDailyFileOutput() {
         return dailyFileOutput;
+    }
+
+    DailyFileJournalConnection getDailyFileJournal() {
+        return dailyFileJournal;
     }
 
     public ConnectionStatusOutput getConnectionStatusOutput() {return connectionStatusOutput;}

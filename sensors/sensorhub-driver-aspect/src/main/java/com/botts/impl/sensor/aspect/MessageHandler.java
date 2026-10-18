@@ -1,13 +1,17 @@
 package com.botts.impl.sensor.aspect;
 
+import com.botts.impl.sensor.aspect.output.DailyFileOutput;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileJournalConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.io.IOException;
+import java.time.Instant;
 import java.util.LinkedList;
 
 import static java.lang.Thread.sleep;
@@ -56,7 +60,7 @@ public class MessageHandler {
 
 //        thread = new Thread(this, "Message Handler");
 
-        Thread msgReader = new Thread(()->{
+        thread = new Thread(()->{
 
             try {
                 DeviceDescriptionRegisters deviceDescriptionRegisters = new DeviceDescriptionRegisters(parentSensor.commProviderModule.getConnection());
@@ -79,8 +83,7 @@ public class MessageHandler {
                         if (timer >= SCAN_INTERVAL_MS) {
                             timer = 0;
 
-                            parentSensor.dailyFileOutput.getDailyFile(monitorRegisters);
-                            parentSensor.dailyFileOutput.onNewMessage();
+                            publishDailyFile(monitorRegisters);
 
                             parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
                             parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
@@ -91,8 +94,7 @@ public class MessageHandler {
                         if (timer >= BACKGROUND_INTERVAL_MS) {
                             timer = 0;
 
-                            parentSensor.dailyFileOutput.getDailyFile(monitorRegisters);
-                            parentSensor.dailyFileOutput.onNewMessage();
+                            publishDailyFile(monitorRegisters);
 
                             parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
                             parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
@@ -124,8 +126,43 @@ public class MessageHandler {
                 log.error("Error in worker thread: {} due to exception: {}", Thread.currentThread().getName(), stringWriter);
             }
 
-        });
-        msgReader.start();
+        }, "Aspect-Reader-" + parentSensor.getUniqueIdentifier());
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    /** Builds, journals, and only then publishes one generated Aspect daily-file line. */
+    private void publishDailyFile(MonitorRegisters monitorRegisters) throws IOException {
+        publishDailyFile(monitorRegisters, Instant.now(), parentSensor.getDailyFileJournal(),
+                parentSensor.dailyFileOutput);
+    }
+
+    /**
+     * Synchronous journal/publication boundary kept package-visible so ordering and
+     * fail-closed policy can be verified without starting a Modbus reader thread.
+     */
+    static void publishDailyFile(MonitorRegisters monitorRegisters, Instant timestamp,
+                                 DailyFileJournalConnection journal,
+                                 DailyFileOutput dailyFileOutput) throws IOException {
+        String line = DailyFileOutput.buildDailyFileLine(monitorRegisters);
+        if (journal != null) {
+            try {
+                journal.append(line, timestamp);
+            } catch (IOException e) {
+                log.error("Unable to append generated Aspect line to daily-file journal", e);
+                if (journal.isRequired())
+                    throw e;
+            }
+        }
+        if (journal == null || journal.shouldPublishLegacyObservation())
+            dailyFileOutput.onNewMessage(line, timestamp);
+    }
+
+    public void stop() {
+        Thread current = thread;
+        thread = null;
+        if (current != null)
+            current.interrupt();
     }
 
     private boolean checkScan(MonitorRegisters monitorRegisters) {

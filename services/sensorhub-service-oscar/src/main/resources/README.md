@@ -2,7 +2,7 @@
 
 ## Administrator and operator manual
 
-The detailed OSCAR 3.9.1 manual is maintained beside `OSCARServiceConfig`, where the administration UI can select it using the active language:
+The detailed OSCAR 3.9.2 manual is maintained beside `OSCARServiceConfig`, where the administration UI can select it using the active language:
 
 - [English](com/botts/impl/service/oscar/i18n/README.md)
 - [Español](com/botts/impl/service/oscar/i18n/README_es.md)
@@ -26,6 +26,13 @@ The purpose of this module is to handle the following aspects of OSCAR (3.0+)
   - Trigger and target filesystem usage
   - Check period, minimum object age, and monitored storage path
 
+OSCAR 3.9.2 retains exactly five verified JPEG frames per eligible aging camera clip and keeps
+legacy video playback for events without the new retained-media representation. High-volume
+detector observations are owned by the tiered database lifecycle, while the required direct
+daily-file journal publishes immutable legacy CSVs independently of database retention. Use the
+release's `documentation/STORAGE_OPERATIONS.md` for archive verification, holds, portable export,
+coordinated backup/restore, and tokenized deletion; do not delete cataloged files or rows manually.
+
 ### Systems/DataStreams/ControlStreams
 - OSCAR client config (urn:ornl:oscar:client:config)
 - Adjudication records (urn:ornl:oscar:adjudication:xxx) under each lane
@@ -42,7 +49,8 @@ The purpose of this module is to handle the following aspects of OSCAR (3.0+)
         - "siteBoundingBox" ([lat, lon], [lat, lon])
 
 ### Background Operations/Services
-- Purging/trimming of occupancy video past the configured age
-- Video cleanup when filesystem usage exceeds the configured threshold
-- Hourly database cleanup outside buffered occupancy windows
-- Midnight UTC export of daily-file data to CSV
+- Exact-five JPEG publication for eligible aging occupancy video, followed by source rollback grace
+- Manifest- and hold-aware video cleanup when filesystem usage exceeds the configured threshold
+- Connection-status maintenance and manifest-gated legacy daily-file observation cleanup
+- Direct journal publication of immutable per-lane daily CSVs and SHA-256 manifests
+- Delegation of eligible detector-observation retention to the tiered PostgreSQL/Parquet database

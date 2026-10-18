@@ -58,6 +58,36 @@ public interface IBucketStore {
 
     List<String> listObjects(String bucketName) throws DataStoreException;
 
+    /**
+     * Lists objects whose normalized key starts with {@code keyPrefix}.
+     *
+     * <p>The default keeps third-party stores source-compatible. Stores that can constrain their
+     * native listing should override this method so callers do not have to walk an entire bucket.
+     * Returned keys are still relative to the bucket, exactly like {@link #listObjects(String)}.</p>
+     */
+    default List<String> listObjects(String bucketName, String keyPrefix) throws DataStoreException {
+        String normalizedPrefix = keyPrefix == null ? "" : keyPrefix.replace('\\', '/');
+        return listObjects(bucketName).stream()
+                .filter(key -> key.replace('\\', '/').startsWith(normalizedPrefix))
+                .toList();
+    }
+
+    /**
+     * Lists at most {@code limit} objects under a prefix whose normalized keys end in a suffix.
+     * Filesystem/object stores should override this so traversal itself stops at the limit; the
+     * default preserves compatibility for third-party implementations.
+     */
+    default List<String> listObjects(String bucketName, String keyPrefix, String keySuffix,
+                                     int limit) throws DataStoreException {
+        if (limit < 1)
+            throw new IllegalArgumentException("Object listing limit must be positive");
+        String normalizedSuffix = keySuffix == null ? "" : keySuffix.replace('\\', '/');
+        return listObjects(bucketName, keyPrefix).stream()
+                .filter(key -> key.replace('\\', '/').endsWith(normalizedSuffix))
+                .limit(limit)
+                .toList();
+    }
+
     long getNumObjects(String bucketName);
 
     String getResourceURI(String bucketName, String key) throws DataStoreException;

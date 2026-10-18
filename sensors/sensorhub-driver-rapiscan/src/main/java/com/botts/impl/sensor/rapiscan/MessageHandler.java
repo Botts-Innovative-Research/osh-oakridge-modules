@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
@@ -103,13 +104,29 @@ public class MessageHandler {
                         if (msgLine == null || !isRunning.get()) {
                             break;
                         }
+                        if (msgLine.isEmpty())
+                            continue;
+
+                        Instant receivedAt = Instant.now();
+                        var journal = parentSensor.getDailyFileJournal();
+                        if (journal != null) {
+                            try {
+                                // Audit capture happens before CSV parsing or any output publication.
+                                journal.append(msgLine, receivedAt);
+                            } catch (IOException e) {
+                                parentSensor.getLogger().error("Unable to append raw RPM line to daily-file journal", e);
+                                if (journal.isRequired())
+                                    throw e;
+                            }
+                        }
 
                         try {
                             reader = new CSVReader(new StringReader(msgLine));
                             csvList = reader.readAll();
 
                             if (!csvList.isEmpty() && csvList.get(0).length > 0 && isRunning.get()) {
-                                parentSensor.getDailyFileOutput().onNewMessage(msgLine);
+                                if (journal == null || journal.shouldPublishLegacyObservation())
+                                    parentSensor.getDailyFileOutput().onNewMessage(msgLine, receivedAt);
                                 onNewMainChar(csvList.get(0)[0], csvList.get(0));
                                 timeSinceLastMessage = System.currentTimeMillis();
                             }

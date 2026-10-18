@@ -1,0 +1,485 @@
+package com.botts.impl.service.oscar.purge;
+
+import com.botts.api.service.bucket.IBucketStore;
+import com.botts.impl.service.bucket.filesystem.FileSystemBucketStore;
+import net.opengis.sensorml.v20.AbstractProcess;
+import net.opengis.swe.v20.DataComponent;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.sensorhub.api.common.BigId;
+import org.sensorhub.api.data.DataStreamInfo;
+import org.sensorhub.api.data.IObsData;
+import org.sensorhub.api.data.ObsData;
+import org.sensorhub.api.database.IObsSystemDatabase;
+import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.api.datastore.obs.ObsFilter;
+import org.sensorhub.api.datastore.obs.IObsStore;
+import org.sensorhub.api.feature.FeatureId;
+import org.sensorhub.impl.datastore.h2.MVObsSystemDatabase;
+import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
+import org.sensorhub.impl.sensor.SensorSystem;
+import org.sensorhub.impl.system.wrapper.SystemWrapper;
+import org.sensorhub.impl.utils.rad.RADHelper;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileObservationMode;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileWriterHandle;
+import org.sensorhub.impl.utils.rad.dailyfile.IDailyFileJournalService;
+import org.sensorhub.impl.utils.rad.model.Occupancy;
+import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
+import org.vast.data.TextEncodingImpl;
+import org.vast.sensorML.SMLHelper;
+
+import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+public class DatabasePurgerSafetyTest {
+
+    private static final Instant NOW = Instant.parse("2026-10-17T12:00:00Z");
+    private MVObsSystemDatabase database;
+    private Path databasePath;
+    private Path bucketRoot;
+    private IBucketStore bucketStore;
+
+    @Before
+    public void setUp() throws Exception {
+        databasePath = Files.createTempFile("purger-safety-", ".dat");
+        Files.delete(databasePath);
+        database = new MVObsSystemDatabase();
+        MVObsSystemDatabaseConfig config = new MVObsSystemDatabaseConfig();
+        config.storagePath = databasePath.toString();
+        config.databaseNum = 14;
+        database.setConfiguration(config);
+        database.init();
+        database.start();
+
+        bucketRoot = Files.createTempDirectory("purger-safety-bucket-");
+        bucketStore = new FileSystemBucketStore(bucketRoot);
+        bucketStore.createBucket("dailyfiles");
+    }
+
+    @After
+    public void tearDown() throws Exception {
+        if (database != null)
+            database.stop();
+        if (databasePath != null)
+            Files.deleteIfExists(databasePath);
+        if (bucketRoot != null && Files.exists(bucketRoot)) {
+            try (var paths = Files.walk(bucketRoot)) {
+                paths.sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
+            }
+        }
+    }
+
+    @Test
+    public void midnightDelayNeverTruncatesToAnEarlyRun() {
+        DatabasePurger purger = purger(null, ZoneOffset.UTC);
+        Instant at235914 = Instant.parse("2026-10-17T23:59:14.900Z");
+        assertEquals(45_100L, purger.calculateDelayUntilMidnightMillis(at235914));
+        Instant fractionalMillisecond = Instant.parse("2026-10-17T23:59:59.000000001Z");
+        assertEquals(1_000L, purger.calculateDelayUntilMidnightMillis(fractionalMillisecond));
+    }
+
+    @Test
+    public void previousDayWindowIsCapturedOnceAndDstAware() {
+        ZoneId zone = ZoneId.of("America/New_York");
+        Instant captured = Instant.parse("2026-03-09T12:00:00Z");
+        DatabasePurger.DayWindow window = DatabasePurger.previousCompletedDayWindow(captured, zone);
+        assertEquals(LocalDate.of(2026, 3, 8), window.day());
+        assertEquals(Instant.parse("2026-03-08T05:00:00Z"), window.startInclusive());
+        assertEquals(Instant.parse("2026-03-09T04:00:00Z"), window.endExclusive());
+    }
+
+    @Test
+    public void purgesExactHalfOpenWindowOnlyAfterJournalManifestExists() throws Exception {
+        BigId system = addSystem(null, "urn:test:lane:daily");
+        BigId daily = addDataStream(system, "urn:test:lane:daily", "dailyFile", dailyFileStructure());
+        DatabasePurger.DayWindow window = DatabasePurger.previousCompletedDayWindow(NOW, ZoneOffset.UTC);
+        addStringObservation(daily, window.startInclusive().plusSeconds(1), "inside");
+        addStringObservation(daily, window.endExclusive(), "next-day-boundary");
+
+        ToggleJournal journal = new ToggleJournal(ZoneOffset.UTC);
+        DatabasePurger purger = purger(journal, ZoneOffset.UTC);
+        purger.exportAndPurgeDailyFileData(window);
+        assertEquals(2, observations(daily).size());
+
+        journal.published.set(true);
+        purger.exportAndPurgeDailyFileData(window);
+        List<IObsData> remaining = observations(daily);
+        assertEquals(1, remaining.size());
+        assertEquals(window.endExclusive(), remaining.get(0).getPhenomenonTime());
+        assertEquals("Immutable [start,end) deletion must leave the next day's midnight record",
+                "next-day-boundary", remaining.get(0).getResult().getStringValue(1));
+    }
+
+    @Test
+    public void deletesLargeDailyWindowInBoundedBatches() throws Exception {
+        BigId system = addSystem(null, "urn:test:lane:batched");
+        BigId daily = addDataStream(system, "urn:test:lane:batched", "dailyFile",
+                dailyFileStructure());
+        DatabasePurger.DayWindow window = DatabasePurger.previousCompletedDayWindow(NOW, ZoneOffset.UTC);
+        for (int i = 0; i <= DatabasePurger.DELETE_BATCH_SIZE; i++)
+            addStringObservation(daily, window.startInclusive().plusNanos(i + 1L), "record-" + i);
+        addStringObservation(daily, window.endExclusive(), "next-day-boundary");
+
+        ToggleJournal journal = new ToggleJournal(ZoneOffset.UTC);
+        journal.published.set(true);
+        purger(journal, ZoneOffset.UTC).exportAndPurgeDailyFileData(window);
+
+        List<IObsData> remaining = observations(daily);
+        assertEquals(1, remaining.size());
+        assertEquals(window.endExclusive(), remaining.get(0).getPhenomenonTime());
+    }
+
+    @Test
+    public void deletionRevalidatesEligibilityAfterConcurrentTimestampMutation() throws Exception {
+        BigId system = addSystem(null, "urn:test:lane:delete-race");
+        BigId daily = addDataStream(system, "urn:test:lane:delete-race", "dailyFile",
+                dailyFileStructure());
+        DatabasePurger.DayWindow window = DatabasePurger.previousCompletedDayWindow(
+                NOW, ZoneOffset.UTC);
+        addStringObservation(daily, window.startInclusive().plusSeconds(1), "moved-before-delete");
+
+        Map.Entry<BigId, IObsData> selected;
+        try (var entries = database.getObservationStore().selectEntries(new ObsFilter.Builder()
+                .withDataStreams(daily).build())) {
+            selected = entries.findFirst().orElseThrow();
+        }
+        Instant movedTime = window.endExclusive().plusSeconds(1);
+        IObsData moved = ObsData.Builder.from(selected.getValue())
+                .withPhenomenonTime(movedTime)
+                .withResultTime(movedTime)
+                .build();
+        AtomicBoolean mutationRan = new AtomicBoolean();
+        IObsSystemDatabase racingDatabase = databaseThatMutatesBeforeFirstDelete(
+                selected.getKey(), moved, mutationRan);
+
+        ToggleJournal journal = new ToggleJournal(ZoneOffset.UTC);
+        journal.published.set(true);
+        new DatabasePurger(racingDatabase, bucketStore, 0, journal, ZoneOffset.UTC,
+                Clock.fixed(NOW, ZoneOffset.UTC)).exportAndPurgeDailyFileData(window);
+
+        assertTrue("The fixture must mutate after selection and immediately before deletion",
+                mutationRan.get());
+        List<IObsData> remaining = observations(daily);
+        assertEquals("A row moved outside the immutable window must survive guarded deletion",
+                1, remaining.size());
+        assertEquals(movedTime, remaining.get(0).getPhenomenonTime());
+    }
+
+    @Test
+    public void dailyFileCatchUpIsDurableBoundedAndOldestFirstAcrossRestart() throws Exception {
+        BigId system = addSystem(null, "urn:test:lane:catch-up");
+        BigId daily = addDataStream(system, "urn:test:lane:catch-up", "dailyFile",
+                dailyFileStructure());
+        LocalDate first = LocalDate.of(2026, 10, 13);
+        addStringObservation(daily, DatabasePurger.dayWindow(first, ZoneOffset.UTC)
+                .startInclusive().plusSeconds(1), "day-1");
+        addStringObservation(daily, DatabasePurger.dayWindow(first.plusDays(1), ZoneOffset.UTC)
+                .startInclusive().plusSeconds(1), "day-2");
+        addStringObservation(daily, DatabasePurger.dayWindow(first.plusDays(2), ZoneOffset.UTC)
+                .startInclusive().plusSeconds(1), "day-3");
+
+        ToggleJournal journal = new ToggleJournal(ZoneOffset.UTC);
+        journal.published.set(true);
+        journal.earliestJournalDay = first;
+        String feedId = "urn:test:lane:catch-up#dailyFile";
+        DatabasePurger firstProcess = new DatabasePurger(database, bucketStore, 0, journal,
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), false, 2);
+        firstProcess.exportAndPurgeDailyFileData();
+
+        assertEquals(List.of(first, first.plusDays(1)), journal.requestedDays);
+        assertEquals(Optional.of(first.plusDays(1)), journal.checkpoint(feedId));
+        assertEquals("One old day must remain for the next bounded cycle", 1,
+                observations(daily).size());
+
+        // A new purger instance proves that progress lives in the journal rather than memory.
+        journal.requestedDays.clear();
+        DatabasePurger restarted = new DatabasePurger(database, bucketStore, 0, journal,
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), false, 2);
+        restarted.exportAndPurgeDailyFileData();
+
+        assertEquals(List.of(first.plusDays(2)), journal.requestedDays);
+        assertEquals(Optional.of(LocalDate.of(2026, 10, 16)), journal.checkpoint(feedId));
+        assertTrue(observations(daily).isEmpty());
+    }
+
+    @Test
+    public void unpublishedCatchUpDayNeitherDeletesNorAdvancesCheckpoint() throws Exception {
+        BigId system = addSystem(null, "urn:test:lane:blocked");
+        BigId daily = addDataStream(system, "urn:test:lane:blocked", "dailyFile",
+                dailyFileStructure());
+        LocalDate day = LocalDate.of(2026, 10, 15);
+        addStringObservation(daily, DatabasePurger.dayWindow(day, ZoneOffset.UTC)
+                .startInclusive().plusSeconds(1), "not-yet-published");
+
+        ToggleJournal journal = new ToggleJournal(ZoneOffset.UTC);
+        journal.earliestJournalDay = day;
+        DatabasePurger purger = new DatabasePurger(database, bucketStore, 0, journal,
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), false, 10);
+        purger.exportAndPurgeDailyFileData();
+
+        assertEquals(1, observations(daily).size());
+        assertEquals(Optional.empty(), journal.checkpoint("urn:test:lane:blocked#dailyFile"));
+        assertEquals(List.of(day), journal.requestedDays);
+    }
+
+    @Test
+    public void occupancyGatingIsScopedToEachLane() throws Exception {
+        BigId lane1 = addSystem(null, "urn:test:lane:1");
+        BigId lane2 = addSystem(null, "urn:test:lane:2");
+        BigId lane1Sensor = addSystem(lane1, "urn:test:sensor:1");
+        BigId lane2Sensor = addSystem(lane2, "urn:test:sensor:2");
+        BigId lane1Process = addSystem(lane1, "urn:test:process:1");
+        BigId lane2Process = addSystem(lane2, "urn:test:process:2");
+
+        BigId lane1Gamma = addDataStream(lane1Sensor, "urn:test:sensor:1", "gammaCounts", scalarStructure("gammaCounts"));
+        BigId lane2Gamma = addDataStream(lane2Sensor, "urn:test:sensor:2", "gammaCounts", scalarStructure("gammaCounts"));
+        BigId lane1Occupancy = addDataStream(lane1Process, "urn:test:process:1", "occupancy", occupancyStructure());
+        BigId lane2Occupancy = addDataStream(lane2Process, "urn:test:process:2", "occupancy", occupancyStructure());
+
+        Instant lane1Start = NOW.minusSeconds(3 * 3600);
+        Instant lane1End = NOW.minusSeconds(2 * 3600);
+        Instant lane2Start = NOW.minusSeconds(90 * 60);
+        Instant lane2End = NOW.minusSeconds(60 * 60);
+        addOccupancy(lane1Occupancy, lane1Start, lane1End);
+        addOccupancy(lane2Occupancy, lane2Start, lane2End);
+
+        Instant duringLane1Only = lane1Start.plusSeconds(10 * 60);
+        addScalarObservation(lane1Gamma, duringLane1Only, 101);
+        addScalarObservation(lane2Gamma, duringLane1Only, 202);
+
+        purger(null, ZoneOffset.UTC).purgeNonOccupancyData();
+
+        assertEquals("Lane 1 activity must retain lane 1 data", 1, observations(lane1Gamma).size());
+        assertTrue("Lane 1 activity must not retain lane 2 data", observations(lane2Gamma).isEmpty());
+    }
+
+    @Test
+    public void delegatedLifecycleSkipsOnlyLegacyHighVolumePurge() throws Exception {
+        BigId lane = addSystem(null, "urn:test:lane:delegated");
+        BigId sensor = addSystem(lane, "urn:test:sensor:delegated");
+        BigId process = addSystem(lane, "urn:test:process:delegated");
+        BigId gamma = addDataStream(sensor, "urn:test:sensor:delegated", "gammaCounts",
+                scalarStructure("gammaCounts"));
+        BigId occupancy = addDataStream(process, "urn:test:process:delegated", "occupancy",
+                occupancyStructure());
+
+        Instant occupiedStart = NOW.minusSeconds(3 * 3600);
+        addOccupancy(occupancy, occupiedStart, occupiedStart.plusSeconds(300));
+        addScalarObservation(gamma, NOW.minusSeconds(2 * 3600), 42);
+
+        DatabasePurger purger = new DatabasePurger(database, bucketStore, 0, null,
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true);
+        purger.executeHourlyPurge();
+
+        assertEquals("The tiered database owns deletion of high-volume observations", 1,
+                observations(gamma).size());
+    }
+
+    @Test
+    public void latestModePreservesNewestDailyFileCompatibilityObservation() throws Exception {
+        BigId system = addSystem(null, "urn:test:lane:latest");
+        BigId daily = addDataStream(system, "urn:test:lane:latest", "dailyFile",
+                dailyFileStructure());
+        addStringObservation(daily, NOW.minusSeconds(30), "oldest");
+        addStringObservation(daily, NOW.minusSeconds(20), "middle");
+        addStringObservation(daily, NOW.minusSeconds(10), "newest");
+
+        ToggleJournal journal = new ToggleJournal(ZoneOffset.UTC, DailyFileObservationMode.LATEST);
+        purger(journal, ZoneOffset.UTC).executeHourlyPurge();
+
+        List<IObsData> remaining = observations(daily);
+        assertEquals("LATEST must retain the live compatibility head used by OSH clients", 1,
+                remaining.size());
+        assertEquals("newest", remaining.get(0).getResult().getStringValue(1));
+    }
+
+    private DatabasePurger purger(IDailyFileJournalService journal, ZoneId zone) {
+        return new DatabasePurger(database, bucketStore, 0, journal, zone, Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    private IObsSystemDatabase databaseThatMutatesBeforeFirstDelete(
+            BigId observationId, IObsData replacement, AtomicBoolean mutationRan) {
+        IObsStore delegateStore = database.getObservationStore();
+        IObsStore observationStore = (IObsStore) Proxy.newProxyInstance(
+                IObsStore.class.getClassLoader(), new Class<?>[]{IObsStore.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("removeEntries")
+                            && mutationRan.compareAndSet(false, true)) {
+                        delegateStore.put(observationId, replacement);
+                    }
+                    return invokeDelegate(method, delegateStore, args);
+                });
+        return (IObsSystemDatabase) Proxy.newProxyInstance(
+                IObsSystemDatabase.class.getClassLoader(),
+                new Class<?>[]{IObsSystemDatabase.class},
+                (proxy, method, args) -> method.getName().equals("getObservationStore")
+                        && method.getParameterCount() == 0
+                        ? observationStore : invokeDelegate(method, database, args));
+    }
+
+    private static Object invokeDelegate(java.lang.reflect.Method method, Object delegate,
+                                         Object[] args) throws Throwable {
+        try {
+            return method.invoke(delegate, args);
+        } catch (InvocationTargetException e) {
+            throw e.getCause();
+        }
+    }
+
+    private BigId addSystem(BigId parent, String uid) throws DataStoreException {
+        AbstractProcess process = new SMLHelper().createPhysicalComponent().uniqueID(uid).name(uid).build();
+        SystemWrapper wrapper = new SystemWrapper(process);
+        return parent == null
+                ? database.getSystemDescStore().add(wrapper).getInternalID()
+                : database.getSystemDescStore().add(parent, wrapper).getInternalID();
+    }
+
+    private BigId addDataStream(BigId systemId, String systemUid, String outputName, DataComponent structure)
+            throws DataStoreException {
+        DataStreamInfo info = new DataStreamInfo.Builder()
+                .withName(outputName)
+                .withSystem(new FeatureId(systemId, systemUid))
+                .withRecordDescription(structure)
+                .withRecordEncoding(new TextEncodingImpl())
+                .build();
+        return database.getDataStreamStore().add(info).getInternalID();
+    }
+
+    private DataComponent dailyFileStructure() {
+        RADHelper helper = new RADHelper();
+        var time = helper.createPrecisionTimeStamp();
+        var message = helper.createRapiscanMessage();
+        return helper.createRecord().name("dailyFile").addField(time.getName(), time)
+                .addField(message.getName(), message).build();
+    }
+
+    private DataComponent scalarStructure(String name) {
+        RADHelper helper = new RADHelper();
+        var time = helper.createPrecisionTimeStamp();
+        var value = helper.createCount().name("value").build();
+        return helper.createRecord().name(name).addField(time.getName(), time)
+                .addField(value.getName(), value).build();
+    }
+
+    private DataComponent occupancyStructure() {
+        return new OccupancyOutput<>(new SensorSystem()).getRecordDescription();
+    }
+
+    private void addStringObservation(BigId dataStream, Instant time, String value) {
+        DataComponent structure = dailyFileStructure();
+        var block = structure.createDataBlock();
+        block.setTimeStamp(0, time);
+        block.setStringValue(1, value);
+        addObservation(dataStream, time, block);
+    }
+
+    private void addScalarObservation(BigId dataStream, Instant time, int value) {
+        DataComponent structure = scalarStructure("gammaCounts");
+        var block = structure.createDataBlock();
+        block.setTimeStamp(0, time);
+        block.setIntValue(1, value);
+        addObservation(dataStream, time, block);
+    }
+
+    private void addOccupancy(BigId dataStream, Instant start, Instant end) {
+        Occupancy occupancy = new Occupancy.Builder()
+                .samplingTime(end.getEpochSecond())
+                .occupancyCount(1)
+                .startTime(start.getEpochSecond())
+                .endTime(end.getEpochSecond())
+                .build();
+        addObservation(dataStream, end, Occupancy.fromOccupancy(occupancy));
+    }
+
+    private void addObservation(BigId dataStream, Instant time, net.opengis.swe.v20.DataBlock block) {
+        database.getObservationStore().add(new ObsData.Builder()
+                .withDataStream(dataStream)
+                .withPhenomenonTime(time)
+                .withResult(block)
+                .build());
+    }
+
+    private List<IObsData> observations(BigId dataStream) {
+        return database.getObservationStore().select(new ObsFilter.Builder()
+                .withDataStreams(dataStream).build()).toList();
+    }
+
+    private static final class ToggleJournal implements IDailyFileJournalService {
+        private final AtomicBoolean published = new AtomicBoolean();
+        private final ZoneId zone;
+        private final DailyFileObservationMode observationMode;
+        private final Map<String, LocalDate> checkpoints = new HashMap<>();
+        private final List<LocalDate> requestedDays = new ArrayList<>();
+        private LocalDate earliestJournalDay;
+
+        private ToggleJournal(ZoneId zone) {
+            this(zone, DailyFileObservationMode.FULL);
+        }
+
+        private ToggleJournal(ZoneId zone, DailyFileObservationMode observationMode) {
+            this.zone = zone;
+            this.observationMode = observationMode;
+        }
+
+        @Override
+        public DailyFileWriterHandle openWriter(String laneId) throws IOException {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public DailyFileObservationMode getObservationMode() {
+            return observationMode;
+        }
+
+        @Override
+        public ZoneId getJournalZoneId() {
+            return zone;
+        }
+
+        @Override
+        public boolean isPublished(String laneId, Instant startInclusive, Instant endExclusive) {
+            requestedDays.add(LocalDate.ofInstant(startInclusive, zone));
+            return published.get();
+        }
+
+        @Override
+        public Optional<LocalDate> readObservationPurgeCheckpoint(String feedId) {
+            return checkpoint(feedId);
+        }
+
+        @Override
+        public void writeObservationPurgeCheckpoint(String feedId, LocalDate processedThrough) {
+            checkpoints.compute(feedId, (ignored, existing) -> existing == null
+                    || processedThrough.isAfter(existing) ? processedThrough : existing);
+        }
+
+        @Override
+        public Optional<LocalDate> findEarliestJournalDay(String laneId) {
+            return Optional.ofNullable(earliestJournalDay);
+        }
+
+        private Optional<LocalDate> checkpoint(String feedId) {
+            return Optional.ofNullable(checkpoints.get(feedId));
+        }
+    }
+}

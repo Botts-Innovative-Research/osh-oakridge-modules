@@ -17,7 +17,14 @@ import com.botts.api.service.bucket.IBucketService;
 import com.botts.api.service.bucket.IBucketStore;
 
 import java.nio.file.Paths;
-import java.util.Collections;
+import java.nio.file.Path;
+import java.nio.file.Files;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.StandardOpenOption;
+import java.nio.channels.FileChannel;
+import java.io.IOException;
+import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractSensorControl<FFMPEGSensorBase<FFmpegConfigType>> implements FFmpegControl {
@@ -33,6 +40,7 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
     DataRecord commandData;
     DataRecord resultData;
     String fileName = "";
+    String workingFileName = "";
     private final FileOutput<?> fileOutput;
 
     public FileControl(FFMPEGSensorBase<FFmpegConfigType> sensor, FileOutput<?> fileOutput) throws DataStoreException {
@@ -50,15 +58,14 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
     }
 
     public String getFileName() {
-        try {
-            if (fileName.isBlank()) {
-                getLogger().debug("Blank video URI ");
-                return "";
-            }
-            return bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileName);
-        } catch (DataStoreException e) {
+        if (fileName.isBlank()) {
+            getLogger().debug("Blank video URI ");
             return "";
         }
+        // This method is used while the recorder still owns a hidden partial. Return only the
+        // eventual final key; callers can persist the legacy videoPaths value without exposing the
+        // in-progress object.
+        return Paths.get(VIDEO_BUCKET, fileName).toString();
     }
 
     @Override
@@ -134,21 +141,22 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                     if (!fileName.contains(".")) {
                         fileName += ".mp4";
                     }
+                    workingFileName = partialFileName(fileName);
 
                     try {
-                        //this.parentSensor.getProcessor().openFile(fileName);
-                        //var outputStream = this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap());
-                        this.bucketStore.putObject(VIDEO_BUCKET, fileName, Collections.emptyMap()).close();
-                        this.fileOutput.openFile(bucketStore.getResourceURI(VIDEO_BUCKET, fileName));
-                        this.parentSensor.getLogger().trace("Writing to file: {}", fileName);
+                        this.fileOutput.openFile(bucketStore.getWritableResourceURI(
+                                VIDEO_BUCKET, workingFileName));
+                        this.parentSensor.getLogger().trace("Writing hidden partial for file: {}", fileName);
                     } catch (Exception e) {
                         getLogger().error("Exception while opening MP4 output", e);
                         try {
-                            bucketStore.deleteObject(VIDEO_BUCKET, fileName);
+                            if (!workingFileName.isBlank())
+                                bucketStore.deleteObject(VIDEO_BUCKET, workingFileName);
                         } catch (Exception cleanupError) {
-                            getLogger().debug("Unable to remove incomplete MP4 output {}", fileName, cleanupError);
+                            getLogger().debug("Unable to remove incomplete MP4 output {}", workingFileName, cleanupError);
                         }
                         fileName = "";
+                        workingFileName = "";
                         commandStatus = false;
                         failureMessage = "Unable to start video recording: " + e.getMessage();
                     }
@@ -173,14 +181,16 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
 
                         // Delete file if we do not want to save
                         if (!saveFile) {
-                            bucketStore.deleteObject(VIDEO_BUCKET, fileName);
+                            bucketStore.deleteObject(VIDEO_BUCKET, workingFileName);
                             this.parentSensor.getLogger().trace("Discarded file: {}", fileName);
                         } else {
+                            publishCompletedFile(workingFileName, fileName);
                             this.parentSensor.getLogger().trace("Saved file: {}", fileName);
                             fileNameTemp = fileName;
                             reportFileName = true;
                         }
                         fileName = "";
+                        workingFileName = "";
                     } catch (Exception e) {
                         // A concurrent processor shutdown can reject or cancel the ordered close
                         // boundary. Always release the native output context before deleting its
@@ -194,13 +204,13 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                         }
                         getLogger().error("Exception while closing MP4 output", e);
                         try {
-                            if (!fileName.isBlank()) {
-                                bucketStore.deleteObject(VIDEO_BUCKET, fileName);
-                            }
+                            if (!workingFileName.isBlank())
+                                bucketStore.deleteObject(VIDEO_BUCKET, workingFileName);
                         } catch (Exception cleanupError) {
-                            getLogger().debug("Unable to remove incomplete MP4 output {}", fileName, cleanupError);
+                            getLogger().debug("Unable to remove incomplete MP4 output {}", workingFileName, cleanupError);
                         }
                         fileName = "";
+                        workingFileName = "";
                         commandStatus = false;
                         failureMessage = "Unable to stop video recording: " + e.getMessage();
                     }
@@ -225,5 +235,83 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                 } catch (Exception ignored) {}
             }
             return status.build();
+    }
+
+    private void publishCompletedFile(String partialKey, String finalKey) throws Exception {
+        if (partialKey == null || partialKey.isBlank() || finalKey == null || finalKey.isBlank())
+            throw new IOException("Recording paths are unavailable");
+        Path partial = Path.of(bucketStore.getWritableResourceURI(VIDEO_BUCKET, partialKey))
+                .toAbsolutePath().normalize();
+        Path completed = Path.of(bucketStore.getWritableResourceURI(VIDEO_BUCKET, finalKey))
+                .toAbsolutePath().normalize();
+        publishCompletedPath(partial, completed, FileControl::forceDirectory);
+    }
+
+    /**
+     * Atomically exposes a completed recording without ever replacing an existing final object.
+     * A hard link is used because {@code ATOMIC_MOVE} is allowed to replace a target on some
+     * providers even when {@code REPLACE_EXISTING} is absent. The partial name is removed only
+     * after the final name and its directory have been forced. Once the final link exists, no
+     * failure path removes it; a caller may safely clean up only the hidden partial name.
+     */
+    static void publishCompletedPath(Path partial, Path completed,
+                                     DirectoryForcer directoryForcer) throws IOException {
+        if (!Files.isRegularFile(partial) || Files.size(partial) <= 0)
+            throw new IOException("Completed MP4 partial is missing or empty");
+        if (!Objects.equals(partial.getParent(), completed.getParent()))
+            throw new IOException("Completed MP4 must be published in the partial's directory");
+        try (FileChannel channel = FileChannel.open(partial, StandardOpenOption.WRITE)) {
+            channel.force(true);
+        }
+
+        // CREATE_LINK is an atomic, no-replace namespace operation: FileAlreadyExistsException is
+        // raised rather than silently replacing an immutable completed recording.
+        Files.createLink(completed, partial);
+        if (!Files.isRegularFile(completed) || Files.size(completed) <= 0)
+            throw new IOException("Published MP4 could not be verified");
+        directoryForcer.force(completed.getParent());
+        Files.delete(partial);
+        directoryForcer.force(completed.getParent());
+    }
+
+    private static String partialFileName(String finalName) {
+        int separator = Math.max(finalName.lastIndexOf('/'), finalName.lastIndexOf('\\'));
+        int extension = finalName.lastIndexOf('.');
+        String marker = ".partial-" + UUID.randomUUID();
+        return extension > separator
+                ? finalName.substring(0, extension) + marker + finalName.substring(extension)
+                : finalName + marker;
+    }
+
+    private static void forceDirectory(Path directory) throws IOException {
+        if (directory == null)
+            return;
+        try (FileChannel channel = FileChannel.open(directory, StandardOpenOption.READ)) {
+            channel.force(true);
+        } catch (UnsupportedOperationException ignored) {
+            // Some supported filesystems do not expose directory channels.
+        } catch (IOException failure) {
+            // Windows does not expose directories as readable FileChannels and commonly reports
+            // AccessDeniedException here even though the same-directory atomic rename succeeded.
+            // Do not turn that platform limitation into deletion of an otherwise complete MP4.
+            // POSIX errors still propagate because they can indicate a real durability failure.
+            if (!isIgnorableWindowsDirectoryFsyncFailure(failure, isWindows()))
+                throw failure;
+        }
+    }
+
+    static boolean isIgnorableWindowsDirectoryFsyncFailure(IOException failure,
+                                                             boolean windows) {
+        return windows && failure instanceof AccessDeniedException;
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT)
+                .startsWith("windows");
+    }
+
+    @FunctionalInterface
+    interface DirectoryForcer {
+        void force(Path directory) throws IOException;
     }
 }

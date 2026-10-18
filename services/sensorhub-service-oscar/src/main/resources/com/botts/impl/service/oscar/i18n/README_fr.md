@@ -1,4 +1,4 @@
-# Manuel d'administration et d'exploitation d'OSCAR 3.9.1
+# Manuel d'administration et d'exploitation d'OSCAR 3.9.2
 
 Ce manuel couvre la première utilisation et l'exploitation complète : certificat, connexion, plan géoréférencé, import/création des voies, adjudication et preuves, événements, statistiques nationales, rapports et fédération de nœuds.
 
@@ -32,7 +32,7 @@ L'interface d'administration sélectionne automatiquement le manuel correspondan
 
 Vous avez besoin :
 
-- d'un déploiement OSCAR 3.9.1 installé et démarré ;
+- d'un déploiement OSCAR 3.9.2 installé et démarré ;
 - de l'URL OSCAR, généralement `https://oscar.local/` sauf si un autre hôte a été choisi ;
 - d'un compte administrateur pour `/sensorhub/admin` ;
 - de l'image de site approuvée et des coordonnées des coins inférieur gauche et supérieur droit ;
@@ -131,6 +131,8 @@ Dans la navigation de gauche, ouvrez **Services > Module de service OSCAR**.
 | ID de base de données | Base d'observations utilisée. Vide, les statistiques utilisent la base fédérée ; les tâches de purge/export propres à une base ne démarrent qu'avec une sélection explicite. |
 | Racine de l'API WebID | URL de Sandia Full Spectrum Web ID. Valeur par défaut : `https://full-spectrum.sandia.gov/api/v1`. Utilisez un service local approuvé en environnement isolé ou laissez vide pour ne pas créer le client Web ID. |
 | Fréquence des statistiques (min) | Intervalle de publication, 60 minutes par défaut. |
+| Déléguer le cycle de vie des observations à la base de données | Activez lorsque la base à niveaux gère la conservation active/archivée. OSCAR maintient encore l'état de connexion et le nettoyage des fichiers quotidiens validé par manifeste. |
+| Limite de travail de purge des fichiers quotidiens | Nombre maximal de fenêtres voie/jour par cycle de rattrapage. Valeur par défaut : 50. |
 | Démarrage automatique | Démarre le service au chargement du nœud. À activer normalement en exploitation. |
 
 Le service requiert un Service de stockage par compartiments démarré. S'il est introuvable, démarrez et vérifiez **Services > Bucket Storage Service**, puis réinitialisez ou redémarrez le service OSCAR.
@@ -143,10 +145,16 @@ Il associe une image PNG/JPG/JPEG à ses limites inférieur gauche et supérieur
 
 | Champ | Défaut | Comportement |
 | --- | ---: | --- |
-| Délai avant conservation/suppression d'images clés (jours) | 7 | Âge auquel une vidéo d'occupation est traitée. |
+| Âge avant conservation de cinq images (jours) | 7 | Âge avant conversion de la vidéo source d'une occupation en exactement cinq JPEG conservés. |
 | Période de requête vidéo (minutes) | 1 | Intervalle de recherche des vidéos éligibles. Une valeur plus grande regroupe davantage d'enregistrements. |
-| Activer la conservation d'images | activé | Activé : réduit les anciens clips au nombre d'images indiqué. Désactivé : supprime les clips éligibles. |
-| Nombre d'images clés conservées | 5 | Images conservées ; sans effet si la conservation est désactivée. |
+| Rattrapage maximal de conservation (heures) | 6 | Plage maximale de temps d'événement historique traitée par cycle. Le reliquat reprend depuis un curseur durable. |
+| Chevauchement des arrivées tardives (heures) | 24 | Intervalle récent réinterrogé pour les occupations validées après le passage du curseur ; les identifiants durables évitent les doublons. |
+| Rapprochement historique par cycle (heures) | 24 | Ancien intervalle revalidé par cycle pour réparer les médias non catalogués sans analyse complète de l'historique. |
+| Limite de travail de maintenance des médias | 200 | Nombre maximal d'entrées de rapprochement du catalogue, de nouvelle tentative et de cycle de vie source examinées par cycle. |
+| Activer la conservation d'images | activé | Activé : convertit les anciens clips en un ensemble exact de cinq JPEG. Désactivé : utilise la suppression historique. |
+| Nombre d'images conservées | 5 | Le schéma v1 exige exactement cinq images lorsque la conservation est activée. |
+| Qualité JPEG conservée | 85 | Qualité d'encodage JPEG sRGB de base de 1 à 100. |
+| Délai de retour arrière de la source (heures) | 24 | Durée minimale de conservation du clip original après validation des cinq JPEG et de leur manifeste. |
 
 Ces paramètres concernent la vidéo historique d'occupation, pas le direct. Choisissez-les selon la politique de conservation des preuves.
 
@@ -158,9 +166,10 @@ Ces paramètres concernent la vidéo historique d'occupation, pas le direct. Cho
 | Utilisation cible (%) | 80 | La purge continue jusqu'à cette cible ou jusqu'à épuisement des fichiers éligibles. |
 | Période de contrôle (minutes) | 1 | Fréquence des contrôles ; doit être positive. |
 | Âge minimal de l'objet (minutes) | 10 | Protège les fichiers plus récents ; ne peut pas être négatif. |
+| Nombre maximal d'ensembles multimédias par cycle | 200 | Limite les entrées de l'index direct inspectées pendant un cycle. La file durable reprend le travail restant après redémarrage ou au cycle suivant. |
 | Chemin de stockage | `files` | Système de fichiers dont l'usage commande la purge. Doit viser le volume de fichiers OSCAR réel. |
 
-La purge sous pression ne supprime que les objets éligibles du compartiment `videos`, en privilégiant les plus anciens ; les CSV quotidiens restent protégés. Surveillez aussi le stockage au niveau du système d'exploitation : ce mécanisme d'urgence ne remplace pas les sauvegardes.
+La purge sous pression ne supprime que les objets éligibles du compartiment `videos` dans l'ordre durable de publication ; elle n'énumère ni ne trie tout l'arbre des médias conservés pendant un cycle. Les CSV quotidiens restent protégés. Surveillez aussi le stockage au niveau du système d'exploitation : ce mécanisme d'urgence ne remplace pas les sauvegardes.
 
 ## 5. Créer et téléverser un plan géoréférencé
 
@@ -633,16 +642,39 @@ Vérifiez voies/événements distants, ligne Nationale, rapport et événement a
 
 ## 12. Conservation des données et stockage
 
-Avec un **ID de base de données** explicite, le service démarre :
+Le profil standard 3.9.2 utilise la base PostgreSQL à plusieurs niveaux. Les enregistrements récents
+et opérationnels restent dans PostgreSQL ; les observations configurées de détecteurs à fort volume
+de plus de 30 jours sont copiées par des tâches d'arrière-plan bornées vers des fichiers Parquet
+catalogués et compressés en ZSTD. La suppression des lignes chaudes est désactivée par défaut. Ne
+l'activez qu'après vérification de l'archive, parité exacte chaud/froid, délai de retour arrière,
+sauvegarde vérifiée et exercice de restauration isolé. Une conservation active sur une génération
+ou une observation bloque la suppression correspondante.
 
-- chaque heure, la suppression des états de connexion de plus d'une heure et des mesures volumineuses hors des fenêtres d'occupation tamponnées ;
-- à minuit UTC, l'export du `dailyFile` de la veille pour chaque voie dans `dailyfiles`, puis la suppression des observations exportées.
+Chaque pilote RPM exige le journal direct des fichiers quotidiens. Il capture si possible
+l'enregistrement source avant analyse, puis publie la journée terminée sous forme de CSV historique
+immuable et de manifeste SHA-256. La conservation de la base ne doit jamais remplacer ce journal.
+La maintenance des états de connexion et le nettoyage, contrôlé par manifeste, des observations
+`dailyFile` historiques se poursuivent indépendamment.
 
-S'il n'existe aucune fenêtre d'occupation, la purge hors occupation est ignorée afin d'éviter une perte involontaire. Une marge récente est conservée et un tampon de cinq secondes entoure chaque occupation.
+Chaque vidéo d'alarme ancienne et éligible devient exactement cinq JPEG décodables séparément
+(première image, quart, milieu, trois quarts et dernière image). La source est conservée pendant le
+délai de retour arrière et après tout échec ; les événements anciens ou non convertis gardent la
+lecture historique. Le nettoyage sous pression ne peut enlever que des ensembles de médias retenus
+complets et éligibles. Il ne supprime ni fichiers quotidiens, rapports, décisions, vidéos historiques
+non cataloguées, ni archives Parquet.
 
-Le service de compartiments gère plans, CSV, vidéos, rapports et exports. Les données de base et les fichiers nécessitent des sauvegardes distinctes. Conservation par âge et par pression sont indépendantes : la première réduit/supprime les vidéos d'occupation ; la seconde réagit au disque et supprime actuellement uniquement les objets éligibles de `videos`.
+Utilisez les commandes `backup`, `backup-verify`, `archive status`, `archive verify`, de
+conservation, d'export portable et de suppression avec simulation/jeton du lanceur de la version.
+La sauvegarde coordonnée couvre PostgreSQL, l'état OSCAR, l'archive froide et les WAL archivés ;
+protégez séparément sa clé de chiffrement et une copie hors hôte vérifiée. Ne supprimez jamais à la
+main les fichiers catalogués. Une mise à niveau antérieure à 3.9.2 conserve l'ancienne base et configuration : elle
+ne crée pas tout le profil et n'active pas les sommes de contrôle PostgreSQL. Initialisez un nouveau
+déploiement 3.9.2 ou appliquez une migration de production validée séparément. Les guides de
+stockage de `documentation/` sont les procédures de référence.
 
-Avant de modifier conservation, base, chemin ou **Supprimer les données avec la voie**, confirmez les obligations de preuve et de sauvegarde.
+Avant de modifier conservation, base, chemins, élagage automatique des sauvegardes ou **Supprimer
+les données avec la voie**, confirmez les exigences de preuve, confidentialité, gel juridique,
+reprise et destruction des documents.
 
 ## 13. Liste de validation
 
@@ -656,6 +688,9 @@ Avant de modifier conservation, base, chemin ou **Supprimer les données avec la
 
 - [ ] ID de nœud unique ; base, Web ID, statistiques et démarrage automatique vérifiés.
 - [ ] Conservation vidéo et pression examinées avant toute purge.
+- [ ] Une base/configuration 3.9.2 neuve ou une migration approuvée est utilisée ; l'état et l'intégrité de l'archive sont valides.
+- [ ] Une sauvegarde coordonnée est vérifiée, sa clé externe est séquestrée séparément, une copie hors hôte existe et une restauration isolée a réussi.
+- [ ] Une voie témoin publie CSV/manifeste depuis le journal ; les événements retenus montrent cinq JPEG et les anciens restent lisibles.
 - [ ] Services de compartiments et OSCAR démarrés.
 
 ### Plan
@@ -698,7 +733,7 @@ Avant de modifier conservation, base, chemin ou **Supprimer les données avec la
 | Tuiles OSM 403/bloquées | N'utilisez pas directement des serveurs bénévoles contrairement à leur politique. Configurez un fournisseur/proxy OSM approuvé ou utilisez Esri pendant la correction. |
 | CSV refusé | Vérifiez en-tête/ordre, groupes de six, index continus, nombre de cellules, nombres, cellules vides non citées et absence de virgules internes. |
 | Voie manquante après CSV | Cherchez un UniqueID déjà chargé, un nom trop long, des erreurs d'enfants et attendez le chargement asynchrone. |
-| **Capteurs** est vide après un redémarrage suivant le téléversement du CSV | Le téléversement a créé des modules en mémoire, mais la configuration complète n'a pas été persistée. Téléversez de nouveau si nécessaire, attendez toutes les voies et tous les enfants, utilisez l'action globale **Enregistrer**, redémarrez OSCAR et vérifiez encore **Capteurs**. Si un nœud 3.9.1 perd toujours les voies, consultez les journaux OSCAR et vérifiez que le propriétaire peut écrire dans `/var/lib/oscar/config.json`. |
+| **Capteurs** est vide après un redémarrage suivant le téléversement du CSV | Le téléversement a créé des modules en mémoire, mais la configuration complète n'a pas été persistée. Téléversez de nouveau si nécessaire, attendez toutes les voies et tous les enfants, utilisez l'action globale **Enregistrer**, redémarrez OSCAR et vérifiez encore **Capteurs**. Si un nœud 3.9.2 perd toujours les voies, consultez les journaux OSCAR et vérifiez que le propriétaire peut écrire dans `/var/lib/oscar/config.json`. |
 | Vue opérationnelle vide ou clé rejetée | Vérifiez que les **Clés de vue opérationnelle** de la voie contiennent exactement la clé en minuscules, appliquez et enregistrez globalement, redémarrez la voie si nécessaire, puis utilisez `?view=<clé>` ou `/view/<clé>`. Une affectation vide ne correspond jamais à une vue limitée. |
 | RPM ne démarre pas | Testez hôte, port, pare-feu, plage Aspect et disponibilité ; consultez l'erreur du pilote enfant. |
 | Caméra ne démarre pas | Testez RTSP/identifiants, retirez `rtsp://` de l'hôte, évitez un port en double, vérifiez codec Axis ou chemin Custom depuis l'hôte OSCAR. |
@@ -729,4 +764,4 @@ Pour l'assistance, relevez version OSCAR, navigateur, voie/occupation, heure et 
 
 ---
 
-Référence du document : comportement du code OSCAR 3.9.1, revu le 2026-10-16. Si une version ultérieure change les champs ou procédures, mettez à jour ensemble le manuel canonique anglais et les trois traductions.
+Référence du document : comportement du code OSCAR 3.9.2, revu le 2026-10-17. Si une version ultérieure change les champs ou procédures, mettez à jour ensemble le manuel canonique anglais et les trois traductions.

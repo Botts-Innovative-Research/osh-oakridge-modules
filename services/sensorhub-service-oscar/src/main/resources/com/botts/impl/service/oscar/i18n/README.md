@@ -1,4 +1,4 @@
-# OSCAR 3.9.1 administrator and operator manual
+# OSCAR 3.9.2 administrator and operator manual
 
 This manual covers the complete first-use and operations workflow including certificate trust, sign-in, site-diagram georeferencing, lane import/manual creation, alarm adjudication and evidence, event review, national statistics, reports, and node federation.
 
@@ -32,7 +32,7 @@ The screenshots show the English interface. OSCAR also supplies Spanish, French,
 
 You need:
 
-- an installed and running OSCAR 3.9.1 deployment;
+- an installed and running OSCAR 3.9.2 deployment;
 - the OSCAR URL, normally `https://oscar.local/` unless deployment selected another hostname;
 - an administrator account for `/sensorhub/admin`;
 - the approved site image and the latitude/longitude of its lower-left and upper-right corners;
@@ -131,6 +131,8 @@ In the left navigation, open **Services > OSCAR Service Module**.
 | Database ID | Observation-system database used by OSCAR. If blank, statistics use the federated database, but database-specific purge/export jobs start only when a database is explicitly selected. |
 | WebID API Root | Base URL of the Sandia Full Spectrum Web ID API. The default is `https://full-spectrum.sandia.gov/api/v1`. Use an approved local endpoint for an isolated deployment, or leave it blank to disable creation of the Web ID client. |
 | Stats Frequency (min) | Interval, in minutes, at which statistics are published. The default is 60. |
+| Delegate Observation Lifecycle to Database | Enable when the configured tiered database owns hot/cold observation retention. OSCAR still performs connection-status and manifest-gated daily-file maintenance. |
+| Daily File Purge Work Limit | Maximum lane/day compatibility-observation windows processed in one catch-up cycle. Default: 50. |
 | Auto Start | Starts the OSCAR Service Module when the node loads. This should normally be enabled in an operational deployment. |
 
 The service requires a started Bucket Storage Service. If the module reports that it cannot find the bucket service, start and verify **Services > Bucket Storage Service**, then reinitialize or restart the OSCAR Service Module.
@@ -143,12 +145,23 @@ This tab selects a PNG/JPG/JPEG and assigns its lower-left and upper-right geogr
 
 | Field | Default | Behavior |
 | --- | ---: | --- |
-| Time to Keyframe Retention/Deletion (days) | 7 | Age after which an occupancy video is processed. |
+| Age Before Five-Frame Retention (days) | 7 | Age before an occupancy source video is converted to exactly five retained JPEGs. |
 | Video Query Period (minutes) | 1 | Interval between searches for eligible occupancy videos. A larger interval processes more eligible records per query. |
-| Enable Frame Retention | enabled | When enabled, old clips are reduced to the configured number of retained frames. When disabled, eligible clips are deleted. |
-| Keyframe Retention Count | 5 | Number of frames kept when frame retention is enabled. It has no effect when retention is disabled. |
+| Maximum Retention Catch-up (hours) | 6 | Maximum historical event-time span processed in one cycle. Remaining backlog resumes from a durable cursor. |
+| Late-arrival Overlap (hours) | 24 | Recent interval rescanned for occupancies committed after the forward cursor passed their event time. Durable IDs suppress duplicate work. |
+| Historical Reconciliation per Cycle (hours) | 24 | Older interval revalidated each cycle to repair missing retained-media catalog state without an unbounded scan. |
+| Media Maintenance Work Limit | 200 | Maximum catalog-reconciliation, sharded retry, and source-lifecycle entries inspected in one cycle. |
+| Enable Frame Retention | enabled | When enabled, old clips are converted to the exact-five retained JPEG set. When disabled, eligible clips use legacy deletion behavior. |
+| Retained Frame Count | 5 | Schema v1 requires exactly five when frame retention is enabled. |
+| Retained JPEG Quality | 85 | Baseline sRGB JPEG encoding quality from 1 through 100. |
+| Source Rollback Grace (hours) | 24 | Minimum time the original clip remains available after all five JPEGs and their manifest are committed. |
 
-These settings affect historical occupancy video, not the live stream configuration. Select values that satisfy site evidence-retention policy before enabling cleanup.
+These settings affect historical occupancy video, not the live stream configuration. The scanner
+uses a durable forward cursor and never rescans all history on every interval. Failed media jobs and
+source cleanup after rollback grace use separate bounded, durable indexes. The overlap and slow
+historical reconciliation make late or previously uncatalogued occupancies eventually visible
+without an unbounded restart scan. Select values that satisfy site evidence-retention policy before
+enabling cleanup.
 
 ### 4.4 Storage Pressure Retention Config tab
 
@@ -158,9 +171,10 @@ These settings affect historical occupancy video, not the live stream configurat
 | Target usage (%) | 80 | Cleanup continues until usage reaches this percentage, or no eligible files remain. |
 | Check period (minutes) | 1 | Frequency of filesystem checks; must be greater than zero. |
 | Minimum object age (minutes) | 10 | Files newer than this are protected from pressure cleanup; cannot be negative. |
+| Maximum media sets per cycle | 200 | Bounds direct-index entries inspected in one cycle. The durable queue resumes remaining work after restart or on the next cycle. |
 | Storage path | `files` | Filesystem path whose usage controls cleanup. It must be nonempty and should identify the actual OSCAR file volume. |
 
-Pressure cleanup removes eligible objects only from the `videos` bucket, oldest priority candidates first; daily CSV exports remain protected. Configure operating-system storage monitoring as well—this feature is an emergency pressure control, not a backup policy.
+Pressure cleanup removes eligible objects only from the `videos` bucket in durable publication order; it never enumerates or sorts the retained-media tree during a pressure cycle. Daily CSV exports remain protected. Configure operating-system storage monitoring as well—this feature is an emergency pressure control, not a backup policy.
 
 ## 5. Create and upload a georeferenced site diagram
 
@@ -663,16 +677,35 @@ Duplicate names and duplicate address/port pairs are rejected. **Edit** changes 
 
 ## 12. Data retention and storage behavior
 
-When the OSCAR Service Module has an explicit **Database ID**, it starts two database-maintenance schedules:
+The standard 3.9.2 profile uses the tiered PostgreSQL database. Recent and operational records stay
+in PostgreSQL; configured high-volume detector observations older than 30 days are copied in
+bounded background jobs to cataloged, ZSTD-compressed Parquet. Hot-row deletion is disabled by
+default. Enable it only after archive verification, exact hot/cold parity, rollback grace, a
+verified backup, and an isolated restore drill. Active generation or observation holds block the
+corresponding deletion.
 
-- every hour, it removes connection-status observations older than one hour and high-volume measurements outside buffered occupancy windows; and
-- at midnight UTC, it exports the previous day's `dailyFile` output for each lane to the `dailyfiles` bucket and removes the exported database observations.
+Each RPM driver requires the direct daily-file journal. It captures the source record before
+parsing where possible and publishes the completed day as an immutable legacy CSV plus SHA-256
+manifest. Database retention must never be used as a substitute for this journal. Connection-state
+maintenance and manifest-gated cleanup of legacy `dailyFile` observations continue independently.
 
-If no occupancy windows exist, non-occupancy cleanup is skipped to avoid unintended data loss. The hourly purge retains recent data with a safety margin and uses a five-second buffer around occupancy windows.
+Eligible aging alarm clips become exactly five independently decodable JPEGs (first, quarter,
+middle, three-quarter, last). The source video remains through the rollback grace and on every
+conversion failure; old or unconverted events retain legacy playback. Storage-pressure cleanup can
+remove only complete, eligible retained-media sets. It does not remove daily files, reports,
+adjudications, legacy uncataloged video, or the Parquet archive.
 
-Files such as site diagrams, spreadsheets, video, reports, and daily exports are handled by the Bucket Storage Service. Database records and bucket files require separate backup planning. Video age retention and storage-pressure retention are independent: age retention decimates/deletes eligible occupancy video, while pressure retention reacts to filesystem use and currently deletes eligible video-bucket objects only.
+Use the release launcher's `backup`, `backup-verify`, `archive status`, `archive verify`, hold,
+portable-export, and tokenized dry-run/purge workflows. A coordinated backup covers PostgreSQL,
+OSCAR state, the cold archive, and archived WAL; protect its separate encryption key and an
+off-host verified copy. Never delete cataloged archive/media files directly. A pre-3.9.2 `upgrade`
+preserves its old database and configuration and does not create the full storage profile or enable
+PostgreSQL checksums; initialize a fresh 3.9.2 deployment or use a separately validated production
+migration. The packaged `documentation/` storage guides are the authoritative runbooks.
 
-Before changing retention, database selection, storage path, or **Delete Data on Lane Removal**, confirm the site's evidence, records, and backup requirements.
+Before changing retention, database selection, storage paths, automatic backup pruning, or
+**Delete Data on Lane Removal**, confirm the site's evidence, privacy, legal-hold, recovery, and
+records-destruction requirements.
 
 ## 13. Validation checklist
 
@@ -688,6 +721,9 @@ Before changing retention, database selection, storage path, or **Delete Data on
 - [ ] Node ID is unique and stable.
 - [ ] Database ID, Web ID root, statistics interval, and Auto Start match site policy.
 - [ ] Video and pressure-retention settings were reviewed before enabling cleanup.
+- [ ] A fresh 3.9.2 database/configuration or an approved migration was used; archive status and integrity verification pass.
+- [ ] A coordinated backup verifies, its external key is escrowed separately, an off-host copy exists, and an isolated restore drill has passed.
+- [ ] A sample lane publishes a journal-backed daily CSV/manifest; retained events show five JPEGs while legacy events still play.
 - [ ] Bucket Storage Service and OSCAR Service Module are started.
 
 ### Site diagram
@@ -730,7 +766,7 @@ Before changing retention, database selection, storage path, or **Delete Data on
 | OSM tiles show 403/blocked | Do not point production traffic directly at volunteer OSM tiles in violation of tile policy. Use the deployment's approved OSM provider/proxy or select Esri while the tile-service configuration is corrected. |
 | CSV rejected | Compare the exact header/order, camera groups of six with sequential indexes, cell count on every row, numeric fields, and plain unquoted empty cells. Remove commas from values. |
 | CSV says success but a lane is missing | Check for an existing loaded lane with the same UniqueID, a name longer than 12 characters, device-child initialization errors, and whether asynchronous loading has finished. |
-| **Sensors** is empty after restart following CSV upload | The upload created in-memory modules, but the complete configuration was not persisted. Upload again if necessary, wait for every lane and child to appear, select the global **Save**, restart OSCAR, and verify **Sensors** again. If a 3.9.1 node still loses the lanes, check OSCAR logs and verify that `/var/lib/oscar/config.json` is owner-writable. |
+| **Sensors** is empty after restart following CSV upload | The upload created in-memory modules, but the complete configuration was not persisted. Upload again if necessary, wait for every lane and child to appear, select the global **Save**, restart OSCAR, and verify **Sensors** again. If a 3.9.2 node still loses the lanes, check OSCAR logs and verify that `/var/lib/oscar/config.json` is owner-writable. |
 | Scoped operational view is empty or rejects its key | Confirm the lane's **Operational View Keys** contains the exact lowercase key, apply and globally save the configuration, restart the lane if required, and use `?view=<key>` or `/view/<key>`. A blank assignment never matches a scoped view. |
 | RPM does not start | Verify host reachability, exact TCP port, firewall, Aspect range, and device availability. Review the child driver status/error, not only the parent lane. |
 | Camera does not start | Verify RTSP reachability and credentials, omit `rtsp://` from host, include a needed port once, confirm Axis codec or Custom path, and test the generated endpoint from the OSCAR host. |
@@ -761,4 +797,4 @@ When collecting support data, record the OSCAR version, browser, affected lane/o
 
 ---
 
-Document baseline: OSCAR 3.9.1 source behavior, reviewed 2026-10-16. If a later release changes fields or workflows, update the English canonical manual and all three translations together.
+Document baseline: OSCAR 3.9.2 source behavior, reviewed 2026-10-17. If a later release changes fields or workflows, update the English canonical manual and all three translations together.

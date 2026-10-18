@@ -46,6 +46,10 @@ public class DailyFileOutput extends AbstractSensorOutput<RapiscanSensor> {
     }
 
     public void onNewMessage(String csvString) {
+        onNewMessage(csvString, Instant.now());
+    }
+
+    public void onNewMessage(String csvString, Instant timeStamp) {
         DataBlock dataBlock;
 
         if (latestRecord == null) {
@@ -53,8 +57,6 @@ public class DailyFileOutput extends AbstractSensorOutput<RapiscanSensor> {
         } else {
             dataBlock = latestRecord.renew();
         }
-        Instant timeStamp = Instant.now();
-
         dataBlock.setTimeStamp(0, timeStamp);
         dataBlock.setStringValue(1, csvString);
 

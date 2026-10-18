@@ -46,7 +46,11 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
     }
 
     public void getDailyFile(MonitorRegisters monitorRegisters){
-        dailyFile = String.join(",",
+        dailyFile = buildDailyFileLine(monitorRegisters);
+    }
+
+    public static String buildDailyFileLine(MonitorRegisters monitorRegisters) {
+        return String.join(",",
                 String.valueOf(monitorRegisters.getTimeElapsed()),
                 String.valueOf(monitorRegisters.getInputSignals()),
                 String.valueOf(monitorRegisters.getGammaChannelStatus()),
@@ -64,6 +68,10 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
         );
     }
     public void onNewMessage() {
+        onNewMessage(dailyFile, Instant.now());
+    }
+
+    public void onNewMessage(String line, Instant timeStamp) {
         DataBlock dataBlock;
 
         if (latestRecord == null) {
@@ -74,9 +82,8 @@ public class DailyFileOutput extends AbstractSensorOutput<AspectSensor> {
 
 //        System.out.println("Daily File: " + dailyfile);
 
-        Instant timeStamp = Instant.now();
         dataBlock.setTimeStamp(0, timeStamp);
-        dataBlock.setStringValue(1, dailyFile);
+        dataBlock.setStringValue(1, line);
 
 
         eventHandler.publish(new DataEvent(timeStamp.toEpochMilli(), DailyFileOutput.this, dataBlock));

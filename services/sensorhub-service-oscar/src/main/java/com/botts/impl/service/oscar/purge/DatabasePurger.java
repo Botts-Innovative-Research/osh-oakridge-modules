@@ -11,6 +11,8 @@ import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.resource.ResourceKey;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileObservationMode;
+import org.sensorhub.impl.utils.rad.dailyfile.IDailyFileJournalService;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,24 +23,30 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+import com.google.common.collect.Range;
+import org.sensorhub.api.datastore.TemporalFilter;
 
 public class DatabasePurger {
     private static final Logger log = LoggerFactory.getLogger(DatabasePurger.class);
 
     private final IObsSystemDatabase database;
     private final IBucketStore bucketStore;
+    private final IDailyFileJournalService journalService;
+    private final ZoneId dailyFileZone;
+    private final Clock clock;
+    private final boolean observationLifecycleDelegated;
+    private final int dailyFilePurgeWorkLimit;
     private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> hourlyPurgeTask;
     private ScheduledFuture<?> dailyExportTask;
@@ -48,6 +56,8 @@ public class DatabasePurger {
     private static final String DAILY_FILES_BUCKET = "dailyfiles";
 
     private static final int CONNECTION_STATUS_RETENTION_HOURS = 1;
+    static final int DELETE_BATCH_SIZE = 5_000;
+    static final int DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT = 50;
 
     // Data stream output names
     private static final String OUTPUT_DAILY_FILE = "dailyFile";
@@ -64,10 +74,57 @@ public class DatabasePurger {
     private static final String OUTPUT_STATUS = "status";
 
     public DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds) {
+        this(database, bucketStore, occupancyBufferSeconds, null, ZoneId.of("UTC"), Clock.systemUTC(),
+                false, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT);
+    }
+
+    public DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds,
+                          IDailyFileJournalService journalService) {
+        this(database, bucketStore, occupancyBufferSeconds, journalService,
+                journalService != null ? journalService.getJournalZoneId() : ZoneId.of("UTC"),
+                Clock.systemUTC(), false, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT);
+    }
+
+    public DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds,
+                          IDailyFileJournalService journalService, boolean observationLifecycleDelegated) {
+        this(database, bucketStore, occupancyBufferSeconds, journalService,
+                observationLifecycleDelegated, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT);
+    }
+
+    public DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds,
+                          IDailyFileJournalService journalService, boolean observationLifecycleDelegated,
+                          int dailyFilePurgeWorkLimit) {
+        this(database, bucketStore, occupancyBufferSeconds, journalService,
+                journalService != null ? journalService.getJournalZoneId() : ZoneId.of("UTC"),
+                Clock.systemUTC(), observationLifecycleDelegated, dailyFilePurgeWorkLimit);
+    }
+
+    DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds,
+                   IDailyFileJournalService journalService, ZoneId dailyFileZone, Clock clock) {
+        this(database, bucketStore, occupancyBufferSeconds, journalService, dailyFileZone, clock,
+                false, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT);
+    }
+
+    DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds,
+                   IDailyFileJournalService journalService, ZoneId dailyFileZone, Clock clock,
+                   boolean observationLifecycleDelegated) {
+        this(database, bucketStore, occupancyBufferSeconds, journalService, dailyFileZone, clock,
+                observationLifecycleDelegated, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT);
+    }
+
+    DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds,
+                   IDailyFileJournalService journalService, ZoneId dailyFileZone, Clock clock,
+                   boolean observationLifecycleDelegated, int dailyFilePurgeWorkLimit) {
         this.database = database;
         this.bucketStore = bucketStore;
         this.occupancyBufferSeconds = occupancyBufferSeconds;
-
+        this.journalService = journalService;
+        this.dailyFileZone = Objects.requireNonNull(dailyFileZone, "dailyFileZone");
+        this.clock = Objects.requireNonNull(clock, "clock");
+        this.observationLifecycleDelegated = observationLifecycleDelegated;
+        if (dailyFilePurgeWorkLimit <= 0)
+            throw new IllegalArgumentException("dailyFilePurgeWorkLimit must be positive");
+        this.dailyFilePurgeWorkLimit = dailyFilePurgeWorkLimit;
     }
 
     public void start() throws SensorHubException {
@@ -91,15 +148,7 @@ public class DatabasePurger {
             );
             log.info("Scheduled hourly purge task (every 1 hour)");
 
-            // Schedule daily midnight export and purge
-            long initialDelayMinutes = calculateDelayUntilMidnight();
-            dailyExportTask = scheduler.scheduleAtFixedRate(
-                this::executeDailyExportAndPurge,
-                initialDelayMinutes,
-                TimeUnit.DAYS.toMinutes(1),
-                TimeUnit.MINUTES
-            );
-            log.info("Scheduled daily export task (next run in {} minutes at midnight)", initialDelayMinutes);
+            scheduleNextDailyExport();
 
         } catch (DataStoreException e) {
             throw new SensorHubException("Failed to create daily files bucket", e);
@@ -130,13 +179,21 @@ public class DatabasePurger {
         log.info("Database purger stopped");
     }
 
-    private void executeHourlyPurge() {
+    void executeHourlyPurge() {
         try {
             log.info("Starting hourly purge task...");
 
             purgeOldConnectionStatus();
 
-            purgeNonOccupancyData();
+            if (observationLifecycleDelegated) {
+                log.debug("Skipping legacy occupancy-gated high-volume purge because lifecycle is delegated to the database");
+            } else {
+                purgeNonOccupancyData();
+            }
+
+            if (journalService != null
+                    && journalService.getObservationMode() == DailyFileObservationMode.LATEST)
+                purgeDailyFileHistoryToLatest();
 
             log.info("Hourly purge task completed successfully");
         } catch (Exception e) {
@@ -152,7 +209,18 @@ public class DatabasePurger {
             log.info("Daily export and purge task completed successfully");
         } catch (Exception e) {
             log.error("Error during daily export and purge task", e);
+        } finally {
+            if (scheduler != null && !scheduler.isShutdown())
+                scheduleNextDailyExport();
         }
+    }
+
+    private void scheduleNextDailyExport() {
+        long delayMillis = calculateDelayUntilMidnightMillis(clock.instant());
+        dailyExportTask = scheduler.schedule(this::executeDailyExportAndPurge,
+                delayMillis, TimeUnit.MILLISECONDS);
+        log.info("Scheduled daily export task for the next {} midnight (in {} ms)",
+                dailyFileZone, delayMillis);
     }
 
     // Utility methods
@@ -184,30 +252,72 @@ public class DatabasePurger {
         return result;
     }
 
-    private List<TimeExtent> getOccupancyWindows() {
-        var filter = new ObsFilter.Builder()
-            .withDataStreams(new DataStreamFilter.Builder()
-                .withOutputNames(OUTPUT_OCCUPANCY)
-                .build())
-            .build();
+    private Map<String, List<TimeExtent>> getOccupancyWindowsByLane() {
+        Map<BigId, IDataStreamInfo> occupancyStreams = getDataStreamEntriesByOutputNames(OUTPUT_OCCUPANCY);
+        if (occupancyStreams.isEmpty())
+            return Map.of();
 
-        return database.getObservationStore()
-            .select(filter)
-            .map(obs -> {
-                try {
-                    Occupancy occ = Occupancy.toOccupancy(obs.getResult());
-                    // Convert epoch seconds to Instant
-                    Instant startTime = Instant.ofEpochSecond((long) occ.getStartTime());
-                    Instant endTime = Instant.ofEpochSecond((long) occ.getEndTime());
-                    return TimeExtent.period(startTime, endTime);
-                } catch (Exception e) {
-                    log.warn("Failed to parse occupancy record: {}", e.getMessage());
-                    return null;
+        Map<BigId, String> laneByDataStream = new HashMap<>();
+        occupancyStreams.forEach((dataStreamId, info) ->
+                laneByDataStream.put(dataStreamId, laneKeyForSystem(info)));
+
+        var filter = new ObsFilter.Builder()
+                .withDataStreams(occupancyStreams.keySet())
+                .build();
+        Map<String, List<TimeExtent>> windowsByLane = new HashMap<>();
+        database.getObservationStore().select(filter).forEach(obs -> {
+            String lane = laneByDataStream.get(obs.getDataStreamID());
+            if (lane == null)
+                return;
+            try {
+                Occupancy occupancy = Occupancy.toOccupancy(obs.getResult());
+                Instant start = instantFromEpochSeconds(occupancy.getStartTime());
+                Instant end = instantFromEpochSeconds(occupancy.getEndTime());
+                if (!start.isBefore(end)) {
+                    log.warn("Ignoring invalid occupancy window on lane {}: [{}, {})", lane, start, end);
+                    return;
                 }
-            })
-            .filter(Objects::nonNull)
-            .sorted(Comparator.comparing(TimeExtent::begin))
-            .toList();
+                windowsByLane.computeIfAbsent(lane, ignored -> new ArrayList<>())
+                        .add(TimeExtent.period(start, end));
+            } catch (Exception e) {
+                log.warn("Failed to parse occupancy record for lane {}: {}", lane, e.getMessage());
+            }
+        });
+        windowsByLane.values().forEach(windows -> windows.sort(Comparator.comparing(TimeExtent::begin)));
+        return windowsByLane;
+    }
+
+    private Map<String, Set<BigId>> getDataStreamIdsByLane(String... outputNames) {
+        Map<String, Set<BigId>> result = new HashMap<>();
+        getDataStreamEntriesByOutputNames(outputNames).forEach((id, info) ->
+                result.computeIfAbsent(laneKeyForSystem(info), ignored -> new HashSet<>()).add(id));
+        return result;
+    }
+
+    /**
+     * Uses the immediate parent system as the lane boundary. Sensor and process
+     * subsystems in one lane therefore share windows, while peer lanes cannot
+     * retain each other's high-volume observations.
+     */
+    String laneKeyForSystem(IDataStreamInfo dataStreamInfo) {
+        BigId systemId = dataStreamInfo.getSystemID().getInternalID();
+        BigId parentId = database.getSystemDescStore().getParent(systemId);
+        if (parentId != null) {
+            var parent = database.getSystemDescStore().getCurrentVersion(parentId);
+            if (parent != null && parent.getUniqueIdentifier() != null)
+                return parent.getUniqueIdentifier();
+        }
+        return dataStreamInfo.getSystemID().getUniqueID();
+    }
+
+    private static Instant instantFromEpochSeconds(double value) {
+        long seconds = (long) Math.floor(value);
+        long nanos = Math.round((value - seconds) * 1_000_000_000d);
+        if (nanos == 1_000_000_000L) {
+            seconds++;
+            nanos = 0;
+        }
+        return Instant.ofEpochSecond(seconds, nanos);
     }
 
     private List<TimeExtent> mergeAndBufferWindows(List<TimeExtent> windows, Duration buffer) {
@@ -249,50 +359,207 @@ public class DatabasePurger {
             return;
         }
 
-        Instant cutoff = Instant.now().minus(Duration.ofHours(CONNECTION_STATUS_RETENTION_HOURS));
+        Instant cutoff = clock.instant().minus(Duration.ofHours(CONNECTION_STATUS_RETENTION_HOURS));
         long deleted = deleteObservationsBeforeTime(ids, cutoff);
         log.info("Purged {} Connection Status observations older than {}", deleted, cutoff);
     }
 
-    public void exportAndPurgeDailyFileData() {
-        log.info("Exporting and purging Daily File data...");
+    /**
+     * Catches up completed daily-file windows in oldest-first order.  The journal owns the
+     * per-feed high-water mark, so a restart never has to scan from epoch and a long outage is
+     * recovered over bounded cycles.  The synchronized boundary also prevents an administrative
+     * invocation from overlapping the scheduled single-threaded task.
+     */
+    public synchronized void exportAndPurgeDailyFileData() {
+        if (journalService == null) {
+            // Compatibility fallback for installations that have not enabled the durable journal.
+            // Such installs retain the historical one-day behavior because they have nowhere safe
+            // to store a restart checkpoint.
+            exportAndPurgeDailyFileData(previousCompletedDayWindow(clock.instant(), dailyFileZone));
+            return;
+        }
 
-        // Export daily files
-        exportDailyFileOutputToCSV();
-        // Purge daily files
-        Set<BigId> ids = getDataStreamIdsByOutputNames(OUTPUT_DAILY_FILE);
-        if (ids.isEmpty()) {
+        LocalDate latestEligibleDay = LocalDate.ofInstant(clock.instant(), dailyFileZone).minusDays(1);
+        Map<BigId, IDataStreamInfo> streams = getDataStreamEntriesByOutputNames(OUTPUT_DAILY_FILE);
+        if (streams.isEmpty()) {
             log.debug("No Daily File data streams found");
             return;
         }
 
-        // Purge data that was exported (yesterday and before) - using UTC
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
-        Instant cutoff = today.atStartOfDay(ZoneOffset.UTC).toInstant();
+        PriorityQueue<DailyFileCatchUpFeed> work = new PriorityQueue<>(Comparator
+                .comparing((DailyFileCatchUpFeed feed) -> feed.nextDay)
+                .thenComparing(feed -> feed.feedId));
+        for (var entry : streams.entrySet()) {
+            try {
+                createDailyFileCatchUpFeed(entry.getKey(), entry.getValue(), latestEligibleDay)
+                        .ifPresent(work::add);
+            } catch (IOException | RuntimeException e) {
+                log.error("Unable to initialize Daily File purge progress for {}: {}",
+                        entry.getValue().getFullName(), e.getMessage(), e);
+            }
+        }
 
-        long deleted = deleteObservationsBeforeTime(ids, cutoff);
-        log.info("Purged {} Daily File observations", deleted);
+        int attempted = 0;
+        long deleted = 0;
+        while (!work.isEmpty() && attempted < dailyFilePurgeWorkLimit) {
+            DailyFileCatchUpFeed feed = work.remove();
+            LocalDate day = feed.nextDay;
+            attempted++;
+            try {
+                DayWindow window = dayWindow(day, dailyFileZone);
+                PurgeDayResult result = purgeDailyFileFeed(feed.dataStreamId, feed.info,
+                        feed.laneId, window);
+                if (!result.complete)
+                    continue; // Do not skip over an unpublished or failed day for this feed.
+
+                deleted += result.deleted;
+                if (feed.processedThrough == null || day.isAfter(feed.processedThrough)) {
+                    journalService.writeObservationPurgeCheckpoint(feed.feedId, day);
+                    feed.processedThrough = day;
+                }
+
+                // A late observation can put nextDay behind the durable high-water mark.  After
+                // repairing that day, resume immediately after the high-water mark instead of
+                // wasting the bounded budget replaying already-empty days.
+                LocalDate next = feed.processedThrough != null
+                        ? feed.processedThrough.plusDays(1) : day.plusDays(1);
+                if (!next.isAfter(latestEligibleDay)) {
+                    feed.nextDay = next;
+                    work.add(feed);
+                }
+            } catch (IOException | RuntimeException e) {
+                log.error("Daily File purge stopped for feed {} on {} without advancing its checkpoint: {}",
+                        feed.feedId, day, e.getMessage(), e);
+            }
+        }
+
+        log.info("Daily File catch-up processed {} of at most {} lane/day window(s), purged {} observation(s), and left {} feed(s) ready for a later cycle",
+                attempted, dailyFilePurgeWorkLimit, deleted, work.size());
+    }
+
+    synchronized void exportAndPurgeDailyFileData(DayWindow window) {
+        log.info("Exporting and purging Daily File data for immutable window [{}, {})",
+                window.startInclusive, window.endExclusive);
+        Map<BigId, IDataStreamInfo> streams = getDataStreamEntriesByOutputNames(OUTPUT_DAILY_FILE);
+        if (streams.isEmpty()) {
+            log.debug("No Daily File data streams found");
+            return;
+        }
+
+        long deleted = 0;
+        for (var entry : streams.entrySet()) {
+            BigId dataStreamId = entry.getKey();
+            IDataStreamInfo info = entry.getValue();
+            PurgeDayResult result = purgeDailyFileFeed(dataStreamId, info,
+                    laneKeyForSystem(info), window);
+            if (result.complete)
+                deleted += result.deleted;
+        }
+        log.info("Purged {} Daily File observations from [{}, {}) after verified publication",
+                deleted, window.startInclusive, window.endExclusive);
+    }
+
+    private Optional<DailyFileCatchUpFeed> createDailyFileCatchUpFeed(
+            BigId dataStreamId, IDataStreamInfo info, LocalDate latestEligibleDay) throws IOException {
+        String feedId = info.getFullName();
+        String laneId = laneKeyForSystem(info);
+        Optional<LocalDate> checkpoint = journalService.readObservationPurgeCheckpoint(feedId);
+        Optional<LocalDate> databaseFirst = firstObservationDay(info);
+
+        LocalDate nextDay;
+        if (checkpoint.isPresent()) {
+            LocalDate afterCheckpoint = checkpoint.get().plusDays(1);
+            // Revisit a late committed record behind the high-water mark.  The half-open deletion
+            // and immutable publication gate make this replay idempotent.
+            nextDay = databaseFirst.filter(day -> day.isBefore(afterCheckpoint))
+                    .orElse(afterCheckpoint);
+        } else {
+            Optional<LocalDate> journalFirst = journalService.findEarliestJournalDay(laneId);
+            nextDay = earlier(databaseFirst, journalFirst).orElse(null);
+        }
+
+        if (nextDay == null || nextDay.isAfter(latestEligibleDay))
+            return Optional.empty();
+        return Optional.of(new DailyFileCatchUpFeed(dataStreamId, info, feedId, laneId,
+                checkpoint.orElse(null), nextDay));
+    }
+
+    private Optional<LocalDate> firstObservationDay(IDataStreamInfo info) {
+        TimeExtent range = info.getPhenomenonTimeRange();
+        if (range == null || range.begin() == null)
+            return Optional.empty();
+        return Optional.of(LocalDate.ofInstant(range.begin(), dailyFileZone));
+    }
+
+    private static Optional<LocalDate> earlier(Optional<LocalDate> first,
+                                                Optional<LocalDate> second) {
+        if (first.isEmpty())
+            return second;
+        if (second.isEmpty())
+            return first;
+        return Optional.of(first.get().isBefore(second.get()) ? first.get() : second.get());
+    }
+
+    private PurgeDayResult purgeDailyFileFeed(BigId dataStreamId, IDataStreamInfo info,
+                                               String laneId, DayWindow window) {
+        if (!hasObservationsInTimeRange(dataStreamId, window.startInclusive, window.endExclusive)) {
+            // Preserve the legacy exporter contract for installations that have not enabled
+            // the durable journal: each discovered dailyFile stream still receives a dated,
+            // header-only CSV for an empty completed day.  Journal-backed installations do not
+            // synthesize an empty source file because their signed manifest is authoritative.
+            if (journalService == null) {
+                String objectKey = legacyObjectKey(info, window.day);
+                boolean published = exportDataStreamToCSV(dataStreamId, objectKey,
+                        window.startInclusive, window.endExclusive);
+                return new PurgeDayResult(published, 0);
+            }
+            return new PurgeDayResult(true, 0);
+        }
+
+        boolean safelyPublished;
+        if (journalService != null) {
+            safelyPublished = journalService.isPublished(laneId,
+                    window.startInclusive, window.endExclusive);
+            if (!safelyPublished) {
+                log.warn("Skipping Daily File purge for lane {} because the journal manifest for [{}, {}) is not published",
+                        laneId, window.startInclusive, window.endExclusive);
+            }
+        } else {
+            String objectKey = legacyObjectKey(info, window.day);
+            safelyPublished = exportDataStreamToCSV(dataStreamId, objectKey,
+                    window.startInclusive, window.endExclusive);
+        }
+        if (!safelyPublished)
+            return new PurgeDayResult(false, 0);
+
+        long deleted = deleteObservationsInTimeRange(Set.of(dataStreamId),
+                window.startInclusive, window.endExclusive);
+        return new PurgeDayResult(true, deleted);
+    }
+
+    private boolean hasObservationsInTimeRange(BigId dataStreamId, Instant start, Instant end) {
+        ObsFilter filter = new ObsFilter.Builder()
+                .withDataStreams(dataStreamId)
+                .withPhenomenonTime(halfOpenTimeRange(start, end))
+                .withValuePredicate(obs -> isInsideHalfOpenWindow(obs.getPhenomenonTime(), start, end))
+                .withLimit(1)
+                .build();
+        try (var observations = database.getObservationStore().select(filter)) {
+            return observations.anyMatch(obs -> isInsideHalfOpenWindow(
+                    obs.getPhenomenonTime(), start, end));
+        }
     }
 
     public void purgeNonOccupancyData() {
         log.info("Purging data outside occupancy windows...");
 
-        // Get occupancy windows
-        List<TimeExtent> windows = getOccupancyWindows();
-        if (windows.isEmpty()) {
+        Map<String, List<TimeExtent>> windowsByLane = getOccupancyWindowsByLane();
+        if (windowsByLane.isEmpty()) {
             log.warn("No occupancy windows found - skipping non-occupancy purge to avoid data loss");
             return;
         }
 
-        log.info("Found {} occupancy windows", windows.size());
-
-        // Merge overlapping windows and add buffer
-        Duration buffer = Duration.ofSeconds(occupancyBufferSeconds);
-        List<TimeExtent> mergedWindows = mergeAndBufferWindows(windows, buffer);
-        log.info("Merged into {} non-overlapping windows with {}s buffer", mergedWindows.size(), occupancyBufferSeconds);
-
-        // Get dataStream IDs for high-volume outputs (Aspect/Rapiscan and RS350)
-        Set<BigId> dataStreamIds = getDataStreamIdsByOutputNames(
+        Map<String, Set<BigId>> streamsByLane = getDataStreamIdsByLane(
             OUTPUT_GAMMA_COUNTS,
             OUTPUT_NEUTRON_COUNTS,
             OUTPUT_GAMMA_THRESHOLD,
@@ -302,15 +569,26 @@ public class DatabasePurger {
             OUTPUT_STATUS
         );
 
-        if (dataStreamIds.isEmpty()) {
+        if (streamsByLane.isEmpty()) {
             log.debug("No high-volume dataStreams found");
             return;
         }
 
-        log.info("Processing {} dataStreams for occupancy-gated purge", dataStreamIds.size());
-
-        // Delete data in the gaps between occupancy windows
-        long totalDeleted = purgeGapsBetweenWindows(dataStreamIds, mergedWindows);
+        long totalDeleted = 0;
+        Duration buffer = Duration.ofSeconds(occupancyBufferSeconds);
+        for (var entry : streamsByLane.entrySet()) {
+            String laneId = entry.getKey();
+            List<TimeExtent> laneWindows = windowsByLane.get(laneId);
+            if (laneWindows == null || laneWindows.isEmpty()) {
+                log.warn("No occupancy windows found for lane {}; leaving its {} high-volume streams untouched",
+                        laneId, entry.getValue().size());
+                continue;
+            }
+            List<TimeExtent> merged = mergeAndBufferWindows(laneWindows, buffer);
+            log.info("Processing {} dataStreams for lane {} against {} merged occupancy windows",
+                    entry.getValue().size(), laneId, merged.size());
+            totalDeleted += purgeGapsBetweenWindows(entry.getValue(), merged);
+        }
         log.info("Purged {} observations outside occupancy windows", totalDeleted);
     }
 
@@ -321,7 +599,7 @@ public class DatabasePurger {
         if (!windows.isEmpty()) {
             TimeExtent firstWindow = windows.get(0);
             // Only delete data from a reasonable past (e.g., 30 days ago) to avoid deleting historical data
-            Instant earliestPurge = Instant.now().minus(Duration.ofDays(30));
+            Instant earliestPurge = clock.instant().minus(Duration.ofDays(30));
             if (firstWindow.begin().isAfter(earliestPurge)) {
                 long deleted = deleteObservationsInTimeRange(dataStreamIds, earliestPurge, firstWindow.begin());
                 totalDeleted += deleted;
@@ -346,7 +624,7 @@ public class DatabasePurger {
         // Keep recent data (last hour) in case new occupancies are being recorded
         if (!windows.isEmpty()) {
             TimeExtent lastWindow = windows.get(windows.size() - 1);
-            Instant safetyMargin = Instant.now().minus(Duration.ofHours(1));
+            Instant safetyMargin = clock.instant().minus(Duration.ofHours(1));
             if (lastWindow.end().isBefore(safetyMargin)) {
                 long deleted = deleteObservationsInTimeRange(dataStreamIds, lastWindow.end(), safetyMargin);
                 totalDeleted += deleted;
@@ -363,14 +641,8 @@ public class DatabasePurger {
         }
 
         // Use a reasonable earliest time to avoid querying from epoch
-        Instant earliestTime = Instant.now().minus(Duration.ofDays(365));
-
-        var filter = new ObsFilter.Builder()
-            .withDataStreams(dataStreamIds)
-            .withPhenomenonTimeDuring(earliestTime, cutoff)
-            .build();
-
-        return database.getObservationStore().removeEntries(filter);
+        Instant earliestTime = clock.instant().minus(Duration.ofDays(365));
+        return deleteObservationsInTimeRange(dataStreamIds, earliestTime, cutoff);
     }
 
     private long deleteObservationsInTimeRange(Set<BigId> dataStreamIds, Instant start, Instant end) {
@@ -378,52 +650,71 @@ public class DatabasePurger {
             return 0;
         }
 
-        var filter = new ObsFilter.Builder()
-            .withDataStreams(dataStreamIds)
-            .withPhenomenonTimeDuring(start, end)
-            .build();
+        long totalDeleted = 0;
+        while (true) {
+            var candidates = new ObsFilter.Builder()
+                    .withDataStreams(dataStreamIds)
+                    .withPhenomenonTime(halfOpenTimeRange(start, end))
+                    // H2 and some SQL stores use an inclusive cursor for the
+                    // index scan. The predicate enforces the immutable
+                    // [start,end) contract before the limit is applied.
+                    .withValuePredicate(obs -> isInsideHalfOpenWindow(
+                            obs.getPhenomenonTime(), start, end))
+                    .withLimit(DELETE_BATCH_SIZE)
+                    .build();
 
-        return database.getObservationStore().removeEntries(filter);
+            List<BigId> observationIds;
+            try (var entries = database.getObservationStore().selectEntries(candidates)) {
+                observationIds = entries
+                        .filter(entry -> isInsideHalfOpenWindow(
+                                entry.getValue().getPhenomenonTime(), start, end))
+                        .map(Map.Entry::getKey)
+                        .toList();
+            }
+            if (observationIds.isEmpty())
+                return totalDeleted;
+
+            // Selection and deletion are separate datastore calls.  Reapply every eligibility
+            // predicate in the delete itself so a concurrent update cannot move a selected row
+            // outside the retention window (or to another stream) and still have it removed by
+            // ID.  Stores that translate filters to SQL perform this as one predicate-guarded
+            // DELETE; the H2 store applies the same filter while holding its mutation lock.
+            long deleted = database.getObservationStore().removeEntries(
+                    new ObsFilter.Builder()
+                            .withInternalIDs(observationIds)
+                            .withDataStreams(dataStreamIds)
+                            .withPhenomenonTime(halfOpenTimeRange(start, end))
+                            .withValuePredicate(obs -> isInsideHalfOpenWindow(
+                                    obs.getPhenomenonTime(), start, end))
+                            .build());
+            if (deleted == 0) {
+                // Every candidate may legitimately have become ineligible after selection.  Stop
+                // this pass rather than spinning on a datastore that cannot currently progress;
+                // the next scheduled pass will discover any still-eligible rows.
+                log.debug("Selected observation batch became ineligible before guarded deletion");
+                return totalDeleted;
+            }
+            if (deleted > observationIds.size())
+                throw new IllegalStateException("Observation store deleted more rows than the selected batch");
+            totalDeleted += deleted;
+        }
     }
 
-    private void exportDailyFileOutputToCSV() {
-        // Use UTC for consistent daily file exports
-        LocalDate yesterday = LocalDate.now(ZoneOffset.UTC).minusDays(1);
-        String dateStr = yesterday.format(DateTimeFormatter.ISO_LOCAL_DATE);
-
-        Instant startOfYesterday = yesterday.atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant endOfYesterday = yesterday.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-
-        // Get daily file dataStream info for name lookup
-        Map<BigId, IDataStreamInfo> dataStreamInfo = getDataStreamEntriesByOutputNames(OUTPUT_DAILY_FILE);
-
-        if (dataStreamInfo.isEmpty()) {
-            log.info("No Daily File dataStreams found, nothing to export");
-            return;
-        }
-
-        log.info("Exporting DailyFileOutput records for {} lanes...", dataStreamInfo.size());
-
-        // Export each dataStream to its own CSV file
-        for (var entry : dataStreamInfo.entrySet()) {
-            BigId dataStreamId = entry.getKey();
-            IDataStreamInfo dsInfo = entry.getValue();
-
-            // Use system ID to create a unique filename per lane
-            String systemId = dsInfo.getSystemID().getUniqueID();
-            // Extract lane identifier from system ID (e.g., "urn:osh:sensor:rapiscan:lane1" -> "lane1")
-            String laneId = systemId.contains(":") ? systemId.substring(systemId.lastIndexOf(':') + 1) : systemId;
-            String objectKey = String.format("%s_%s.csv", laneId, dateStr);
-
-            exportDataStreamToCSV(dataStreamId, objectKey, startOfYesterday, endOfYesterday);
-        }
+    private String legacyObjectKey(IDataStreamInfo dataStreamInfo, LocalDate day) {
+        String systemId = dataStreamInfo.getSystemID().getUniqueID();
+        String laneId = systemId.contains(":")
+                ? systemId.substring(systemId.lastIndexOf(':') + 1) : systemId;
+        return laneId.replaceAll("[^A-Za-z0-9._-]", "_") + "_"
+                + day.format(DateTimeFormatter.ISO_LOCAL_DATE) + ".csv";
     }
 
-    private void exportDataStreamToCSV(BigId dataStreamId, String objectKey,
-                                       Instant startTime, Instant endTime) {
+    private boolean exportDataStreamToCSV(BigId dataStreamId, String objectKey,
+                                          Instant startTime, Instant endTime) {
         var filter = new ObsFilter.Builder()
             .withDataStreams(Set.of(dataStreamId))
-            .withPhenomenonTimeDuring(startTime, endTime)
+            .withPhenomenonTime(halfOpenTimeRange(startTime, endTime))
+            .withValuePredicate(obs -> isInsideHalfOpenWindow(
+                    obs.getPhenomenonTime(), startTime, endTime))
             .build();
 
         Map<String, String> metadata = new HashMap<>();
@@ -435,39 +726,103 @@ public class DatabasePurger {
             // Write CSV header
             writer.write("message,timestamp\n");
 
-            AtomicLong counter = new AtomicLong();
-            database.getObservationStore()
-                .select(filter)
-                .forEach(obs -> {
-                    try {
-                        String timestamp = obs.getPhenomenonTime().toString();
-
-                        // Get the message content from the observation
-                        String message = "";
-                        if (obs.getResult() != null && obs.getResult().getAtomCount() > 1) {
-                            message = obs.getResult().getStringValue(1);
-                            // Escape quotes and wrap in quotes for CSV
-                            message = "\"" + message.replace("\"", "\"\"") + "\"";
-                        }
-
-                        writer.write(String.format("%s,%s\n", message, timestamp));
-                        counter.getAndIncrement();
-                    } catch (IOException e) {
-                        log.warn("Failed to write observation to CSV: {}", e.getMessage());
+            long counter = 0;
+            try (var observations = database.getObservationStore().select(filter)) {
+                var iterator = observations.iterator();
+                while (iterator.hasNext()) {
+                    var obs = iterator.next();
+                    String timestamp = obs.getPhenomenonTime().toString();
+                    String message = "";
+                    if (obs.getResult() != null && obs.getResult().getAtomCount() > 1) {
+                        message = obs.getResult().getStringValue(1);
+                        message = "\"" + message.replace("\"", "\"\"") + "\"";
                     }
-                });
-
+                    writer.write(String.format("%s,%s\n", message, timestamp));
+                    counter++;
+                }
+            }
+            writer.flush();
             log.info("Exported {} DailyFileOutput records to bucket {}/{}", counter, DAILY_FILES_BUCKET, objectKey);
+            return true;
         } catch (IOException | DataStoreException e) {
             log.error("Failed to export DailyFileOutput to bucket {}/{}: {}", DAILY_FILES_BUCKET, objectKey, e.getMessage(), e);
+            return false;
         }
     }
 
-    private long calculateDelayUntilMidnight() {
-        // Schedule based on UTC midnight for consistent behavior
-        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
-        LocalDateTime nextMidnight = now.toLocalDate().plusDays(1).atStartOfDay();
-        Duration duration = Duration.between(now, nextMidnight);
-        return duration.toMinutes();
+    private void purgeDailyFileHistoryToLatest() {
+        Map<BigId, IDataStreamInfo> streams = getDataStreamEntriesByOutputNames(OUTPUT_DAILY_FILE);
+        long deleted = 0;
+        for (BigId dataStreamId : streams.keySet()) {
+            var latest = database.getObservationStore().select(new ObsFilter.Builder()
+                    .withDataStreams(dataStreamId)
+                    .withLatestResult()
+                    .build()).findFirst();
+            if (latest.isPresent()) {
+                Instant latestTime = latest.get().getPhenomenonTime();
+                deleted += deleteObservationsInTimeRange(Set.of(dataStreamId),
+                        clock.instant().minus(Duration.ofDays(365)), latestTime);
+            }
+        }
+        log.info("Purged {} historical Daily File observations in LATEST mode", deleted);
+    }
+
+    static TemporalFilter halfOpenTimeRange(Instant startInclusive, Instant endExclusive) {
+        return new TemporalFilter.Builder()
+                .withRange(Range.closedOpen(startInclusive, endExclusive))
+                .build();
+    }
+
+    private static boolean isInsideHalfOpenWindow(Instant value,
+                                                   Instant startInclusive,
+                                                   Instant endExclusive) {
+        return value != null && !value.isBefore(startInclusive) && value.isBefore(endExclusive);
+    }
+
+    long calculateDelayUntilMidnightMillis(Instant now) {
+        Instant nextMidnight = LocalDate.ofInstant(now, dailyFileZone).plusDays(1)
+                .atStartOfDay(dailyFileZone).toInstant();
+        Duration delay = Duration.between(now, nextMidnight);
+        long delayMillis = delay.toMillis();
+        // Duration#toMillis truncates. Round up so a sub-millisecond
+        // remainder can never schedule cleanup before the day is complete.
+        if (delay.compareTo(Duration.ofMillis(delayMillis)) > 0)
+            delayMillis++;
+        return Math.max(1L, delayMillis);
+    }
+
+    static DayWindow previousCompletedDayWindow(Instant capturedNow, ZoneId zoneId) {
+        LocalDate day = LocalDate.ofInstant(capturedNow, zoneId).minusDays(1);
+        return dayWindow(day, zoneId);
+    }
+
+    static DayWindow dayWindow(LocalDate day, ZoneId zoneId) {
+        return new DayWindow(day, day.atStartOfDay(zoneId).toInstant(),
+                day.plusDays(1).atStartOfDay(zoneId).toInstant());
+    }
+
+    record DayWindow(LocalDate day, Instant startInclusive, Instant endExclusive) {
+    }
+
+    private record PurgeDayResult(boolean complete, long deleted) {
+    }
+
+    private static final class DailyFileCatchUpFeed {
+        private final BigId dataStreamId;
+        private final IDataStreamInfo info;
+        private final String feedId;
+        private final String laneId;
+        private LocalDate processedThrough;
+        private LocalDate nextDay;
+
+        private DailyFileCatchUpFeed(BigId dataStreamId, IDataStreamInfo info, String feedId,
+                                     String laneId, LocalDate processedThrough, LocalDate nextDay) {
+            this.dataStreamId = dataStreamId;
+            this.info = info;
+            this.feedId = feedId;
+            this.laneId = laneId;
+            this.processedThrough = processedThrough;
+            this.nextDay = nextDay;
+        }
     }
 }

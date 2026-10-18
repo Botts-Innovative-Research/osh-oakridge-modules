@@ -44,6 +44,14 @@ public class OSCARServiceConfig extends ServiceConfig {
     @DisplayInfo(label = "Stats Frequency (min)", desc = "Frequency at which statistics will be published")
     public int statsFrequencyMinutes = 60;
 
+    @DisplayInfo(label = "Delegate Observation Lifecycle to Database",
+            desc = "Skip OSCAR's occupancy-gated high-volume purge when the datastore owns hot/cold lifecycle; daily-file and connection-status maintenance still run")
+    public boolean delegateObservationLifecycleToDatabase = false;
+
+    @DisplayInfo(label = "Daily File Purge Work Limit",
+            desc = "Maximum number of lane/day compatibility-observation windows processed during one daily catch-up cycle")
+    public int dailyFilePurgeWorkLimit = 50;
+
     @DisplayInfo(label = "WebID API Root", desc = "Base URL of the Sandia Full Spectrum Web ID API")
     public String webIdApiRoot;
 

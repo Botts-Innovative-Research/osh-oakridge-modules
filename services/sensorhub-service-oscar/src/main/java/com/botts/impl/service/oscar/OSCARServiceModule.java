@@ -26,7 +26,10 @@ import com.botts.impl.service.oscar.spreadsheet.SpreadsheetHandler;
 import com.botts.impl.service.oscar.stats.StatisticsControl;
 import com.botts.impl.service.oscar.stats.StatisticsOutput;
 import com.botts.impl.service.oscar.video.VideoRetention;
+import com.botts.impl.service.oscar.media.MediaResourceHandler;
+import com.botts.impl.service.oscar.media.MediaSetStore;
 import org.sensorhub.impl.utils.rad.interfaces.IWebIdProvider;
+import org.sensorhub.impl.utils.rad.dailyfile.IDailyFileJournalService;
 import org.sensorhub.impl.utils.rad.webid.WebIdClient;
 import com.botts.impl.service.oscar.webid.WebIdResourceHandler;
 import org.sensorhub.api.common.SensorHubException;
@@ -58,6 +61,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
     DatabasePurger databasePurger;
     StoragePressureRetention storagePressureRetention;
     WebIdResourceHandler webIdResourceHandler;
+    MediaResourceHandler mediaResourceHandler;
+    MediaSetStore retainedMediaStore;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -91,15 +96,23 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
                     bucketStore,
                     Duration.ofMinutes(getConfiguration().videoRetentionConfig.videoQueryPeriod),
                     Duration.ofDays(getConfiguration().videoRetentionConfig.timeToRetention),
-                    frameCount);
+                    frameCount,
+                    getConfiguration().videoRetentionConfig.jpegQuality,
+                    Duration.ofHours(getConfiguration().videoRetentionConfig.sourceRollbackGraceHours),
+                    Duration.ofHours(getConfiguration().videoRetentionConfig.maximumCatchUpHours),
+                    getConfiguration().videoRetentionConfig.maintenanceWorkLimit,
+                    Duration.ofHours(getConfiguration().videoRetentionConfig.lateArrivalOverlapHours),
+                    Duration.ofHours(getConfiguration().videoRetentionConfig.reconciliationCatchUpHours));
         } else {
             videoRetention = null;
             logger.info("No video retention config set.");
         }
+        retainedMediaStore = videoRetention != null
+                ? videoRetention.getMediaStore() : createMediaStore();
 
         if (getConfiguration().storagePressureRetentionConfig != null) {
             storagePressureRetention = new StoragePressureRetention(bucketStore,
-                    getConfiguration().storagePressureRetentionConfig, getLogger());
+                    retainedMediaStore, getConfiguration().storagePressureRetentionConfig, getLogger());
         } else {
             storagePressureRetention = null;
             logger.info("No storage pressure retention config set.");
@@ -149,9 +162,14 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
                 getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
 
 
+            if (config.delegateObservationLifecycleToDatabase)
+                getLogger().info("High-volume observation lifecycle is delegated to the configured database; "
+                        + "OSCAR will retain manifest-gated daily-file and connection-status maintenance");
             if (databasePurger == null)
-                databasePurger = new DatabasePurger((IObsSystemDatabase) module, bucketStore, 5);
-
+                databasePurger = new DatabasePurger((IObsSystemDatabase) module, bucketStore, 5,
+                        getParentHub().getModuleRegistry().getModuleByType(IDailyFileJournalService.class),
+                        config.delegateObservationLifecycleToDatabase,
+                        config.dailyFilePurgeWorkLimit);
             databasePurger.start();
         }
 
@@ -159,6 +177,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
                 ? new WebIdClient(config.webIdApiRoot) : null;
         webIdResourceHandler = new WebIdResourceHandler(bucketStore, getParentHub(), webIdClient);
         bucketService.registerObjectHandler(webIdResourceHandler);
+        mediaResourceHandler = new MediaResourceHandler(retainedMediaStore);
+        bucketService.registerObjectHandler(mediaResourceHandler);
 
         statsOutput.start();
 
@@ -188,8 +208,10 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
             getLogger().error("Could not stop stats output", ex);
         }
 
-        if (databasePurger != null)
+        if (databasePurger != null) {
             databasePurger.stop();
+            databasePurger = null;
+        }
 
         if (videoRetention != null)
             videoRetention.stop();
@@ -200,6 +222,18 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
         if (webIdResourceHandler != null) {
             bucketService.unregisterObjectHandler(webIdResourceHandler);
             webIdResourceHandler = null;
+        }
+        if (mediaResourceHandler != null) {
+            bucketService.unregisterObjectHandler(mediaResourceHandler);
+            mediaResourceHandler = null;
+        }
+    }
+
+    private MediaSetStore createMediaStore() throws SensorHubException {
+        try {
+            return new MediaSetStore(bucketStore);
+        } catch (org.sensorhub.api.datastore.DataStoreException e) {
+            throw new SensorHubException("Unable to initialize retained-media storage", e);
         }
     }
 

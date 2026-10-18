@@ -7,12 +7,14 @@ import org.sensorhub.api.datastore.DataStoreException;
 
 import java.io.*;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -47,16 +49,61 @@ public class FileSystemBucketStore implements IBucketStore {
     }
 
     public FileSystemBucketStore(Path rootDirectory, long maxFileSizeMb) throws IOException {
-        this.rootDirectory = rootDirectory;
+        this.rootDirectory = Objects.requireNonNull(rootDirectory, "rootDirectory")
+                .toAbsolutePath().normalize();
         this.maxFileSizeBytes = UploadPolicy.maxFileSizeBytes(maxFileSizeMb);
-        if (!Files.exists(rootDirectory)) {
-            createDirectories(rootDirectory);
+        if (!Files.exists(this.rootDirectory)) {
+            createDirectories(this.rootDirectory);
         }
-        setDirectoryPermissions(rootDirectory);
+        setDirectoryPermissions(this.rootDirectory);
     }
 
     private Path getBucketPath(String bucketName) {
-        return rootDirectory.resolve(bucketName);
+        if (bucketName == null || bucketName.isBlank()
+                || bucketName.equals(".") || bucketName.equals("..")
+                || bucketName.indexOf('/') >= 0 || bucketName.indexOf('\\') >= 0
+                || bucketName.chars().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("Bucket name must be one non-empty path component");
+        }
+
+        Path component = Path.of(bucketName);
+        if (component.isAbsolute() || component.getRoot() != null || component.getNameCount() != 1)
+            throw new IllegalArgumentException("Bucket name must be one relative path component");
+        Path resolved = rootDirectory.resolve(component).normalize();
+        if (!resolved.startsWith(rootDirectory) || !rootDirectory.equals(resolved.getParent()))
+            throw new IllegalArgumentException("Bucket name must stay within the bucket root");
+        return resolved;
+    }
+
+    private Path requireConfinedBucketDirectory(String bucketName) throws IOException {
+        Path bucketPath = getBucketPath(bucketName);
+        if (Files.isSymbolicLink(bucketPath)
+                || !Files.isDirectory(bucketPath, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Bucket is not a regular directory: " + bucketName);
+        }
+        Path realRoot = rootDirectory.toRealPath();
+        Path realBucket = bucketPath.toRealPath();
+        if (!realRoot.equals(realBucket.getParent()))
+            throw new IOException("Bucket escapes the configured root: " + bucketName);
+        return realBucket;
+    }
+
+    private Path resolveStoreRelativePath(String relativePath) {
+        if (relativePath == null || relativePath.isBlank()
+                || relativePath.chars().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("Relative object path is required");
+        }
+        Path relative = Path.of(relativePath.replace('\\', '/'));
+        if (relative.isAbsolute() || relative.getRoot() != null)
+            throw new IllegalArgumentException("Object path must be relative to the bucket root");
+        for (Path component : relative) {
+            if (component.toString().equals(".."))
+                throw new IllegalArgumentException("Object path must stay within the bucket root");
+        }
+        Path resolved = rootDirectory.resolve(relative).normalize();
+        if (!resolved.startsWith(rootDirectory))
+            throw new IllegalArgumentException("Object path must stay within the bucket root");
+        return resolved;
     }
 
     private void createDirectories(Path directory) throws IOException {
@@ -93,8 +140,7 @@ public class FileSystemBucketStore implements IBucketStore {
     private Path resolveObjectPath(String bucketName, String key) throws DataStoreException {
         try {
             UploadPolicy.validateObjectKey(key);
-            Path bucketPath = getBucketPath(bucketName);
-            Path realBucketPath = bucketPath.toRealPath();
+            Path realBucketPath = requireConfinedBucketDirectory(bucketName);
             Path resolved = realBucketPath.resolve(key.replace('\\', '/')).normalize();
             if (!resolved.startsWith(realBucketPath))
                 throw new DataStoreException("Object key must stay within the bucket");
@@ -112,22 +158,33 @@ public class FileSystemBucketStore implements IBucketStore {
             if (Files.isSymbolicLink(resolved))
                 throw new DataStoreException("Object path is a symbolic link");
             return resolved;
-        } catch (IOException e) {
+        } catch (IOException | IllegalArgumentException e) {
             throw new DataStoreException("Invalid object key: " + key, e);
         }
     }
 
     @Override
     public boolean bucketExists(String bucketName) {
-        Path path = getBucketPath(bucketName);
-        return Files.exists(path);
+        try {
+            requireConfinedBucketDirectory(bucketName);
+            return true;
+        } catch (IOException | IllegalArgumentException e) {
+            return false;
+        }
     }
 
     @Override
     public void createBucket(String bucketName) throws DataStoreException {
         try {
-            createDirectories(getBucketPath(bucketName));
-        } catch (IOException e) {
+            Path path = getBucketPath(bucketName);
+            if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+                requireConfinedBucketDirectory(bucketName);
+            } else {
+                Files.createDirectory(path);
+                requireConfinedBucketDirectory(bucketName);
+                setDirectoryPermissions(path);
+            }
+        } catch (IOException | IllegalArgumentException e) {
             throw new DataStoreException(FAILED_CREATE_BUCKET + bucketName, e);
         }
     }
@@ -136,9 +193,14 @@ public class FileSystemBucketStore implements IBucketStore {
     public void deleteBucket(String bucketName) throws DataStoreException {
         try {
             Path path = getBucketPath(bucketName);
-            if (Files.exists(path))
-                Files.walk(path).forEach(p -> p.toFile().delete());
-        } catch (IOException e) {
+            if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+                requireConfinedBucketDirectory(bucketName);
+                try (Stream<Path> paths = Files.walk(path)) {
+                    for (Path candidate : paths.sorted((left, right) -> right.compareTo(left)).toList())
+                        Files.delete(candidate);
+                }
+            }
+        } catch (IOException | IllegalArgumentException e) {
             throw new DataStoreException(FAILED_DELETE_BUCKET + bucketName, e);
         }
     }
@@ -168,6 +230,8 @@ public class FileSystemBucketStore implements IBucketStore {
 
     @Override
     public boolean objectExists(String bucketName, String objectName) {
+        if (isPartialObjectKey(objectName))
+            return false;
         try {
             Path path = resolveObjectPath(bucketName, objectName);
             return Files.exists(path) && path.toFile().isFile() && !Files.isSymbolicLink(path);
@@ -178,7 +242,14 @@ public class FileSystemBucketStore implements IBucketStore {
 
     @Override
     public boolean objectExists(String relativePath) {
-        return Files.exists(getBucketPath(relativePath));
+        if (isPartialObjectKey(relativePath))
+            return false;
+        try {
+            Path path = resolveStoreRelativePath(relativePath);
+            return Files.exists(path) && path.toRealPath().startsWith(rootDirectory.toRealPath());
+        } catch (IOException | IllegalArgumentException e) {
+            return false;
+        }
     }
 
     @Override
@@ -254,6 +325,8 @@ public class FileSystemBucketStore implements IBucketStore {
 
     @Override
     public InputStream getObject(String bucketName, String key) throws DataStoreException {
+        if (isPartialObjectKey(key))
+            throw new DataStoreException(OBJECT_NOT_FOUND + bucketName);
         try {
             Path file = resolveObjectPath(bucketName, key);
             if (!Files.exists(file))
@@ -266,6 +339,8 @@ public class FileSystemBucketStore implements IBucketStore {
 
     @Override
     public long getObjectSize(String bucketName, String key) throws DataStoreException {
+        if (isPartialObjectKey(key))
+            throw new DataStoreException(OBJECT_NOT_FOUND + bucketName);
         Path file = resolveObjectPath(bucketName, key);
         if (!Files.exists(file))
             throw new DataStoreException(OBJECT_NOT_FOUND + bucketName, new IllegalArgumentException());
@@ -276,6 +351,8 @@ public class FileSystemBucketStore implements IBucketStore {
 
     @Override
     public String getObjectMimeType(String bucketName, String key) throws DataStoreException {
+        if (isPartialObjectKey(key))
+            throw new DataStoreException(OBJECT_NOT_FOUND + bucketName);
         Path path = resolveObjectPath(bucketName, key);
         if (!Files.exists(path))
             throw new DataStoreException(OBJECT_NOT_FOUND + bucketName, new IllegalArgumentException());
@@ -318,6 +395,82 @@ public class FileSystemBucketStore implements IBucketStore {
             try (Stream<Path> stream = Files.walk(path)) {
                 return stream.filter(Files::isRegularFile)
                         .map(p -> path.relativize(p).toString())
+                        .filter(key -> !isPartialObjectKey(key))
+                        .toList();
+            }
+        } catch (IOException e) {
+            throw new DataStoreException(FAILED_LIST_OBJECTS + bucketName, e);
+        }
+    }
+
+    @Override
+    public List<String> listObjects(String bucketName, String keyPrefix) throws DataStoreException {
+        try {
+            Path bucketPath = getBucketPath(bucketName);
+            if (!Files.exists(bucketPath))
+                throw new DataStoreException(BUCKET_NOT_FOUND, new IllegalArgumentException());
+
+            String normalizedPrefix = keyPrefix == null ? "" : keyPrefix.replace('\\', '/');
+            while (normalizedPrefix.endsWith("/"))
+                normalizedPrefix = normalizedPrefix.substring(0, normalizedPrefix.length() - 1);
+            if (normalizedPrefix.isEmpty())
+                return listObjects(bucketName);
+
+            Path prefixPath = resolveObjectPath(bucketName, normalizedPrefix);
+            if (!Files.exists(prefixPath))
+                return List.of();
+            if (!Files.isDirectory(prefixPath) || Files.isSymbolicLink(prefixPath))
+                return objectExists(bucketName, normalizedPrefix) ? List.of(normalizedPrefix) : List.of();
+
+            Path realBucketPath = bucketPath.toRealPath();
+            try (Stream<Path> stream = Files.walk(prefixPath)) {
+                return stream.filter(Files::isRegularFile)
+                        .filter(candidate -> !Files.isSymbolicLink(candidate))
+                        .map(candidate -> realBucketPath.relativize(candidate).toString())
+                        .filter(key -> !isPartialObjectKey(key))
+                        .toList();
+            }
+        } catch (IOException e) {
+            throw new DataStoreException(FAILED_LIST_OBJECTS + bucketName, e);
+        }
+    }
+
+    @Override
+    public List<String> listObjects(String bucketName, String keyPrefix, String keySuffix, int limit)
+            throws DataStoreException {
+        if (limit < 1)
+            throw new IllegalArgumentException("Object listing limit must be positive");
+        try {
+            Path bucketPath = getBucketPath(bucketName);
+            if (!Files.exists(bucketPath))
+                throw new DataStoreException(BUCKET_NOT_FOUND, new IllegalArgumentException());
+
+            String normalizedPrefix = keyPrefix == null ? "" : keyPrefix.replace('\\', '/');
+            while (normalizedPrefix.endsWith("/"))
+                normalizedPrefix = normalizedPrefix.substring(0, normalizedPrefix.length() - 1);
+            String normalizedSuffix = keySuffix == null ? "" : keySuffix.replace('\\', '/');
+            Path prefixPath = normalizedPrefix.isEmpty()
+                    ? bucketPath.toRealPath() : resolveObjectPath(bucketName, normalizedPrefix);
+            if (!Files.exists(prefixPath))
+                return List.of();
+            Path realBucketPath = bucketPath.toRealPath();
+            if (!Files.isDirectory(prefixPath) || Files.isSymbolicLink(prefixPath)) {
+                if (!objectExists(bucketName, normalizedPrefix)
+                        || !normalizedPrefix.endsWith(normalizedSuffix))
+                    return List.of();
+                return List.of(normalizedPrefix);
+            }
+
+            // Filtering precedes limit, and the stream short-circuits Files.walk traversal as soon
+            // as enough matching objects are found. No whole-prefix list is materialized.
+            try (Stream<Path> stream = Files.walk(prefixPath)) {
+                return stream.filter(Files::isRegularFile)
+                        .filter(candidate -> !Files.isSymbolicLink(candidate))
+                        .map(candidate -> realBucketPath.relativize(candidate).toString())
+                        .map(key -> key.replace('\\', '/'))
+                        .filter(key -> !isPartialObjectKey(key))
+                        .filter(key -> key.endsWith(normalizedSuffix))
+                        .limit(limit)
                         .toList();
             }
         } catch (IOException e) {
@@ -331,7 +484,10 @@ public class FileSystemBucketStore implements IBucketStore {
         if (!Files.exists(path))
             return -1;
         try (Stream<Path> stream = Files.walk(path)) {
-            return stream.filter(Files::isRegularFile).count();
+            return stream.filter(Files::isRegularFile)
+                    .map(candidate -> path.relativize(candidate).toString())
+                    .filter(key -> !isPartialObjectKey(key))
+                    .count();
         } catch (IOException e) {
             return -1;
         }
@@ -371,6 +527,13 @@ public class FileSystemBucketStore implements IBucketStore {
         if (!objectExists(bucketName, key))
             throw new DataStoreException(OBJECT_NOT_FOUND + bucketName);
         return Paths.get(bucketName, key).toString();
+    }
+
+    private static boolean isPartialObjectKey(String key) {
+        if (key == null)
+            return false;
+        String normalized = key.replace('\\', '/');
+        return normalized.contains(".partial-") || normalized.endsWith(".partial");
     }
 
 

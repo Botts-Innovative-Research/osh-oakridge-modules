@@ -1,4 +1,4 @@
-# Manual de administración y operación de OSCAR 3.9.1
+# Manual de administración y operación de OSCAR 3.9.2
 
 Este manual cubre el primer uso y la operación completa: certificado, acceso, plano georreferenciado, importación/creación de carriles, adjudicación y evidencias, eventos, estadísticas nacionales, informes y federación de nodos.
 
@@ -32,7 +32,7 @@ La interfaz de administración selecciona automáticamente la versión del manua
 
 Necesita:
 
-- un despliegue OSCAR 3.9.1 instalado y en ejecución;
+- un despliegue OSCAR 3.9.2 instalado y en ejecución;
 - la URL de OSCAR, normalmente `https://oscar.local/` salvo que se haya elegido otro host;
 - una cuenta administradora para `/sensorhub/admin`;
 - la imagen aprobada del sitio y la latitud/longitud de sus esquinas inferior izquierda y superior derecha;
@@ -131,6 +131,8 @@ En la navegación izquierda, abra **Servicios > Módulo de servicio OSCAR**.
 | ID de base de datos | Base de observaciones usada por OSCAR. En blanco, las estadísticas usan la base federada; los trabajos de purga/exportación específicos solo arrancan con una base elegida explícitamente. |
 | Raíz de API WebID | URL base de Sandia Full Spectrum Web ID. Predeterminado: `https://full-spectrum.sandia.gov/api/v1`. Use un servicio local aprobado para despliegues aislados o déjelo vacío para no crear el cliente Web ID. |
 | Frecuencia de estadísticas (min) | Intervalo de publicación; predeterminado 60 minutos. |
+| Delegar el ciclo de vida de las observaciones a la base de datos | Active esta opción cuando la base de datos por niveles gestione la retención activa y archivada. OSCAR mantiene el estado de conexión y la limpieza de archivos diarios validada por manifiesto. |
+| Límite de trabajo de purga de archivos diarios | Máximo de ventanas de compatibilidad de carril/día por ciclo de recuperación. Predeterminado: 50. |
 | Inicio automático | Inicia el servicio cuando se carga el nodo. Normalmente debe estar activo en producción. |
 
 El servicio necesita un Servicio de almacenamiento en buckets iniciado. Si no lo encuentra, inicie y verifique **Servicios > Servicio de almacenamiento en buckets**, y reinicialice o reinicie el servicio OSCAR.
@@ -143,10 +145,16 @@ Selecciona una imagen PNG/JPG/JPEG y asigna los límites inferior izquierdo y su
 
 | Campo | Predeterminado | Comportamiento |
 | --- | ---: | --- |
-| Tiempo hasta retención/eliminación de fotogramas clave (días) | 7 | Edad a la que se procesa un vídeo de ocupación. |
+| Antigüedad antes de conservar cinco fotogramas (días) | 7 | Edad antes de convertir el vídeo fuente de una ocupación en exactamente cinco JPEG conservados. |
 | Periodo de consulta de vídeo (minutos) | 1 | Intervalo entre búsquedas de vídeos elegibles. Un periodo mayor agrupa más registros por consulta. |
-| Activar retención de fotogramas | activado | Activado: reduce clips antiguos al número indicado. Desactivado: elimina los clips elegibles. |
-| Número de fotogramas clave retenidos | 5 | Fotogramas que se conservan; no tiene efecto si la retención está desactivada. |
+| Recuperación máxima de retención (horas) | 6 | Intervalo máximo de tiempo histórico de eventos procesado por ciclo. El trabajo restante continúa desde un cursor duradero. |
+| Superposición de llegadas tardías (horas) | 24 | Intervalo reciente que se vuelve a consultar para ocupaciones confirmadas después de que avanzara el cursor; los ID duraderos evitan duplicados. |
+| Reconciliación histórica por ciclo (horas) | 24 | Intervalo antiguo que se revalida por ciclo para reparar medios sin catálogo sin recorrer todo el historial. |
+| Límite de trabajo de mantenimiento multimedia | 200 | Máximo de entradas de reconciliación del catálogo, reintento y ciclo de vida del origen inspeccionadas por ciclo. |
+| Activar retención de fotogramas | activado | Activado: convierte clips antiguos en el conjunto exacto de cinco JPEG. Desactivado: usa el comportamiento de eliminación heredado. |
+| Número de fotogramas retenidos | 5 | El esquema v1 exige exactamente cinco cuando la retención está activada. |
+| Calidad JPEG retenida | 85 | Calidad de codificación JPEG sRGB de línea base de 1 a 100. |
+| Gracia de reversión del origen (horas) | 24 | Tiempo mínimo que se conserva el clip original después de confirmar los cinco JPEG y su manifiesto. |
 
 Estas opciones afectan al vídeo histórico de ocupación, no al flujo en directo. Defina valores compatibles con la política de evidencias del sitio.
 
@@ -158,9 +166,10 @@ Estas opciones afectan al vídeo histórico de ocupación, no al flujo en direct
 | Uso objetivo (%) | 80 | La limpieza continúa hasta alcanzarlo o agotar archivos elegibles. |
 | Periodo de comprobación (minutos) | 1 | Frecuencia de comprobación; debe ser mayor que cero. |
 | Edad mínima del objeto (minutos) | 10 | Protege archivos más nuevos; no puede ser negativa. |
+| Máximo de conjuntos multimedia por ciclo | 200 | Limita las entradas del índice directo inspeccionadas en un ciclo. La cola duradera reanuda el trabajo restante tras un reinicio o en el ciclo siguiente. |
 | Ruta de almacenamiento | `files` | Sistema de archivos cuyo uso controla la limpieza. Debe apuntar al volumen real de archivos OSCAR. |
 
-La limpieza por presión solo elimina objetos elegibles del bucket `videos`, priorizando los candidatos antiguos; los CSV diarios están protegidos. Mantenga además supervisión del sistema operativo: este control de emergencia no sustituye las copias de seguridad.
+La limpieza por presión solo elimina objetos elegibles del bucket `videos` en orden de publicación duradero; durante un ciclo no enumera ni ordena todo el árbol de medios retenidos. Los CSV diarios están protegidos. Mantenga además supervisión del sistema operativo: este control de emergencia no sustituye las copias de seguridad.
 
 ## 5. Crear y cargar un plano georreferenciado
 
@@ -634,16 +643,39 @@ Verifique carriles/eventos del remoto, su fila Nacional, un informe y un evento 
 
 ## 12. Retención de datos y almacenamiento
 
-Con un **ID de base de datos** explícito, el servicio inicia:
+El perfil estándar 3.9.2 utiliza la base de datos PostgreSQL por niveles. Los registros recientes y
+operativos permanecen en PostgreSQL; las observaciones configuradas de detectores de gran volumen
+con más de 30 días se copian mediante trabajos de fondo limitados a Parquet comprimido con ZSTD y
+catalogado. La eliminación de filas activas está desactivada de forma predeterminada. Actívela solo
+después de verificar el archivo, confirmar la paridad exacta entre datos activos y fríos, cumplir el
+plazo de reversión, obtener una copia verificada y superar una restauración aislada. Las retenciones
+activas de generación u observación impiden la eliminación correspondiente.
 
-- cada hora, eliminación de estados de conexión de más de una hora y mediciones de alto volumen fuera de ventanas de ocupación amortiguadas; y
-- a medianoche UTC, exportación del `dailyFile` del día anterior por carril al bucket `dailyfiles` y eliminación de esas observaciones ya exportadas.
+Cada controlador RPM requiere el diario directo de archivos diarios. Captura el registro fuente
+antes del análisis cuando es posible y publica el día terminado como CSV heredado inmutable más un
+manifiesto SHA-256. La retención de la base de datos nunca debe sustituir este diario. El
+mantenimiento del estado de conexión y la limpieza, validada por manifiesto, de observaciones
+`dailyFile` heredadas continúan por separado.
 
-Si no existen ventanas de ocupación, se omite la purga fuera de ocupación para evitar pérdida accidental. Se conserva un margen reciente y se aplica un búfer de cinco segundos alrededor de cada ocupación.
+Cada vídeo de alarma apto y antiguo se convierte en exactamente cinco JPEG decodificables de forma
+independiente (primero, cuarto, centro, tres cuartos y último). El vídeo fuente se conserva durante
+el plazo de reversión y ante cualquier fallo; los eventos antiguos o no convertidos mantienen la
+reproducción heredada. La limpieza por presión solo puede quitar conjuntos completos y aptos de
+medios retenidos. No elimina archivos diarios, informes, adjudicaciones, vídeo heredado sin
+catálogo ni el archivo Parquet.
 
-El Servicio de buckets maneja planos, hojas, vídeos, informes y exportaciones. Los registros de base de datos y los archivos necesitan copias de seguridad separadas. La retención por edad y la de presión son independientes: la primera reduce/elimina vídeos de ocupación; la segunda reacciona al uso del disco y actualmente elimina solo objetos elegibles de `videos`.
+Use los comandos `backup`, `backup-verify`, `archive status`, `archive verify`, retenciones,
+exportación portátil y eliminación con vista previa y token del lanzador de la versión. La copia
+coordinada cubre PostgreSQL, el estado OSCAR, el archivo frío y WAL archivado; proteja por separado
+su clave de cifrado y una copia externa verificada. Nunca borre directamente archivos catalogados.
+Una actualización anterior a 3.9.2 conserva la base y configuración anteriores: no crea todo el perfil ni
+activa las sumas de comprobación de PostgreSQL. Inicialice un despliegue 3.9.2 nuevo o aplique una
+migración de producción validada aparte. Las guías de almacenamiento de `documentation/` son los
+procedimientos autorizados.
 
-Antes de cambiar retención, base de datos, ruta o **Eliminar datos al eliminar el carril**, confirme las obligaciones de evidencias y copias.
+Antes de cambiar retención, base, rutas, poda automática de copias o **Eliminar datos al eliminar
+el carril**, confirme las obligaciones de evidencia, privacidad, retención legal, recuperación y
+destrucción de registros.
 
 ## 13. Lista de validación
 
@@ -657,6 +689,9 @@ Antes de cambiar retención, base de datos, ruta o **Eliminar datos al eliminar 
 
 - [ ] ID de nodo único; base de datos, Web ID, estadísticas y Auto Start revisados.
 - [ ] Retención de vídeo y presión revisadas antes de activar limpieza.
+- [ ] Se usó una base/configuración 3.9.2 nueva o una migración aprobada; el estado y la integridad del archivo son correctos.
+- [ ] Una copia coordinada se verifica, su clave externa está custodiada aparte, existe copia fuera del host y se superó una restauración aislada.
+- [ ] Un carril de muestra publica CSV/manifiesto desde el diario; eventos retenidos muestran cinco JPEG y los heredados siguen reproduciéndose.
 - [ ] Servicios de buckets y OSCAR están iniciados.
 
 ### Plano
@@ -699,7 +734,7 @@ Antes de cambiar retención, base de datos, ruta o **Eliminar datos al eliminar 
 | OSM 403/bloqueado | No use directamente servidores voluntarios incumpliendo su política. Configure proveedor/proxy OSM aprobado o use Esri mientras se corrige. |
 | CSV rechazado | Revise encabezado/orden, grupos de seis, índices secuenciales, número de celdas, numéricos, vacíos sin comillas y ausencia de comas internas. |
 | Falta un carril tras CSV | Busque UniqueID ya cargado, nombre mayor de 12, errores de hijos y espere la carga asíncrona. |
-| **Sensores** está vacío tras reiniciar después de cargar el CSV | La carga creó módulos en memoria, pero no se conservó la configuración completa. Vuelva a cargar si hace falta, espere a que aparezcan todos los carriles e hijos, pulse **Guardar** globalmente, reinicie OSCAR y compruebe otra vez **Sensores**. Si un nodo 3.9.1 sigue perdiendo los carriles, revise los logs de OSCAR y verifique que el propietario pueda escribir en `/var/lib/oscar/config.json`. |
+| **Sensores** está vacío tras reiniciar después de cargar el CSV | La carga creó módulos en memoria, pero no se conservó la configuración completa. Vuelva a cargar si hace falta, espere a que aparezcan todos los carriles e hijos, pulse **Guardar** globalmente, reinicie OSCAR y compruebe otra vez **Sensores**. Si un nodo 3.9.2 sigue perdiendo los carriles, revise los logs de OSCAR y verifique que el propietario pueda escribir en `/var/lib/oscar/config.json`. |
 | Una vista operativa está vacía o rechaza su clave | Confirme que **Claves de vista operativa** del carril contiene exactamente la clave en minúsculas, aplique y guarde globalmente, reinicie el carril si procede y use `?view=<clave>` o `/view/<clave>`. Una asignación vacía nunca coincide con una vista delimitada. |
 | RPM no inicia | Pruebe alcance del host, puerto, cortafuegos, rango Aspect y disponibilidad; revise el error del hijo. |
 | Cámara no inicia | Pruebe RTSP/credenciales, quite `rtsp://` del host, no duplique puerto, confirme códec Axis o ruta Custom y pruebe desde el host OSCAR. |
@@ -730,4 +765,4 @@ Para soporte, registre versión OSCAR, navegador, carril/ocupación, hora y zona
 
 ---
 
-Base del documento: comportamiento del código OSCAR 3.9.1, revisado el 2026-10-16. Si una versión posterior cambia campos o flujos, actualice conjuntamente el manual canónico en inglés y las tres traducciones.
+Base del documento: comportamiento del código OSCAR 3.9.2, revisado el 2026-10-17. Si una versión posterior cambia campos o flujos, actualice conjuntamente el manual canónico en inglés y las tres traducciones.
