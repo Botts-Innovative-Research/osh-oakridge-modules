@@ -3,6 +3,7 @@ package com.botts.impl.service.bucket;
 import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.service.bucket.filesystem.FileSystemBucketStore;
 import com.botts.impl.service.bucket.util.MultipartRequestParser;
+import org.apache.commons.fileupload.disk.DiskFileItem;
 import org.apache.commons.fileupload.servlet.ServletFileUpload;
 import org.junit.After;
 import org.junit.Before;
@@ -318,6 +319,89 @@ public class MultipartUploadTest {
         }
     }
 
+    @Test
+    public void testMultipartSpillUsesManagedDataTempDirectory() throws Exception {
+        Path dataTemp = Files.createTempDirectory("multipart-data-tmp-").toRealPath();
+        Path nativeTemp = Files.createTempDirectory("multipart-native-tmp-").toRealPath();
+        String oldDataTemp = System.getProperty("oscar.data.tmpdir");
+        String oldJavaTemp = System.getProperty("java.io.tmpdir");
+        MultipartRequestParser.MultipartParseResult result = null;
+        try {
+            System.setProperty("oscar.data.tmpdir", dataTemp.toString());
+            System.setProperty("java.io.tmpdir", nativeTemp.toString());
+
+            String boundary = "----ManagedDataTempBoundary";
+            String fileContent = "x".repeat(1024 * 1024 + 1);
+            byte[] multipartBody = createMultipartBody(
+                boundary, "large.bin", "application/octet-stream", fileContent);
+            HttpServletRequest request = createMockRequest(
+                "POST", "multipart/form-data; boundary=" + boundary, multipartBody);
+
+            result = MultipartRequestParser.parse(request);
+            DiskFileItem item = (DiskFileItem) result.fileItems().get(0);
+            assertNotNull("Large upload should spill to disk", item.getStoreLocation());
+            assertEquals(dataTemp.toFile(), item.getStoreLocation().getParentFile().getCanonicalFile());
+            assertNotEquals(nativeTemp.toFile(), item.getStoreLocation().getParentFile().getCanonicalFile());
+        } finally {
+            if (result != null)
+                result.close();
+            restoreSystemProperty("oscar.data.tmpdir", oldDataTemp);
+            restoreSystemProperty("java.io.tmpdir", oldJavaTemp);
+            deleteDirectory(dataTemp);
+            deleteDirectory(nativeTemp);
+        }
+    }
+
+    @Test
+    public void testMultipartRejectsRelativeManagedDataTempDirectory() throws Exception {
+        String oldDataTemp = System.getProperty("oscar.data.tmpdir");
+        try {
+            System.setProperty("oscar.data.tmpdir", "relative-upload-temp");
+            HttpServletRequest request = createMockRequest(
+                "POST", "multipart/form-data; boundary=invalid-temp", new byte[0]);
+            try {
+                MultipartRequestParser.parse(request);
+                fail("Expected relative managed data temp directory to be rejected");
+            } catch (Exception expected) {
+                assertTrue(expected.getMessage().contains("must be absolute"));
+            }
+        } finally {
+            restoreSystemProperty("oscar.data.tmpdir", oldDataTemp);
+        }
+    }
+
+    @Test
+    public void testMultipartRejectsBlankOrNativeManagedDataTempDirectory() throws Exception {
+        String oldDataTemp = System.getProperty("oscar.data.tmpdir");
+        String oldJavaTemp = System.getProperty("java.io.tmpdir");
+        Path nativeTemp = Files.createTempDirectory("multipart-native-only-").toRealPath();
+        try {
+            System.setProperty("java.io.tmpdir", nativeTemp.toString());
+            HttpServletRequest request = createMockRequest(
+                "POST", "multipart/form-data; boundary=invalid-temp", new byte[0]);
+
+            System.setProperty("oscar.data.tmpdir", "  ");
+            try {
+                MultipartRequestParser.parse(request);
+                fail("Expected blank managed data temp directory to be rejected");
+            } catch (Exception expected) {
+                assertTrue(expected.getMessage().contains("must not be blank"));
+            }
+
+            System.setProperty("oscar.data.tmpdir", nativeTemp.toString());
+            try {
+                MultipartRequestParser.parse(request);
+                fail("Expected native and data temp directories to remain distinct");
+            } catch (Exception expected) {
+                assertTrue(expected.getMessage().contains("must differ from java.io.tmpdir"));
+            }
+        } finally {
+            restoreSystemProperty("oscar.data.tmpdir", oldDataTemp);
+            restoreSystemProperty("java.io.tmpdir", oldJavaTemp);
+            deleteDirectory(nativeTemp);
+        }
+    }
+
     /**
      * Test full round-trip: parse multipart, store, and retrieve.
      */
@@ -377,6 +461,23 @@ public class MultipartUploadTest {
 
     private HttpServletRequest createMockRequest(String method, String contentType, byte[] body) {
         return new MockHttpServletRequest(method, contentType, body);
+    }
+
+    private static void restoreSystemProperty(String name, String value) {
+        if (value == null)
+            System.clearProperty(name);
+        else
+            System.setProperty(name, value);
+    }
+
+    private static void deleteDirectory(Path directory) throws IOException {
+        if (!Files.exists(directory))
+            return;
+        try (var paths = Files.walk(directory)) {
+            paths.sorted(Comparator.reverseOrder())
+                .map(Path::toFile)
+                .forEach(File::delete);
+        }
     }
 
     /**
