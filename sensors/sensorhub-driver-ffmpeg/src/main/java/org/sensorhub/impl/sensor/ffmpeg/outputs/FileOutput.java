@@ -757,7 +757,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 TimeUnit.NANOSECONDS.timedWait(this, remainingNanos);
                 remainingNanos = deadline - System.nanoTime();
             }
-            return generation == expectedGeneration && ready;
+            return generation == expectedGeneration && active && ready;
         }
     }
 

@@ -48,6 +48,17 @@ public class FileOutputRecordingReadinessTest {
     }
 
     @Test
+    public void stoppedGenerationCannotReportPreviouslySignaledReadiness() throws Exception {
+        FileOutput.RecordingReadiness readiness = new FileOutput.RecordingReadiness();
+        long generation = readiness.start();
+        readiness.packetWritten(generation);
+        readiness.stop(generation);
+
+        assertFalse("A stopped output must not be acknowledged as an active recording",
+                readiness.await(generation, Duration.ofMillis(10)));
+    }
+
+    @Test
     public void waitTimesOutWhenNoPacketArrives() throws Exception {
         FileOutput.RecordingReadiness readiness = new FileOutput.RecordingReadiness();
         long generation = readiness.start();
