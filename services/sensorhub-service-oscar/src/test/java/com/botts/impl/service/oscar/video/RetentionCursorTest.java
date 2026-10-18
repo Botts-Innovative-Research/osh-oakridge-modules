@@ -12,14 +12,19 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.sensorhub.api.ISensorHub;
+import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.impl.utils.rad.model.Occupancy;
 
+import java.io.IOException;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -75,10 +80,12 @@ public class RetentionCursorTest {
 
         RetentionProcessedObservation processed = RetentionProcessedObservation.at(
                 "observation-id", first, second);
-        assertFalse(store.isObservationProcessed(processed.observationId()));
+        assertFalse(store.isObservationProcessed(
+                processed.observationId(), processed.resultTime()));
         store.markObservationProcessed(processed);
         assertTrue("Processed IDs must survive cursor advancement and restart",
-                new MediaSetStore(bucketStore).isObservationProcessed(processed.observationId()));
+                new MediaSetStore(bucketStore).isObservationProcessed(
+                        processed.observationId(), processed.resultTime()));
 
         MediaMaintenanceCheckpoint maintenance = MediaMaintenanceCheckpoint.initial(second)
                 .withLifecycle(new MediaMaintenanceCheckpoint.Cursor(17, "lifecycle-key"),
@@ -91,6 +98,285 @@ public class RetentionCursorTest {
         try (var files = Files.walk(root)) {
             assertFalse("Atomic checkpoint publication must not leave partials",
                     files.anyMatch(path -> path.getFileName().toString().contains(".partial-")));
+        }
+    }
+
+    @Test
+    public void hourlyProcessedIndexesArePrunedOnlyBehindLateArrivalBoundary()
+            throws Exception {
+        Path root = temporaryFolder.newFolder("processed-marker-prune").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        MediaSetStore store = new MediaSetStore(bucketStore);
+        Instant cutoff = Instant.parse("2026-01-02T00:00:00Z");
+        RetentionProcessedObservation old = RetentionProcessedObservation.at(
+                "old-observation", cutoff.minusSeconds(61 * 60), cutoff);
+        RetentionProcessedObservation boundary = RetentionProcessedObservation.at(
+                "boundary-observation", cutoff.minusSeconds(60 * 60), cutoff);
+        RetentionProcessedObservation recent = RetentionProcessedObservation.at(
+                "recent-observation", cutoff, cutoff.plusSeconds(1));
+        store.markObservationProcessed(old);
+        store.markObservationProcessed(boundary);
+        store.markObservationProcessed(recent);
+
+        MediaSetStore.ProcessedObservationPruneResult result =
+                store.pruneProcessedObservations(cutoff, 1);
+        assertEquals(1, result.inspected());
+        assertEquals(1, result.deleted());
+        assertFalse(store.isObservationProcessed(old.observationId(), old.resultTime()));
+        assertTrue("The inclusive overlap boundary must remain deduplicated",
+                store.isObservationProcessed(boundary.observationId(), boundary.resultTime()));
+        assertTrue(store.isObservationProcessed(recent.observationId(), recent.resultTime()));
+
+        MediaSetStore restarted = new MediaSetStore(bucketStore);
+        assertTrue("Metadata reclamation state and retained markers must survive restart",
+                restarted.isObservationProcessed(
+                        boundary.observationId(), boundary.resultTime()));
+        try (var files = Files.walk(root)) {
+            long markerCount = files.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith(".idx"))
+                    .filter(path -> path.toString().contains("retention-processed-index"))
+                    .count();
+            assertEquals(2, markerCount);
+        }
+    }
+
+    @Test
+    public void processedIndexCacheRefreshesAfterAnotherLiveStoreAppends()
+            throws Exception {
+        Path root = temporaryFolder.newFolder("processed-index-cache").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        MediaSetStore first = new MediaSetStore(bucketStore);
+        MediaSetStore second = new MediaSetStore(bucketStore);
+        Instant hour = Instant.parse("2026-01-02T12:15:00Z");
+        RetentionProcessedObservation one = RetentionProcessedObservation.at(
+                "first-observation", hour, hour);
+        RetentionProcessedObservation two = RetentionProcessedObservation.at(
+                "second-observation", hour.plusSeconds(60), hour.plusSeconds(60));
+        RetentionProcessedObservation three = RetentionProcessedObservation.at(
+                "third-observation", hour.plusSeconds(120), hour.plusSeconds(120));
+        RetentionProcessedObservation four = RetentionProcessedObservation.at(
+                "fourth-observation", hour.plusSeconds(180), hour.plusSeconds(180));
+
+        first.markObservationProcessed(one);
+        // A second local append is a cache hit on the same hour and must remain mutable internally.
+        first.markObservationProcessed(three);
+        assertTrue(first.isObservationProcessed(three.observationId(), three.resultTime()));
+        assertFalse("The first store must not cache an absent digest indefinitely",
+                first.isObservationProcessed(two.observationId(), two.resultTime()));
+        second.markObservationProcessed(two);
+        assertTrue("A stamped cache must refresh after an external append",
+                first.isObservationProcessed(two.observationId(), two.resultTime()));
+        first.markObservationProcessed(four);
+        assertTrue(first.isObservationProcessed(four.observationId(), four.resultTime()));
+
+        try (var files = Files.walk(root)) {
+            assertEquals("Every observation in one hour belongs to one compact index inode", 1,
+                    files.filter(Files::isRegularFile)
+                            .filter(path -> path.getFileName().toString().endsWith(".idx"))
+                            .filter(path -> path.toString().contains(
+                                    "retention-processed-index"))
+                            .count());
+        }
+    }
+
+    @Test
+    public void processedIndexReclamationHasARealDirectIoWorkBound() throws Exception {
+        Path root = temporaryFolder.newFolder("processed-index-bounded").toPath();
+        InstrumentedBucketStore bucketStore = new InstrumentedBucketStore(root);
+        MediaSetStore store = new MediaSetStore(bucketStore);
+        Instant old = Instant.parse("2026-01-01T01:05:00Z");
+        Instant sameHourDifferentFile = Instant.parse("2026-01-01T01:55:00Z");
+        store.markObservationProcessed(RetentionProcessedObservation.at(
+                "old", old, old));
+        store.markObservationProcessed(RetentionProcessedObservation.at(
+                "old-same-hour", sameHourDifferentFile, sameHourDifferentFile));
+
+        MediaSetStore.ProcessedObservationPruneResult first =
+                store.pruneProcessedObservations(
+                        Instant.parse("2026-01-01T05:00:00Z"), 1);
+        assertEquals(1, first.inspected());
+        assertEquals(1, first.deleted());
+        assertFalse(store.isObservationProcessed("old", old));
+        assertFalse(store.isObservationProcessed("old-same-hour", sameHourDifferentFile));
+        assertEquals(0, bucketStore.listCalls.get());
+        assertEquals("One reclaimed hour performs exactly twelve direct file probes",
+                12, bucketStore.deleteCalls.get());
+
+        MediaSetStore.ProcessedObservationPruneResult missingHours =
+                store.pruneProcessedObservations(
+                        Instant.parse("2026-01-01T05:00:00Z"), 2);
+        assertEquals(2, missingHours.inspected());
+        assertEquals(0, missingHours.deleted());
+        assertEquals("Missing buckets are direct-addressed and consume the same bounded budget",
+                36, bucketStore.deleteCalls.get());
+        assertEquals(0, bucketStore.listCalls.get());
+    }
+
+    @Test
+    public void absentProcessedIndexMustCrossDurabilityBarrierBeforeCheckpointAdvances()
+            throws Exception {
+        org.junit.Assume.assumeFalse("Open-file unlink injection is POSIX-only",
+                System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT)
+                        .contains("win"));
+        Path root = temporaryFolder.newFolder("processed-index-durable-absence").toPath();
+        Instant old = Instant.parse("2026-01-01T01:00:00Z");
+        long epochHour = Math.floorDiv(old.getEpochSecond(), 60L * 60L);
+        String prefix = "retained-media/v1/retention-processed-index/";
+        String firstKey = prefix + String.format(java.util.Locale.ROOT,
+                "%019d-00.idx", epochHour);
+        String finalKey = prefix + String.format(java.util.Locale.ROOT,
+                "%019d-11.idx", epochHour);
+        DeleteIndexParentAfterObjectStore bucketStore =
+                new DeleteIndexParentAfterObjectStore(root, finalKey);
+        MediaSetStore store = new MediaSetStore(bucketStore);
+        store.markObservationProcessed(RetentionProcessedObservation.at("old", old, old));
+
+        // Simulate an unlink whose directory entry has not yet crossed a durability barrier. The
+        // final absent direct probe then loses its containing directory before it can be fsynced.
+        Files.delete(Path.of(bucketStore.getResourceURI(MediaSetStore.VIDEO_BUCKET, firstKey)));
+        assertThrows(IOException.class, () -> store.pruneProcessedObservations(
+                old.plus(Duration.ofHours(3)), 1));
+        Path blockedParent = bucketStore.blockedParent();
+        assertNotNull(blockedParent);
+        assertTrue(Files.isRegularFile(blockedParent));
+
+        FileSystemBucketStore restartedBucketStore = new FileSystemBucketStore(root);
+        MediaSetStore restarted = new MediaSetStore(restartedBucketStore);
+        assertThrows("A restart must not advance through an absence without a parent barrier",
+                IOException.class, () -> restarted.pruneProcessedObservations(
+                        old.plus(Duration.ofHours(3)), 1));
+
+        Files.delete(blockedParent);
+        MediaSetStore.ProcessedObservationPruneResult recovered =
+                restarted.pruneProcessedObservations(old.plus(Duration.ofHours(3)), 1);
+        assertEquals("The failed pass must leave the original hour checkpointed", 1,
+                recovered.inspected());
+        assertEquals(Long.valueOf(epochHour + 1L), recovered.nextEpochHour());
+    }
+
+    @Test
+    public void legacyRetentionModeStillReclaimsProcessedMetadata() throws Exception {
+        Path root = temporaryFolder.newFolder("legacy-metadata-reclamation").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        MediaSetStore store = new MediaSetStore(bucketStore);
+        Instant old = Instant.parse("2026-01-01T00:05:00Z");
+        store.markObservationProcessed(RetentionProcessedObservation.at("old", old, old));
+        store.writeRetentionScanCheckpoint(RetentionScanCheckpoint.at(
+                Instant.parse("2026-01-01T03:00:00Z"),
+                Instant.parse("2026-01-01T03:00:00Z")));
+
+        VideoRetention retention = retention(bucketStore, 0, 10);
+        retention.runMaintenanceCycle();
+
+        assertFalse("frameCount=0 disables frame conversion, not metadata reclamation",
+                store.isObservationProcessed("old", old));
+    }
+
+    @Test
+    public void legacyRetentionDeletesVideosThroughTheConfiguredBucket() throws Exception {
+        Path root = temporaryFolder.newFolder("legacy-video-delete").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        VideoRetention retention = retention(bucketStore, 0, 10);
+        String firstKey = "clips/legacy/first.mp4";
+        String secondKey = "clips/legacy/second.mp4";
+        Files.write(Path.of(bucketStore.getWritableResourceURI(
+                MediaSetStore.VIDEO_BUCKET, firstKey)), new byte[]{1});
+        Files.write(Path.of(bucketStore.getWritableResourceURI(
+                MediaSetStore.VIDEO_BUCKET, secondKey)), new byte[]{2});
+        Occupancy occupancy = new Occupancy.Builder().videoPaths(List.of(
+                "videos/" + firstKey, "/videos/" + secondKey)).build();
+
+        assertTrue(retention.deleteOccupancyVideo(
+                new SlidingOccupancyQuery.OccupancyRecord(
+                        "event", "lane", null, occupancy)));
+        assertFalse(bucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, firstKey));
+        assertFalse(bucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, secondKey));
+    }
+
+    @Test
+    public void legacyRetentionRequiresDurableUnlinkBeforeReportingSuccess() throws Exception {
+        Path root = temporaryFolder.newFolder("legacy-video-durable-delete").toPath();
+        String key = "clips/legacy-durable/source.mp4";
+        DeleteParentAfterObjectStore bucketStore = new DeleteParentAfterObjectStore(root, key);
+        VideoRetention retention = retention(bucketStore, 0, 10);
+        Path source = Path.of(bucketStore.getWritableResourceURI(
+                MediaSetStore.VIDEO_BUCKET, key));
+        Files.write(source, new byte[]{1});
+        Occupancy occupancy = new Occupancy.Builder()
+                .videoPaths(List.of("videos/" + key)).build();
+        SlidingOccupancyQuery.OccupancyRecord record =
+                new SlidingOccupancyQuery.OccupancyRecord("event", "lane", null, occupancy);
+
+        assertFalse("The observation must remain unprocessed when parent fsync cannot complete",
+                retention.deleteOccupancyVideo(record));
+        assertFalse(bucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, key));
+        assertTrue(Files.isRegularFile(source.getParent(),
+                java.nio.file.LinkOption.NOFOLLOW_LINKS));
+
+        FileSystemBucketStore restartedBucketStore = new FileSystemBucketStore(root);
+        VideoRetention restarted = retention(restartedBucketStore, 0, 10);
+        assertFalse("Restart must not accept a merely visible absence with an irregular parent",
+                restarted.deleteOccupancyVideo(record));
+        Files.delete(source.getParent());
+        assertTrue(restarted.deleteOccupancyVideo(record));
+    }
+
+    @Test
+    public void corruptProcessedBucketDoesNotStarveOtherMaintenance() throws Exception {
+        Path root = temporaryFolder.newFolder("corrupt-processed-index").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        MediaSetStore store = new MediaSetStore(bucketStore);
+        Instant old = Instant.parse("2026-01-01T00:05:00Z");
+        store.markObservationProcessed(RetentionProcessedObservation.at("old", old, old));
+        store.writeRetentionScanCheckpoint(RetentionScanCheckpoint.at(
+                old, old));
+        Path index;
+        try (var files = Files.walk(root)) {
+            index = files.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith(".idx"))
+                    .filter(path -> path.toString().contains("retention-processed-index"))
+                    .findFirst().orElseThrow();
+        }
+        byte[] corrupt = Files.readAllBytes(index);
+        corrupt[corrupt.length - 1] ^= 1;
+        Files.write(index, corrupt, StandardOpenOption.TRUNCATE_EXISTING);
+
+        VideoRetention retention = retention(bucketStore, 5, 10);
+        retention.runMaintenanceCycle();
+
+        assertTrue("Independent maintenance must continue after reclamation fails visibly",
+                bucketStore.objectExists(MediaSetStore.VIDEO_BUCKET,
+                        MediaSetStore.MAINTENANCE_CHECKPOINT_KEY));
+        IOException failure = assertThrows(IOException.class,
+                () -> new MediaSetStore(bucketStore)
+                        .isObservationProcessed("old", old));
+        assertTrue(failure.getMessage().contains("checksum"));
+    }
+
+    @Test
+    public void corruptOutOfRangeMetadataCheckpointFailsClosed() throws Exception {
+        Path root = temporaryFolder.newFolder("negative-metadata-checkpoint").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        MediaSetStore store = new MediaSetStore(bucketStore);
+        Path checkpoint = Path.of(bucketStore.getWritableResourceURI(
+                MediaSetStore.VIDEO_BUCKET,
+                MediaSetStore.METADATA_RECLAMATION_CHECKPOINT_KEY));
+        store.writeRetentionScanCheckpoint(RetentionScanCheckpoint.at(
+                Instant.parse("2026-01-01T03:00:00Z"),
+                Instant.parse("2026-01-01T03:00:00Z")));
+        for (long invalid : new long[]{-1L, Long.MAX_VALUE}) {
+            Files.writeString(checkpoint, ("""
+                    {"schemaVersion":2,"earliestProcessedObservationEpochHour":%d,
+                     "updatedAt":"2026-01-01T00:00:00Z"}
+                    """).formatted(invalid));
+            IOException failure = assertThrows(IOException.class,
+                    () -> store.pruneProcessedObservations(Instant.now(), 1));
+            assertTrue(failure.getMessage().contains("checkpoint"));
+
+            retention(bucketStore, 5, 10).runMaintenanceCycle();
+            assertTrue("Malformed reclamation state must not starve independent maintenance",
+                    bucketStore.objectExists(MediaSetStore.VIDEO_BUCKET,
+                            MediaSetStore.MAINTENANCE_CHECKPOINT_KEY));
         }
     }
 
@@ -161,7 +447,7 @@ public class RetentionCursorTest {
             }
 
             @Override
-            public boolean isProcessed(String observationId) {
+            public boolean isProcessed(String observationId, Instant resultTime) {
                 return false;
             }
 
@@ -207,7 +493,9 @@ public class RetentionCursorTest {
                 return Optional.empty();
             }
             @Override public void writeReconciliation(RetentionReconciliationCheckpoint checkpoint) { }
-            @Override public boolean isProcessed(String observationId) { return false; }
+            @Override public boolean isProcessed(String observationId, Instant resultTime) {
+                return false;
+            }
             @Override public void markProcessed(RetentionProcessedObservation marker) { }
         };
         CountDownLatch started = new CountDownLatch(1);
@@ -250,5 +538,115 @@ public class RetentionCursorTest {
         }
         if (interrupted)
             Thread.interrupted();
+    }
+
+    private static VideoRetention retention(FileSystemBucketStore bucketStore, int frameCount,
+                                            int metadataWorkLimit) {
+        ISensorHub hub = (ISensorHub) Proxy.newProxyInstance(
+                ISensorHub.class.getClassLoader(), new Class<?>[]{ISensorHub.class},
+                (proxy, method, arguments) -> null);
+        return new VideoRetention(hub, bucketStore, Duration.ofMinutes(1), Duration.ZERO,
+                frameCount, 85, Duration.ZERO, Duration.ofHours(1), 3, Duration.ZERO,
+                Duration.ofHours(1), metadataWorkLimit);
+    }
+
+    private static final class InstrumentedBucketStore extends FileSystemBucketStore {
+        private final AtomicInteger listCalls = new AtomicInteger();
+        private final AtomicInteger deleteCalls = new AtomicInteger();
+
+        private InstrumentedBucketStore(Path root) throws IOException {
+            super(root);
+        }
+
+        @Override
+        public List<String> listObjects(String bucketName) throws DataStoreException {
+            listCalls.incrementAndGet();
+            throw new AssertionError("Processed-index reclamation must not list the bucket");
+        }
+
+        @Override
+        public List<String> listObjects(String bucketName, String keyPrefix)
+                throws DataStoreException {
+            listCalls.incrementAndGet();
+            throw new AssertionError("Processed-index reclamation must not list a prefix");
+        }
+
+        @Override
+        public List<String> listObjects(String bucketName, String keyPrefix, String keySuffix,
+                                        int limit) throws DataStoreException {
+            listCalls.incrementAndGet();
+            throw new AssertionError("Processed-index reclamation must not page a prefix");
+        }
+
+        @Override
+        public void deleteObject(String bucketName, String key) throws DataStoreException {
+            if (key.contains("retention-processed-index/") && key.endsWith(".idx"))
+                deleteCalls.incrementAndGet();
+            super.deleteObject(bucketName, key);
+        }
+    }
+
+    /** Replaces an index directory after its final direct delete but before the caller can fsync. */
+    private static final class DeleteIndexParentAfterObjectStore extends FileSystemBucketStore {
+        private final String targetKey;
+        private boolean armed = true;
+        private Path blockedParent;
+
+        private DeleteIndexParentAfterObjectStore(Path root, String targetKey) throws IOException {
+            super(root);
+            this.targetKey = targetKey;
+        }
+
+        @Override
+        public void deleteObject(String bucketName, String key) throws DataStoreException {
+            Path target = null;
+            if (armed && MediaSetStore.VIDEO_BUCKET.equals(bucketName) && targetKey.equals(key))
+                target = Path.of(getWritableResourceURI(bucketName, key));
+            super.deleteObject(bucketName, key);
+            if (target == null)
+                return;
+            try {
+                Path parent = target.getParent();
+                Files.delete(parent.resolve(".index.lock"));
+                Files.delete(parent);
+                Files.write(parent, new byte[]{1}, StandardOpenOption.CREATE_NEW);
+                blockedParent = parent;
+                armed = false;
+            } catch (IOException e) {
+                throw new DataStoreException("Unable to inject processed-index barrier failure", e);
+            }
+        }
+
+        private Path blockedParent() {
+            return blockedParent;
+        }
+    }
+
+    /** Simulates a successful legacy unlink followed by a failed parent-directory barrier. */
+    private static final class DeleteParentAfterObjectStore extends FileSystemBucketStore {
+        private final String targetKey;
+        private boolean armed = true;
+
+        private DeleteParentAfterObjectStore(Path root, String targetKey) throws IOException {
+            super(root);
+            this.targetKey = targetKey;
+        }
+
+        @Override
+        public void deleteObject(String bucketName, String key) throws DataStoreException {
+            Path parent = null;
+            if (armed && MediaSetStore.VIDEO_BUCKET.equals(bucketName) && targetKey.equals(key))
+                parent = Path.of(getWritableResourceURI(bucketName, key)).getParent();
+            super.deleteObject(bucketName, key);
+            if (parent == null)
+                return;
+            try {
+                Files.delete(parent);
+                Files.write(parent, new byte[]{1}, StandardOpenOption.CREATE_NEW);
+                armed = false;
+            } catch (IOException e) {
+                throw new DataStoreException("Unable to inject legacy delete barrier failure", e);
+            }
+        }
     }
 }

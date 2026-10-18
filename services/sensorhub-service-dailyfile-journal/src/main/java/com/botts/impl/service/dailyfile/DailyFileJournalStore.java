@@ -55,6 +55,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.CRC32C;
 
 /**
@@ -76,6 +77,7 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     static final int MANIFEST_VERSION = 1;
     static final int LIFECYCLE_MAINTENANCE_DAY_LIMIT = 16;
     static final long LIFECYCLE_MAINTENANCE_INTERVAL_MILLIS = 60_000;
+    static final long CLOSE_TIMEOUT_MILLIS = 5_000;
     static final int MAX_METADATA_BYTES = 64 * 1024;
     static final int MAX_CONFIRMATION_SET_BYTES = 64 * 1024 * 1024;
     static final int MAX_CONFIRMATION_SET_RECEIPTS = 250_000;
@@ -106,11 +108,14 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     private final Map<String, LaneState> lanes = new ConcurrentHashMap<>();
     private final Map<String, ConfirmationSetIndex> confirmationSetIndexes =
             new ConcurrentHashMap<>();
+    private final Set<Path> durableDirectoryEntries = ConcurrentHashMap.newKeySet();
     private final AtomicInteger confirmationSetMarkerLoads = new AtomicInteger();
     private final ScheduledExecutorService forceScheduler;
     private final ScheduledExecutorService lifecycleScheduler;
-    private final Object lifecycleLock = new Object();
+    private final ReentrantLock closeLock = new ReentrantLock();
+    private final ReentrantLock lifecycleLock = new ReentrantLock();
     private final AtomicBoolean closed = new AtomicBoolean();
+    private boolean closeComplete;
     private String recoveryMaintenanceCursor = "";
     private String purgeMaintenanceCursor = "";
 
@@ -122,6 +127,7 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     DailyFileJournalStore(Path rootDirectory, DailyFileJournalServiceConfig config, Clock clock,
                           Logger log, boolean startScheduler) throws IOException {
         this.rootDirectory = initializeRoot(rootDirectory);
+        durableDirectoryEntries.add(this.rootDirectory);
         Objects.requireNonNull(config, "config");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.log = Objects.requireNonNull(log, "log");
@@ -189,7 +195,8 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     @Override
     public DailyFileWriterHandle openWriter(String laneId) throws IOException {
         String checkedLaneId = requireLaneId(laneId);
-        synchronized (lifecycleLock) {
+        lifecycleLock.lock();
+        try {
             ensureOpen();
             LaneState state;
             try {
@@ -204,6 +211,8 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
                 throw e.ioException;
             }
             return new WriterHandle(state);
+        } finally {
+            lifecycleLock.unlock();
         }
     }
 
@@ -638,7 +647,8 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     void sealCompletedDays(Instant now) throws IOException {
         IOException failure = maintainActiveLanes(now);
 
-        synchronized (lifecycleLock) {
+        lifecycleLock.lock();
+        try {
             // A recovered lane need not have been opened by a driver yet.
             try (DirectoryStream<Path> laneDirs = Files.newDirectoryStream(segmentsDirectory)) {
                 for (Path laneDir : laneDirs) {
@@ -660,6 +670,8 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
             } catch (IOException e) {
                 failure = merge(failure, e);
             }
+        } finally {
+            lifecycleLock.unlock();
         }
         if (failure != null)
             throw failure;
@@ -927,40 +939,107 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
 
     @Override
     public void close() throws IOException {
-        if (!closed.compareAndSet(false, true))
-            return;
-        shutdownScheduler(lifecycleScheduler, 5000);
-        shutdownScheduler(forceScheduler, Math.max(1000, fsyncIntervalMillis * 2));
-
-        IOException failure = null;
-        // shutdownNow is advisory for filesystem I/O. Wait for any in-flight lifecycle
-        // pass to release its lock before closing lane channels underneath it.
-        synchronized (lifecycleLock) {
-            for (LaneState lane : lanes.values()) {
-                try {
-                    lane.closeForShutdown();
-                } catch (IOException e) {
-                    failure = merge(failure, e);
-                }
-            }
-            lanes.clear();
+        long deadlineNanos = System.nanoTime()
+                + TimeUnit.MILLISECONDS.toNanos(CLOSE_TIMEOUT_MILLIS);
+        boolean closeLocked;
+        try {
+            closeLocked = tryLockUntil(closeLock, deadlineNanos);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while closing the daily-file journal", e);
         }
-        if (failure != null)
-            throw failure;
+        if (!closeLocked)
+            throw new IOException("Timed out waiting for another daily-file close attempt");
+        try {
+            if (closeComplete)
+                return;
+            closed.set(true);
+            if (!shutdownSchedulersUntil(lifecycleScheduler, forceScheduler, deadlineNanos))
+                throw new IOException("Daily-file journal schedulers did not terminate within "
+                        + CLOSE_TIMEOUT_MILLIS + " ms");
+
+            IOException failure = null;
+            boolean lifecycleLocked;
+            try {
+                lifecycleLocked = tryLockUntil(lifecycleLock, deadlineNanos);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while closing the daily-file journal", e);
+            }
+            if (!lifecycleLocked)
+                throw new IOException(
+                        "Timed out waiting for daily-file lifecycle maintenance to stop");
+            try {
+                for (LaneState lane : lanes.values()) {
+                    try {
+                        lane.closeForShutdown(deadlineNanos);
+                    } catch (IOException e) {
+                        failure = merge(failure, e);
+                    }
+                }
+                if (failure == null) {
+                    lanes.clear();
+                    closeComplete = true;
+                }
+            } finally {
+                lifecycleLock.unlock();
+            }
+            if (failure != null)
+                throw failure;
+        } finally {
+            closeLock.unlock();
+        }
     }
 
-    private static void shutdownScheduler(ScheduledExecutorService scheduler,
-                                          long waitMillis) {
-        if (scheduler == null)
-            return;
-        scheduler.shutdown();
+    static boolean shutdownSchedulersBounded(ScheduledExecutorService first,
+                                             ScheduledExecutorService second,
+                                             long timeoutMillis) {
+        if (timeoutMillis < 0)
+            throw new IllegalArgumentException("timeoutMillis must not be negative");
+        long deadlineNanos = System.nanoTime()
+                + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        return shutdownSchedulersUntil(first, second, deadlineNanos);
+    }
+
+    private static boolean shutdownSchedulersUntil(ScheduledExecutorService first,
+                                                   ScheduledExecutorService second,
+                                                   long deadlineNanos) {
+        if (first != null)
+            first.shutdown();
+        if (second != null)
+            second.shutdown();
+        long now = System.nanoTime();
+        long gracefulDeadline = now + Math.max(0L, deadlineNanos - now) / 2L;
         try {
-            if (!scheduler.awaitTermination(waitMillis, TimeUnit.MILLISECONDS))
-                scheduler.shutdownNow();
+            boolean firstStopped = awaitUntil(first, gracefulDeadline);
+            boolean secondStopped = awaitUntil(second, gracefulDeadline);
+            if (!firstStopped && first != null)
+                first.shutdownNow();
+            if (!secondStopped && second != null)
+                second.shutdownNow();
+            return awaitUntil(first, deadlineNanos) && awaitUntil(second, deadlineNanos);
         } catch (InterruptedException e) {
-            scheduler.shutdownNow();
+            if (first != null)
+                first.shutdownNow();
+            if (second != null)
+                second.shutdownNow();
             Thread.currentThread().interrupt();
+            return false;
         }
+    }
+
+    private static boolean awaitUntil(ScheduledExecutorService scheduler, long deadlineNanos)
+            throws InterruptedException {
+        if (scheduler == null || scheduler.isTerminated())
+            return true;
+        long remaining = deadlineNanos - System.nanoTime();
+        return remaining > 0 && scheduler.awaitTermination(remaining, TimeUnit.NANOSECONDS);
+    }
+
+    private static boolean tryLockUntil(ReentrantLock lock, long deadlineNanos)
+            throws InterruptedException {
+        long remaining = deadlineNanos - System.nanoTime();
+        return remaining > 0 && lock.tryLock(remaining, TimeUnit.NANOSECONDS);
     }
 
     private void periodicMaintenance() {
@@ -1087,7 +1166,8 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
      * unbounded in-memory work list.
      */
     void maintainBoundedLifecycle(Instant now) throws IOException {
-        synchronized (lifecycleLock) {
+        lifecycleLock.lock();
+        try {
             IOException failure = null;
             try {
                 resumeStagedDeletionsBounded(LIFECYCLE_MAINTENANCE_DAY_LIMIT);
@@ -1148,6 +1228,8 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
             }
             if (failure != null)
                 throw failure;
+        } finally {
+            lifecycleLock.unlock();
         }
     }
 
@@ -1764,9 +1846,25 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     private static void forceDirectory(Path directory) throws IOException {
         try (FileChannel channel = FileChannel.open(directory, StandardOpenOption.READ)) {
             channel.force(true);
-        } catch (UnsupportedOperationException | AccessDeniedException e) {
-            // Some Windows filesystems cannot open directories as channels.
+        } catch (UnsupportedOperationException e) {
+            // Directory fsync is unavailable on some supported filesystem/JDK combinations.
+        } catch (IOException e) {
+            // Windows commonly rejects opening a directory as a FileChannel. Ignore only that
+            // platform-specific limitation; permission and all other failures remain visible on
+            // filesystems where directory fsync is supported.
+            if (!isIgnorableWindowsDirectoryFsyncFailure(e, isWindows()))
+                throw e;
         }
+    }
+
+    static boolean isIgnorableWindowsDirectoryFsyncFailure(IOException failure,
+                                                             boolean windows) {
+        return windows && failure instanceof AccessDeniedException;
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT)
+                .startsWith("windows");
     }
 
     private static void writeFully(FileChannel channel, ByteBuffer buffer) throws IOException {
@@ -1798,14 +1896,24 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     private static Path initializeRoot(Path root) throws IOException {
         Path configured = Objects.requireNonNull(root, "rootDirectory")
                 .toAbsolutePath().normalize();
-        Files.createDirectories(configured);
+        createDirectoryTreeDurably(configured);
         if (!Files.isDirectory(configured))
             throw new IOException("Daily-file storage root is not a directory: " + configured);
         return configured.toRealPath();
     }
 
-    private static void createConfinedDirectories(Path confinementRoot, Path directory)
+    private void createConfinedDirectories(Path confinementRoot, Path directory)
             throws IOException {
+        createConfinedDirectories(confinementRoot, directory, durableDirectoryEntries,
+                DailyFileJournalStore::forceDirectory);
+    }
+
+    static void createConfinedDirectories(Path confinementRoot, Path directory,
+                                          Set<Path> durableEntries,
+                                          DirectoryForcer directoryForcer)
+            throws IOException {
+        Objects.requireNonNull(durableEntries, "durableEntries");
+        Objects.requireNonNull(directoryForcer, "directoryForcer");
         Path root = confinementRoot.toAbsolutePath().normalize();
         Path target = directory.toAbsolutePath().normalize();
         if (!target.startsWith(root))
@@ -1815,15 +1923,57 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
         Path current = root;
         for (Path component : root.relativize(target)) {
             current = current.resolve(component);
+            boolean created = false;
             try {
                 Files.createDirectory(current);
+                created = true;
             } catch (FileAlreadyExistsException ignored) {
                 // Validated below. This also handles a concurrent creator safely.
             }
             if (!Files.isDirectory(current, LinkOption.NOFOLLOW_LINKS)
                     || Files.isSymbolicLink(current))
                 throw new IOException("Refusing linked or non-directory storage path: " + current);
+            if (created || !durableEntries.contains(current)) {
+                directoryForcer.force(current.getParent());
+                durableEntries.add(current);
+            }
         }
+    }
+
+    private static void createDirectoryTreeDurably(Path directory) throws IOException {
+        List<Path> missing = new ArrayList<>();
+        Path existing = directory;
+        while (existing != null && Files.notExists(existing, LinkOption.NOFOLLOW_LINKS)) {
+            missing.add(existing);
+            existing = existing.getParent();
+        }
+        if (existing == null || !Files.exists(existing, LinkOption.NOFOLLOW_LINKS)
+                || !Files.isDirectory(existing, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(existing))
+            throw new IOException("Daily-file storage root has no regular existing ancestor: "
+                    + directory);
+
+        // Re-forcing the nearest visible ancestor closes the retry window after a prior create
+        // succeeded but its parent-directory barrier failed.
+        if (existing.getParent() != null)
+            forceDirectory(existing.getParent());
+        for (int index = missing.size() - 1; index >= 0; index--) {
+            Path component = missing.get(index);
+            try {
+                Files.createDirectory(component);
+            } catch (FileAlreadyExistsException ignored) {
+                // A concurrent creator is acceptable only after the no-follow validation below.
+            }
+            if (!Files.isDirectory(component, LinkOption.NOFOLLOW_LINKS)
+                    || Files.isSymbolicLink(component))
+                throw new IOException("Refusing linked or non-directory storage path: " + component);
+            forceDirectory(component.getParent());
+        }
+    }
+
+    @FunctionalInterface
+    interface DirectoryForcer {
+        void force(Path directory) throws IOException;
     }
 
     private static String readBoundedUtf8(Path path, int maxBytes, String description)
@@ -1886,6 +2036,7 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
     private final class LaneState {
         private final String laneId;
         private final Path laneDirectory;
+        private final ReentrantLock lock = new ReentrantLock();
         private LocalDate activeDay;
         private Path dayDirectory;
         private Path openSegment;
@@ -1897,102 +2048,149 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
         private int unforcedRecords;
         private long unforcedBytes;
         private IOException terminalFailure;
+        private IOException shutdownFailure;
 
         private LaneState(String laneId) throws IOException {
             this.laneId = laneId;
             this.laneDirectory = laneDirectory(laneId);
         }
 
-        synchronized void append(DailyFileRecord record) throws IOException {
-            ensureOpen();
-            if (terminalFailure != null)
-                throw new IOException("Daily-file journal lane is failed: " + laneId, terminalFailure);
+        void append(DailyFileRecord record) throws IOException {
+            lock.lock();
+            try {
+                ensureOpen();
+                if (terminalFailure != null)
+                    throw new IOException("Daily-file journal lane is failed: " + laneId,
+                            terminalFailure);
 
-            LocalDate recordDay = LocalDate.ofInstant(record.timestamp(), zoneId);
-            byte[] payload = encodeRecord(record);
-            int frameBytes = FRAME_HEADER_BYTES + payload.length;
-            if (SEGMENT_HEADER_BYTES + frameBytes > maxSegmentBytes)
-                throw new IOException("Daily-file record requires "
-                        + (SEGMENT_HEADER_BYTES + frameBytes) + " segment bytes; configured maximum is "
-                        + maxSegmentBytes);
-            if (activeDay == null) {
+                LocalDate recordDay = LocalDate.ofInstant(record.timestamp(), zoneId);
+                byte[] payload = encodeRecord(record);
+                int frameBytes = FRAME_HEADER_BYTES + payload.length;
+                if (SEGMENT_HEADER_BYTES + frameBytes > maxSegmentBytes)
+                    throw new IOException("Daily-file record requires "
+                            + (SEGMENT_HEADER_BYTES + frameBytes)
+                            + " segment bytes; configured maximum is " + maxSegmentBytes);
+                if (activeDay == null) {
+                    try {
+                        openDay(recordDay, record.timestamp());
+                    } catch (IOException e) {
+                        terminalFailure = e;
+                        throw e;
+                    }
+                } else if (!recordDay.equals(activeDay)) {
+                    if (recordDay.isBefore(activeDay))
+                        throw new IOException("Out-of-order daily-file record for " + laneId + ": "
+                                + record.timestamp() + " belongs to " + recordDay
+                                + " after " + activeDay);
+                    try {
+                        sealActiveDay();
+                        openDay(recordDay, record.timestamp());
+                    } catch (IOException e) {
+                        terminalFailure = e;
+                        throw e;
+                    }
+                }
+
                 try {
-                    openDay(recordDay, record.timestamp());
+                    if (segmentRecords > 0 && (channel.size() + frameBytes > maxSegmentBytes
+                            || Duration.between(segmentCreatedAt, record.timestamp())
+                            .compareTo(maxSegmentAge) >= 0)) {
+                        rotateSegment(record.timestamp());
+                    }
+
+                    ByteBuffer frame = ByteBuffer.allocate(frameBytes);
+                    frame.putInt(payload.length);
+                    frame.putInt(crc32c(payload));
+                    frame.put(payload);
+                    frame.flip();
+                    writeFully(channel, frame);
+                    segmentRecords++;
+                    dayRecords++;
+                    unforcedRecords++;
+                    unforcedBytes += frameBytes;
+                    if (unforcedRecords >= maxUnforcedRecords || unforcedBytes >= maxUnforcedBytes)
+                        force();
                 } catch (IOException e) {
                     terminalFailure = e;
                     throw e;
                 }
-            } else if (!recordDay.equals(activeDay)) {
-                if (recordDay.isBefore(activeDay))
-                    throw new IOException("Out-of-order daily-file record for " + laneId + ": "
-                            + record.timestamp() + " belongs to " + recordDay + " after " + activeDay);
-                try {
-                    sealActiveDay();
-                    openDay(recordDay, record.timestamp());
-                } catch (IOException e) {
-                    terminalFailure = e;
-                    throw e;
-                }
-            }
-
-            try {
-                if (segmentRecords > 0 && (channel.size() + frameBytes > maxSegmentBytes
-                        || Duration.between(segmentCreatedAt, record.timestamp()).compareTo(maxSegmentAge) >= 0)) {
-                    rotateSegment(record.timestamp());
-                }
-
-                ByteBuffer frame = ByteBuffer.allocate(frameBytes);
-                frame.putInt(payload.length);
-                frame.putInt(crc32c(payload));
-                frame.put(payload);
-                frame.flip();
-                writeFully(channel, frame);
-                segmentRecords++;
-                dayRecords++;
-                unforcedRecords++;
-                unforcedBytes += frameBytes;
-                if (unforcedRecords >= maxUnforcedRecords || unforcedBytes >= maxUnforcedBytes)
-                    force();
-            } catch (IOException e) {
-                terminalFailure = e;
-                throw e;
-            }
-        }
-
-        synchronized void maintenance(Instant now) throws IOException {
-            if (terminalFailure != null)
-                throw new IOException("Daily-file journal lane is failed: " + laneId, terminalFailure);
-            try {
-                if (channel != null)
-                    force();
-                LocalDate currentDay = LocalDate.ofInstant(now, zoneId);
-                if (activeDay != null && activeDay.isBefore(currentDay))
-                    sealActiveDay();
-            } catch (IOException e) {
-                terminalFailure = e;
-                throw e;
-            }
-        }
-
-        synchronized void force() throws IOException {
-            if (channel == null || (unforcedRecords == 0 && unforcedBytes == 0))
-                return;
-            channel.force(false);
-            unforcedRecords = 0;
-            unforcedBytes = 0;
-            writeLedger(laneId, DayWindow.forDate(activeDay, zoneId), "OPEN", dayRecords,
-                    null, null, null, 0);
-        }
-
-        synchronized void closeForShutdown() throws IOException {
-            if (channel == null)
-                return;
-            try {
-                force();
-                channel.close();
             } finally {
-                channel = null;
-                openSegment = null;
+                lock.unlock();
+            }
+        }
+
+        void maintenance(Instant now) throws IOException {
+            lock.lock();
+            try {
+                if (terminalFailure != null)
+                    throw new IOException("Daily-file journal lane is failed: " + laneId,
+                            terminalFailure);
+                try {
+                    if (channel != null)
+                        force();
+                    LocalDate currentDay = LocalDate.ofInstant(now, zoneId);
+                    if (activeDay != null && activeDay.isBefore(currentDay))
+                        sealActiveDay();
+                } catch (IOException e) {
+                    terminalFailure = e;
+                    throw e;
+                }
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        void force() throws IOException {
+            lock.lock();
+            try {
+                if (channel == null || (unforcedRecords == 0 && unforcedBytes == 0))
+                    return;
+                channel.force(false);
+                unforcedRecords = 0;
+                unforcedBytes = 0;
+                writeLedger(laneId, DayWindow.forDate(activeDay, zoneId), "OPEN", dayRecords,
+                        null, null, null, 0);
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        void closeForShutdown(long deadlineNanos) throws IOException {
+            boolean locked;
+            try {
+                locked = tryLockUntil(lock, deadlineNanos);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while closing daily-file lane " + laneId, e);
+            }
+            if (!locked)
+                throw new IOException("Timed out while closing daily-file lane " + laneId);
+            try {
+                if (shutdownFailure != null)
+                    throw new IOException("Daily-file lane previously failed to close: " + laneId,
+                            shutdownFailure);
+                if (channel == null)
+                    return;
+                IOException failure = null;
+                try {
+                    force();
+                } catch (IOException e) {
+                    failure = e;
+                }
+                try {
+                    channel.close();
+                } catch (IOException e) {
+                    failure = merge(failure, e);
+                } finally {
+                    channel = null;
+                    openSegment = null;
+                }
+                if (failure != null) {
+                    shutdownFailure = failure;
+                    throw failure;
+                }
+            } finally {
+                lock.unlock();
             }
         }
 

@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -20,12 +21,18 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -753,6 +760,127 @@ public class DailyFileJournalStoreTest {
             assertEquals(java.util.Optional.of(processedThrough),
                     restarted.readObservationPurgeCheckpoint(feedId));
         }
+    }
+
+    @Test
+    public void retriesParentBarrierForEveryCreatedDirectoryComponent() throws Exception {
+        Path confinement = Files.createDirectories(root.resolve("durable-directory-root"));
+        Path target = confinement.resolve("first/second/third");
+        Set<Path> durableEntries = new HashSet<>();
+        List<Path> forcedDirectories = new ArrayList<>();
+        AtomicBoolean failSecondBarrier = new AtomicBoolean(true);
+
+        IOException failure = assertThrows(IOException.class,
+                () -> DailyFileJournalStore.createConfinedDirectories(
+                        confinement, target, durableEntries, directory -> {
+                            forcedDirectories.add(directory);
+                            if (directory.equals(confinement.resolve("first"))
+                                    && failSecondBarrier.getAndSet(false)) {
+                                throw new IOException("injected directory barrier failure");
+                            }
+                        }));
+        assertTrue(failure.getMessage().contains("injected"));
+        assertTrue(Files.isDirectory(confinement.resolve("first/second")));
+        assertFalse(Files.exists(target));
+
+        DailyFileJournalStore.createConfinedDirectories(
+                confinement, target, durableEntries, forcedDirectories::add);
+
+        assertEquals(List.of(
+                confinement,
+                confinement.resolve("first"),
+                confinement.resolve("first"),
+                confinement.resolve("first/second")), forcedDirectories);
+        assertTrue(Files.isDirectory(target));
+    }
+
+    @Test
+    public void accessDeniedDirectoryBarrierIsVisibleOnPosixAndIgnoredOnWindows() {
+        AccessDeniedException denied = new AccessDeniedException("directory");
+
+        assertFalse(DailyFileJournalStore.isIgnorableWindowsDirectoryFsyncFailure(
+                denied, false));
+        assertTrue(DailyFileJournalStore.isIgnorableWindowsDirectoryFsyncFailure(
+                denied, true));
+        assertFalse(DailyFileJournalStore.isIgnorableWindowsDirectoryFsyncFailure(
+                new IOException("other failure"), true));
+    }
+
+    @Test
+    public void schedulerShutdownReturnsWithinItsBoundAndCanBeRetried()
+            throws Exception {
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        scheduler.execute(() -> {
+            started.countDown();
+            while (release.getCount() != 0) {
+                try {
+                    release.await();
+                } catch (InterruptedException ignored) {
+                    // Deliberately model filesystem work that does not respond to interruption.
+                }
+            }
+        });
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+
+        long startedAt = System.nanoTime();
+        try {
+            assertFalse(DailyFileJournalStore.shutdownSchedulersBounded(
+                    scheduler, null, 100));
+            long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(
+                    System.nanoTime() - startedAt);
+            assertTrue("Shutdown exceeded its bounded wait: " + elapsedMillis + " ms",
+                    elapsedMillis < 2_000);
+        } finally {
+            release.countDown();
+            assertTrue(DailyFileJournalStore.shutdownSchedulersBounded(
+                    scheduler, null, 2_000));
+        }
+    }
+
+    @Test
+    public void verifiedSnapshotCliRejectsSymlinkedStorageAncestor() throws Exception {
+        Path liveState = Files.createDirectories(root.resolve("cli-link-live"));
+        Path liveStorage = liveState.resolve("nested/files");
+        try (DailyFileJournalStore ignored = new DailyFileJournalStore(liveStorage, config,
+                clock, LoggerFactory.getLogger(getClass()), false)) {
+            // Initialize a valid, empty live journal tree.
+        }
+        Files.writeString(liveState.resolve("config.json"), """
+                [{
+                  "objClass":"com.botts.impl.service.dailyfile.DailyFileJournalServiceConfig",
+                  "rootDirectory":"nested/files",
+                  "journalDirectory":".dailyfile-journal",
+                  "publicationDirectory":"dailyfiles",
+                  "zoneId":"America/New_York",
+                  "dailyFileObservationMode":"FULL",
+                  "fsyncIntervalMillis":60000,
+                  "maxUnforcedRecords":128,
+                  "maxUnforcedBytes":1048576,
+                  "maxSegmentBytes":67108864,
+                  "maxSegmentAgeSeconds":900,
+                  "maxRecordBytes":4194304,
+                  "sealedJournalRetentionDays":0,
+                  "moduleClass":"com.botts.impl.service.dailyfile.DailyFileJournalService"
+                }]
+                """, StandardCharsets.UTF_8);
+
+        Path snapshotState = Files.createDirectories(root.resolve("cli-link-snapshot"));
+        Path outside = Files.createDirectories(root.resolve("cli-link-outside/files"))
+                .getParent();
+        try {
+            Files.createSymbolicLink(snapshotState.resolve("nested"), outside);
+        } catch (UnsupportedOperationException | IOException e) {
+            return;
+        }
+
+        IOException failure = assertThrows(IOException.class,
+                () -> DailyFileBackupConfirmationCli.confirmVerifiedSnapshot(
+                        liveState, snapshotState, "20261017T120000Z-0123abcd",
+                        "a".repeat(64)));
+        assertTrue(failure.getMessage().contains("symbolic link"));
+        assertTrue(Files.isDirectory(outside.resolve("files")));
     }
 
     @Test

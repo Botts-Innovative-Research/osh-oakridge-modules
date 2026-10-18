@@ -151,6 +151,7 @@ Il associe une image PNG/JPG/JPEG à ses limites inférieur gauche et supérieur
 | Chevauchement des arrivées tardives (heures) | 24 | Intervalle récent réinterrogé pour les occupations validées après le passage du curseur ; les identifiants durables évitent les doublons. |
 | Rapprochement historique par cycle (heures) | 24 | Ancien intervalle revalidé par cycle pour réparer les médias non catalogués sans analyse complète de l'historique. |
 | Limite de travail de maintenance des médias | 200 | Nombre maximal d'entrées de rapprochement du catalogue, de nouvelle tentative et de cycle de vie source examinées par cycle. |
+| Limite de récupération des métadonnées multimédias | 200 | Nombre maximal d'heures UTC d'observations traitées récupérées par cycle, y compris les heures absentes. Chaque heure utilise douze accès fixes de cinq minutes ; ce n'est pas un nombre d'occupations. |
 | Activer la conservation d'images | activé | Activé : convertit les anciens clips en un ensemble exact de cinq JPEG. Désactivé : utilise la suppression historique. |
 | Nombre d'images conservées | 5 | Le schéma v1 exige exactement cinq images lorsque la conservation est activée. |
 | Qualité JPEG conservée | 85 | Qualité d'encodage JPEG sRGB de base de 1 à 100. |
@@ -170,6 +171,20 @@ Ces paramètres concernent la vidéo historique d'occupation, pas le direct. Cho
 | Chemin de stockage | `files` | Système de fichiers dont l'usage commande la purge. Doit viser le volume de fichiers OSCAR réel. |
 
 La purge sous pression ne supprime que les objets éligibles du compartiment `videos` dans l'ordre durable de publication ; elle n'énumère ni ne trie tout l'arbre des médias conservés pendant un cycle. Les CSV quotidiens restent protégés. Surveillez aussi le stockage au niveau du système d'exploitation : ce mécanisme d'urgence ne remplace pas les sauvegardes.
+
+Les identifiants d'observations traitées partagent au plus douze fichiers exacts de cinq minutes
+avec somme de contrôle par heure UTC d'événement. Une heure complète n'est récupérée que si sa fin
+précède strictement le chevauchement durable des arrivées tardives, par douze accès directs bornés
+et sans parcours d'arbre. La mémoire reste ainsi bornée et le seuil par fichier dépasse 1,2 million
+d'occupations réparties uniformément par heure. Un index compact exact, verrouillé par fichier,
+mémorise les suppressions sous pression sans un
+tombstone JSON permanent par caméra. Sauvegardez et restaurez comme une unité tout
+`videos/retained-media/v1`, notamment index, points de contrôle, files, manifestes et journaux.
+
+Ce format compact apparaît pour la première fois dans 3.9.2 et ne migre pas les prototypes
+`.deleted.json` ni les arbres de marqueurs par observation. Les systèmes de test doivent démarrer
+avec une base et un préfixe de médias 3.9.2 neufs. Pour revenir en arrière, restaurez les deux depuis
+la même sauvegarde coordonnée antérieure à 3.9.2 ; n'exécutez jamais un ancien binaire sur ce stockage.
 
 ## 5. Créer et téléverser un plan géoréférencé
 

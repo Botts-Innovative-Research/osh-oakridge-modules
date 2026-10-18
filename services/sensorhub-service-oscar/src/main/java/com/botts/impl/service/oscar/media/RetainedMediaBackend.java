@@ -1,7 +1,6 @@
 package com.botts.impl.service.oscar.media;
 
 import com.botts.api.service.bucket.IBucketStore;
-import org.sensorhub.api.datastore.DataStoreException;
 import org.slf4j.Logger;
 
 import java.io.IOException;
@@ -59,11 +58,11 @@ public final class RetainedMediaBackend {
 
     private boolean processLocked(MediaSetStore.Identity identity, String sourceObjectKey) {
         try {
-            String normalizedSourceKey = MediaSetStore.normalizedSourceKey(sourceObjectKey);
             if (mediaStore.isTerminallyDeleted(identity)) {
-                mediaStore.clearMaintenance(identity);
+                mediaStore.finishTerminalDeletion(identity);
                 return true;
             }
+            String normalizedSourceKey = MediaSetStore.normalizedSourceKey(sourceObjectKey);
             Optional<MediaManifest> existing = mediaStore.findManifest(identity);
             if (existing.isPresent()) {
                 MediaManifest manifest = existing.get();
@@ -139,8 +138,9 @@ public final class RetainedMediaBackend {
                     identity.mediaSetId(), identity.eventId(), identity.laneUid(), identity.cameraUid());
             return true;
         } catch (Exception failure) {
-            // No failure path removes the source. Frames without a final manifest are invisible to
-            // the API and are cleaned before the next idempotent attempt.
+            // Frames without a final manifest are invisible to the API and are cleaned before the
+            // next idempotent attempt. A failed lifecycle unlink remains recoverable from its
+            // ELIGIBLE_FOR_DELETION manifest even when the source is already visibly absent.
             try {
                 if (mediaStore.findManifest(identity).isEmpty())
                     mediaStore.cleanupUncommittedFrames(identity);
@@ -154,7 +154,7 @@ public final class RetainedMediaBackend {
             } catch (Exception ledgerFailure) {
                 failure.addSuppressed(ledgerFailure);
             }
-            log.error("Retained-media job failed for event {}, lane {}, camera {}; source preserved: {}",
+            log.error("Retained-media job failed for event {}, lane {}, camera {}; source reference retained for recovery: {}",
                     identity.eventId(), identity.laneUid(), identity.cameraUid(),
                     durableSourceKey(sourceObjectKey), failure);
             return false;
@@ -162,7 +162,7 @@ public final class RetainedMediaBackend {
     }
 
     private void advanceSourceLifecycle(MediaSetStore.Identity identity, MediaManifest manifest,
-                                        String normalizedSourceKey) throws IOException, DataStoreException {
+                                        String normalizedSourceKey) throws IOException {
         if (manifest.isHeld() || manifest.lifecycleState() == MediaManifest.LifecycleState.HELD)
             return;
         if (manifest.source().state() == MediaManifest.SourceState.DELETED)
@@ -171,6 +171,9 @@ public final class RetainedMediaBackend {
             return;
 
         if (!bucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, normalizedSourceKey)) {
+            // Visible absence is not sufficient after a failed unlink barrier. Force the nearest
+            // existing parent before committing DELETED and clearing retryable lifecycle state.
+            mediaStore.deleteVideoObjectDurably(normalizedSourceKey);
             markSourceDeleted(identity, manifest);
             return;
         }
@@ -178,7 +181,7 @@ public final class RetainedMediaBackend {
         MediaManifest eligible = manifest.withSource(
                 manifest.source().withState(MediaManifest.SourceState.ELIGIBLE_FOR_DELETION));
         mediaStore.publishManifest(identity, eligible);
-        bucketStore.deleteObject(MediaSetStore.VIDEO_BUCKET, normalizedSourceKey);
+        mediaStore.deleteVideoObjectDurably(normalizedSourceKey);
         markSourceDeleted(identity, eligible);
     }
 

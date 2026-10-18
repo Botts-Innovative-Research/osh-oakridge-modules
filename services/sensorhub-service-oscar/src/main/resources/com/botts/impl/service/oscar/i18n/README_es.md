@@ -151,6 +151,7 @@ Selecciona una imagen PNG/JPG/JPEG y asigna los límites inferior izquierdo y su
 | Superposición de llegadas tardías (horas) | 24 | Intervalo reciente que se vuelve a consultar para ocupaciones confirmadas después de que avanzara el cursor; los ID duraderos evitan duplicados. |
 | Reconciliación histórica por ciclo (horas) | 24 | Intervalo antiguo que se revalida por ciclo para reparar medios sin catálogo sin recorrer todo el historial. |
 | Límite de trabajo de mantenimiento multimedia | 200 | Máximo de entradas de reconciliación del catálogo, reintento y ciclo de vida del origen inspeccionadas por ciclo. |
+| Límite de reclamación de metadatos multimedia | 200 | Máximo de intervalos horarios UTC de observaciones procesadas que se reclaman por ciclo, incluidas horas ausentes. Cada hora usa doce accesos fijos de cinco minutos; no es un recuento de ocupaciones. |
 | Activar retención de fotogramas | activado | Activado: convierte clips antiguos en el conjunto exacto de cinco JPEG. Desactivado: usa el comportamiento de eliminación heredado. |
 | Número de fotogramas retenidos | 5 | El esquema v1 exige exactamente cinco cuando la retención está activada. |
 | Calidad JPEG retenida | 85 | Calidad de codificación JPEG sRGB de línea base de 1 a 100. |
@@ -170,6 +171,20 @@ Estas opciones afectan al vídeo histórico de ocupación, no al flujo en direct
 | Ruta de almacenamiento | `files` | Sistema de archivos cuyo uso controla la limpieza. Debe apuntar al volumen real de archivos OSCAR. |
 
 La limpieza por presión solo elimina objetos elegibles del bucket `videos` en orden de publicación duradero; durante un ciclo no enumera ni ordena todo el árbol de medios retenidos. Los CSV diarios están protegidos. Mantenga además supervisión del sistema operativo: este control de emergencia no sustituye las copias de seguridad.
+
+Los ID de observaciones procesadas comparten como máximo doce archivos exactos de cinco minutos con
+suma de comprobación por hora UTC del evento. Una hora completa se elimina solo cuando termina
+estrictamente antes de la superposición duradera de llegadas tardías, mediante doce accesos directos
+limitados y sin recorrer el árbol. Esto mantiene la memoria acotada y eleva el umbral por archivo a
+más de 1,2 millones de ocupaciones distribuidas uniformemente por hora. Un
+índice compacto exacto, bloqueado por archivo, conserva las eliminaciones por presión sin una lápida
+JSON permanente por cámara. Copie y restaure como una unidad todo `videos/retained-media/v1`,
+incluidos índices, puntos de control, colas, manifiestos y libros de trabajo.
+
+Este formato compacto aparece por primera vez en 3.9.2 y no migra los prototipos previos
+`.deleted.json` ni árboles de marcadores por observación. Los sistemas de prueba deben comenzar con
+una base de datos y un prefijo de medios nuevos de 3.9.2. Para volver atrás, restaure ambos desde la
+misma copia coordinada anterior a 3.9.2; no ejecute un binario antiguo sobre este almacenamiento.
 
 ## 5. Crear y cargar un plano georreferenciado
 

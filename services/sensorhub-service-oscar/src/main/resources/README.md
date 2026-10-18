@@ -33,6 +33,18 @@ daily-file journal publishes immutable legacy CSVs independently of database ret
 release's `documentation/STORAGE_OPERATIONS.md` for archive verification, holds, portable export,
 coordinated backup/restore, and tokenized deletion; do not delete cataloged files or rows manually.
 
+Retained-media housekeeping is bounded as well: processed-observation IDs share at most twelve
+checksummed five-minute index files per UTC event hour, and a complete hour is reclaimed only after
+it is strictly behind the durable late-arrival overlap. This moves the in-memory single-file
+threshold above 1.2 million evenly distributed occupancies/hour while retaining fixed memory and
+inode bounds. Pressure-deletion state uses an exact, file-locked compact
+index rather than one permanent JSON tombstone per camera set. Back up the complete
+`videos/retained-media/v1` prefix; its indexes and checkpoints prevent intentionally deleted media
+from being reconstructed during reconciliation. The 3.9.2 compact layout requires fresh state for
+pre-release/test deployments; do not reuse prototype `.deleted.json` or per-observation marker
+trees. Downgrade only by restoring the database and this complete prefix from the same coordinated
+pre-3.9.2 backup.
+
 ### Systems/DataStreams/ControlStreams
 - OSCAR client config (urn:ornl:oscar:client:config)
 - Adjudication records (urn:ornl:oscar:adjudication:xxx) under each lane

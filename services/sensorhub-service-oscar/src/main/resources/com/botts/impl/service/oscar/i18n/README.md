@@ -151,6 +151,7 @@ This tab selects a PNG/JPG/JPEG and assigns its lower-left and upper-right geogr
 | Late-arrival Overlap (hours) | 24 | Recent interval rescanned for occupancies committed after the forward cursor passed their event time. Durable IDs suppress duplicate work. |
 | Historical Reconciliation per Cycle (hours) | 24 | Older interval revalidated each cycle to repair missing retained-media catalog state without an unbounded scan. |
 | Media Maintenance Work Limit | 200 | Maximum catalog-reconciliation, sharded retry, and source-lifecycle entries inspected in one cycle. |
+| Media Metadata Reclamation Work Limit | 200 | Maximum direct-addressed UTC processed-observation hour buckets reclaimed in one cycle, including missing hours. Each hour is twelve fixed five-minute probes; it is not an occupancy count. |
 | Enable Frame Retention | enabled | When enabled, old clips are converted to the exact-five retained JPEG set. When disabled, eligible clips use legacy deletion behavior. |
 | Retained Frame Count | 5 | Schema v1 requires exactly five when frame retention is enabled. |
 | Retained JPEG Quality | 85 | Baseline sRGB JPEG encoding quality from 1 through 100. |
@@ -175,6 +176,21 @@ enabling cleanup.
 | Storage path | `files` | Filesystem path whose usage controls cleanup. It must be nonempty and should identify the actual OSCAR file volume. |
 
 Pressure cleanup removes eligible objects only from the `videos` bucket in durable publication order; it never enumerates or sorts the retained-media tree during a pressure cycle. Daily CSV exports remain protected. Configure operating-system storage monitoring as well—this feature is an emergency pressure control, not a backup policy.
+
+Processed-observation IDs share at most twelve exact, checksummed five-minute files per UTC event
+hour. A complete hour is reclaimed only when its end is strictly behind the durable late-arrival
+overlap, using twelve bounded direct probes rather than a tree scan. This keeps the heap bounded
+while moving the single-file threshold above 1.2 million evenly distributed occupancies/hour.
+Pressure deletion is remembered in an exact checksummed,
+file-locked compact index, replacing a permanent JSON tombstone per camera set without permitting
+historical reconciliation to recreate deleted media. Back up and restore the complete
+`videos/retained-media/v1` prefix as one unit; its indexes, checkpoints, queues, manifests, and
+ledgers are application state.
+
+The compact layout first ships in 3.9.2 and does not scan/migrate pre-release prototype
+`.deleted.json` or per-observation marker trees. Test/pre-release systems need a fresh 3.9.2 database
+and retained-media prefix. To downgrade, restore both from the same coordinated pre-3.9.2 backup;
+never run an older binary against 3.9.2 storage.
 
 ## 5. Create and upload a georeferenced site diagram
 

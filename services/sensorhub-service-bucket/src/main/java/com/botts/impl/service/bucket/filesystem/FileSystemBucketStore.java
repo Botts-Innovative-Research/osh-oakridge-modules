@@ -6,17 +6,23 @@ import com.botts.impl.service.bucket.util.UploadPolicy;
 import org.sensorhub.api.datastore.DataStoreException;
 
 import java.io.*;
+import java.nio.channels.FileChannel;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermission;
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 public class FileSystemBucketStore implements IBucketStore {
@@ -43,6 +49,7 @@ public class FileSystemBucketStore implements IBucketStore {
     );
     private final Path rootDirectory;
     private final long maxFileSizeBytes;
+    private final Set<Path> durableDirectoryEntries = ConcurrentHashMap.newKeySet();
 
     public FileSystemBucketStore(Path rootDirectory) throws IOException {
         this(rootDirectory, UploadPolicy.DEFAULT_MAX_FILE_SIZE_MB);
@@ -56,6 +63,8 @@ public class FileSystemBucketStore implements IBucketStore {
             createDirectories(this.rootDirectory);
         }
         setDirectoryPermissions(this.rootDirectory);
+        forceDirectoryEntry(this.rootDirectory);
+        durableDirectoryEntries.add(this.rootDirectory);
     }
 
     private Path getBucketPath(String bucketName) {
@@ -85,6 +94,10 @@ public class FileSystemBucketStore implements IBucketStore {
         Path realBucket = bucketPath.toRealPath();
         if (!realRoot.equals(realBucket.getParent()))
             throw new IOException("Bucket escapes the configured root: " + bucketName);
+        if (!durableDirectoryEntries.contains(realBucket)) {
+            forceDirectory(realBucket.getParent());
+            durableDirectoryEntries.add(realBucket);
+        }
         return realBucket;
     }
 
@@ -107,12 +120,30 @@ public class FileSystemBucketStore implements IBucketStore {
     }
 
     private void createDirectories(Path directory) throws IOException {
-        Files.createDirectories(directory);
-        setDirectoryPermissions(directory);
+        Path normalized = directory.toAbsolutePath().normalize();
+        List<Path> missing = new java.util.ArrayList<>();
+        Path existing = normalized;
+        while (existing != null && Files.notExists(existing, LinkOption.NOFOLLOW_LINKS)) {
+            missing.add(existing);
+            existing = existing.getParent();
+        }
+        if (existing == null || !Files.isDirectory(existing, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(existing))
+            throw new IOException("Bucket root has no regular existing ancestor: " + normalized);
+        if (existing.getParent() != null)
+            forceDirectory(existing.getParent());
+        for (int index = missing.size() - 1; index >= 0; index--) {
+            Path component = missing.get(index);
+            Files.createDirectory(component);
+            setDirectoryPermissions(component);
+            forceDirectory(component.getParent());
+            durableDirectoryEntries.add(component);
+        }
     }
 
     private void createObjectParentDirectories(Path bucketPath, Path parent) throws IOException {
-        Files.createDirectories(parent);
+        createObjectParentDirectoriesDurably(bucketPath, parent, durableDirectoryEntries,
+                FileSystemBucketStore::forceDirectory);
         setDirectoryPermissions(bucketPath);
         Path current = bucketPath;
         Path relativeParent = bucketPath.relativize(parent);
@@ -120,6 +151,67 @@ public class FileSystemBucketStore implements IBucketStore {
             current = current.resolve(segment);
             setDirectoryPermissions(current);
         }
+    }
+
+    static void createObjectParentDirectoriesDurably(Path bucketPath, Path parent,
+                                                      Set<Path> durableEntries,
+                                                      DirectoryForcer directoryForcer)
+            throws IOException {
+        Objects.requireNonNull(durableEntries, "durableEntries");
+        Objects.requireNonNull(directoryForcer, "directoryForcer");
+        Path root = bucketPath.toAbsolutePath().normalize();
+        Path target = parent.toAbsolutePath().normalize();
+        if (!target.startsWith(root))
+            throw new IOException("Object parent escapes the bucket root: " + target);
+        if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(root))
+            throw new IOException("Bucket root is linked or not a directory: " + root);
+
+        Path current = root;
+        for (Path component : root.relativize(target)) {
+            current = current.resolve(component);
+            boolean created = false;
+            try {
+                Files.createDirectory(current);
+                created = true;
+            } catch (FileAlreadyExistsException ignored) {
+                // Validate a concurrent or pre-existing directory below before trusting it.
+            }
+            if (!Files.isDirectory(current, LinkOption.NOFOLLOW_LINKS)
+                    || Files.isSymbolicLink(current))
+                throw new IOException("Object parent is linked or not a directory: " + current);
+            if (created || !durableEntries.contains(current)) {
+                directoryForcer.force(current.getParent());
+                durableEntries.add(current);
+            }
+        }
+    }
+
+    private void forceDirectoryEntry(Path directory) throws IOException {
+        if (directory.getParent() != null)
+            forceDirectory(directory.getParent());
+    }
+
+    private static void forceDirectory(Path directory) throws IOException {
+        if (directory == null)
+            return;
+        try (FileChannel channel = FileChannel.open(directory, StandardOpenOption.READ)) {
+            channel.force(true);
+        } catch (UnsupportedOperationException e) {
+            // Directory fsync is unavailable on some supported filesystem/JDK combinations.
+        } catch (IOException e) {
+            if (!(isWindows() && e instanceof AccessDeniedException))
+                throw e;
+        }
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT)
+                .startsWith("windows");
+    }
+
+    @FunctionalInterface
+    interface DirectoryForcer {
+        void force(Path directory) throws IOException;
     }
 
     private void setDirectoryPermissions(Path directory) throws IOException {
@@ -283,7 +375,7 @@ public class FileSystemBucketStore implements IBucketStore {
             resolved = resolveObjectPath(bucketName, key);
             // Create parent directories if they don't exist (for nested keys like "subdir/file.txt")
             Path parent = resolved.getParent();
-            if (parent != null && !Files.exists(parent))
+            if (parent != null)
                 createObjectParentDirectories(bucketPath, parent);
             Files.copy(new LimitedInputStream(data), resolved, StandardCopyOption.REPLACE_EXISTING);
             setFilePermissions(resolved);
@@ -512,7 +604,7 @@ public class FileSystemBucketStore implements IBucketStore {
             Path bucketPath = getBucketPath(bucketName).toRealPath();
             Path objectPath = resolveObjectPath(bucketName, key);
             Path parent = objectPath.getParent();
-            if (parent != null && !Files.exists(parent))
+            if (parent != null)
                 createObjectParentDirectories(bucketPath, parent);
             return objectPath.toString();
         } catch (IOException e) {

@@ -38,6 +38,9 @@ public class VideoRetentionConfig {
     @DisplayInfo(label = "Media Maintenance Work Limit", desc = "Maximum catalog-reconciliation, source-lifecycle, and retry entries inspected per scheduled cycle.")
     public int maintenanceWorkLimit = 200;
 
+    @DisplayInfo(label = "Media Metadata Reclamation Work Limit", desc = "Maximum direct-addressed UTC processed-observation hour buckets reclaimed per scheduled cycle, including missing hours. Each hour uses twelve fixed five-minute probes; the default catches up as many as 200 backlog hours without a directory scan.")
+    public int metadataReclamationWorkLimit = 200;
+
     @DisplayInfo(label = "Enable Frame Retention", desc = "Publish the exact-five JPEG retained-media set instead of using legacy whole-video deletion.")
     public boolean enableFrameRetention = true;
 

@@ -36,13 +36,13 @@ public class DailyFileJournalService extends AbstractModule<DailyFileJournalServ
 
     @Override
     protected void doStop() throws SensorHubException {
-        if (store != null) {
+        DailyFileJournalStore activeStore = store;
+        if (activeStore != null) {
             try {
-                store.close();
+                activeStore.close();
+                store = null;
             } catch (IOException e) {
                 throw new SensorHubException("Unable to close the daily-file journal cleanly", e);
-            } finally {
-                store = null;
             }
         }
     }

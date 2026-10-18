@@ -59,6 +59,8 @@ public class VideoRetention {
     private final RetainedMediaBackend retainedMediaBackend;
     private final MediaIdentityResolver identityResolver;
     private final int maintenanceWorkLimit;
+    private final int metadataReclamationWorkLimit;
+    private final Duration lateArrivalOverlap;
 
     SlidingOccupancyQuery retentionQuery;
 
@@ -91,13 +93,29 @@ public class VideoRetention {
                           Duration rollbackGrace, Duration maximumCatchUp,
                           int maintenanceWorkLimit, Duration lateArrivalOverlap,
                           Duration reconciliationCatchUp) {
+        this(hub, bucketStore, queryPeriod, retentionTimeOffset, frameCount, jpegQuality,
+                rollbackGrace, maximumCatchUp, maintenanceWorkLimit, lateArrivalOverlap,
+                reconciliationCatchUp, 200);
+    }
+
+    public VideoRetention(ISensorHub hub, IBucketStore bucketStore, TemporalAmount queryPeriod,
+                          TemporalAmount retentionTimeOffset, int frameCount, int jpegQuality,
+                          Duration rollbackGrace, Duration maximumCatchUp,
+                          int maintenanceWorkLimit, Duration lateArrivalOverlap,
+                          Duration reconciliationCatchUp, int metadataReclamationWorkLimit) {
         this.bucketStore = bucketStore;
         this.frameCount = frameCount;
         if (maximumCatchUp == null || maximumCatchUp.isZero() || maximumCatchUp.isNegative())
             throw new IllegalArgumentException("Maximum retention catch-up must be positive");
         if (maintenanceWorkLimit < 3)
             throw new IllegalArgumentException("Media maintenance work limit must be at least three");
+        if (metadataReclamationWorkLimit < 1)
+            throw new IllegalArgumentException(
+                    "Media metadata reclamation work limit must be positive");
         this.maintenanceWorkLimit = maintenanceWorkLimit;
+        this.metadataReclamationWorkLimit = metadataReclamationWorkLimit;
+        this.lateArrivalOverlap = java.util.Objects.requireNonNull(
+                lateArrivalOverlap, "lateArrivalOverlap");
 
         if (frameCount != 0 && frameCount != MediaManifest.RETAINED_FRAME_COUNT)
             throw new IllegalArgumentException(
@@ -120,7 +138,7 @@ public class VideoRetention {
                 retentionTimeOffset,
                 maximumCatchUp,
                 mediaStore,
-                frameCount > 0 ? this::runMaintenanceCycle : null,
+                this::runMaintenanceCycle,
                 lateArrivalOverlap,
                 reconciliationCatchUp);
     }
@@ -135,17 +153,15 @@ public class VideoRetention {
         hasStarted = true;
     }
 
-    private boolean deleteOccupancyVideo(SlidingOccupancyQuery.OccupancyRecord record) {
+    boolean deleteOccupancyVideo(SlidingOccupancyQuery.OccupancyRecord record) {
         boolean succeeded = true;
         for (String videoFile : record.occupancy().getVideoPaths()) {
             logger.info("deleting, {}", videoFile);
-            if (!bucketStore.objectExists("", videoFile)) {
-                logger.info("Video file {} does not exist or has already been deleted", videoFile);
-                continue;
-            }
+            String objectKey = MediaSetStore.stripVideoBucket(videoFile);
             try {
-                bucketStore.deleteObject("", videoFile);
-            } catch (DataStoreException e) {
+                if (mediaStore.deleteVideoObjectDurably(objectKey) == 0)
+                    logger.info("Video file {} does not exist or has already been deleted", videoFile);
+            } catch (IOException e) {
                 logger.info("Failed to delete video file {}", videoFile, e);
                 succeeded = false;
             }
@@ -179,8 +195,18 @@ public class VideoRetention {
         return durablyAccepted;
     }
 
-    private void runMaintenanceCycle() throws IOException {
+    void runMaintenanceCycle() throws IOException {
         Instant now = Instant.now();
+        try {
+            reclaimMetadata();
+        } catch (IOException e) {
+            // A corrupt processed-observation bucket is fail-visible and may pause the matching
+            // scan window, but it must never starve independent catalog/lifecycle/retry recovery.
+            logger.error("Retained-media metadata reclamation failed; continuing other maintenance",
+                    e);
+        }
+        if (frameCount == 0)
+            return;
         MediaMaintenanceCheckpoint checkpoint = mediaStore.readMaintenanceCheckpoint()
                 .orElseGet(() -> initializeMaintenanceCheckpoint(now));
         int catalogLimit = Math.max(1, maintenanceWorkLimit / 3);
@@ -201,6 +227,20 @@ public class VideoRetention {
                 checkpoint.retryCursor(), retryLimit, now);
         checkpoint = checkpoint.withRetry(retry.cursor(), Instant.now());
         mediaStore.writeMaintenanceCheckpoint(checkpoint);
+    }
+
+    private void reclaimMetadata() throws IOException {
+        var scanCheckpoint = mediaStore.readRetentionScanCheckpoint();
+        if (scanCheckpoint.isPresent()) {
+            Instant retainFrom = SlidingOccupancyQuery.overlapStart(
+                    scanCheckpoint.get().processedThrough(), lateArrivalOverlap);
+            MediaSetStore.ProcessedObservationPruneResult result =
+                    mediaStore.pruneProcessedObservations(
+                            retainFrom, metadataReclamationWorkLimit);
+            if (result.deleted() > 0)
+                logger.debug("Pruned {} of {} inspected processed-observation index buckets",
+                        result.deleted(), result.inspected());
+        }
     }
 
     private void sweepCommittedCatalog(int entryLimit) throws IOException {

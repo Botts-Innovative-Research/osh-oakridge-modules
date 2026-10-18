@@ -259,7 +259,8 @@ public final class SlidingOccupancyQuery {
                 Map.Entry<BigId, IObsData> entry = iterator.next();
                 IObsData observation = entry.getValue();
                 String observationId = identityResolver.publicObservationId(entry.getKey());
-                if (skipProcessed && cursorStore.isProcessed(observationId))
+                if (skipProcessed && cursorStore.isProcessed(
+                        observationId, observation.getResultTime()))
                     continue;
                 OccupancyRecord record = new OccupancyRecord(
                         observationId,
@@ -267,8 +268,12 @@ public final class SlidingOccupancyQuery {
                         Occupancy.toOccupancy(observation.getResult()));
                 if (!afterQueryAction.call(record))
                     return false;
-                cursorStore.markProcessed(RetentionProcessedObservation.at(observationId,
-                        observation.getResultTime(), clock.instant()));
+                // Historical reconciliation intentionally ignores processed markers. Rewriting a
+                // marker there would recreate old tiny files immediately after safe reclamation;
+                // only the forward/late-arrival scan needs this bounded deduplication state.
+                if (skipProcessed)
+                    cursorStore.markProcessed(RetentionProcessedObservation.at(observationId,
+                            observation.getResultTime(), clock.instant()));
             }
         }
         return true;
@@ -444,7 +449,7 @@ public final class SlidingOccupancyQuery {
 
         void writeReconciliation(RetentionReconciliationCheckpoint checkpoint) throws IOException;
 
-        boolean isProcessed(String observationId);
+        boolean isProcessed(String observationId, Instant resultTime) throws IOException;
 
         void markProcessed(RetentionProcessedObservation marker) throws IOException;
     }
@@ -476,8 +481,8 @@ public final class SlidingOccupancyQuery {
         }
 
         @Override
-        public boolean isProcessed(String observationId) {
-            return mediaStore.isObservationProcessed(observationId);
+        public boolean isProcessed(String observationId, Instant resultTime) throws IOException {
+            return mediaStore.isObservationProcessed(observationId, resultTime);
         }
 
         @Override

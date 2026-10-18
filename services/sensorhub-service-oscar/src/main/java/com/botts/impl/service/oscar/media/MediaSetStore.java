@@ -11,13 +11,17 @@ import java.io.IOException;
 import java.io.Reader;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
@@ -25,10 +29,18 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
+import java.util.zip.CRC32C;
 
 /**
  * Filesystem-backed catalog for retained media sets.
@@ -51,6 +63,8 @@ public final class MediaSetStore {
             "retained-media/v1/.pressure-queue-state.json";
     public static final String CATALOG_QUEUE_STATE_KEY =
             "retained-media/v1/.catalog-queue-state.json";
+    public static final String METADATA_RECLAMATION_CHECKPOINT_KEY =
+            "retained-media/v1/.metadata-reclamation-checkpoint.json";
     private static final String MAINTENANCE_PREFIX = "retained-media/v1/maintenance/";
     private static final String PRESSURE_QUEUE_ITEM_PREFIX =
             "retained-media/v1/pressure-queue/items/";
@@ -60,13 +74,41 @@ public final class MediaSetStore {
             "retained-media/v1/catalog-queue/items/";
     private static final String CATALOG_QUEUE_MEMBER_PREFIX =
             "retained-media/v1/catalog-queue/members/";
-    private static final String PROCESSED_OBSERVATION_PREFIX =
-            "retained-media/v1/retention-processed/";
+    private static final String PROCESSED_OBSERVATION_INDEX_PREFIX =
+            "retained-media/v1/retention-processed-index/";
+    private static final String PROCESSED_OBSERVATION_INDEX_LOCK_KEY =
+            PROCESSED_OBSERVATION_INDEX_PREFIX + ".index.lock";
+    private static final String DELETION_INDEX_PREFIX =
+            "retained-media/v1/deletion-index/";
     private static final String MANIFEST_FILE = "manifest.json";
     private static final String LEDGER_FILE = ".job.json";
-    private static final String DELETION_FILE = ".deleted.json";
     private static final String PARTIAL_MARKER = ".partial-";
+    private static final String BUCKET_PATH_ANCHOR = ".oscar-retained-media-path-anchor";
     private static final int MAX_INTERNAL_JSON_BYTES = 1024 * 1024;
+    private static final byte[] DELETION_INDEX_HEADER = new byte[]{
+            'O', 'S', 'C', 'A', 'R', 'M', 'D', 'I', 0, 0, 0, 1, 0, 0, 0, 36
+    };
+    private static final byte[] PROCESSED_OBSERVATION_INDEX_HEADER = new byte[]{
+            'O', 'S', 'C', 'A', 'R', 'M', 'P', 'I', 0, 0, 0, 1, 0, 0, 0, 36
+    };
+    private static final int EXACT_INDEX_DIGEST_BYTES = 32;
+    private static final int EXACT_INDEX_RECORD_BYTES = 36;
+    private static final int EXACT_INDEX_CACHE_MAX_ENTRIES = 32;
+    private static final int EXACT_INDEX_CACHE_MAX_RECORDS = 200_000;
+    private static final int EXACT_INDEX_CACHE_MAX_RECORDS_PER_SNAPSHOT = 100_000;
+    private static final long PROCESSED_OBSERVATION_BUCKET_SECONDS = 60L * 60L;
+    /*
+     * Keep reclamation/checkpointing hourly, but split a busy hour into deterministic five-minute
+     * files.  A single cache snapshot therefore remains below 100,000 entries until a 50-lane
+     * site sustains more than 6.6 completed occupancies per lane per second for five minutes
+     * (1.2 million/hour).  That is far beyond a physically meaningful RPM occupancy rate and
+     * removes the former 100,000-record/hour cache cliff without returning to per-event inodes.
+     */
+    private static final int PROCESSED_OBSERVATION_INDEX_FILES_PER_HOUR = 12;
+    private static final long PROCESSED_OBSERVATION_INDEX_FILE_SECONDS =
+            PROCESSED_OBSERVATION_BUCKET_SECONDS
+                    / PROCESSED_OBSERVATION_INDEX_FILES_PER_HOUR;
+    private static final Object[] INDEX_FILE_LOCKS = createLocks(256);
 
     private static final Gson GSON = new GsonBuilder()
             .registerTypeAdapter(Instant.class,
@@ -78,7 +120,16 @@ public final class MediaSetStore {
             .create();
 
     private final IBucketStore bucketStore;
+    private final Path videoBucketRoot;
     private final Object[] identityLocks = new Object[256];
+    /**
+     * A small per-store LRU avoids reparsing a busy exact-index file for every occupancy. Every hit is
+     * guarded by a fresh filesystem stamp while the cross-process index lock is held, so an append
+     * from another live {@code MediaSetStore} is observed before the cached set can be used.
+     */
+    private final Map<String, ExactIndexSnapshot> exactIndexCache =
+            new LinkedHashMap<>(EXACT_INDEX_CACHE_MAX_ENTRIES + 1, 0.75f, true);
+    private int exactIndexCacheRecordCount;
 
     public MediaSetStore(IBucketStore bucketStore) throws DataStoreException {
         this.bucketStore = Objects.requireNonNull(bucketStore, "bucketStore");
@@ -86,6 +137,18 @@ public final class MediaSetStore {
             identityLocks[index] = new Object();
         if (!bucketStore.bucketExists(VIDEO_BUCKET))
             bucketStore.createBucket(VIDEO_BUCKET);
+        try {
+            Path anchor = Path.of(bucketStore.getWritableResourceURI(
+                            VIDEO_BUCKET, BUCKET_PATH_ANCHOR))
+                    .toAbsolutePath().normalize();
+            this.videoBucketRoot = anchor.getParent();
+            if (videoBucketRoot == null
+                    || !Files.isDirectory(videoBucketRoot, LinkOption.NOFOLLOW_LINKS)
+                    || Files.isSymbolicLink(videoBucketRoot))
+                throw new DataStoreException("Videos bucket is not a regular directory");
+        } catch (IllegalArgumentException e) {
+            throw new DataStoreException("Unable to resolve the videos bucket path", e);
+        }
     }
 
     public record Identity(String eventId, String laneUid, String cameraUid) {
@@ -115,14 +178,11 @@ public final class MediaSetStore {
         return baseKey(identity) + "/" + LEDGER_FILE;
     }
 
-    public String deletionMarkerKey(Identity identity) {
-        return baseKey(identity) + "/" + DELETION_FILE;
-    }
-
     public String frameKey(Identity identity, int oneBasedIndex) {
         if (oneBasedIndex < 1 || oneBasedIndex > MediaManifest.RETAINED_FRAME_COUNT)
             throw new IllegalArgumentException("Retained frame index must be 1 through 5");
-        return baseKey(identity) + String.format("/frame-%02d.jpg", oneBasedIndex);
+        return baseKey(identity) + String.format(Locale.ROOT,
+                "/frame-%02d.jpg", oneBasedIndex);
     }
 
     public Optional<MediaManifest> findManifest(Identity identity) throws IOException {
@@ -346,15 +406,92 @@ public final class MediaSetStore {
                 RetentionReconciliationCheckpoint.class);
     }
 
-    public boolean isObservationProcessed(String observationId) {
-        return bucketStore.objectExists(VIDEO_BUCKET, processedObservationKey(observationId));
+    /** Exact time-bucketed lookup with no per-observation marker inode or stale cache. */
+    public boolean isObservationProcessed(String observationId, Instant resultTime)
+            throws IOException {
+        String digest = processedObservationDigest(observationId);
+        String key = processedObservationIndexKey(resultTime);
+        return withIndexFileLock(PROCESSED_OBSERVATION_INDEX_LOCK_KEY, () -> {
+            Path path = writablePath(key);
+            if (!requireExistingOrConfirmedAbsent(path, "processed-observation index"))
+                return false;
+            return readExactIndex(path, key, PROCESSED_OBSERVATION_INDEX_HEADER,
+                    ignored -> true, "processed-observation index", digest).containsTarget();
+        });
     }
 
-    public synchronized void markObservationProcessed(RetentionProcessedObservation marker)
+    /**
+     * Appends one observation digest to its UTC epoch-hour bucket. The durable lower-bound state is
+     * reserved first, so a crash can leave at most a harmless missing bucket, never an untracked
+     * bucket that reclamation cannot eventually reach.
+     */
+    public void markObservationProcessed(RetentionProcessedObservation marker)
             throws IOException {
         Objects.requireNonNull(marker, "marker");
-        atomicWriteJson(processedObservationKey(marker.observationId()), marker,
-                RetentionProcessedObservation.class);
+        String digest = processedObservationDigest(marker.observationId());
+        long epochHour = processedObservationEpochHour(marker.resultTime());
+        String key = processedObservationIndexKey(marker.resultTime());
+        withIndexFileLock(PROCESSED_OBSERVATION_INDEX_LOCK_KEY, () -> {
+            MediaMetadataReclamationCheckpoint checkpoint =
+                    readMetadataReclamationCheckpoint();
+            Long earliest = checkpoint.earliestProcessedObservationEpochHour();
+            if (earliest == null || epochHour < earliest) {
+                checkpoint = checkpoint.withEarliestProcessedObservationEpochHour(
+                        epochHour, Instant.now());
+                writeMetadataReclamationCheckpoint(checkpoint);
+            }
+            appendExactIndexDigest(writablePath(key), key,
+                    PROCESSED_OBSERVATION_INDEX_HEADER, digest, ignored -> true,
+                    "processed-observation index");
+            return null;
+        });
+    }
+
+    /**
+     * Deletes at most {@code workLimit} deterministic hourly index buckets whose end is strictly
+     * before the forward scanner's durable late-arrival boundary. Each hour has twelve
+     * direct-addressed five-minute files; no object listing or directory traversal occurs, and a
+     * missing hour consumes the same fixed twelve probes as a populated hour.
+     */
+    public ProcessedObservationPruneResult pruneProcessedObservations(
+            Instant retainFromInclusive, int workLimit) throws IOException {
+        Objects.requireNonNull(retainFromInclusive, "retainFromInclusive");
+        if (workLimit < 1)
+            throw new IllegalArgumentException("Processed-observation prune limit must be positive");
+
+        return withIndexFileLock(PROCESSED_OBSERVATION_INDEX_LOCK_KEY, () -> {
+            MediaMetadataReclamationCheckpoint checkpoint =
+                    readMetadataReclamationCheckpoint();
+            Long nextEpochHour = checkpoint.earliestProcessedObservationEpochHour();
+            if (nextEpochHour == null)
+                return new ProcessedObservationPruneResult(0, 0, null);
+
+            int inspected = 0;
+            int deleted = 0;
+            while (inspected < workLimit
+                    && processedObservationBucketEnd(nextEpochHour)
+                    .isBefore(retainFromInclusive)) {
+                boolean deletedAnyFile = false;
+                for (int file = 0; file < PROCESSED_OBSERVATION_INDEX_FILES_PER_HOUR;
+                     file++) {
+                    String key = processedObservationIndexKey(nextEpochHour, file);
+                    DurableDeleteResult result = deleteDurably(key, true);
+                    if (result.existed())
+                        deletedAnyFile = true;
+                    invalidateExactIndex(key);
+                }
+                if (deletedAnyFile)
+                    deleted++;
+                inspected++;
+                nextEpochHour = Math.addExact(nextEpochHour, 1L);
+            }
+            if (inspected > 0) {
+                checkpoint = checkpoint.withEarliestProcessedObservationEpochHour(
+                        nextEpochHour, Instant.now());
+                writeMetadataReclamationCheckpoint(checkpoint);
+            }
+            return new ProcessedObservationPruneResult(inspected, deleted, nextEpochHour);
+        });
     }
 
     public Optional<MediaMaintenanceCheckpoint> readMaintenanceCheckpoint() throws IOException {
@@ -416,8 +553,18 @@ public final class MediaSetStore {
         return bucketStore.objectExists(VIDEO_BUCKET, maintenanceKey(kind, identity));
     }
 
-    public boolean isTerminallyDeleted(Identity identity) {
-        return bucketStore.objectExists(VIDEO_BUCKET, deletionMarkerKey(identity));
+    public boolean isTerminallyDeleted(Identity identity) throws IOException {
+        Objects.requireNonNull(identity, "identity");
+        String mediaSetId = identity.mediaSetId();
+        String key = deletionIndexKey(mediaSetId);
+        return withIndexFileLock(deletionIndexLockKey(mediaSetId), () -> {
+            Path path = writablePath(key);
+            if (!requireExistingOrConfirmedAbsent(path, "media deletion index"))
+                return false;
+            return readExactIndex(path, key, DELETION_INDEX_HEADER,
+                    digest -> deletionIndexKey(digest).equals(key),
+                    "media deletion index", mediaSetId).containsTarget();
+        });
     }
 
     public synchronized void clearMaintenance(Identity identity) throws IOException {
@@ -723,7 +870,7 @@ public final class MediaSetStore {
         Identity identity = new Identity(manifest.eventId(), manifest.laneUid(), manifest.cameraUid());
         withIdentityLock(identity, () -> {
             if (isTerminallyDeleted(identity)) {
-                clearMaintenance(identity);
+                finishTerminalDeletionLocked(identity);
                 return null;
             }
             ensureManifestMaintenance(identity, manifest);
@@ -777,17 +924,22 @@ public final class MediaSetStore {
     }
 
     public void cleanupUncommittedFrames(Identity identity) throws IOException {
-        if (bucketStore.objectExists(VIDEO_BUCKET, manifestKey(identity)))
+        String committedKey = manifestKey(identity);
+        Path committedPath = objectPathWithoutCreatingParents(committedKey);
+        if (requireRegularObjectOrDurableAbsence(committedPath, committedKey))
             return;
-        Path setDirectory = writablePath(baseKey(identity) + "/.cleanup-anchor").getParent();
-        if (setDirectory == null || !Files.exists(setDirectory))
+        String setKey = baseKey(identity);
+        Path setDirectory = committedPath.getParent();
+        if (setDirectory == null || Files.notExists(setDirectory, LinkOption.NOFOLLOW_LINKS))
             return;
+        List<Path> candidates;
         try (var files = Files.list(setDirectory)) {
-            for (Path file : files.filter(Files::isRegularFile).toList()) {
-                String name = file.getFileName().toString();
-                if (name.endsWith(".jpg") || name.contains(PARTIAL_MARKER))
-                    Files.deleteIfExists(file);
-            }
+            candidates = files.filter(Files::isRegularFile).toList();
+        }
+        for (Path file : candidates) {
+            String name = file.getFileName().toString();
+            if (name.endsWith(".jpg") || name.contains(PARTIAL_MARKER))
+                deleteIfPresent(setKey + "/" + name);
         }
     }
 
@@ -798,8 +950,36 @@ public final class MediaSetStore {
         return withIdentityLock(identity, () -> deleteMediaSetLocked(entry, identity));
     }
 
+    /**
+     * Completes an interrupted terminal deletion, including removal of its durable queue work.
+     * A terminal index entry is authoritative even if a pre-crash manifest unlink reappears.
+     */
+    public long finishTerminalDeletion(Identity identity) throws IOException {
+        Objects.requireNonNull(identity, "identity");
+        return withIdentityLock(identity, () -> {
+            if (!isTerminallyDeleted(identity))
+                throw new IOException("Retained media set is not terminally deleted: "
+                        + identity.mediaSetId());
+            return finishTerminalDeletionLocked(identity);
+        });
+    }
+
+    private long finishTerminalDeletionLocked(Identity identity) throws IOException {
+        String key = manifestKey(identity);
+        Path path = objectPathWithoutCreatingParents(key);
+        if (requireRegularObjectOrDurableAbsence(path, key)) {
+            MediaManifest manifest = readManifest(key);
+            return deleteMediaSetLocked(new ManifestEntry(key, manifest), identity);
+        }
+        clearMaintenance(identity);
+        clearPressureCandidate(identity);
+        clearCatalogCandidate(identity);
+        return 0;
+    }
+
     private long deleteMediaSetLocked(ManifestEntry entry, Identity identity) throws IOException {
-        if (!bucketStore.objectExists(VIDEO_BUCKET, entry.manifestKey())) {
+        Path manifestPath = objectPathWithoutCreatingParents(entry.manifestKey());
+        if (!requireRegularObjectOrDurableAbsence(manifestPath, entry.manifestKey())) {
             if (isTerminallyDeleted(identity)) {
                 clearMaintenance(identity);
                 clearPressureCandidate(identity);
@@ -823,19 +1003,20 @@ public final class MediaSetStore {
             publishManifest(identity, manifest);
         }
 
-        // The terminal marker is committed before the first destructive delete. It survives the
-        // media set and prevents a stale retry, overlapping scan, or restart from reconstructing it.
+        // The exact terminal index record is appended and fsynced before the first destructive
+        // delete. It survives the set without one permanent JSON/inode per camera and prevents a
+        // stale retry, overlapping scan, or restart from reconstructing intentionally deleted media.
         if (!isTerminallyDeleted(identity))
-            atomicWriteJson(deletionMarkerKey(identity),
-                    MediaDeletionMarker.at(identity, Instant.now()), MediaDeletionMarker.class);
+            recordTerminalDeletion(identity);
         clearMaintenance(identity);
 
         long deletedBytes = 0;
         try {
             for (MediaManifest.Asset asset : manifest.assets())
                 deletedBytes += deleteIfPresent(asset.objectKey());
-            if (manifest.source().state() != MediaManifest.SourceState.DELETED)
-                deletedBytes += deleteIfPresent(stripVideoBucket(manifest.source().objectKey()));
+            // A terminal set delete verifies the source is absent even when an older manifest says
+            // DELETED. This also removes a directory entry replayed after a pre-upgrade crash.
+            deletedBytes += deleteIfPresent(stripVideoBucket(manifest.source().objectKey()));
             deletedBytes += deleteIfPresent(ledgerKey(identity));
             deletedBytes += deleteIfPresent(entry.manifestKey());
             clearMaintenance(identity);
@@ -843,10 +1024,15 @@ public final class MediaSetStore {
             clearCatalogCandidate(identity);
             return deletedBytes;
         } catch (IOException e) {
-            // The DELETING manifest and terminal tombstone remain durable recovery markers. A
-            // future cleanup pass can retry every idempotent delete without media recreation.
+            // The terminal tombstone plus either the DELETING manifest or remaining catalog and
+            // pressure work stay durable. A future cleanup pass retries every idempotent delete.
             throw e;
         }
+    }
+
+    /** Deletes a videos-bucket object and makes its absence durable before returning. */
+    public long deleteVideoObjectDurably(String key) throws IOException {
+        return deleteIfPresent(key);
     }
 
     public long mediaSetBytes(MediaManifest manifest) {
@@ -865,6 +1051,292 @@ public final class MediaSetStore {
         int lockIndex = (identity.mediaSetId().hashCode() & Integer.MAX_VALUE) % identityLocks.length;
         synchronized (identityLocks[lockIndex]) {
             return action.call();
+        }
+    }
+
+    private MediaMetadataReclamationCheckpoint readMetadataReclamationCheckpoint()
+            throws IOException {
+        Path path = writablePath(METADATA_RECLAMATION_CHECKPOINT_KEY);
+        if (!requireExistingOrConfirmedAbsent(path, "media metadata checkpoint"))
+            return MediaMetadataReclamationCheckpoint.initial(Instant.EPOCH);
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(path))
+            throw new IOException("Media metadata checkpoint is not a regular file");
+        MediaMetadataReclamationCheckpoint checkpoint = readInternalJson(
+                METADATA_RECLAMATION_CHECKPOINT_KEY,
+                MediaMetadataReclamationCheckpoint.class).orElseThrow(() ->
+                new IOException("Media metadata checkpoint disappeared during locked read"));
+        // Invoke the canonical constructor for validation after deserialization.
+        try {
+            return new MediaMetadataReclamationCheckpoint(checkpoint.schemaVersion(),
+                    checkpoint.earliestProcessedObservationEpochHour(), checkpoint.updatedAt());
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new IOException("Invalid media metadata checkpoint", e);
+        }
+    }
+
+    private void writeMetadataReclamationCheckpoint(
+            MediaMetadataReclamationCheckpoint checkpoint) throws IOException {
+        Objects.requireNonNull(checkpoint, "checkpoint");
+        atomicWriteJson(METADATA_RECLAMATION_CHECKPOINT_KEY, checkpoint,
+                MediaMetadataReclamationCheckpoint.class);
+    }
+
+    /** Commits one exact digest to a bounded-shard, append-only, checksummed deletion index. */
+    void recordTerminalDeletion(Identity identity) throws IOException {
+        String mediaSetId = identity.mediaSetId();
+        String key = deletionIndexKey(mediaSetId);
+        withIndexFileLock(deletionIndexLockKey(mediaSetId), () -> {
+            appendExactIndexDigest(writablePath(key), key, DELETION_INDEX_HEADER, mediaSetId,
+                    digest -> deletionIndexKey(digest).equals(key), "media deletion index");
+            return null;
+        });
+    }
+
+    private void appendExactIndexDigest(Path path, String key, byte[] expectedHeader,
+                                        String digestHex, Predicate<String> recordValidator,
+                                        String description) throws IOException {
+        ensureExactIndexHeader(path, expectedHeader);
+        ExactIndexReadResult existing = readExactIndex(path, key, expectedHeader,
+                recordValidator, description, digestHex);
+        if (existing.containsTarget())
+            return;
+
+        byte[] digest = hexBytes(digestHex);
+        ByteBuffer record = ByteBuffer.allocate(EXACT_INDEX_RECORD_BYTES);
+        record.put(digest);
+        CRC32C checksum = new CRC32C();
+        checksum.update(digest, 0, digest.length);
+        record.putInt((int) checksum.getValue());
+        record.flip();
+
+        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.WRITE,
+                LinkOption.NOFOLLOW_LINKS)) {
+            channel.position(channel.size());
+            while (record.hasRemaining())
+                channel.write(record);
+            channel.force(true);
+        }
+        forceDirectory(path.getParent());
+        if (existing.cacheableEntries() != null) {
+            Set<String> updated = existing.cacheableEntries();
+            // Remove the old accounting before mutating the shared cached set in place.
+            invalidateExactIndex(key);
+            updated.add(digestHex);
+            cacheExactIndex(key, path, updated);
+        } else {
+            invalidateExactIndex(key);
+        }
+    }
+
+    private ExactIndexReadResult readExactIndex(Path path, String key, byte[] expectedHeader,
+                                                Predicate<String> recordValidator,
+                                                String description, String targetDigest)
+            throws IOException {
+        BasicFileAttributes initialAttributes = readRegularFileAttributes(path, key, description);
+        FileStamp initialStamp = FileStamp.from(initialAttributes);
+        ExactIndexSnapshot cached = cachedExactIndex(key);
+        if (cached != null && cached.stamp().equals(initialStamp)) {
+            // A matching stamp is a performance hint, not authority to bypass current access
+            // checks. An index made unreadable after it was cached must fail closed.
+            verifyExactIndexReadable(path, key, description);
+            return new ExactIndexReadResult(cached.entries().contains(targetDigest),
+                    cached.entries());
+        }
+
+        Set<String> loaded = null;
+        boolean containsTarget = false;
+        try (FileChannel channel = FileChannel.open(path,
+                StandardOpenOption.READ, StandardOpenOption.WRITE,
+                LinkOption.NOFOLLOW_LINKS)) {
+            long size = channel.size();
+            if (size < expectedHeader.length)
+                throw new IOException(description + " header is truncated: " + key);
+            ByteBuffer header = ByteBuffer.allocate(expectedHeader.length);
+            readFully(channel, header, 0, description + " header");
+            if (!java.util.Arrays.equals(header.array(), expectedHeader))
+                throw new IOException(description + " header is invalid: " + key);
+
+            long completeBytes = ((size - expectedHeader.length)
+                    / EXACT_INDEX_RECORD_BYTES) * EXACT_INDEX_RECORD_BYTES;
+            long validSize = expectedHeader.length + completeBytes;
+            if (validSize != size) {
+                // Only an interrupted final append can create a short tail. A complete record with
+                // a bad checksum is never truncated, because that could resurrect deleted media.
+                channel.truncate(validSize);
+                channel.force(true);
+                forceDirectory(path.getParent());
+                size = validSize;
+            }
+
+            long recordCount = completeBytes / EXACT_INDEX_RECORD_BYTES;
+            if (recordCount <= EXACT_INDEX_CACHE_MAX_RECORDS_PER_SNAPSHOT)
+                loaded = new HashSet<>((int) Math.min(Integer.MAX_VALUE,
+                        Math.max(16L, recordCount * 4L / 3L + 1L)));
+
+            long position = expectedHeader.length;
+            ByteBuffer record = ByteBuffer.allocate(EXACT_INDEX_RECORD_BYTES);
+            byte[] digest = new byte[EXACT_INDEX_DIGEST_BYTES];
+            while (position < size) {
+                record.clear();
+                readFully(channel, record, position, description + " record");
+                record.flip();
+                record.get(digest);
+                int expectedChecksum = record.getInt();
+                CRC32C checksum = new CRC32C();
+                checksum.update(digest, 0, digest.length);
+                if ((int) checksum.getValue() != expectedChecksum)
+                    throw new IOException(description + " checksum is invalid: " + key);
+                String digestHex = hex(digest);
+                if (!recordValidator.test(digestHex))
+                    throw new IOException(description + " record is in the wrong bucket: " + key);
+                if (digestHex.equals(targetDigest))
+                    containsTarget = true;
+                if (loaded != null)
+                    loaded.add(digestHex);
+                position += EXACT_INDEX_RECORD_BYTES;
+            }
+        }
+        if (loaded == null) {
+            invalidateExactIndex(key);
+            return new ExactIndexReadResult(containsTarget, null);
+        }
+        cacheExactIndex(key, path, loaded);
+        return new ExactIndexReadResult(containsTarget, loaded);
+    }
+
+    private BasicFileAttributes readRegularFileAttributes(Path path, String key,
+                                                          String description)
+            throws IOException {
+        BasicFileAttributes attributes;
+        try {
+            attributes = Files.readAttributes(path, BasicFileAttributes.class,
+                    LinkOption.NOFOLLOW_LINKS);
+        } catch (IOException e) {
+            throw new IOException("Unable to inspect " + description + ": " + key, e);
+        }
+        if (!attributes.isRegularFile() || Files.isSymbolicLink(path))
+            throw new IOException(description + " is not a regular file: " + key);
+        return attributes;
+    }
+
+    private void verifyExactIndexReadable(Path path, String key, String description)
+            throws IOException {
+        try (FileChannel ignored = FileChannel.open(path, StandardOpenOption.READ,
+                LinkOption.NOFOLLOW_LINKS)) {
+            // Opening is the check; no content read is required because this exact file stamp was
+            // fully checksummed before entering the cache.
+        } catch (IOException | UnsupportedOperationException e) {
+            throw new IOException("Unable to read " + description + ": " + key, e);
+        }
+    }
+
+    private void ensureExactIndexHeader(Path path, byte[] header) throws IOException {
+        if (requireExistingOrConfirmedAbsent(path, "retained-media exact index"))
+            return;
+        Path partial = partialSibling(path);
+        try {
+            writeAndForce(partial, header);
+            try {
+                Files.move(partial, path, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                throw new IOException(
+                        "Retained-media exact indexes require same-directory atomic rename", e);
+            }
+            forceDirectory(path.getParent());
+        } finally {
+            Files.deleteIfExists(partial);
+        }
+    }
+
+    private <T> T withIndexFileLock(String lockKey, IOCallable<T> action) throws IOException {
+        Path lockPath = writablePath(lockKey);
+        int stripe = (lockPath.toString().hashCode() & Integer.MAX_VALUE)
+                % INDEX_FILE_LOCKS.length;
+        synchronized (INDEX_FILE_LOCKS[stripe]) {
+            boolean existed = requireExistingOrConfirmedAbsent(
+                    lockPath, "retained-media index lock");
+            if (existed)
+                readRegularFileAttributes(
+                        lockPath, lockKey, "retained-media index lock");
+            try (FileChannel channel = FileChannel.open(lockPath,
+                    StandardOpenOption.CREATE, StandardOpenOption.WRITE,
+                    LinkOption.NOFOLLOW_LINKS)) {
+                // Revalidate after opening to close the check/create race. The open option rejects
+                // a final symlink; this check also rejects directories and other irregular files.
+                readRegularFileAttributes(lockPath, lockKey, "retained-media index lock");
+                try (FileLock ignored = channel.lock()) {
+                    return action.call();
+                }
+            }
+        }
+    }
+
+    private static boolean requireExistingOrConfirmedAbsent(Path path, String description)
+            throws IOException {
+        if (Files.exists(path, LinkOption.NOFOLLOW_LINKS))
+            return true;
+        if (Files.notExists(path, LinkOption.NOFOLLOW_LINKS))
+            return false;
+        throw new IOException("Unable to determine whether " + description + " exists: " + path);
+    }
+
+    private ExactIndexSnapshot cachedExactIndex(String key) {
+        synchronized (exactIndexCache) {
+            return exactIndexCache.get(key);
+        }
+    }
+
+    private void cacheExactIndex(String key, Path path, Set<String> entries) throws IOException {
+        BasicFileAttributes attributes = readRegularFileAttributes(path, key, "retained-media index");
+        synchronized (exactIndexCache) {
+            ExactIndexSnapshot previous = exactIndexCache.remove(key);
+            if (previous != null)
+                exactIndexCacheRecordCount -= previous.entries().size();
+            // One pathological high-rate index file must not consume unbounded heap. It remains fully
+            // queryable from the checksummed file, but is deliberately not retained in memory.
+            if (entries.size() > EXACT_INDEX_CACHE_MAX_RECORDS_PER_SNAPSHOT)
+                return;
+            ExactIndexSnapshot snapshot = new ExactIndexSnapshot(
+                    FileStamp.from(attributes), entries);
+            exactIndexCache.put(key, snapshot);
+            exactIndexCacheRecordCount += snapshot.entries().size();
+            Iterator<Map.Entry<String, ExactIndexSnapshot>> iterator =
+                    exactIndexCache.entrySet().iterator();
+            while ((exactIndexCache.size() > EXACT_INDEX_CACHE_MAX_ENTRIES
+                    || exactIndexCacheRecordCount > EXACT_INDEX_CACHE_MAX_RECORDS)
+                    && iterator.hasNext()) {
+                Map.Entry<String, ExactIndexSnapshot> eldest = iterator.next();
+                exactIndexCacheRecordCount -= eldest.getValue().entries().size();
+                iterator.remove();
+            }
+        }
+    }
+
+    private void invalidateExactIndex(String key) {
+        synchronized (exactIndexCache) {
+            ExactIndexSnapshot removed = exactIndexCache.remove(key);
+            if (removed != null)
+                exactIndexCacheRecordCount -= removed.entries().size();
+        }
+    }
+
+    ExactIndexCacheStats exactIndexCacheStats() {
+        synchronized (exactIndexCache) {
+            return new ExactIndexCacheStats(exactIndexCache.size(), exactIndexCacheRecordCount,
+                    EXACT_INDEX_CACHE_MAX_ENTRIES, EXACT_INDEX_CACHE_MAX_RECORDS,
+                    EXACT_INDEX_CACHE_MAX_RECORDS_PER_SNAPSHOT);
+        }
+    }
+
+    private static void readFully(FileChannel channel, ByteBuffer target, long position,
+                                  String description) throws IOException {
+        while (target.hasRemaining()) {
+            int read = channel.read(target, position + target.position());
+            if (read < 0)
+                throw new IOException("Unexpected end of " + description);
+            if (read == 0)
+                throw new IOException("Unable to make progress reading " + description);
         }
     }
 
@@ -902,14 +1374,81 @@ public final class MediaSetStore {
 
     private static String maintenanceShardPrefix(MediaMaintenanceJob.Kind kind, int shard) {
         return MAINTENANCE_PREFIX + kind.name().toLowerCase(java.util.Locale.ROOT) + "/"
-                + String.format("%02x", shard) + "/";
+                + String.format(Locale.ROOT, "%02x", shard) + "/";
     }
 
-    private static String processedObservationKey(String observationId) {
+    private static String processedObservationDigest(String observationId) {
         if (observationId == null || observationId.isBlank())
             throw new IllegalArgumentException("observationId is required");
-        String digest = sha256(observationId.getBytes(StandardCharsets.UTF_8));
-        return PROCESSED_OBSERVATION_PREFIX + digest.substring(0, 2) + "/" + digest + ".json";
+        return sha256(observationId.getBytes(StandardCharsets.UTF_8));
+    }
+
+    static String processedObservationIndexKey(Instant resultTime) {
+        long epochHour = processedObservationEpochHour(resultTime);
+        long secondsWithinHour = Math.floorMod(resultTime.getEpochSecond(),
+                PROCESSED_OBSERVATION_BUCKET_SECONDS);
+        int file = Math.toIntExact(secondsWithinHour
+                / PROCESSED_OBSERVATION_INDEX_FILE_SECONDS);
+        return processedObservationIndexKey(epochHour, file);
+    }
+
+    private static String processedObservationIndexKey(long epochHour, int file) {
+        if (file < 0 || file >= PROCESSED_OBSERVATION_INDEX_FILES_PER_HOUR)
+            throw new IllegalArgumentException("Processed-observation index file is invalid");
+        return PROCESSED_OBSERVATION_INDEX_PREFIX
+                + String.format(Locale.ROOT, "%019d-%02d.idx", epochHour, file);
+    }
+
+    private static long processedObservationEpochHour(Instant resultTime) {
+        Objects.requireNonNull(resultTime, "resultTime");
+        long epochHour = Math.floorDiv(resultTime.getEpochSecond(),
+                PROCESSED_OBSERVATION_BUCKET_SECONDS);
+        long maximumEpochHour = Math.floorDiv(Instant.MAX.getEpochSecond(),
+                PROCESSED_OBSERVATION_BUCKET_SECONDS) - 1L;
+        if (epochHour < 0 || epochHour > maximumEpochHour)
+            throw new IllegalArgumentException(
+                    "Processed-observation result time is outside the supported range");
+        return epochHour;
+    }
+
+    private static Instant processedObservationBucketEnd(long epochHour) {
+        try {
+            return Instant.ofEpochSecond(Math.multiplyExact(Math.addExact(epochHour, 1L),
+                    PROCESSED_OBSERVATION_BUCKET_SECONDS));
+        } catch (ArithmeticException | java.time.DateTimeException e) {
+            return epochHour >= 0 ? Instant.MAX : Instant.MIN;
+        }
+    }
+
+    static String deletionIndexKey(Identity identity) {
+        return deletionIndexKey(identity.mediaSetId());
+    }
+
+    private static String deletionIndexKey(String mediaSetId) {
+        if (mediaSetId == null || !mediaSetId.matches("[0-9a-f]{64}"))
+            throw new IllegalArgumentException("mediaSetId must be a lowercase SHA-256 digest");
+        return DELETION_INDEX_PREFIX + mediaSetId.substring(0, 2) + "/"
+                + mediaSetId.substring(0, 4) + ".idx";
+    }
+
+    private static String deletionIndexLockKey(String mediaSetId) {
+        if (mediaSetId == null || !mediaSetId.matches("[0-9a-f]{64}"))
+            throw new IllegalArgumentException("mediaSetId must be a lowercase SHA-256 digest");
+        return DELETION_INDEX_PREFIX + mediaSetId.substring(0, 2) + "/.index.lock";
+    }
+
+    private static byte[] hexBytes(String value) {
+        if (value == null || (value.length() & 1) != 0)
+            throw new IllegalArgumentException("Hex value must have an even length");
+        byte[] result = new byte[value.length() / 2];
+        for (int index = 0; index < result.length; index++) {
+            int high = Character.digit(value.charAt(index * 2), 16);
+            int low = Character.digit(value.charAt(index * 2 + 1), 16);
+            if (high < 0 || low < 0)
+                throw new IllegalArgumentException("Hex value contains a non-hexadecimal character");
+            result[index] = (byte) ((high << 4) | low);
+        }
+        return result;
     }
 
     private static Instant retryDueAt(MediaJobLedger ledger) {
@@ -921,7 +1460,8 @@ public final class MediaSetStore {
     private static String pressureItemKey(long sequence) {
         if (sequence < 0)
             throw new IllegalArgumentException("pressure queue sequence must not be negative");
-        return PRESSURE_QUEUE_ITEM_PREFIX + String.format("%019d.json", sequence);
+        return PRESSURE_QUEUE_ITEM_PREFIX
+                + String.format(Locale.ROOT, "%019d.json", sequence);
     }
 
     private static String pressureMemberKey(Identity identity) {
@@ -933,7 +1473,8 @@ public final class MediaSetStore {
     private static String catalogItemKey(long sequence) {
         if (sequence < 0)
             throw new IllegalArgumentException("catalog queue sequence must not be negative");
-        return CATALOG_QUEUE_ITEM_PREFIX + String.format("%019d.json", sequence);
+        return CATALOG_QUEUE_ITEM_PREFIX
+                + String.format(Locale.ROOT, "%019d.json", sequence);
     }
 
     private static String catalogMemberKey(Identity identity) {
@@ -1127,15 +1668,142 @@ public final class MediaSetStore {
     }
 
     private long deleteIfPresent(String key) throws IOException {
+        return deleteDurably(key, false).bytes();
+    }
+
+    /**
+     * Deletes one regular object and durably records its absence. Reclamation deliberately issues
+     * its bounded direct delete even when the file is already absent, then requires a fresh parent
+     * barrier before its checkpoint may advance.
+     */
+    private DurableDeleteResult deleteDurably(String key, boolean deleteWhenAbsent)
+            throws IOException {
+        Path path = objectPathWithoutCreatingParents(key);
+        validateExistingDeleteParentPrefix(path);
+        boolean existed = requireExistingOrConfirmedAbsent(path, "retained media object");
+        BasicFileAttributes attributes = null;
+        if (existed)
+            attributes = readRegularFileAttributes(path, key, "retained media object");
+        if (!existed && !deleteWhenAbsent) {
+            forceDurableAbsence(path, key);
+            return new DurableDeleteResult(false, 0);
+        }
+
+        long bytes = attributes == null ? 0 : attributes.size();
         try {
-            if (!bucketStore.objectExists(VIDEO_BUCKET, key))
-                return 0;
-            long bytes = bucketStore.getObjectSize(VIDEO_BUCKET, key);
             bucketStore.deleteObject(VIDEO_BUCKET, key);
-            return bytes;
         } catch (DataStoreException e) {
             throw new IOException("Unable to delete retained media object " + key, e);
         }
+        // The queue/member state that makes this delete retryable is cleared only after the
+        // nearest existing parent has durably recorded this unlink (or a missing parent).
+        forceDurableAbsence(path, key);
+        return new DurableDeleteResult(existed, bytes);
+    }
+
+    private record DurableDeleteResult(boolean existed, long bytes) {
+    }
+
+    private Path objectPathWithoutCreatingParents(String key) throws IOException {
+        try {
+            if (key == null || key.isBlank())
+                throw new IllegalArgumentException("Object key is required");
+            Path relative = Path.of(key.replace('\\', '/'));
+            if (relative.isAbsolute() || relative.getRoot() != null || relative.getNameCount() == 0)
+                throw new IllegalArgumentException("Object key must be relative");
+            for (Path component : relative) {
+                if (component.toString().isBlank() || component.toString().equals(".")
+                        || component.toString().equals(".."))
+                    throw new IllegalArgumentException("Object key must remain inside the bucket");
+            }
+            Path resolved = videoBucketRoot.resolve(relative).normalize();
+            if (resolved.equals(videoBucketRoot) || !resolved.startsWith(videoBucketRoot))
+                throw new IllegalArgumentException("Object key must remain inside the bucket");
+            return resolved;
+        } catch (RuntimeException e) {
+            throw new IOException("Invalid retained media object key " + key, e);
+        }
+    }
+
+    private boolean requireRegularObjectOrDurableAbsence(Path path, String key)
+            throws IOException {
+        validateExistingDeleteParentPrefix(path);
+        if (requireExistingOrConfirmedAbsent(path, "retained media object")) {
+            readRegularFileAttributes(path, key, "retained media object");
+            return true;
+        }
+        forceDurableAbsence(path, key);
+        return false;
+    }
+
+    /**
+     * Makes a visible absence durable without creating the missing object's parent. If one or more
+     * parent directories are also absent, forcing the nearest existing ancestor durably records
+     * the first missing directory entry and therefore the complete descendant absence.
+     */
+    private void forceDurableAbsence(Path path, String key) throws IOException {
+        validateExistingDeleteParentPrefix(path);
+        if (!Files.notExists(path, LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("Retained media object is not confirmed absent: " + key);
+
+        Path candidate = path.getParent();
+        while (candidate != null && candidate.startsWith(videoBucketRoot)) {
+            if (Files.exists(candidate, LinkOption.NOFOLLOW_LINKS)) {
+                validateExistingDirectoryChain(candidate);
+                forceDirectory(candidate);
+                if (!Files.notExists(path, LinkOption.NOFOLLOW_LINKS))
+                    throw new IOException(
+                            "Retained media object appeared during durable deletion: " + key);
+                return;
+            }
+            if (!Files.notExists(candidate, LinkOption.NOFOLLOW_LINKS))
+                throw new IOException(
+                        "Unable to confirm retained media parent absence: " + candidate);
+            candidate = candidate.getParent();
+        }
+        throw new IOException("Unable to find a durable parent for retained media object " + key);
+    }
+
+    private void validateExistingDeleteParentPrefix(Path path) throws IOException {
+        Path parent = path.getParent();
+        if (parent == null || !parent.startsWith(videoBucketRoot))
+            throw new IOException("Retained media object has no confined parent: " + path);
+        Path current = videoBucketRoot;
+        requireRegularDirectory(current);
+        for (Path component : videoBucketRoot.relativize(parent)) {
+            current = current.resolve(component);
+            if (Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
+                requireRegularDirectory(current);
+            } else if (Files.notExists(current, LinkOption.NOFOLLOW_LINKS)) {
+                return;
+            } else {
+                throw new IOException(
+                        "Unable to inspect retained media parent directory: " + current);
+            }
+        }
+    }
+
+    private void validateExistingDirectoryChain(Path directory) throws IOException {
+        Path current = videoBucketRoot;
+        requireRegularDirectory(current);
+        for (Path component : videoBucketRoot.relativize(directory)) {
+            current = current.resolve(component);
+            requireRegularDirectory(current);
+        }
+    }
+
+    private static void requireRegularDirectory(Path directory) throws IOException {
+        final BasicFileAttributes attributes;
+        try {
+            attributes = Files.readAttributes(directory, BasicFileAttributes.class,
+                    LinkOption.NOFOLLOW_LINKS);
+        } catch (IOException e) {
+            throw new IOException("Unable to inspect retained media parent directory: "
+                    + directory, e);
+        }
+        if (!attributes.isDirectory() || Files.isSymbolicLink(directory))
+            throw new IOException(
+                    "Retained media parent is not a regular directory: " + directory);
     }
 
     private static void validateManifestShape(MediaManifest manifest) throws IOException {
@@ -1220,6 +1888,13 @@ public final class MediaSetStore {
                 .startsWith("windows");
     }
 
+    private static Object[] createLocks(int count) {
+        Object[] locks = new Object[count];
+        for (int index = 0; index < locks.length; index++)
+            locks[index] = new Object();
+        return locks;
+    }
+
     private static void validateIdentity(String value, String field) {
         if (value == null || value.isBlank() || value.length() > 512
                 || value.indexOf('\u0000') >= 0 || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0)
@@ -1235,10 +1910,14 @@ public final class MediaSetStore {
     }
 
     private static String hex(byte[] bytes) {
-        StringBuilder result = new StringBuilder(bytes.length * 2);
-        for (byte value : bytes)
-            result.append(String.format("%02x", value));
-        return result.toString();
+        char[] digits = "0123456789abcdef".toCharArray();
+        char[] result = new char[bytes.length * 2];
+        for (int index = 0; index < bytes.length; index++) {
+            int value = bytes[index] & 0xff;
+            result[index * 2] = digits[value >>> 4];
+            result[index * 2 + 1] = digits[value & 0x0f];
+        }
+        return new String(result);
     }
 
     public record ManifestEntry(String manifestKey, MediaManifest manifest) {}
@@ -1246,6 +1925,33 @@ public final class MediaSetStore {
     public record PublishedAsset(String objectKey, String sha256, long bytes, int width, int height) {}
 
     public record MaintenanceEntry(String key, MediaMaintenanceJob job) {}
+
+    public record ProcessedObservationPruneResult(int inspected, int deleted, Long nextEpochHour) {
+        public ProcessedObservationPruneResult {
+            if (inspected < 0 || deleted < 0 || deleted > inspected)
+                throw new IllegalArgumentException("Invalid processed-observation prune counts");
+        }
+    }
+
+    private record FileStamp(long size, FileTime lastModifiedTime, Object fileKey) {
+        private static FileStamp from(BasicFileAttributes attributes) {
+            return new FileStamp(attributes.size(), attributes.lastModifiedTime(),
+                    attributes.fileKey());
+        }
+    }
+
+    private record ExactIndexSnapshot(FileStamp stamp, Set<String> entries) {
+        private ExactIndexSnapshot {
+            Objects.requireNonNull(stamp, "stamp");
+            Objects.requireNonNull(entries, "entries");
+        }
+    }
+
+    private record ExactIndexReadResult(boolean containsTarget,
+                                        Set<String> cacheableEntries) {}
+
+    record ExactIndexCacheStats(int entries, int records, int maximumEntries,
+                                int maximumRecords, int maximumRecordsPerSnapshot) {}
 
     public record PressureQueueEntry(long sequence, Optional<MediaPressureJob> job,
                                      boolean currentMembership) {

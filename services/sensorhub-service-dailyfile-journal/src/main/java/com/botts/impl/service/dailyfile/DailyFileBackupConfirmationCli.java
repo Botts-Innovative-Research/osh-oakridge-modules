@@ -66,15 +66,16 @@ public final class DailyFileBackupConfirmationCli {
         DailyFileJournalServiceConfig config = readConfig(liveState.resolve("config.json"));
         Path liveStorage = configuredStorageRoot(liveState, config.rootDirectory);
         Path relativeStorage = liveState.relativize(liveStorage);
-        Path snapshotStorage = requireDirectory(snapshotState.resolve(relativeStorage),
+        Path snapshotStorage = requireDirectory(snapshotState,
+                snapshotState.resolve(relativeStorage),
                 "snapshot journal storage root");
         Path snapshotJournal = configuredChild(snapshotStorage, config.journalDirectory,
                 "journalDirectory");
         Path snapshotPublications = configuredChild(snapshotStorage, config.publicationDirectory,
                 "publicationDirectory");
-        Path ledgers = requireDirectory(snapshotJournal.resolve("ledger"),
+        Path ledgers = requireDirectory(snapshotJournal, snapshotJournal.resolve("ledger"),
                 "snapshot journal ledger");
-        Path segments = requireDirectory(snapshotJournal.resolve("segments"),
+        Path segments = requireDirectory(snapshotJournal, snapshotJournal.resolve("segments"),
                 "snapshot journal segments");
         ZoneId zone = ZoneId.of(config.zoneId);
         String backupReference = "oscar-backup:" + backupId
@@ -167,7 +168,7 @@ public final class DailyFileBackupConfirmationCli {
                 .toAbsolutePath();
         if (!resolved.startsWith(stateRoot))
             throw new IOException("Daily File Journal storage is outside the backed-up OSCAR state");
-        return requireDirectory(resolved, "live journal storage root");
+        return requireDirectory(stateRoot, resolved, "live journal storage root");
     }
 
     private static Path configuredChild(Path root, String configured, String field)
@@ -178,7 +179,7 @@ public final class DailyFileBackupConfirmationCli {
         Path resolved = root.resolve(child).normalize();
         if (!resolved.startsWith(root))
             throw new IOException(field + " escapes the journal storage root");
-        return requireDirectory(resolved, "snapshot " + field);
+        return requireDirectory(root, resolved, "snapshot " + field);
     }
 
     private static LocalDate dayFromLedger(Path ledger, JsonObject json) throws IOException {
@@ -282,6 +283,16 @@ public final class DailyFileBackupConfirmationCli {
     }
 
     private static Path requireDirectory(Path path, String description) throws IOException {
+        Path normalized = path.toAbsolutePath().normalize();
+        if (!Files.isDirectory(normalized, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(normalized))
+            throw new IOException(description + " is missing or is a symbolic link: " + normalized);
+        return normalized.toRealPath();
+    }
+
+    private static Path requireDirectory(Path root, Path path, String description)
+            throws IOException {
+        requireInside(root, path);
         Path normalized = path.toAbsolutePath().normalize();
         if (!Files.isDirectory(normalized, LinkOption.NOFOLLOW_LINKS)
                 || Files.isSymbolicLink(normalized))

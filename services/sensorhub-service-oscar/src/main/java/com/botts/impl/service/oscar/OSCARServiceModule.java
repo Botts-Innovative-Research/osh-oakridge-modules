@@ -103,7 +103,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
                     Duration.ofHours(getConfiguration().videoRetentionConfig.maximumCatchUpHours),
                     getConfiguration().videoRetentionConfig.maintenanceWorkLimit,
                     Duration.ofHours(getConfiguration().videoRetentionConfig.lateArrivalOverlapHours),
-                    Duration.ofHours(getConfiguration().videoRetentionConfig.reconciliationCatchUpHours));
+                    Duration.ofHours(getConfiguration().videoRetentionConfig.reconciliationCatchUpHours),
+                    getConfiguration().videoRetentionConfig.metadataReclamationWorkLimit);
         } else {
             videoRetention = null;
             logger.info("No video retention config set.");

@@ -58,6 +58,14 @@ The journal requires same-directory atomic rename support. Initialization or pub
 filesystem that cannot provide it. The journal and publication directories must remain under the
 same configured storage root and must not be symlinked. The journal metadata binds the root to its
 calendar zone before records are accepted; changing `zoneId` requires a new empty journal root.
+Each newly created managed directory entry is made durable by forcing its parent before the journal
+uses it. Directory-force permission failures remain fail-visible on POSIX filesystems; only the
+known Windows inability to open directories as file channels uses the platform fallback.
+
+Service close has a five-second total bound for scheduler quiescence and waiting on concurrent
+active-lane work. A task that does not quiesce within that bound produces an explicit close failure
+rather than an unbounded stop wait. The module retains the failed store so cleanup can be retried;
+it releases ownership only after every lane closes successfully.
 
 ## Day boundary and publication
 
