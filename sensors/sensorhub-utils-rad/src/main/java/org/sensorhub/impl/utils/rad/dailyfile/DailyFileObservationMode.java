@@ -7,7 +7,7 @@ package org.sensorhub.impl.utils.rad.dailyfile;
 public enum DailyFileObservationMode {
     /** Publish and retain every daily-file observation until its sealed day is purged. */
     FULL,
-    /** Publish observations for live consumers and periodically retain only the latest value. */
+    /** Production compatibility label with the same safe completed-day cleanup as {@link #FULL}. */
     LATEST,
     /** Do not publish the legacy daily-file observation. */
     NONE

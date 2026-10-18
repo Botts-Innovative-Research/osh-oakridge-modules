@@ -25,7 +25,7 @@ public class DailyFileJournalServiceConfig extends ModuleConfig {
     public String zoneId = "UTC";
 
     @DisplayInfo(label = "Daily File Observation Mode",
-            desc = "FULL keeps the compatibility observation history; LATEST retains live/latest compatibility; NONE disables it")
+            desc = "FULL and LATEST publish live compatibility observations and clean only completed manifest-validated days; NONE disables them")
     public DailyFileObservationMode dailyFileObservationMode = DailyFileObservationMode.FULL;
 
     @DisplayInfo(label = "Fsync Interval (milliseconds)",

@@ -11,7 +11,6 @@ import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.resource.ResourceKey;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
-import org.sensorhub.impl.utils.rad.dailyfile.DailyFileObservationMode;
 import org.sensorhub.impl.utils.rad.dailyfile.IDailyFileJournalService;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.slf4j.Logger;
@@ -180,25 +179,34 @@ public class DatabasePurger {
     }
 
     void executeHourlyPurge() {
+        log.info("Starting hourly purge task...");
+
+        runHourlyPurgePhase("connection-status purge", this::purgeOldConnectionStatus);
+
+        if (observationLifecycleDelegated) {
+            log.debug("Skipping legacy occupancy-gated high-volume purge because lifecycle is delegated to the database");
+        } else {
+            runHourlyPurgePhase("legacy occupancy-gated purge", this::purgeNonOccupancyData);
+        }
+
+        // The exact-midnight attempt can run before the journal finishes publishing every
+        // lane. Reuse the same bounded, manifest-gated catch-up on each hourly cycle so a
+        // skipped day is retried after publication and an outage backlog converges. Keep the
+        // legacy no-journal exporter on its once-daily schedule to avoid duplicate exports.
+        if (journalService != null) {
+            runHourlyPurgePhase("Daily File journal catch-up", this::exportAndPurgeDailyFileData);
+        }
+
+        log.info("Hourly purge task completed");
+    }
+
+    private void runHourlyPurgePhase(String description, Runnable phase) {
         try {
-            log.info("Starting hourly purge task...");
-
-            purgeOldConnectionStatus();
-
-            if (observationLifecycleDelegated) {
-                log.debug("Skipping legacy occupancy-gated high-volume purge because lifecycle is delegated to the database");
-            } else {
-                purgeNonOccupancyData();
-            }
-
-            if (journalService != null
-                    && journalService.getObservationMode() == DailyFileObservationMode.LATEST)
-                purgeDailyFileHistoryToLatest();
-
-            log.info("Hourly purge task completed successfully");
+            phase.run();
         } catch (Exception e) {
-            // Log but don't throw - we don't want to kill the scheduler
-            log.error("Error during hourly purge task", e);
+            // Isolate phases so an unrelated retention failure cannot starve journal catch-up,
+            // and contain every exception so ScheduledExecutorService keeps the recurring task.
+            log.error("Error during hourly {}", description, e);
         }
     }
 
@@ -748,23 +756,6 @@ public class DatabasePurger {
             log.error("Failed to export DailyFileOutput to bucket {}/{}: {}", DAILY_FILES_BUCKET, objectKey, e.getMessage(), e);
             return false;
         }
-    }
-
-    private void purgeDailyFileHistoryToLatest() {
-        Map<BigId, IDataStreamInfo> streams = getDataStreamEntriesByOutputNames(OUTPUT_DAILY_FILE);
-        long deleted = 0;
-        for (BigId dataStreamId : streams.keySet()) {
-            var latest = database.getObservationStore().select(new ObsFilter.Builder()
-                    .withDataStreams(dataStreamId)
-                    .withLatestResult()
-                    .build()).findFirst();
-            if (latest.isPresent()) {
-                Instant latestTime = latest.get().getPhenomenonTime();
-                deleted += deleteObservationsInTimeRange(Set.of(dataStreamId),
-                        clock.instant().minus(Duration.ofDays(365)), latestTime);
-            }
-        }
-        log.info("Purged {} historical Daily File observations in LATEST mode", deleted);
     }
 
     static TemporalFilter halfOpenTimeRange(Instant startInclusive, Instant endExclusive) {

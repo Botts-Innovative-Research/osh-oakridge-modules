@@ -132,7 +132,7 @@ In the left navigation, open **Services > OSCAR Service Module**.
 | WebID API Root | Base URL of the Sandia Full Spectrum Web ID API. The default is `https://full-spectrum.sandia.gov/api/v1`. Use an approved local endpoint for an isolated deployment, or leave it blank to disable creation of the Web ID client. |
 | Stats Frequency (min) | Interval, in minutes, at which statistics are published. The default is 60. |
 | Delegate Observation Lifecycle to Database | Enable when the configured tiered database owns hot/cold observation retention. OSCAR still performs connection-status and manifest-gated daily-file maintenance. |
-| Daily File Purge Work Limit | Maximum lane/day compatibility-observation windows processed in one catch-up cycle. Default: 50. |
+| Daily File Purge Work Limit | Maximum lane/day compatibility-observation windows processed in each scheduled catch-up invocation, including an hourly retry. Default: 50. |
 | Auto Start | Starts the OSCAR Service Module when the node loads. This should normally be enabled in an operational deployment. |
 
 The service requires a started Bucket Storage Service. If the module reports that it cannot find the bucket service, start and verify **Services > Bucket Storage Service**, then reinitialize or restart the OSCAR Service Module.

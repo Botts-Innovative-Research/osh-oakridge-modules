@@ -75,9 +75,10 @@ After the end of a day, sealed records are rendered in journal order. Each legac
 
 There is no header and the raw record is not re-quoted or parsed. The CSV is written to a hidden
 same-directory partial, forced, and atomically renamed. Its v1 manifest is then written, forced, and
-atomically renamed. The manifest is the commit marker and includes the exact half-open window, lane
-UID, zone, record and byte counts, filename, publication time, and SHA-256 of the CSV. The ledger is
-marked `PUBLISHED` last.
+atomically renamed. The manifest commits the public artifact pair and includes the exact half-open
+window, lane UID, zone, record and byte counts, filename, publication time, and SHA-256 of the CSV.
+The ledger is marked `PUBLISHED` last; cleanup authorization requires the ledger, manifest, and CSV
+to agree.
 
 Publication is immutable and idempotent. Recovery accepts an existing CSV only when its length and
 SHA-256 match the journal rendering, and accepts an existing manifest only when its lane, window,
@@ -93,7 +94,11 @@ half-open day is either empty or has a valid immutable CSV/manifest and its data
 completed. A failed or unpublished day blocks later days for that feed but not other feeds. A late
 database record behind the high-water mark is detected from the stream's oldest observation and
 replayed safely. `OSCARServiceConfig.dailyFilePurgeWorkLimit` bounds total lane/day attempts per
-cycle (default `50`), and the single-threaded/synchronized task cannot overlap itself.
+invocation (default `50`), and the single-threaded/synchronized task cannot overlap itself. The
+exact-midnight invocation is an initial attempt; every hourly maintenance cycle reruns this same
+bounded path when the journal is enabled. A lane whose manifest was not yet published at midnight
+is therefore left untouched and retried after publication, while multi-day backlogs converge over
+successive hourly invocations. The legacy no-journal CSV exporter remains once daily.
 
 Sealed private `.seg` files are not deleted merely because the public CSV exists. After the
 coordinated backup has passed its structural, HMAC, PostgreSQL, archive-generation, and payload
@@ -173,23 +178,27 @@ not change journal capture or CSV publication:
 
 - `FULL` (service default for upgrade compatibility) publishes every compatibility observation and
   retains the completed day until its journal manifest is verified.
-- `LATEST` publishes for live consumers but the OSCAR maintenance task removes older values,
-  retaining the newest observation.
+- `LATEST` is the production compatibility label: it publishes for live consumers and uses the
+  same manifest-gated completed-day cleanup as `FULL`. It does not discard observations from the
+  current unsealed day merely to retain one row.
 - `NONE` does not publish the compatibility observation. Raw journal capture still occurs.
 
 The 3.9.2 standard production profile selects `LATEST`: the lane system subscribes to each live
 `dailyFile` event to derive occupancy transitions, so `NONE` is not operationally equivalent. The
 direct journal and immutable daily CSV remain the historical record. `LATEST` still incurs the
-initial database/WAL write because OSH currently couples live observation delivery with storage,
-but it bounds the compatibility table to the newest value between maintenance cycles. Select
-`FULL` only for an external consumer that requires queryable raw observation history.
+initial database/WAL write because OSH currently couples live observation delivery with storage.
+It bounds the compatibility table to the current unsealed local day plus any manifest-blocked
+backlog; it never removes a row merely to retain a single latest value. `FULL` and `LATEST` retain
+their established configuration names, but completed-day cleanup is manifest-gated in either
+publishing mode.
 
 When the configured database implements its own tiered hot/cold lifecycle, set
 `OSCARServiceConfig.delegateObservationLifecycleToDatabase` to `true`. OSCAR then skips only its
 legacy occupancy-gated high-volume purge. Connection-status maintenance and manifest-gated
 daily-file observation cleanup continue; gamma/neutron lifecycle belongs to the tiered database.
 Set `OSCARServiceConfig.dailyFilePurgeWorkLimit` to the maximum lane/day windows one scheduled
-catch-up may attempt; the standard production configuration uses `50`.
+catch-up invocation may attempt; the standard production configuration uses `50`. The limit applies
+separately to the midnight attempt and to each hourly retry.
 
 ## Operations
 
@@ -232,5 +241,5 @@ The journal suite covers exact legacy bytes, full-UID filename hashing, SHA-256 
 publication validation, backup-gated sealed-segment expiry, durable purge checkpoints, DST windows,
 size/age rotation, partial-tail recovery, CRC corruption, oversize-record rejection, and concurrent
 per-lane writers. Purger safety tests cover exact midnight scheduling, DST windows, manifest gating,
-exclusive end boundaries, bounded oldest-first restart catch-up, lane-scoped occupancy, and
-delegated high-volume lifecycle.
+exclusive end boundaries, post-publication hourly retry, bounded oldest-first restart catch-up,
+unsealed-day retention, lane-scoped occupancy, and delegated high-volume lifecycle.

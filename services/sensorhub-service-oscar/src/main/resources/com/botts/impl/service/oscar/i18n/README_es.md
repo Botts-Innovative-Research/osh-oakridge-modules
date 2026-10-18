@@ -132,7 +132,7 @@ En la navegación izquierda, abra **Servicios > Módulo de servicio OSCAR**.
 | Raíz de API WebID | URL base de Sandia Full Spectrum Web ID. Predeterminado: `https://full-spectrum.sandia.gov/api/v1`. Use un servicio local aprobado para despliegues aislados o déjelo vacío para no crear el cliente Web ID. |
 | Frecuencia de estadísticas (min) | Intervalo de publicación; predeterminado 60 minutos. |
 | Delegar el ciclo de vida de las observaciones a la base de datos | Active esta opción cuando la base de datos por niveles gestione la retención activa y archivada. OSCAR mantiene el estado de conexión y la limpieza de archivos diarios validada por manifiesto. |
-| Límite de trabajo de purga de archivos diarios | Máximo de ventanas de compatibilidad de carril/día por ciclo de recuperación. Predeterminado: 50. |
+| Límite de trabajo de purga de archivos diarios | Máximo de ventanas de compatibilidad de carril/día por ejecución programada de recuperación, incluida la repetición horaria. Predeterminado: 50. |
 | Inicio automático | Inicia el servicio cuando se carga el nodo. Normalmente debe estar activo en producción. |
 
 El servicio necesita un Servicio de almacenamiento en buckets iniciado. Si no lo encuentra, inicie y verifique **Servicios > Servicio de almacenamiento en buckets**, y reinicialice o reinicie el servicio OSCAR.

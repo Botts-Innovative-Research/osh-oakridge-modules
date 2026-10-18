@@ -189,7 +189,7 @@ public class DatabasePurgerSafetyTest {
     }
 
     @Test
-    public void dailyFileCatchUpIsDurableBoundedAndOldestFirstAcrossRestart() throws Exception {
+    public void hourlyDailyFileCatchUpIsDurableBoundedAndOldestFirstAcrossRestart() throws Exception {
         BigId system = addSystem(null, "urn:test:lane:catch-up");
         BigId daily = addDataStream(system, "urn:test:lane:catch-up", "dailyFile",
                 dailyFileStructure());
@@ -206,8 +206,8 @@ public class DatabasePurgerSafetyTest {
         journal.earliestJournalDay = first;
         String feedId = "urn:test:lane:catch-up#dailyFile";
         DatabasePurger firstProcess = new DatabasePurger(database, bucketStore, 0, journal,
-                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), false, 2);
-        firstProcess.exportAndPurgeDailyFileData();
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true, 2);
+        firstProcess.executeHourlyPurge();
 
         assertEquals(List.of(first, first.plusDays(1)), journal.requestedDays);
         assertEquals(Optional.of(first.plusDays(1)), journal.checkpoint(feedId));
@@ -217,8 +217,8 @@ public class DatabasePurgerSafetyTest {
         // A new purger instance proves that progress lives in the journal rather than memory.
         journal.requestedDays.clear();
         DatabasePurger restarted = new DatabasePurger(database, bucketStore, 0, journal,
-                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), false, 2);
-        restarted.exportAndPurgeDailyFileData();
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true, 2);
+        restarted.executeHourlyPurge();
 
         assertEquals(List.of(first.plusDays(2)), journal.requestedDays);
         assertEquals(Optional.of(LocalDate.of(2026, 10, 16)), journal.checkpoint(feedId));
@@ -226,7 +226,7 @@ public class DatabasePurgerSafetyTest {
     }
 
     @Test
-    public void unpublishedCatchUpDayNeitherDeletesNorAdvancesCheckpoint() throws Exception {
+    public void hourlyCatchUpRetriesAfterPublicationWithoutDeletingEarly() throws Exception {
         BigId system = addSystem(null, "urn:test:lane:blocked");
         BigId daily = addDataStream(system, "urn:test:lane:blocked", "dailyFile",
                 dailyFileStructure());
@@ -234,15 +234,53 @@ public class DatabasePurgerSafetyTest {
         addStringObservation(daily, DatabasePurger.dayWindow(day, ZoneOffset.UTC)
                 .startInclusive().plusSeconds(1), "not-yet-published");
 
-        ToggleJournal journal = new ToggleJournal(ZoneOffset.UTC);
+        ToggleJournal journal = new ToggleJournal(ZoneOffset.UTC, DailyFileObservationMode.LATEST);
         journal.earliestJournalDay = day;
         DatabasePurger purger = new DatabasePurger(database, bucketStore, 0, journal,
-                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), false, 10);
-        purger.exportAndPurgeDailyFileData();
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true, 10);
+        purger.executeHourlyPurge();
 
         assertEquals(1, observations(daily).size());
         assertEquals(Optional.empty(), journal.checkpoint("urn:test:lane:blocked#dailyFile"));
         assertEquals(List.of(day), journal.requestedDays);
+
+        journal.published.set(true);
+        journal.requestedDays.clear();
+        purger.executeHourlyPurge();
+
+        assertTrue("The next hourly cycle must remove the completed day after publication",
+                observations(daily).isEmpty());
+        assertEquals(Optional.of(LocalDate.of(2026, 10, 16)),
+                journal.checkpoint("urn:test:lane:blocked#dailyFile"));
+        assertEquals(List.of(day), journal.requestedDays);
+    }
+
+    @Test
+    public void hourlyCatchUpStillRunsWhenAnotherMaintenancePhaseFails() throws Exception {
+        BigId system = addSystem(null, "urn:test:lane:phase-failure");
+        BigId daily = addDataStream(system, "urn:test:lane:phase-failure", "dailyFile",
+                dailyFileStructure());
+        LocalDate day = LocalDate.of(2026, 10, 16);
+        addStringObservation(daily, DatabasePurger.dayWindow(day, ZoneOffset.UTC)
+                .startInclusive().plusSeconds(1), "published");
+
+        ToggleJournal journal = new ToggleJournal(ZoneOffset.UTC);
+        journal.earliestJournalDay = day;
+        journal.published.set(true);
+        DatabasePurger purger = new DatabasePurger(database, bucketStore, 0, journal,
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true, 10) {
+            @Override
+            public void purgeOldConnectionStatus() {
+                throw new IllegalStateException("fixture connection-status failure");
+            }
+        };
+
+        purger.executeHourlyPurge();
+
+        assertTrue("An unrelated hourly failure must not starve Daily File catch-up",
+                observations(daily).isEmpty());
+        assertEquals(Optional.of(day),
+                journal.checkpoint("urn:test:lane:phase-failure#dailyFile"));
     }
 
     @Test
@@ -299,7 +337,7 @@ public class DatabasePurgerSafetyTest {
     }
 
     @Test
-    public void latestModePreservesNewestDailyFileCompatibilityObservation() throws Exception {
+    public void latestModeNeverDeletesUnsealedCurrentDayObservations() throws Exception {
         BigId system = addSystem(null, "urn:test:lane:latest");
         BigId daily = addDataStream(system, "urn:test:lane:latest", "dailyFile",
                 dailyFileStructure());
@@ -311,9 +349,8 @@ public class DatabasePurgerSafetyTest {
         purger(journal, ZoneOffset.UTC).executeHourlyPurge();
 
         List<IObsData> remaining = observations(daily);
-        assertEquals("LATEST must retain the live compatibility head used by OSH clients", 1,
+        assertEquals("LATEST cleanup must wait for a completed, published day", 3,
                 remaining.size());
-        assertEquals("newest", remaining.get(0).getResult().getStringValue(1));
     }
 
     private DatabasePurger purger(IDailyFileJournalService journal, ZoneId zone) {

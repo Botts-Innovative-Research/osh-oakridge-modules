@@ -49,7 +49,7 @@ public class OSCARServiceConfig extends ServiceConfig {
     public boolean delegateObservationLifecycleToDatabase = false;
 
     @DisplayInfo(label = "Daily File Purge Work Limit",
-            desc = "Maximum number of lane/day compatibility-observation windows processed during one daily catch-up cycle")
+            desc = "Maximum number of lane/day compatibility-observation windows processed during one scheduled catch-up invocation")
     public int dailyFilePurgeWorkLimit = 50;
 
     @DisplayInfo(label = "WebID API Root", desc = "Base URL of the Sandia Full Spectrum Web ID API")
