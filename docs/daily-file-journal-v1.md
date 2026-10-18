@@ -203,6 +203,23 @@ Set `OSCARServiceConfig.dailyFilePurgeWorkLimit` to the maximum lane/day windows
 catch-up invocation may attempt; the standard production configuration uses `50`. The limit applies
 separately to the midnight attempt and to each hourly retry.
 
+Database maintenance is also a module-lifecycle boundary. On stop, OSCAR first marks the purge as
+cancelled, interrupts its scheduled task, and checks that flag between bounded selection/deletion
+batches and lane/day windows. A datastore that implements the optional
+`ICancellableDataStore` capability also aborts only the JDBC connections borrowed inside the active
+maintenance scope after first cancelling their tracked active statements; unrelated requests and
+connections are not cancelled, and OSCAR does not impose a global PostgreSQL statement timeout.
+The PostgreSQL cancellation signal has its own two-second network bound. The purger waits at most
+five seconds, leaving headroom under
+the core module registry's ten-second stop deadline. It reports success only after the worker has
+terminated, so no purge can continue mutating after a successful stop. A non-cancellable datastore
+call that ignores interruption instead produces an explicit bounded stop failure; operators should
+preserve that error and investigate the blocked datastore call rather than treating the module as
+stopped. A query-cancellation error also remains a stop failure even if task interruption releases
+the Java worker, because the server-side transaction cannot then be proven terminated; that purger
+instance must be recreated. A cleanly terminated purger remains restartable, and repeated successful
+stop requests are idempotent.
+
 ## Operations
 
 Treat the journal root as application state, not as a scratch or bucket-cache directory. Back it up
@@ -238,6 +255,20 @@ Run the self-contained targeted checks from the distribution worktree root:
 ./gradlew :sensorhub-driver-rapiscan:compileJava \
   :sensorhub-driver-aspect:compileJava \
   :sensorhub-driver-rs350:compileJava --no-daemon
+```
+
+From the sibling `osh-addons` checkout, cancellation has both a self-contained concurrency suite
+and an opt-in real PostgreSQL/Hikari probe. The latter must target only the disposable integration
+database and verifies prompt cancellation of `pg_sleep`, rollback of an in-flight mutation, and an
+unrelated connection that remains usable:
+
+```sh
+./gradlew :sensorhub-datastore-postgis:test \
+  --tests org.sensorhub.impl.datastore.postgis.connection.TestCancellableConnectionScope --no-daemon
+OSCAR_IT_ARCHIVE_DIR=/path/to/disposable/archive \
+  ./gradlew :sensorhub-datastore-postgis:test \
+  --tests 'org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.scopedAbortCancelsRealPostgresWorkWithoutTouchingAnotherConnection' \
+  --no-daemon --rerun-tasks
 ```
 
 The journal suite covers exact legacy bytes, full-UID filename hashing, SHA-256 manifests, persisted

@@ -13,6 +13,7 @@ import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.data.ObsData;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.api.datastore.ICancellableDataStore;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.api.feature.FeatureId;
@@ -46,9 +47,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 public class DatabasePurgerSafetyTest {
@@ -385,6 +391,197 @@ public class DatabasePurgerSafetyTest {
         List<IObsData> remaining = observations(daily);
         assertEquals("LATEST cleanup must wait for a completed, published day", 3,
                 remaining.size());
+    }
+
+    @Test
+    public void activeImmediatePurgeIsCancelledBeforeStopSucceedsAndCanRestart() throws Exception {
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch cancellationReleasedWorker = new CountDownLatch(1);
+        CountDownLatch firstExited = new CountDownLatch(1);
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        AtomicInteger runCount = new AtomicInteger();
+        AtomicInteger cancellationCount = new AtomicInteger();
+        AtomicInteger postCancelMutations = new AtomicInteger();
+
+        DatabasePurger purger = new DatabasePurger(database, bucketStore, 0, null,
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true) {
+            @Override
+            ICancellableDataStore.CancellableOperation beginCancellableDataStoreOperation() {
+                return new TestCancellationOperation(cancellationCount,
+                        cancellationReleasedWorker);
+            }
+
+            @Override
+            public void purgeOldConnectionStatus() {
+                int run = runCount.incrementAndGet();
+                if (run > 1) {
+                    secondStarted.countDown();
+                    return;
+                }
+
+                firstStarted.countDown();
+                awaitIgnoringInterrupts(cancellationReleasedWorker);
+                if (cancellationCount.get() == 0)
+                    postCancelMutations.incrementAndGet();
+                firstExited.countDown();
+            }
+        };
+
+        purger.start();
+        assertTrue("The initial-delay-zero purge must be active", firstStarted.await(2, TimeUnit.SECONDS));
+        long stopStarted = System.nanoTime();
+        purger.stop();
+        long stopMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - stopStarted);
+
+        assertTrue("Stop must stay comfortably inside the core 10 second budget",
+                stopMillis < DatabasePurger.STOP_TIMEOUT_MILLIS + 1_000L);
+        assertTrue(firstExited.await(1, TimeUnit.SECONDS));
+        assertEquals(1, cancellationCount.get());
+        assertEquals("No mutation may run after cancellation and successful stop",
+                0, postCancelMutations.get());
+
+        purger.stop(); // idempotent
+        assertEquals(1, cancellationCount.get());
+
+        purger.start();
+        assertTrue("A fully stopped purger must be restartable",
+                secondStarted.await(2, TimeUnit.SECONDS));
+        purger.stop();
+        assertTrue(runCount.get() >= 2);
+    }
+
+    @Test
+    public void interruptResistantWorkerCausesTruthfulBoundedStopFailure() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch allowExit = new CountDownLatch(1);
+        CountDownLatch exited = new CountDownLatch(1);
+        AtomicInteger mutationCount = new AtomicInteger();
+
+        DatabasePurger purger = new DatabasePurger(database, bucketStore, 0, null,
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true) {
+            @Override
+            ICancellableDataStore.CancellableOperation beginCancellableDataStoreOperation() {
+                return new ICancellableDataStore.CancellableOperation() {
+                    @Override public void cancel() { }
+                    @Override public boolean isCancellationRequested() { return false; }
+                    @Override public void close() { }
+                };
+            }
+
+            @Override
+            public void purgeOldConnectionStatus() {
+                started.countDown();
+                awaitIgnoringInterrupts(allowExit);
+                mutationCount.incrementAndGet();
+                exited.countDown();
+            }
+        };
+
+        purger.start();
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+        long stopStarted = System.nanoTime();
+        assertThrows(org.sensorhub.api.common.SensorHubException.class,
+                () -> purger.stop(100, TimeUnit.MILLISECONDS));
+        assertTrue("A non-cancellable store must fail before the registry deadline",
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - stopStarted) < 1_000L);
+        assertFalse("The blocked worker is deliberately still active", exited.await(50, TimeUnit.MILLISECONDS));
+
+        allowExit.countDown();
+        assertTrue(exited.await(1, TimeUnit.SECONDS));
+        purger.stop(1, TimeUnit.SECONDS);
+        int mutationsAtSuccessfulStop = mutationCount.get();
+        Thread.sleep(50L);
+        assertEquals("A successful stop must leave no mutating worker behind",
+                mutationsAtSuccessfulStop, mutationCount.get());
+    }
+
+    @Test
+    public void datastoreCancellationFailureCanNeverBeReportedAsSuccessfulStop() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch exited = new CountDownLatch(1);
+        AtomicInteger cancellationAttempts = new AtomicInteger();
+
+        DatabasePurger purger = new DatabasePurger(database, bucketStore, 0, null,
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true) {
+            @Override
+            ICancellableDataStore.CancellableOperation beginCancellableDataStoreOperation() {
+                return new ICancellableDataStore.CancellableOperation() {
+                    @Override
+                    public void cancel() {
+                        cancellationAttempts.incrementAndGet();
+                        throw new IllegalStateException("fixture datastore cancellation failure");
+                    }
+
+                    @Override public boolean isCancellationRequested() { return false; }
+                    @Override public void close() { }
+                };
+            }
+
+            @Override
+            public void purgeOldConnectionStatus() {
+                started.countDown();
+                try {
+                    new CountDownLatch(1).await();
+                } catch (InterruptedException expected) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    exited.countDown();
+                }
+            }
+        };
+
+        purger.start();
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+        assertThrows(org.sensorhub.api.common.SensorHubException.class, purger::stop);
+        assertTrue("Task interruption may terminate the worker, but cannot erase a failed query cancellation",
+                exited.await(1, TimeUnit.SECONDS));
+        assertTrue(cancellationAttempts.get() >= 1);
+        assertThrows("A repeated stop must not convert the prior failure into success",
+                org.sensorhub.api.common.SensorHubException.class, purger::stop);
+        assertThrows("The unsafe purger instance must be recreated rather than restarted",
+                org.sensorhub.api.common.SensorHubException.class, purger::start);
+    }
+
+    private static void awaitIgnoringInterrupts(CountDownLatch latch) {
+        boolean interrupted = false;
+        while (true) {
+            try {
+                latch.await();
+                break;
+            } catch (InterruptedException ignored) {
+                interrupted = true;
+            }
+        }
+        if (interrupted)
+            Thread.interrupted();
+    }
+
+    private static final class TestCancellationOperation
+            implements ICancellableDataStore.CancellableOperation {
+        private final AtomicInteger cancellationCount;
+        private final CountDownLatch release;
+        private final AtomicBoolean cancelled = new AtomicBoolean();
+
+        TestCancellationOperation(AtomicInteger cancellationCount, CountDownLatch release) {
+            this.cancellationCount = cancellationCount;
+            this.release = release;
+        }
+
+        @Override
+        public void cancel() {
+            if (cancelled.compareAndSet(false, true)) {
+                cancellationCount.incrementAndGet();
+                release.countDown();
+            }
+        }
+
+        @Override
+        public boolean isCancellationRequested() {
+            return cancelled.get();
+        }
+
+        @Override
+        public void close() { }
     }
 
     private DatabasePurger purger(IDailyFileJournalService journal, ZoneId zone) {

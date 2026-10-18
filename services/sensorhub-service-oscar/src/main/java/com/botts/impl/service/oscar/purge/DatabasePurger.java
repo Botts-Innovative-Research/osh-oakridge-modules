@@ -6,6 +6,7 @@ import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.data.IDataStreamInfo;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.api.datastore.ICancellableDataStore;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.api.datastore.obs.ObsFilter;
@@ -32,6 +33,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import com.google.common.collect.Range;
 import org.sensorhub.api.datastore.TemporalFilter;
@@ -46,9 +48,13 @@ public class DatabasePurger {
     private final Clock clock;
     private final boolean observationLifecycleDelegated;
     private final int dailyFilePurgeWorkLimit;
-    private ScheduledExecutorService scheduler;
-    private ScheduledFuture<?> hourlyPurgeTask;
-    private ScheduledFuture<?> dailyExportTask;
+    private volatile ScheduledExecutorService scheduler;
+    private volatile ScheduledFuture<?> hourlyPurgeTask;
+    private volatile ScheduledFuture<?> dailyExportTask;
+    private final AtomicReference<ICancellableDataStore.CancellableOperation> activeDataStoreOperation =
+            new AtomicReference<>();
+    private final AtomicReference<RuntimeException> stopCancellationFailure = new AtomicReference<>();
+    private volatile boolean stopRequested;
 
     private final int occupancyBufferSeconds;
 
@@ -57,6 +63,7 @@ public class DatabasePurger {
     private static final int CONNECTION_STATUS_RETENTION_HOURS = 1;
     static final int DELETE_BATCH_SIZE = 5_000;
     static final int DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT = 50;
+    static final long STOP_TIMEOUT_MILLIS = TimeUnit.SECONDS.toMillis(5);
 
     // Data stream output names
     private static final String OUTPUT_DAILY_FILE = "dailyFile";
@@ -127,6 +134,14 @@ public class DatabasePurger {
     }
 
     public void start() throws SensorHubException {
+        if (stopCancellationFailure.get() != null)
+            throw new SensorHubException(
+                    "Database purger cannot restart after a failed datastore cancellation; recreate the module");
+        ScheduledExecutorService previousScheduler = scheduler;
+        if (previousScheduler != null && !previousScheduler.isTerminated())
+            throw new SensorHubException("Database purger is already running or has not terminated");
+
+        stopRequested = false;
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "OSCAR-database-purger");
             t.setDaemon(true);
@@ -150,43 +165,114 @@ public class DatabasePurger {
             scheduleNextDailyExport();
 
         } catch (DataStoreException e) {
+            scheduler.shutdownNow();
             throw new SensorHubException("Failed to create daily files bucket", e);
         }
     }
 
     public void stop() throws SensorHubException {
+        stop(STOP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+    }
+
+    void stop(long timeout, TimeUnit unit) throws SensorHubException {
+        Objects.requireNonNull(unit, "unit");
+        if (timeout <= 0)
+            throw new IllegalArgumentException("Database purger stop timeout must be positive");
+
         log.info("Stopping database purger...");
+        stopRequested = true;
+
+        RuntimeException cancellationFailure = cancelActiveDataStoreOperation();
 
         if (hourlyPurgeTask != null)
-            hourlyPurgeTask.cancel(false);
+            hourlyPurgeTask.cancel(true);
         if (dailyExportTask != null)
-            dailyExportTask.cancel(false);
+            dailyExportTask.cancel(true);
 
-        scheduler.shutdown();
-        try {
-            if (!scheduler.awaitTermination(60, TimeUnit.SECONDS)) {
-                scheduler.shutdownNow();
-                if (!scheduler.awaitTermination(60, TimeUnit.SECONDS)) {
-                    log.error("Scheduler did not terminate");
-                }
-            }
-        } catch (InterruptedException e) {
-            scheduler.shutdownNow();
-            Thread.currentThread().interrupt();
+        ScheduledExecutorService activeScheduler = scheduler;
+        if (activeScheduler == null || activeScheduler.isTerminated()) {
+            clearSchedulerReferences(activeScheduler);
+            throwIfCancellationFailed(cancellationFailure);
+            log.info("Database purger stopped");
+            return;
         }
 
+        activeScheduler.shutdownNow();
+        boolean terminated;
+        try {
+            terminated = activeScheduler.awaitTermination(timeout, unit);
+        } catch (InterruptedException e) {
+            cancelActiveDataStoreOperation();
+            activeScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+            throw new SensorHubException("Interrupted while stopping database purger", e);
+        }
+
+        if (!terminated) {
+            RuntimeException retryFailure = cancelActiveDataStoreOperation();
+            SensorHubException failure = new SensorHubException(
+                    "Database purger worker did not terminate within " +
+                            unit.toMillis(timeout) + " ms; refusing to report a successful stop");
+            if (cancellationFailure != null)
+                failure.addSuppressed(cancellationFailure);
+            if (retryFailure != null && retryFailure != cancellationFailure)
+                failure.addSuppressed(retryFailure);
+            throw failure;
+        }
+
+        clearSchedulerReferences(activeScheduler);
+        throwIfCancellationFailed(cancellationFailure);
         log.info("Database purger stopped");
     }
 
+    private void throwIfCancellationFailed(RuntimeException currentFailure)
+            throws SensorHubException {
+        RuntimeException failure = currentFailure != null
+                ? currentFailure : stopCancellationFailure.get();
+        if (failure != null)
+            throw new SensorHubException(
+                    "Database purger worker terminated, but datastore cancellation failed; " +
+                            "refusing to report a successful stop", failure);
+    }
+
+    private RuntimeException cancelActiveDataStoreOperation() {
+        ICancellableDataStore.CancellableOperation operation = activeDataStoreOperation.get();
+        if (operation == null)
+            return null;
+        try {
+            operation.cancel();
+            return null;
+        } catch (RuntimeException error) {
+            stopCancellationFailure.compareAndSet(null, error);
+            log.warn("Could not cancel the active database-purge operation cleanly", error);
+            return error;
+        }
+    }
+
+    private void clearSchedulerReferences(ScheduledExecutorService stoppedScheduler) {
+        if (scheduler == stoppedScheduler)
+            scheduler = null;
+        hourlyPurgeTask = null;
+        dailyExportTask = null;
+    }
+
     void executeHourlyPurge() {
+        runCancellableMaintenance(this::executeHourlyPurgeWithinScope);
+    }
+
+    private void executeHourlyPurgeWithinScope() {
+        if (shouldStopPurge())
+            return;
         log.info("Starting hourly purge task...");
 
-        runHourlyPurgePhase("connection-status purge", this::purgeOldConnectionStatus);
+        if (!runHourlyPurgePhase("connection-status purge", this::purgeOldConnectionStatus))
+            return;
 
         if (observationLifecycleDelegated) {
             log.debug("Skipping legacy occupancy-gated high-volume purge because lifecycle is delegated to the database");
         } else {
-            runHourlyPurgePhase("legacy occupancy-gated purge", this::purgeNonOccupancyData);
+            if (!runHourlyPurgePhase("legacy occupancy-gated purge", this::purgeNonOccupancyData))
+                return;
         }
 
         // The exact-midnight attempt can run before the journal finishes publishing every
@@ -194,33 +280,84 @@ public class DatabasePurger {
         // skipped day is retried after publication and an outage backlog converges. Keep the
         // legacy no-journal exporter on its once-daily schedule to avoid duplicate exports.
         if (journalService != null) {
-            runHourlyPurgePhase("Daily File journal catch-up", this::exportAndPurgeDailyFileData);
+            if (!runHourlyPurgePhase("Daily File journal catch-up", this::exportAndPurgeDailyFileData))
+                return;
         }
 
-        log.info("Hourly purge task completed");
+        if (!shouldStopPurge())
+            log.info("Hourly purge task completed");
     }
 
-    private void runHourlyPurgePhase(String description, Runnable phase) {
+    private boolean runHourlyPurgePhase(String description, Runnable phase) {
+        if (shouldStopPurge())
+            return false;
         try {
             phase.run();
         } catch (Exception e) {
             // Isolate phases so an unrelated retention failure cannot starve journal catch-up,
             // and contain every exception so ScheduledExecutorService keeps the recurring task.
-            log.error("Error during hourly {}", description, e);
+            if (shouldStopPurge())
+                log.debug("Cancelled hourly {} during database-purger stop", description);
+            else
+                log.error("Error during hourly {}", description, e);
         }
+        return !shouldStopPurge();
     }
 
     private void executeDailyExportAndPurge() {
         try {
-            log.info("Starting daily export and purge task...");
-            exportAndPurgeDailyFileData();
-            log.info("Daily export and purge task completed successfully");
+            runCancellableMaintenance(() -> {
+                if (shouldStopPurge())
+                    return;
+                log.info("Starting daily export and purge task...");
+                exportAndPurgeDailyFileData();
+                if (!shouldStopPurge())
+                    log.info("Daily export and purge task completed successfully");
+            });
         } catch (Exception e) {
-            log.error("Error during daily export and purge task", e);
+            if (shouldStopPurge())
+                log.debug("Cancelled daily export and purge task during database-purger stop");
+            else
+                log.error("Error during daily export and purge task", e);
         } finally {
-            if (scheduler != null && !scheduler.isShutdown())
+            if (!shouldStopPurge() && scheduler != null && !scheduler.isShutdown())
                 scheduleNextDailyExport();
         }
+    }
+
+    private void runCancellableMaintenance(Runnable maintenance) {
+        if (shouldStopPurge())
+            return;
+
+        ICancellableDataStore.CancellableOperation operation = beginCancellableDataStoreOperation();
+        if (operation == null) {
+            maintenance.run();
+            return;
+        }
+        if (!activeDataStoreOperation.compareAndSet(null, operation)) {
+            operation.close();
+            throw new IllegalStateException("Another cancellable database-purge operation is active");
+        }
+
+        try (operation) {
+            if (shouldStopPurge()) {
+                operation.cancel();
+                return;
+            }
+            maintenance.run();
+        } finally {
+            activeDataStoreOperation.compareAndSet(operation, null);
+        }
+    }
+
+    ICancellableDataStore.CancellableOperation beginCancellableDataStoreOperation() {
+        var observationStore = database.getObservationStore();
+        return observationStore instanceof ICancellableDataStore cancellable
+                ? cancellable.beginCancellableOperation() : null;
+    }
+
+    private boolean shouldStopPurge() {
+        return stopRequested || Thread.currentThread().isInterrupted();
     }
 
     private void scheduleNextDailyExport() {
@@ -360,6 +497,8 @@ public class DatabasePurger {
     }
 
     public void purgeOldConnectionStatus() {
+        if (shouldStopPurge())
+            return;
         Set<BigId> ids = getDataStreamIdsByOutputNames(OUTPUT_CONNECTION_STATUS);
 
         if (ids.isEmpty()) {
@@ -369,7 +508,10 @@ public class DatabasePurger {
 
         Instant cutoff = clock.instant().minus(Duration.ofHours(CONNECTION_STATUS_RETENTION_HOURS));
         long deleted = deleteObservationsBeforeTime(ids, cutoff);
-        log.info("Purged {} Connection Status observations older than {}", deleted, cutoff);
+        if (shouldStopPurge())
+            log.debug("Connection Status purge cancelled after deleting {} observations", deleted);
+        else
+            log.info("Purged {} Connection Status observations older than {}", deleted, cutoff);
     }
 
     /**
@@ -417,7 +559,7 @@ public class DatabasePurger {
 
         int attempted = 0;
         long deleted = 0;
-        while (!work.isEmpty() && attempted < dailyFilePurgeWorkLimit) {
+        while (!shouldStopPurge() && !work.isEmpty() && attempted < dailyFilePurgeWorkLimit) {
             DailyFileCatchUpFeed feed = work.remove();
             LocalDate day = feed.nextDay;
             attempted++;
@@ -444,6 +586,8 @@ public class DatabasePurger {
                     work.add(feed);
                 }
             } catch (IOException | RuntimeException e) {
+                if (shouldStopPurge())
+                    break;
                 log.error("Daily File purge stopped for feed {} on {} without advancing its checkpoint: {}",
                         feed.feedId, day, e.getMessage(), e);
             }
@@ -464,6 +608,8 @@ public class DatabasePurger {
 
         long deleted = 0;
         for (var entry : streams.entrySet()) {
+            if (shouldStopPurge())
+                break;
             BigId dataStreamId = entry.getKey();
             IDataStreamInfo info = entry.getValue();
             PurgeDayResult result = purgeDailyFileFeed(dataStreamId, info,
@@ -593,6 +739,8 @@ public class DatabasePurger {
         long totalDeleted = 0;
         Duration buffer = Duration.ofSeconds(occupancyBufferSeconds);
         for (var entry : streamsByLane.entrySet()) {
+            if (shouldStopPurge())
+                break;
             String laneId = entry.getKey();
             List<TimeExtent> laneWindows = windowsByLane.get(laneId);
             if (laneWindows == null || laneWindows.isEmpty()) {
@@ -626,6 +774,8 @@ public class DatabasePurger {
         // Delete data in gaps between occupancy windows
         Instant previousEnd = windows.isEmpty() ? Instant.EPOCH : windows.get(0).end();
         for (int i = 1; i < windows.size(); i++) {
+            if (shouldStopPurge())
+                return totalDeleted;
             TimeExtent window = windows.get(i);
             if (previousEnd.isBefore(window.begin())) {
                 // There's a gap between windows - delete data in this gap
@@ -638,7 +788,7 @@ public class DatabasePurger {
 
         // Delete data after the last occupancy up to current time minus a safety margin
         // Keep recent data (last hour) in case new occupancies are being recorded
-        if (!windows.isEmpty()) {
+        if (!shouldStopPurge() && !windows.isEmpty()) {
             TimeExtent lastWindow = windows.get(windows.size() - 1);
             Instant safetyMargin = clock.instant().minus(Duration.ofHours(1));
             if (lastWindow.end().isBefore(safetyMargin)) {
@@ -667,7 +817,7 @@ public class DatabasePurger {
         }
 
         long totalDeleted = 0;
-        while (true) {
+        while (!shouldStopPurge()) {
             var candidates = new ObsFilter.Builder()
                     .withDataStreams(dataStreamIds)
                     .withPhenomenonTime(halfOpenTimeRange(start, end))
@@ -687,6 +837,8 @@ public class DatabasePurger {
                         .map(Map.Entry::getKey)
                         .toList();
             }
+            if (shouldStopPurge())
+                return totalDeleted;
             if (observationIds.isEmpty())
                 return totalDeleted;
 
@@ -714,6 +866,7 @@ public class DatabasePurger {
                 throw new IllegalStateException("Observation store deleted more rows than the selected batch");
             totalDeleted += deleted;
         }
+        return totalDeleted;
     }
 
     private String legacyObjectKey(IDataStreamInfo dataStreamInfo, LocalDate day) {
@@ -745,7 +898,7 @@ public class DatabasePurger {
             long counter = 0;
             try (var observations = database.getObservationStore().select(filter)) {
                 var iterator = observations.iterator();
-                while (iterator.hasNext()) {
+                while (!shouldStopPurge() && iterator.hasNext()) {
                     var obs = iterator.next();
                     String timestamp = obs.getPhenomenonTime().toString();
                     String message = "";
