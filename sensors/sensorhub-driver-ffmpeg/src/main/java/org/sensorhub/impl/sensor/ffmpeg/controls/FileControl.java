@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends AbstractSensorControl<FFMPEGSensorBase<FFmpegConfigType>> implements FFmpegControl {
     public static final String SENSOR_CONTROL_NAME = "ffmpegFileControl";
@@ -42,6 +43,7 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
     String fileName = "";
     String workingFileName = "";
     private final FileOutput<?> fileOutput;
+    private final AsyncCommandQueue<ICommandStatus> commandQueue = new AsyncCommandQueue<>();
 
     public FileControl(FFMPEGSensorBase<FFmpegConfigType> sensor, FileOutput<?> fileOutput) throws DataStoreException {
         super(SENSOR_CONTROL_NAME, sensor);
@@ -66,6 +68,42 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
         // eventual final key; callers can persist the legacy videoPaths value without exposing the
         // in-progress object.
         return Paths.get(VIDEO_BUCKET, fileName).toString();
+    }
+
+    /**
+     * Removes a completed output that lost its occupancy publication race during stop/restart.
+     * Only this control's exact relative camera directory is accepted.
+     */
+    public CompletableFuture<Void> discardCompletedFile(String relativePath) {
+        final String objectKey;
+        try {
+            String normalized = Objects.requireNonNull(relativePath, "relativePath")
+                    .replace('\\', '/');
+            if (normalized.startsWith("/") || normalized.contains("://")
+                    || normalized.indexOf('\0') >= 0)
+                throw new IllegalArgumentException("Completed video path must be relative");
+            if (normalized.startsWith(VIDEO_BUCKET + "/"))
+                normalized = normalized.substring(VIDEO_BUCKET.length() + 1);
+            String cameraPrefix = "clips/"
+                    + parentSensor.getUniqueIdentifier().replace(':', '-') + "/";
+            String leaf = normalized.startsWith(cameraPrefix)
+                    ? normalized.substring(cameraPrefix.length()) : "";
+            if (leaf.isBlank() || leaf.contains("/") || leaf.equals(".") || leaf.equals("..")
+                    || leaf.contains(".partial-"))
+                throw new IllegalArgumentException("Completed video path is outside this camera");
+            objectKey = normalized;
+        } catch (RuntimeException invalid) {
+            return CompletableFuture.failedFuture(invalid);
+        }
+
+        return CompletableFuture.runAsync(() -> {
+            try {
+                if (bucketStore.objectExists(VIDEO_BUCKET, objectKey))
+                    bucketStore.deleteObject(VIDEO_BUCKET, objectKey);
+            } catch (Exception failure) {
+                throw new CompletionException(failure);
+            }
+        });
     }
 
     @Override
@@ -108,7 +146,10 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
 
     @Override
     public CompletableFuture<ICommandStatus> submitCommand(ICommandData command) {
-        return CompletableFuture.supplyAsync(() -> executeCommand(command));
+        // A synchronized execute method prevents simultaneous mutations, but common-pool tasks
+        // can acquire that monitor in a different order than submitCommand was called. The FIFO
+        // preserves the required open -> close/cancel -> next open camera lifecycle.
+        return commandQueue.submit(() -> CompletableFuture.supplyAsync(() -> executeCommand(command)));
     }
 
     private synchronized ICommandStatus executeCommand(ICommandData command) {
@@ -135,10 +176,19 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                 }
 
                 else {
+                    final String requestedName;
+                    try {
+                        requestedName = validateRequestedFileName(
+                                selected.getData().getStringValue());
+                    } catch (IllegalArgumentException invalidName) {
+                        commandStatus = false;
+                        failureMessage = invalidName.getMessage();
+                        return status(command, commandStatus, failureMessage, false, "");
+                    }
                     fileName = Paths.get("clips", parentSensor.getUniqueIdentifier().replace(':', '-'),
-                            selected.getData().getStringValue()).toString();
+                            requestedName).toString();
 
-                    if (!fileName.contains(".")) {
+                    if (!requestedName.endsWith(".mp4")) {
                         fileName += ".mp4";
                     }
                     workingFileName = partialFileName(fileName);
@@ -162,19 +212,37 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                     }
                 }
             } else if (selected.getName().equals(CMD_CLOSE_FILE)) {
+                boolean saveFile = ((Boolean) selected).getValue();
                 if (!fileOutput.isWriting()) {
-                    commandStatus = false;
-                    failureMessage = "Video recording is not active";
-                }
-                else {
-                    boolean saveFile = ((Boolean) selected).getValue();
+                    if (saveFile) {
+                        commandStatus = false;
+                        failureMessage = "Video recording is not active";
+                    } else {
+                        // Discard is an idempotent cancellation. In particular, an open that could
+                        // not receive a packet must not turn a non-alarm occupancy into an error.
+                        try {
+                            discardInactivePartial(workingFileName,
+                                    () -> bucketStore.deleteObject(VIDEO_BUCKET, workingFileName));
+                        } catch (Exception cleanupError) {
+                            getLogger().error("Unable to remove canceled MP4 output {}",
+                                    workingFileName, cleanupError);
+                            commandStatus = false;
+                            failureMessage = "Unable to remove canceled video recording: "
+                                    + cleanupError.getMessage();
+                        }
+                        fileName = "";
+                        workingFileName = "";
+                    }
+                } else {
                     try {
                         var processor = this.parentSensor.getProcessor();
                         if (processor == null) {
-                            this.fileOutput.closeFile();
+                            finishOutput(saveFile, this.fileOutput::closeFile,
+                                    this.fileOutput::cancelFile);
                         } else {
                             processor.executeAfterPendingVideoData(fileOutput, () -> {
-                                fileOutput.closeFile();
+                                finishOutput(saveFile, fileOutput::closeFile,
+                                        fileOutput::cancelFile);
                                 return null;
                             });
                         }
@@ -192,6 +260,14 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                         fileName = "";
                         workingFileName = "";
                     } catch (Exception e) {
+                        // publishCompletedPath deliberately never removes a final hard link after
+                        // it has been created. If a later durability/partial-cleanup step failed,
+                        // include that final object in the failed status so the occupancy owner can
+                        // validate and remove the unpublished file rather than leaking it.
+                        if (saveFile && e instanceof FinalObjectCreatedException) {
+                            fileNameTemp = fileName;
+                            reportFileName = true;
+                        }
                         // A concurrent processor shutdown can reject or cancel the ordered close
                         // boundary. Always release the native output context before deleting its
                         // incomplete bucket object.
@@ -202,12 +278,12 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                                 e.addSuppressed(cleanupError);
                             }
                         }
-                        getLogger().error("Exception while closing MP4 output", e);
+                        getLogger().error("Exception while finalizing MP4 output", e);
                         try {
                             if (!workingFileName.isBlank())
                                 bucketStore.deleteObject(VIDEO_BUCKET, workingFileName);
                         } catch (Exception cleanupError) {
-                            getLogger().debug("Unable to remove incomplete MP4 output {}", workingFileName, cleanupError);
+                            getLogger().error("Unable to remove incomplete MP4 output {}", workingFileName, cleanupError);
                         }
                         fileName = "";
                         workingFileName = "";
@@ -220,21 +296,50 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                 failureMessage = "Unsupported file command: " + selected.getName();
             }
 
-            CommandStatus.Builder status = new CommandStatus.Builder()
-                    .withCommand(command.getID())
-                    .withStatusCode(commandStatus ? ICommandStatus.CommandStatusCode.ACCEPTED : ICommandStatus.CommandStatusCode.FAILED);
-            if (failureMessage != null)
-                status.withMessage(failureMessage);
+            return status(command, commandStatus, failureMessage, reportFileName, fileNameTemp);
+    }
 
-            if (commandStatus && reportFileName) {
-                try {
-                    resultData.renewDataBlock();
-                    resultData.getData().setStringValue(bucketStore.getRelativeResourceURI(VIDEO_BUCKET, fileNameTemp));
-                    ICommandResult result = CommandResult.withData(resultData.getData());
-                    status.withResult(result);
-                } catch (Exception ignored) {}
+    private ICommandStatus status(ICommandData command, boolean commandStatus,
+                                  String failureMessage, boolean reportFileName,
+                                  String completedFileName) {
+        CommandStatus.Builder status = new CommandStatus.Builder()
+                .withCommand(command.getID())
+                .withStatusCode(commandStatus ? ICommandStatus.CommandStatusCode.ACCEPTED
+                        : ICommandStatus.CommandStatusCode.FAILED);
+        if (failureMessage != null)
+            status.withMessage(failureMessage);
+
+        if (reportFileName) {
+            try {
+                resultData.renewDataBlock();
+                resultData.getData().setStringValue(
+                        bucketStore.getRelativeResourceURI(VIDEO_BUCKET, completedFileName));
+                ICommandResult result = CommandResult.withData(resultData.getData());
+                status.withResult(result);
+            } catch (Exception pathFailure) {
+                // Completed recording keys are created exclusively from a validated safe leaf.
+                // Preserve cleanup observability even if a bucket implementation cannot format
+                // its relative URI after publication.
+                getLogger().error("Unable to format completed video URI {}; using canonical key",
+                        completedFileName, pathFailure);
+                resultData.renewDataBlock();
+                resultData.getData().setStringValue(
+                        Paths.get(VIDEO_BUCKET, completedFileName).toString());
+                status.withResult(CommandResult.withData(resultData.getData()));
             }
-            return status.build();
+        }
+        return status.build();
+    }
+
+    static String validateRequestedFileName(String requestedName) {
+        if (requestedName == null || requestedName.isBlank()
+                || !requestedName.equals(requestedName.trim()))
+            throw new IllegalArgumentException("Video file name must not be blank or padded");
+        boolean safeStem = requestedName.matches("[A-Za-z0-9][A-Za-z0-9_-]*");
+        boolean safeMp4 = requestedName.matches("[A-Za-z0-9][A-Za-z0-9_-]*\\.mp4");
+        if (requestedName.length() > 200 || (!safeStem && !safeMp4))
+            throw new IllegalArgumentException("Video file name must be one safe relative filename");
+        return requestedName;
     }
 
     private void publishCompletedFile(String partialKey, String finalKey) throws Exception {
@@ -245,6 +350,28 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
         Path completed = Path.of(bucketStore.getWritableResourceURI(VIDEO_BUCKET, finalKey))
                 .toAbsolutePath().normalize();
         publishCompletedPath(partial, completed, FileControl::forceDirectory);
+    }
+
+    /** Selects strict saved-recording finalization or tolerant discard finalization. */
+    static void finishOutput(boolean saveFile, OutputFinalizer close,
+                             OutputFinalizer cancel) throws Exception {
+        if (saveFile)
+            close.run();
+        else
+            cancel.run();
+    }
+
+    /**
+     * Removes a partial left by an output that stopped before receiving its first packet.
+     * Absence is idempotent success, while a real lookup/delete failure is surfaced to the
+     * command status so cancellation cannot silently leak hidden media.
+     */
+    static void discardInactivePartial(String partialKey, OutputFinalizer delete) throws Exception {
+        if (partialKey == null || partialKey.isBlank())
+            return;
+        // Bucket stores intentionally hide partial objects from objectExists/listObjects. Their
+        // delete operation is idempotent, so address the known private key directly.
+        delete.run();
     }
 
     /**
@@ -267,11 +394,18 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
         // CREATE_LINK is an atomic, no-replace namespace operation: FileAlreadyExistsException is
         // raised rather than silently replacing an immutable completed recording.
         Files.createLink(completed, partial);
-        if (!Files.isRegularFile(completed) || Files.size(completed) <= 0)
-            throw new IOException("Published MP4 could not be verified");
-        directoryForcer.force(completed.getParent());
-        Files.delete(partial);
-        directoryForcer.force(completed.getParent());
+        try {
+            if (!Files.isRegularFile(completed) || Files.size(completed) <= 0)
+                throw new IOException("Published MP4 could not be verified");
+            directoryForcer.force(completed.getParent());
+            Files.delete(partial);
+            directoryForcer.force(completed.getParent());
+        } catch (IOException postLinkFailure) {
+            // Distinguish a final object created by this attempt from createLink failing because
+            // an immutable object already existed. Only the former may be handed to the occupancy
+            // coordinator for unpublished-output cleanup.
+            throw new FinalObjectCreatedException(postLinkFailure);
+        }
     }
 
     private static String partialFileName(String finalName) {
@@ -313,5 +447,16 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
     @FunctionalInterface
     interface DirectoryForcer {
         void force(Path directory) throws IOException;
+    }
+
+    static final class FinalObjectCreatedException extends IOException {
+        private FinalObjectCreatedException(IOException cause) {
+            super(cause.getMessage(), cause);
+        }
+    }
+
+    @FunctionalInterface
+    interface OutputFinalizer {
+        void run() throws Exception;
     }
 }

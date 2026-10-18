@@ -1,13 +1,17 @@
 package com.botts.impl.sensor.rapiscan;
 
 import com.botts.impl.sensor.rapiscan.output.DailyFileOutput;
+import com.botts.impl.sensor.rapiscan.output.GammaOutput;
 import com.botts.impl.sensor.rapiscan.output.TamperOutput;
 import org.junit.Test;
+import org.sensorhub.impl.utils.rad.model.Occupancy;
+import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -71,6 +75,24 @@ public class MessageHandlerTest {
         assertEquals(17, MessageHandler.getNeutronMax(List.of(4, 17, 9)));
     }
 
+    @Test
+    public void receivedDailyTimestampIsExactOccupancyStartCorrelationKey() {
+        var sensor = new RecordingSensor();
+        sensor.setConfiguration(new RapiscanConfig());
+        var handler = new MessageHandler(new ByteArrayInputStream(new byte[0]), sensor);
+        Instant start = Instant.parse("2026-10-18T10:00:00.123Z");
+        Instant end = start.plusSeconds(1);
+
+        handler.onNewMainChar("GS", new String[]{"GS", "1", "2", "3", "4"}, start);
+        handler.onNewMainChar("GX", new String[]{"GX", "7", "9000"}, end);
+        handler.stop();
+
+        Occupancy occupancy = sensor.occupancyOutput.lastOccupancy;
+        assertTrue(occupancy != null);
+        assertEquals(start.toEpochMilli(), Math.round(occupancy.getStartTime() * 1_000.0));
+        assertEquals(end.toEpochMilli(), Math.round(occupancy.getEndTime() * 1_000.0));
+    }
+
     private RapiscanSensor configuredSensor() {
         var sensor = new RapiscanSensor();
         sensor.setConfiguration(new RapiscanConfig());
@@ -80,6 +102,8 @@ public class MessageHandlerTest {
     private static class RecordingSensor extends RapiscanSensor {
         private final RecordingTamperOutput tamperOutput = new RecordingTamperOutput(this);
         private final RecordingDailyFileOutput dailyFileOutput = new RecordingDailyFileOutput(this);
+        private final RecordingGammaOutput gammaOutput = new RecordingGammaOutput(this);
+        private final RecordingOccupancyOutput occupancyOutput = new RecordingOccupancyOutput(this);
 
         @Override
         public TamperOutput getTamperOutput() {
@@ -89,6 +113,41 @@ public class MessageHandlerTest {
         @Override
         public DailyFileOutput getDailyFileOutput() {
             return dailyFileOutput;
+        }
+
+        @Override
+        public GammaOutput getGammaOutput() {
+            return gammaOutput;
+        }
+
+        @Override
+        public OccupancyOutput<RapiscanSensor> getOccupancyOutput() {
+            return occupancyOutput;
+        }
+    }
+
+    private static class RecordingGammaOutput extends GammaOutput {
+        private RecordingGammaOutput(RapiscanSensor parentSensor) {
+            super(parentSensor);
+        }
+
+        @Override
+        public void onNewMessage(String[] csvString, long timeStamp, String alarmState,
+                                 int[] foregroundCountsPerSecond) {
+            // Timestamp correlation is under test, not gamma publication.
+        }
+    }
+
+    private static class RecordingOccupancyOutput extends OccupancyOutput<RapiscanSensor> {
+        private volatile Occupancy lastOccupancy;
+
+        private RecordingOccupancyOutput(RapiscanSensor parentSensor) {
+            super(parentSensor);
+        }
+
+        @Override
+        public void setData(Occupancy occupancy) {
+            lastOccupancy = occupancy;
         }
     }
 

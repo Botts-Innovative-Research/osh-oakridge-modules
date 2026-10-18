@@ -59,12 +59,6 @@ public class Rs350StateManager extends StateManager {
     }
 
     private static Instant toInstant(double epochSeconds) {
-        long seconds = (long) Math.floor(epochSeconds);
-        long nanos = Math.round((epochSeconds - seconds) * 1_000_000_000.0);
-        if (nanos == 1_000_000_000L) {
-            seconds++;
-            nanos = 0;
-        }
-        return Instant.ofEpochSecond(seconds, nanos);
+        return Instant.ofEpochMilli(Math.round(epochSeconds * 1_000.0));
     }
 }

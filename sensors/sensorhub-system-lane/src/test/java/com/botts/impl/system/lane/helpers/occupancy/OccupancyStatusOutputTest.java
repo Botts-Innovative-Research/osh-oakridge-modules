@@ -19,7 +19,7 @@ public class OccupancyStatusOutputTest {
 
     private static final Instant CLEAR_TIME = Instant.parse("2026-09-24T12:00:00Z");
     private static final Instant OCCUPIED_TIME = Instant.parse("2026-09-24T12:00:10.250Z");
-    private static final Instant RS350_SOURCE_START = Instant.parse("2026-09-24T12:00:09Z");
+    private static final Instant RS350_SOURCE_START = Instant.parse("2026-09-24T12:00:09.100Z");
     private static final Instant ALARM_TIME = Instant.parse("2026-09-24T12:00:20Z");
     private static final Instant END_TIME = Instant.parse("2026-09-24T12:00:30Z");
 

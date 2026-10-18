@@ -49,12 +49,16 @@ public class MessageHandler {
         return timeSinceLastMessage;
     }
 
-    public MessageHandler(AspectSensor parentSensor, int deviceAddress) {
+    /** Testable initialization path that does not start the device reader thread. */
+    MessageHandler(AspectSensor parentSensor) {
         this.parentSensor = parentSensor;
-        this.deviceAddress = deviceAddress;
-
         occupancyGammaBatch = new LinkedList<>();
         occupancyNeutronBatch = new LinkedList<>();
+    }
+
+    public MessageHandler(AspectSensor parentSensor, int deviceAddress) {
+        this(parentSensor);
+        this.deviceAddress = deviceAddress;
 
 
 
@@ -77,13 +81,20 @@ public class MessageHandler {
 
                     monitorRegisters.readRegisters(deviceAddress);
 
-                    double timestamp = System.currentTimeMillis() / 1000d;
+                    SampleClock sampleClock = sampleClock(Instant.now());
+                    Instant sampleTime = sampleClock.observationTime();
+                    double timestamp = sampleClock.epochSeconds();
+                    int previousOccupancyCount = occupancyCount;
+                    boolean occupancyRecordReady = checkOccupancyRecord(
+                            monitorRegisters, timestamp);
+                    boolean occupancyStartedThisSample = previousOccupancyCount >= 0
+                            && occupancyCount != previousOccupancyCount;
 
                     if (checkScan(monitorRegisters)) {
-                        if (timer >= SCAN_INTERVAL_MS) {
+                        if (shouldPublishDailyFile(true, timer, occupancyStartedThisSample)) {
                             timer = 0;
 
-                            publishDailyFile(monitorRegisters);
+                            publishDailyFile(monitorRegisters, sampleTime);
 
                             parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
                             parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
@@ -91,19 +102,17 @@ public class MessageHandler {
                         }
 
                     } else {
-                        if (timer >= BACKGROUND_INTERVAL_MS) {
+                        if (shouldPublishDailyFile(false, timer, occupancyStartedThisSample)) {
                             timer = 0;
 
-                            publishDailyFile(monitorRegisters);
+                            publishDailyFile(monitorRegisters, sampleTime);
 
                             parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
                             parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
                         }
                     }
 
-
-
-                    if (checkOccupancyRecord(monitorRegisters, timestamp)) {
+                    if (occupancyRecordReady) {
                         Occupancy occupancy = new Occupancy.Builder()
                                 .occupancyCount(monitorRegisters.getObjectCounter())
                                 .startTime(startTime)
@@ -132,8 +141,8 @@ public class MessageHandler {
     }
 
     /** Builds, journals, and only then publishes one generated Aspect daily-file line. */
-    private void publishDailyFile(MonitorRegisters monitorRegisters) throws IOException {
-        publishDailyFile(monitorRegisters, Instant.now(), parentSensor.getDailyFileJournal(),
+    private void publishDailyFile(MonitorRegisters monitorRegisters, Instant timestamp) throws IOException {
+        publishDailyFile(monitorRegisters, timestamp, parentSensor.getDailyFileJournal(),
                 parentSensor.dailyFileOutput);
     }
 
@@ -158,6 +167,23 @@ public class MessageHandler {
             dailyFileOutput.onNewMessage(line, timestamp);
     }
 
+    /** One captured clock value drives both the daily observation and occupancy start time. */
+    static SampleClock sampleClock(Instant observationTime) {
+        // Aspect and the other supported RPMs expose millisecond timestamps. Quantizing here makes
+        // the double occupancy value and the Instant phenomenon time an exact correlation pair.
+        Instant millisecondTime = Instant.ofEpochMilli(observationTime.toEpochMilli());
+        return new SampleClock(millisecondTime, millisecondTime.toEpochMilli() / 1_000.0);
+    }
+
+    record SampleClock(Instant observationTime, double epochSeconds) {}
+
+    /** Occupancy transitions bypass cadence throttling so correlation never uses a later sample. */
+    static boolean shouldPublishDailyFile(boolean scan, long elapsedMillis,
+                                          boolean occupancyStartedThisSample) {
+        return occupancyStartedThisSample
+                || elapsedMillis >= (scan ? SCAN_INTERVAL_MS : BACKGROUND_INTERVAL_MS);
+    }
+
     public void stop() {
         Thread current = thread;
         thread = null;
@@ -176,7 +202,7 @@ public class MessageHandler {
      * @param timestamp        the timestamp
      * @return true if the record should be written, false otherwise
      */
-    private boolean checkOccupancyRecord(MonitorRegisters monitorRegisters, double timestamp) {
+    boolean checkOccupancyRecord(MonitorRegisters monitorRegisters, double timestamp) {
         // Initialize the occupancy count
         if (occupancyCount == -1) {
             occupancyCount = monitorRegisters.getObjectCounter();

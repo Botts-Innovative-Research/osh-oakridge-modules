@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.time.Instant;
 
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertEquals;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -69,6 +70,43 @@ public class MessageHandlerJournalTest {
         MessageHandler.publishDailyFile(registers(), RECEIVED_AT, journal, legacyOutput);
 
         verify(legacyOutput).onNewMessage(GENERATED_LINE, RECEIVED_AT);
+    }
+
+    @Test
+    public void dailyObservationAndOccupancyUseSameMillisecondCorrelationClock() throws Exception {
+        DailyFileJournalConnection journal = mock(DailyFileJournalConnection.class);
+        DailyFileOutput legacyOutput = mock(DailyFileOutput.class);
+        when(journal.shouldPublishLegacyObservation()).thenReturn(true);
+        Instant captured = Instant.parse("2026-10-17T12:34:56.123456789Z");
+
+        MessageHandler.SampleClock clock = MessageHandler.sampleClock(captured);
+        MessageHandler.publishDailyFile(registers(), clock.observationTime(), journal,
+                legacyOutput);
+
+        verify(legacyOutput).onNewMessage(GENERATED_LINE, clock.observationTime());
+        assertEquals(clock.observationTime().toEpochMilli(),
+                Math.round(clock.epochSeconds() * 1_000.0));
+        assertEquals(captured.toEpochMilli(), clock.observationTime().toEpochMilli());
+
+        // The same captured clock that timestamps the daily sample is also consumed by the
+        // Aspect occupancy state machine when its object counter changes. This is the exact key
+        // later used to associate the completed Occupancy with its camera generation.
+        MessageHandler handler = new MessageHandler(mock(AspectSensor.class));
+        MonitorRegisters baseline = mock(MonitorRegisters.class);
+        when(baseline.getObjectCounter()).thenReturn(10);
+        MonitorRegisters occupied = mock(MonitorRegisters.class);
+        when(occupied.getObjectCounter()).thenReturn(11);
+        when(occupied.isOccupied()).thenReturn(true);
+
+        org.junit.Assert.assertFalse(handler.checkOccupancyRecord(baseline, 1.0));
+        org.junit.Assert.assertFalse(handler.checkOccupancyRecord(
+                occupied, clock.epochSeconds()));
+        assertEquals(clock.observationTime().toEpochMilli(),
+                Math.round(handler.startTime * 1_000.0));
+        org.junit.Assert.assertTrue("An occupancy start between cadence ticks must publish now",
+                MessageHandler.shouldPublishDailyFile(true, 1L, true));
+        org.junit.Assert.assertFalse("Ordinary scan samples remain cadence-limited",
+                MessageHandler.shouldPublishDailyFile(true, 1L, false));
     }
 
     private static MonitorRegisters registers() {

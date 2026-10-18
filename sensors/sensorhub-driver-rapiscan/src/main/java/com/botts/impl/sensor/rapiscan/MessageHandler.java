@@ -107,7 +107,9 @@ public class MessageHandler {
                         if (msgLine.isEmpty())
                             continue;
 
-                        Instant receivedAt = Instant.now();
+                        // Daily-file phenomenon time and Occupancy.startTime share this exact
+                        // millisecond correlation key.
+                        Instant receivedAt = Instant.ofEpochMilli(System.currentTimeMillis());
                         var journal = parentSensor.getDailyFileJournal();
                         if (journal != null) {
                             try {
@@ -127,7 +129,7 @@ public class MessageHandler {
                             if (!csvList.isEmpty() && csvList.get(0).length > 0 && isRunning.get()) {
                                 if (journal == null || journal.shouldPublishLegacyObservation())
                                     parentSensor.getDailyFileOutput().onNewMessage(msgLine, receivedAt);
-                                onNewMainChar(csvList.get(0)[0], csvList.get(0));
+                                onNewMainChar(csvList.get(0)[0], csvList.get(0), receivedAt);
                                 timeSinceLastMessage = System.currentTimeMillis();
                             }
                         } catch (Exception e) {
@@ -216,6 +218,11 @@ public class MessageHandler {
     }
 
     void onNewMainChar(String mainChar, String[] csvLine) {
+        onNewMainChar(mainChar, csvLine, Instant.now());
+    }
+
+    void onNewMainChar(String mainChar, String[] csvLine, Instant receivedAt) {
+        long receivedAtMillis = receivedAt.toEpochMilli();
 
         // Add scan data for EML service. Background and other data gives EML context, so we must show EML everything until end of occupancy
         if (parentSensor.getConfiguration().emlConfig.emlEnabled && !mainChar.equals("GB") && !mainChar.equals("NB")) {
@@ -254,7 +261,7 @@ public class MessageHandler {
             case "GA" -> {
                 gammaScanRunningSumBatch.addLast(csvLine);
                 if (!currentOccupancy) {
-                    occupancyStartTime = System.currentTimeMillis();
+                    occupancyStartTime = receivedAtMillis;
                     currentOccupancy = true;
                 }
 
@@ -278,7 +285,7 @@ public class MessageHandler {
 
                 //usually the foreground value will switch to "GA" in an alarm state
                 if (!currentOccupancy) {
-                    occupancyStartTime = System.currentTimeMillis();
+                    occupancyStartTime = receivedAtMillis;
                     currentOccupancy = true;
                 }
                 int gamma = Integer.parseInt(csvLine[1]) +
@@ -296,7 +303,7 @@ public class MessageHandler {
 
             case "NA" -> {
                 if (!currentOccupancy) {
-                    occupancyStartTime = System.currentTimeMillis();
+                    occupancyStartTime = receivedAtMillis;
                     currentOccupancy = true;
 
                 } else {
@@ -313,7 +320,7 @@ public class MessageHandler {
 
             case "NS" -> {
                 if (!currentOccupancy) {
-                    occupancyStartTime = System.currentTimeMillis();
+                    occupancyStartTime = receivedAtMillis;
                     currentOccupancy = true;
                 } else {
                     int neutron = Integer.parseInt(csvLine[1]) +
@@ -327,7 +334,7 @@ public class MessageHandler {
             }
 
             case "GX" -> {
-                occupancyEndTime = System.currentTimeMillis();
+                occupancyEndTime = receivedAtMillis;
                 gammaMax = getGammaMax(occupancyGammaBatch);
                 neutronMax = getNeutronMax(occupancyNeutronBatch);
 
@@ -335,7 +342,7 @@ public class MessageHandler {
                         .occupancyCount(Integer.parseInt(csvLine[1]))
                         .startTime(occupancyStartTime/1000d)
                         .endTime(occupancyEndTime/1000d)
-                        .samplingTime(System.currentTimeMillis()/1000d)
+                        .samplingTime(receivedAtMillis/1000d)
                         .neutronBackground(Double.parseDouble(csvLine[2])/1000)
                         .gammaAlarm(isGammaAlarm)
                         .neutronAlarm(isNeutronAlarm)

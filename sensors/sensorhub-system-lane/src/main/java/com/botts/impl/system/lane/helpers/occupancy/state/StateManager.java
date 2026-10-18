@@ -4,6 +4,7 @@ import net.opengis.swe.v20.DataComponent;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BooleanSupplier;
 
@@ -31,8 +32,10 @@ public abstract class StateManager {
     final ReentrantLock lock = new ReentrantLock(true);
     DataComponent dailyFile;
     State currentState;
-    List<IStateListener> listeners = new ArrayList<IStateListener>();
+    List<IStateListener> listeners = new CopyOnWriteArrayList<>();
     Map<State, Runnable> stateActionMap = new HashMap<>();
+    private Instant sampleTime;
+    private Instant occupancyStartTimeHint;
     //Map<State, Transition[]> transitionMap = new HashMap<State, Transition[]>();
 
     public StateManager() {
@@ -107,9 +110,19 @@ public abstract class StateManager {
      * occupancy transition
      */
     public boolean updateDailyFile(DataComponent dailyFile) {
+        return updateDailyFile(dailyFile, Instant.now());
+    }
+
+    /**
+     * Applies a daily-file sample using the observation's phenomenon time as the correlation key.
+     * The same instant is retained for the complete occupancy so the eventual occupancy record can
+     * be matched exactly even when camera close callbacks arrive out of order.
+     */
+    public boolean updateDailyFile(DataComponent dailyFile, Instant observationTime) {
         lock.lock();
         try {
             this.dailyFile = dailyFile;
+            this.sampleTime = Objects.requireNonNull(observationTime, "observationTime");
             if (!parseDailyFile())
                 return false;
             stateActionMap.get(currentState).run();
@@ -122,8 +135,12 @@ public abstract class StateManager {
     protected abstract boolean parseDailyFile();
 
     protected void transitionToState(State newState) {
+        if (currentState == State.NON_OCCUPANCY && newState != State.NON_OCCUPANCY)
+            occupancyStartTimeHint = sampleTime;
         notifyStateTransition(currentState, newState);
         currentState = newState;
+        if (newState == State.NON_OCCUPANCY)
+            occupancyStartTimeHint = null;
     }
 
     public void notifyStateTransition(State fromState, State toState) {
@@ -134,7 +151,7 @@ public abstract class StateManager {
 
     public State getCurrentState() { return currentState; }
     public boolean hasActiveOccupancy() { return currentState != State.NON_OCCUPANCY; }
-    public Instant getOccupancyStartTimeHint() { return null; }
+    public Instant getOccupancyStartTimeHint() { return occupancyStartTimeHint; }
     public void addListener(IStateListener listener) { listeners.add(listener); }
     public void removeListener(IStateListener listener) { listeners.remove(listener); }
     public void clearListeners() { listeners.clear(); }
