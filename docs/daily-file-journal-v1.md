@@ -98,7 +98,10 @@ invocation (default `50`), and the single-threaded/synchronized task cannot over
 exact-midnight invocation is an initial attempt; every hourly maintenance cycle reruns this same
 bounded path when the journal is enabled. A lane whose manifest was not yet published at midnight
 is therefore left untouched and retried after publication, while multi-day backlogs converge over
-successive hourly invocations. The legacy no-journal CSV exporter remains once daily.
+successive hourly invocations. If module startup exposes the journal capability before its durable
+store is open, the first catch-up is deferred once for the whole service—without per-lane errors or
+deletion—and the next hourly cycle resumes from the unchanged durable checkpoints. The legacy
+no-journal CSV exporter remains once daily.
 
 Sealed private `.seg` files are not deleted merely because the public CSV exists. After the
 coordinated backup has passed its structural, HMAC, PostgreSQL, archive-generation, and payload

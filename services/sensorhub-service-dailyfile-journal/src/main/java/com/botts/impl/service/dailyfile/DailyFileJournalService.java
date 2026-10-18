@@ -17,7 +17,7 @@ import java.util.Optional;
 public class DailyFileJournalService extends AbstractModule<DailyFileJournalServiceConfig>
         implements IDailyFileJournalService {
 
-    private DailyFileJournalStore store;
+    private volatile DailyFileJournalStore store;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -51,6 +51,11 @@ public class DailyFileJournalService extends AbstractModule<DailyFileJournalServ
     public DailyFileWriterHandle openWriter(String laneId) throws IOException {
         ensureInitialized();
         return store.openWriter(laneId);
+    }
+
+    @Override
+    public boolean isJournalReady() {
+        return store != null;
     }
 
     @Override

@@ -387,6 +387,14 @@ public class DatabasePurger {
             return;
         }
 
+        if (!journalService.isJournalReady()) {
+            // Module startup is concurrent: OSCAR can discover the journal capability before
+            // its durable store has opened.  This is not a feed failure and no data is eligible
+            // for deletion yet.  The hourly task will retry the same manifest-gated work.
+            log.info("Daily File journal catch-up deferred until the durable journal is ready");
+            return;
+        }
+
         LocalDate latestEligibleDay = LocalDate.ofInstant(clock.instant(), dailyFileZone).minusDays(1);
         Map<BigId, IDataStreamInfo> streams = getDataStreamEntriesByOutputNames(OUTPUT_DAILY_FILE);
         if (streams.isEmpty()) {

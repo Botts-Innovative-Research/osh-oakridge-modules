@@ -10,6 +10,18 @@ import java.util.Optional;
 public interface IDailyFileJournalService {
 
     /**
+     * Returns {@code true} once the durable journal store can serve maintenance reads.
+     *
+     * <p>The OSCAR service and journal module can be started concurrently.  Maintenance
+     * callers use this signal to defer a bounded catch-up cycle instead of treating normal
+     * module-start ordering as a per-feed I/O failure.  Custom implementations that are ready
+     * as soon as they are discoverable retain the historical behavior through this default.</p>
+     */
+    default boolean isJournalReady() {
+        return true;
+    }
+
+    /**
      * Opens a synchronous writer for a stable lane identifier. Repeated calls
      * for the same lane share the same ordered durable stream.
      */

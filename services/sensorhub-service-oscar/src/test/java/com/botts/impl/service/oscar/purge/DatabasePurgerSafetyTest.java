@@ -256,6 +256,40 @@ public class DatabasePurgerSafetyTest {
     }
 
     @Test
+    public void hourlyCatchUpDefersWithoutNoiseUntilJournalIsReady() throws Exception {
+        BigId system = addSystem(null, "urn:test:lane:journal-startup");
+        BigId daily = addDataStream(system, "urn:test:lane:journal-startup", "dailyFile",
+                dailyFileStructure());
+        LocalDate day = LocalDate.of(2026, 10, 16);
+        addStringObservation(daily, DatabasePurger.dayWindow(day, ZoneOffset.UTC)
+                .startInclusive().plusSeconds(1), "wait-for-journal");
+
+        ToggleJournal journal = new ToggleJournal(ZoneOffset.UTC);
+        journal.ready.set(false);
+        journal.earliestJournalDay = day;
+        journal.published.set(true);
+        DatabasePurger purger = new DatabasePurger(database, bucketStore, 0, journal,
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true, 10);
+
+        purger.executeHourlyPurge();
+
+        assertEquals("An undiscoverable manifest must never permit deletion", 1,
+                observations(daily).size());
+        assertTrue("A not-yet-started journal must not be queried per feed",
+                journal.requestedDays.isEmpty());
+        assertEquals(Optional.empty(),
+                journal.checkpoint("urn:test:lane:journal-startup#dailyFile"));
+
+        journal.ready.set(true);
+        purger.executeHourlyPurge();
+
+        assertTrue("The next hourly cycle must resume after journal startup",
+                observations(daily).isEmpty());
+        assertEquals(Optional.of(day),
+                journal.checkpoint("urn:test:lane:journal-startup#dailyFile"));
+    }
+
+    @Test
     public void hourlyCatchUpStillRunsWhenAnotherMaintenancePhaseFails() throws Exception {
         BigId system = addSystem(null, "urn:test:lane:phase-failure");
         BigId daily = addDataStream(system, "urn:test:lane:phase-failure", "dailyFile",
@@ -465,6 +499,7 @@ public class DatabasePurgerSafetyTest {
     }
 
     private static final class ToggleJournal implements IDailyFileJournalService {
+        private final AtomicBoolean ready = new AtomicBoolean(true);
         private final AtomicBoolean published = new AtomicBoolean();
         private final ZoneId zone;
         private final DailyFileObservationMode observationMode;
@@ -479,6 +514,11 @@ public class DatabasePurgerSafetyTest {
         private ToggleJournal(ZoneId zone, DailyFileObservationMode observationMode) {
             this.zone = zone;
             this.observationMode = observationMode;
+        }
+
+        @Override
+        public boolean isJournalReady() {
+            return ready.get();
         }
 
         @Override
