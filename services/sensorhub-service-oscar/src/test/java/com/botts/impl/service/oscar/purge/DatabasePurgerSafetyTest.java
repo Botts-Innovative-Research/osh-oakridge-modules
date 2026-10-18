@@ -163,7 +163,10 @@ public class DatabasePurgerSafetyTest {
                 .withDataStreams(daily).build())) {
             selected = entries.findFirst().orElseThrow();
         }
-        Instant movedTime = window.endExclusive().plusSeconds(1);
+        // Move exactly onto the excluded upper bound. This catches stores that
+        // accidentally collapse Range.closedOpen into an inclusive SQL range
+        // during the final predicate-guarded delete.
+        Instant movedTime = window.endExclusive();
         IObsData moved = ObsData.Builder.from(selected.getValue())
                 .withPhenomenonTime(movedTime)
                 .withResultTime(movedTime)
