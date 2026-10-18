@@ -30,6 +30,10 @@ All notable changes to this project will be documented in this file.
 - Occupancy MP4 commands now execute in a bounded per-camera FIFO, publish only an exact validated
   generation-qualified path, cancel non-alarm output, and remove hidden partial or late unpublished
   output without replacing or deleting an older immutable recording on a name collision.
+- Occupancy MP4 startup now acknowledges OPEN only after the current recording generation has
+  successfully muxed a keyframe. A bounded five-second wait accommodates slow camera startup while
+  preserving the lane's eight-second close/publication deadline, and failed preparation removes the
+  hidden partial instead of producing a zero-packet alarm clip.
 
 ## [2.1.0] - 2025-10-14
 

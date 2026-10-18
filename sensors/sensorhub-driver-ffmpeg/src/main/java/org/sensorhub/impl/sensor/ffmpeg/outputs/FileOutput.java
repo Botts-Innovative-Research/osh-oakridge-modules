@@ -32,6 +32,9 @@ import org.vast.swe.SWEHelper;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.bytedeco.ffmpeg.global.avcodec.*;
@@ -47,6 +50,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
     private static final Logger logger = LoggerFactory.getLogger(FileOutput.class);
     private final AtomicBoolean doFileWrite = new AtomicBoolean(false);
+    private final RecordingReadiness recordingReadiness = new RecordingReadiness();
     //private static final String BUCKET_NAME = Constants.VIDEO_BUCKET;
     private static final String BUCKET_NAME = "videos";
     //private String outputFile = "";
@@ -61,6 +65,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     final int MAX_PACKET_QUEUE_SIZE = 1000;
     private final TimestampNormalizer timestampNormalizer = new TimestampNormalizer();
     private long packetsWritten;
+    private volatile long recordingGeneration;
     private volatile long packetsDroppedBeforeInitialKeyFrame;
     private boolean waitingForInitialKeyFrame;
     private boolean headerWritten;
@@ -166,6 +171,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                     recordWriteFailure(ffmpegIOException("Could not write video packet", writeRet));
                 } else {
                     packetsWritten++;
+                    recordingReadiness.packetWritten(recordingGeneration);
                 }
             }
         } catch (IOException e) {
@@ -212,8 +218,11 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 this.headerWritten = false;
                 this.packetsWritten = 0;
                 this.packetsDroppedBeforeInitialKeyFrame = 0;
-                this.waitingForInitialKeyFrame = deliveryMode == DeliveryMode.LIVE_ONLY
-                        && fileName.endsWith(".m3u8");
+                // A newly opened recording must not begin in the middle of a GOP. Besides being
+                // independently decodable, the first successfully muxed keyframe is the readiness
+                // boundary used by FileControl before it acknowledges the open command.
+                this.waitingForInitialKeyFrame = fileName.endsWith(".m3u8")
+                        || (deliveryMode == DeliveryMode.BUFFERED && fileName.endsWith(".mp4"));
                 this.timestampNormalizer.reset();
 
                 seekableBuffer = null;
@@ -278,10 +287,12 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
                 // FFmpeg's log level is process-wide. Do not change it for one recording and
                 // inadvertently hide (or amplify) diagnostics from the other camera streams.
+                recordingGeneration = recordingReadiness.start();
                 doFileWrite.set(true);
 
             } catch (Exception e) {
                 doFileWrite.set(false);
+                recordingReadiness.stop(recordingGeneration);
                 IOException cleanupFailure = cleanupOutput(headerWritten);
                 IOException openFailure = e instanceof IOException
                         ? (IOException) e
@@ -356,8 +367,52 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         synchronized (contextLock) {
             if (writeFailure == null) {
                 writeFailure = failure;
+                recordingReadiness.stop(recordingGeneration);
                 logger.error("Video output failed for {}: {}", fileName, failure.getMessage());
             }
+        }
+    }
+
+    /**
+     * Waits until this recording has successfully muxed its first independently decodable
+     * keyframe. The wait does not hold {@link #contextLock}, so the packet callback remains free to
+     * satisfy the gate on its dedicated listener executor.
+     *
+     * @throws IOException if the output fails, is stopped, or does not become ready in time
+     */
+    public void awaitRecordingReady(Duration timeout) throws IOException {
+        Objects.requireNonNull(timeout, "timeout");
+        if (timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("timeout must be positive");
+        }
+
+        long expectedGeneration = recordingGeneration;
+        final boolean ready;
+        try {
+            ready = recordingReadiness.await(expectedGeneration, timeout);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while waiting for a decodable video keyframe", e);
+        }
+        if (ready) {
+            return;
+        }
+
+        IOException failure = writeFailure;
+        if (failure != null) {
+            throw new IOException("Video output failed before its first decodable keyframe", failure);
+        }
+        if (!isWriting()) {
+            throw new IOException("Video output stopped before its first decodable keyframe");
+        }
+        throw new IOException("Video input did not produce a decodable keyframe within "
+                + timeout.toSeconds() + " seconds");
+    }
+
+    /** True only after this recording has successfully muxed at least one packet. */
+    public boolean hasWrittenPacket() {
+        synchronized (contextLock) {
+            return packetsWritten > 0;
         }
     }
 
@@ -478,7 +533,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         return options;
     }
 
-    /** Number of live packets intentionally skipped while aligning a new HLS stream to an IDR. */
+    /** Number of packets intentionally skipped while aligning a new output to an IDR. */
     public long getPacketsDroppedBeforeInitialKeyFrame() {
         return packetsDroppedBeforeInitialKeyFrame;
     }
@@ -514,6 +569,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
             }
 
             doFileWrite.set(false);
+            recordingReadiness.stop(recordingGeneration);
             IOException failure = writeFailure;
             if (requirePackets && packetsWritten == 0 && failure == null) {
                 failure = new IOException("No video packets were received while recording");
@@ -653,6 +709,56 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     @Override
     public double getAverageSamplingPeriod() {
         return Double.NaN;
+    }
+
+    /**
+     * Generation-scoped one-shot gate for the first successfully muxed packet. A packet callback
+     * from an old recording can never release a newer recording, and the common post-ready packet
+     * path avoids synchronization.
+     */
+    static final class RecordingReadiness {
+        private long generation;
+        private boolean active;
+        private volatile boolean ready;
+
+        synchronized long start() {
+            generation++;
+            active = true;
+            ready = false;
+            notifyAll();
+            return generation;
+        }
+
+        void packetWritten(long expectedGeneration) {
+            if (ready) {
+                return;
+            }
+            synchronized (this) {
+                if (active && generation == expectedGeneration && !ready) {
+                    ready = true;
+                    notifyAll();
+                }
+            }
+        }
+
+        synchronized void stop(long expectedGeneration) {
+            if (active && generation == expectedGeneration) {
+                active = false;
+                notifyAll();
+            }
+        }
+
+        synchronized boolean await(long expectedGeneration, Duration timeout)
+                throws InterruptedException {
+            long remainingNanos = timeout.toNanos();
+            long deadline = System.nanoTime() + remainingNanos;
+            while (active && generation == expectedGeneration && !ready
+                    && remainingNanos > 0) {
+                TimeUnit.NANOSECONDS.timedWait(this, remainingNanos);
+                remainingNanos = deadline - System.nanoTime();
+            }
+            return generation == expectedGeneration && ready;
+        }
     }
 
     // Used to write ffmpeg output to buffer instead of a file

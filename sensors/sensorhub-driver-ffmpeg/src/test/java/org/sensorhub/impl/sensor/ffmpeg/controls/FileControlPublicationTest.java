@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.Assert.assertArrayEquals;
@@ -20,6 +21,13 @@ import static org.junit.Assert.assertTrue;
 public class FileControlPublicationTest {
     @Rule
     public TemporaryFolder temporaryFolder = new TemporaryFolder();
+
+    @Test
+    public void recordingReadinessWaitLeavesOuterDeadlineMargin() {
+        assertEquals(Duration.ofSeconds(5), FileControl.RECORDING_READINESS_TIMEOUT);
+        assertTrue("Readiness wait must leave time for close and durable publication",
+                FileControl.RECORDING_READINESS_TIMEOUT.compareTo(Duration.ofSeconds(8)) < 0);
+    }
 
     @Test
     public void publicationNeverReplacesAnExistingFinalObject() throws Exception {

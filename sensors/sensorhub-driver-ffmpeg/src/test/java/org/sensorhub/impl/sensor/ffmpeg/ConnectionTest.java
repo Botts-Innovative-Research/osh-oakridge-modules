@@ -523,19 +523,12 @@ public abstract class ConnectionTest {
 
     @Test
     public void testMp4FileOutput() throws SensorHubException {
-        final long fileRecordTime = 5000;
         MpegTsProcessor processor = driver.mpegTsProcessor;
-        processor.setFrameBuffer(30);
+        // Deliberately disable pre-roll. OPEN must remain pending until a new, muxable keyframe
+        // arrives from the live processor rather than succeeding from an already buffered GOP.
+        processor.setFrameBuffer(0);
 
         try {
-            // Allow the processor to establish a real pre-roll before opening the recorder. This
-            // exercises the buffer replay path and its native AVPacket ownership.
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-
             Optional<IStreamingControlInterface> fileControl = driver.getCommandInputs().values().stream().filter(c -> c instanceof FileControl).findFirst();
             if (fileControl.isPresent()) {
                 var struct = fileControl.get().getCommandDescription().clone();
@@ -560,12 +553,12 @@ public abstract class ConnectionTest {
                         .build()).join();
                 assertEquals("MP4 open command failed: " + openStatus.getMessage(),
                         ICommandStatus.CommandStatusCode.ACCEPTED, openStatus.getStatusCode());
+                assertTrue("An accepted MP4 open must already contain a muxed keyframe",
+                        ((FileControl<?>) fileControl.get()).getFileOutput().hasWrittenPacket());
 
-                try {
-                    Thread.sleep(fileRecordTime);
-                } catch (InterruptedException ignored) {}
-
-
+                // Close immediately after OPEN is acknowledged. This is the production race that
+                // previously produced a header-only, zero-packet MP4 when an occupancy ended as
+                // the camera processor started.
                 // --------- Close File ---------
                 fileIO.setSelectedItem(FileControl.CMD_CLOSE_FILE);
                 var fileIoItem = fileIO.getSelectedItem();
@@ -661,9 +654,10 @@ public abstract class ConnectionTest {
     }
 
     /**
-     * Opens the completed MP4 with FFmpeg and requires both valid video metadata and actual video
-     * packets. File existence alone is insufficient: the muxer can create a zero-byte or
-     * header-only path before returning EINVAL.
+     * Opens the completed MP4 with FFmpeg and requires valid video metadata, a keyframe as the
+     * first video packet, and an actually decoded video frame. File existence or packet parsing
+     * alone is insufficient: a muxer can create a header-only or mid-GOP file that no player can
+     * decode.
      */
     private static void assertValidVideoFile(Path outputPath, boolean requireContainerDimensions) {
         AVFormatContext context = new AVFormatContext(null);
@@ -689,16 +683,37 @@ public abstract class ConnectionTest {
             }
             assertTrue("Output contains no video stream", videoStreamIndex >= 0);
 
+            var codecParameters = context.streams(videoStreamIndex).codecpar();
+            AVCodec decoder = avcodec_find_decoder(codecParameters.codec_id());
+            assertNotNull("No decoder is available for the MP4 video codec", decoder);
+            assertFalse("No decoder is available for the MP4 video codec", decoder.isNull());
+            AVCodecContext decoderContext = avcodec_alloc_context3(decoder);
+            assertNotNull("FFmpeg could not allocate an MP4 decoder", decoderContext);
+            assertFalse("FFmpeg could not allocate an MP4 decoder", decoderContext.isNull());
+            assertTrue("Could not copy MP4 codec parameters into decoder",
+                    avcodec_parameters_to_context(decoderContext, codecParameters) >= 0);
+            assertTrue("Could not open MP4 video decoder",
+                    avcodec_open2(decoderContext, decoder, (PointerPointer<?>) null) >= 0);
+
             AVPacket packet = av_packet_alloc();
+            AVFrame frame = av_frame_alloc();
             assertTrue("FFmpeg could not allocate a validation packet",
                     packet != null && !packet.isNull());
+            assertTrue("FFmpeg could not allocate a validation frame",
+                    frame != null && !frame.isNull());
             try {
                 boolean foundVideoPacket = false;
+                boolean decodedFrame = false;
                 long previousDts = AV_NOPTS_VALUE;
                 int videoPacketsRead = 0;
-                while (videoPacketsRead < 30 && av_read_frame(context, packet) >= 0) {
+                while (!decodedFrame && videoPacketsRead < 30
+                        && av_read_frame(context, packet) >= 0) {
                     if (packet.stream_index() == videoStreamIndex) {
                         assertTrue("Output contains an empty video packet", packet.size() > 0);
+                        if (!foundVideoPacket) {
+                            assertTrue("The first MP4 video packet is not a keyframe",
+                                    (packet.flags() & AV_PKT_FLAG_KEY) != 0);
+                        }
                         if (packet.dts() != AV_NOPTS_VALUE && previousDts != AV_NOPTS_VALUE) {
                             assertTrue("Output video DTS is not monotonic",
                                     packet.dts() > previousDts);
@@ -708,12 +723,29 @@ public abstract class ConnectionTest {
                         }
                         foundVideoPacket = true;
                         videoPacketsRead++;
+
+                        int sendRet = avcodec_send_packet(decoderContext, packet);
+                        assertTrue("MP4 decoder rejected a packet (error " + sendRet + ")",
+                                sendRet >= 0);
+                        int receiveRet = avcodec_receive_frame(decoderContext, frame);
+                        if (receiveRet >= 0) {
+                            assertTrue("Decoded MP4 frame width is missing", frame.width() > 0);
+                            assertTrue("Decoded MP4 frame height is missing", frame.height() > 0);
+                            decodedFrame = true;
+                        } else {
+                            assertTrue("MP4 decoder failed before producing a frame (error "
+                                            + receiveRet + ")",
+                                    receiveRet == AVERROR_EAGAIN() || receiveRet == AVERROR_EOF);
+                        }
                     }
                     av_packet_unref(packet);
                 }
                 assertTrue("Output contains no readable video packets", foundVideoPacket);
+                assertTrue("MP4 output did not decode a video frame", decodedFrame);
             } finally {
+                av_frame_free(frame);
                 av_packet_free(packet);
+                avcodec_free_context(decoderContext);
             }
         } finally {
             if (context != null && !context.isNull()) {

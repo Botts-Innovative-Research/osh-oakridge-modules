@@ -23,6 +23,7 @@ import java.nio.file.AccessDeniedException;
 import java.nio.file.StandardOpenOption;
 import java.nio.channels.FileChannel;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -36,6 +37,10 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
     public static final String FILE_IO = "fileIO";
     //public static final String VIDEO_BUCKET = Constants.VIDEO_BUCKET;
     public static final String VIDEO_BUCKET = "videos";
+    // The lane coordinator exposes an eight-second command deadline. Five seconds accommodates a
+    // slow camera GOP/startup while reserving three seconds for trailer flush, durable publication,
+    // and command propagation before that outer deadline.
+    static final Duration RECORDING_READINESS_TIMEOUT = Duration.ofSeconds(5);
 
     private final IBucketStore bucketStore;
     DataRecord commandData;
@@ -196,9 +201,17 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                     try {
                         this.fileOutput.openFile(bucketStore.getWritableResourceURI(
                                 VIDEO_BUCKET, workingFileName));
+                        this.fileOutput.awaitRecordingReady(RECORDING_READINESS_TIMEOUT);
                         this.parentSensor.getLogger().trace("Writing hidden partial for file: {}", fileName);
                     } catch (Exception e) {
                         getLogger().error("Exception while opening MP4 output", e);
+                        if (fileOutput.isWriting()) {
+                            try {
+                                fileOutput.cancelFile();
+                            } catch (Exception cleanupError) {
+                                e.addSuppressed(cleanupError);
+                            }
+                        }
                         try {
                             if (!workingFileName.isBlank())
                                 bucketStore.deleteObject(VIDEO_BUCKET, workingFileName);
