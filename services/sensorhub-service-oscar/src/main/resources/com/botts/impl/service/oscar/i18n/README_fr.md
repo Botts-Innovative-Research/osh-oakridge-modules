@@ -606,6 +606,8 @@ Ouvrez les **Détails de la voie** pour une voie dotée d'une caméra configuré
 
 La caméra doit fournir une vidéo H.264 avec un GOP fermé et une image IDR/clé toutes les une à deux secondes. Un GOP ouvert ou plus long peut retarder le démarrage ou empêcher le décodage indépendant du premier segment.
 
+L'enregistrement d'une alarme applique la même exigence d'image clé. Une commande `OPEN` reste en attente pendant cinq secondes au maximum, jusqu'à ce que la génération d'enregistrement courante ait correctement multiplexé sa première image clé ; les paquets commençant au milieu d'un GOP sont rejetés. Une commande `CLOSE` pour une occupation très courte attend derrière cette commande `OPEN`. Si l'image clé n'arrive pas, ou si l'enregistreur s'arrête ou échoue, OSCAR annule cette génération et supprime son fichier partiel caché au lieu d'associer à l'événement un MP4 vide ou indécodable. Lorsqu'une alarme n'a pas de vidéo, vérifiez que l'intervalle d'images clés H.264 ne dépasse pas cinq secondes.
+
 Si la récupération automatique limitée est épuisée, le panneau affiche **La vidéo en direct n’a pas pu être lue.** Vérifiez que la caméra et le réseau sont accessibles, puis sélectionnez **Réessayer**. Cette action arrête la tentative précédente et en lance une nouvelle ; elle ne nécessite ni réinitialisation ni redémarrage d'OSCAR, ni réimportation des voies, ni suppression de l'état de l'application ou des volumes Docker.
 
 ## 9. Statistiques nationales
@@ -695,6 +697,13 @@ main les fichiers catalogués. Une mise à niveau antérieure à 3.9.2 conserve 
 ne crée pas tout le profil et n'active pas les sommes de contrôle PostgreSQL. Initialisez un nouveau
 déploiement 3.9.2 ou appliquez une migration de production validée séparément. Les guides de
 stockage de `documentation/` sont les procédures de référence.
+
+Utilisez le lanceur de la version pour arrêter ou redémarrer tout le déploiement. Il arrête d'abord
+la passerelle, laisse ensuite OSCAR vider ses files et enregistrer pendant que PostgreSQL reste
+disponible, puis arrête PostgreSQL en dernier. N'exécutez pas
+`docker compose stop` ou `docker compose restart` sans limiter les services : des signaux
+simultanés peuvent retirer la base de données alors qu'OSCAR termine encore les écritures en file
+et l'arrêt de ses modules.
 
 Avant de modifier conservation, base, chemins, élagage automatique des sauvegardes ou **Supprimer
 les données avec la voie**, confirmez les exigences de preuve, confidentialité, gel juridique,

@@ -607,6 +607,8 @@ Abra **Detalles del carril** para un carril que tenga una cámara configurada. A
 
 La cámara debe proporcionar vídeo H.264 con un GOP cerrado y un fotograma IDR/clave cada uno o dos segundos. Un GOP abierto o más largo puede retrasar el inicio o impedir que el primer segmento se decodifique de forma independiente.
 
+La grabación de alarmas aplica el mismo requisito de fotograma clave. Un comando `OPEN` queda pendiente durante cinco segundos como máximo, hasta que la generación de grabación actual haya multiplexado correctamente su primer fotograma clave; los paquetes que comienzan en medio de un GOP se descartan. Un `CLOSE` de una ocupación muy breve espera detrás de ese `OPEN`. Si el fotograma clave no llega, o la grabadora se detiene o falla, OSCAR cancela esa generación y elimina su archivo parcial oculto en vez de adjuntar al evento un MP4 vacío o no decodificable. Si una alarma no tiene vídeo, compruebe que el intervalo entre fotogramas clave H.264 sea de cinco segundos o menos.
+
 Si se agota la recuperación automática limitada, el panel muestra **No se pudo reproducir el vídeo en directo.** Compruebe que la cámara y la red estén disponibles y seleccione **Reintentar**. Este botón detiene el intento anterior e inicia uno nuevo; no requiere restablecer ni reiniciar OSCAR, volver a importar carriles ni eliminar el estado de la aplicación o los volúmenes de Docker.
 
 ## 9. Estadísticas nacionales
@@ -695,6 +697,13 @@ Una actualización anterior a 3.9.2 conserva la base y configuración anteriores
 activa las sumas de comprobación de PostgreSQL. Inicialice un despliegue 3.9.2 nuevo o aplique una
 migración de producción validada aparte. Las guías de almacenamiento de `documentation/` son los
 procedimientos autorizados.
+
+Use el lanzador de la versión para `stop` y `restart` de todo el despliegue. Primero detiene la
+puerta de enlace, después permite que OSCAR vacíe sus colas y guarde mientras PostgreSQL sigue
+disponible, y detiene PostgreSQL al final. No ejecute
+`docker compose stop` ni `docker compose restart` sin limitar los servicios: las señales simultáneas
+pueden retirar la base de datos mientras
+OSCAR todavía completa escrituras en cola y el cierre de módulos.
 
 Antes de cambiar retención, base, rutas, poda automática de copias o **Eliminar datos al eliminar
 el carril**, confirme las obligaciones de evidencia, privacidad, retención legal, recuperación y

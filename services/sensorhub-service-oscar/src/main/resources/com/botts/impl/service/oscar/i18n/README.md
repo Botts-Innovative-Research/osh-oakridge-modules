@@ -627,6 +627,8 @@ Open **Lane Details** for a lane with a configured camera. The panel initially s
 
 The camera must provide H.264 with a closed GOP and an IDR/keyframe every one to two seconds. A longer or open GOP can delay startup or prevent the first segment from decoding independently.
 
+Alarm recording uses the same keyframe requirement. An `OPEN` command remains pending for no more than five seconds, until the current recording generation has successfully muxed its first keyframe; packets from the middle of a GOP are discarded. A `CLOSE` for a very short occupancy waits behind that `OPEN`. If the keyframe does not arrive, or the recorder stops or fails, OSCAR cancels that generation and removes its hidden partial file instead of attaching an empty or undecodable MP4 to the event. Check for an H.264 keyframe interval of five seconds or less when an alarm has no video.
+
 If bounded automatic recovery is exhausted, the panel shows **Live video could not be played.** Check that the camera and network are reachable, then select **Retry**. Retry stops the previous stream attempt and starts a fresh one; it does not require resetting or restarting OSCAR, re-importing lanes, or deleting application state or Docker volumes.
 
 ## 9. National statistics
@@ -725,6 +727,11 @@ off-host verified copy. Never delete cataloged archive/media files directly. A p
 preserves its old database and configuration and does not create the full storage profile or enable
 PostgreSQL checksums; initialize a fresh 3.9.2 deployment or use a separately validated production
 migration. The packaged `documentation/` storage guides are the authoritative runbooks.
+
+Use the release launcher for deployment-wide `stop` and `restart`. It stops the gateway first,
+then lets OSCAR drain and save while PostgreSQL remains available, and stops PostgreSQL last. Do
+not run an unscoped multi-service `docker compose stop` or `docker compose restart`: simultaneous
+signals can remove the database while OSCAR is still completing queued writes and module shutdown.
 
 Before changing retention, database selection, storage paths, automatic backup pruning, or
 **Delete Data on Lane Removal**, confirm the site's evidence, privacy, legal-hold, recovery, and
