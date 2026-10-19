@@ -375,6 +375,57 @@ public class CameraRecordingCoordinatorTest {
     }
 
     @Test
+    public void queuedCommandGetsFullExecutionTimeoutWithoutCrossGenerationContamination()
+            throws Exception {
+        Duration operationTimeout = Duration.ofMillis(400);
+        CameraRecordingCoordinator coordinator =
+                new CameraRecordingCoordinator(operationTimeout, Duration.ofSeconds(2));
+        FakeCamera camera = new FakeCamera("urn:osh:camera:keyframe-gated");
+        Instant firstStart = Instant.parse("2026-10-18T12:35:00Z");
+
+        CameraRecordingCoordinator.Recording first = coordinator.begin(firstStart,
+                "first-keyframe-gated", List.of(camera));
+        Invocation firstOpen = camera.take();
+        first.decide(true);
+        assertTrue(coordinator.finish(first, true));
+
+        // Model a successful first-keyframe wait that consumes most of the per-operation bound.
+        // The close has already been enqueued, but its own deadline must not start yet.
+        Thread.sleep(250);
+        firstOpen.complete(accepted());
+        Invocation firstClose = camera.take();
+
+        // Cross the close's old enqueue-relative deadline while keeping its actual execution
+        // below the same bound. Before the fix this quarantined the healthy camera and rejected
+        // the next generation's open.
+        Thread.sleep(200);
+        CameraRecordingCoordinator.Recording second = coordinator.begin(
+                firstStart.plusSeconds(1), "second-keyframe-gated", List.of(camera));
+
+        String firstPath = camera.path(first.fileName());
+        firstClose.complete(acceptedWithPath(firstPath));
+        assertEquals(List.of(firstPath), first.videoPaths().get(2, TimeUnit.SECONDS));
+
+        Invocation secondOpen = camera.take();
+        assertEquals(Operation.OPEN, secondOpen.operation);
+        assertEquals(second.fileName(), secondOpen.fileName);
+        secondOpen.complete(accepted());
+        second.decide(true);
+        assertTrue(coordinator.finish(second, true));
+
+        Invocation secondClose = camera.take();
+        assertEquals(Operation.CLOSE, secondClose.operation);
+        String secondPath = camera.path(second.fileName());
+        secondClose.complete(acceptedWithPath(secondPath));
+        assertEquals(List.of(secondPath), second.videoPaths().get(2, TimeUnit.SECONDS));
+        assertFalse("Each generation must retain only its own output",
+                second.videoPaths().getNow(List.of()).contains(firstPath));
+
+        first.invalidate();
+        second.invalidate();
+    }
+
+    @Test
     public void lateCloseAfterRegistryTimeoutIsObservedAndDiscarded() throws Exception {
         CameraRecordingCoordinator coordinator = new CameraRecordingCoordinator(
                 Duration.ofMillis(50), Duration.ofSeconds(2));

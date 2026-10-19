@@ -425,23 +425,35 @@ final class CameraRecordingCoordinator {
                 queue.cleanupPending++;
         }
 
-        CompletableFuture.delayedExecutor(commandTimeout.toMillis(), TimeUnit.MILLISECONDS)
-                .execute(() -> {
-                    if (!result.isDone()) {
-                        // Quarantine bounds the chain, but keep observing the real result. A late
-                        // successful CLOSE can publish a final object; invalidated Recording.retain
-                        // must see that authoritative path so it can delete the orphan candidate.
-                        synchronized (queueLock) {
-                            queue.quarantined = true;
-                        }
-                        logger.error("Timed out waiting for camera {} command; quarantining its "
-                                + "queue until the real operation completes", target.cameraId());
-                    }
-                });
-
         // Register the chain before invoking user/camera code. Even if another thread queues the
         // next command immediately, it will wait for this result.
         predecessor.whenComplete((ignored, predecessorFailure) -> {
+            // Bound the camera operation itself, not its legitimate FIFO wait. Starting this
+            // watchdog when enqueue() is called makes a close or next open inherit time spent
+            // behind the preceding command. In particular, the bounded first-keyframe gate can
+            // consume most of that inherited deadline and falsely quarantine a healthy camera.
+            // A genuinely hung predecessor has its own watchdog, while pending/MAX_PENDING keep
+            // the not-yet-started portion of this queue bounded.
+            CompletableFuture.delayedExecutor(commandTimeout.toMillis(), TimeUnit.MILLISECONDS)
+                    .execute(() -> {
+                        boolean timedOut = false;
+                        synchronized (queueLock) {
+                            // Recheck under the queue lock so completion at the deadline cannot
+                            // race this task into a stale quarantine after operationDone settled.
+                            if (!operationDone.isDone()) {
+                                queue.quarantined = true;
+                                timedOut = true;
+                            }
+                        }
+                        if (timedOut) {
+                            // Quarantine bounds the chain, but keep observing the real result. A
+                            // late successful CLOSE can publish a final object; invalidated
+                            // Recording.retain must see that authoritative path so it can delete
+                            // the orphan candidate.
+                            logger.error("Timed out waiting for camera {} command; quarantining its "
+                                    + "queue until the real operation completes", target.cameraId());
+                        }
+                    });
             final CompletableFuture<ICommandStatus> submitted;
             try {
                 submitted = Objects.requireNonNull(command.get(),
