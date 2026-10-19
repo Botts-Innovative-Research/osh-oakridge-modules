@@ -25,8 +25,12 @@ public class FileControlPublicationTest {
     @Test
     public void recordingReadinessWaitLeavesOuterDeadlineMargin() {
         assertEquals(Duration.ofSeconds(5), FileControl.RECORDING_READINESS_TIMEOUT);
+        assertEquals(5, FileControl.MINIMUM_RETAINABLE_VIDEO_PACKETS);
+        assertEquals(Duration.ofSeconds(5), FileControl.RECORDING_COMPLETENESS_TIMEOUT);
         assertTrue("Readiness wait must leave time for close and durable publication",
                 FileControl.RECORDING_READINESS_TIMEOUT.compareTo(Duration.ofSeconds(8)) < 0);
+        assertTrue("Completeness wait must leave time for close and durable publication",
+                FileControl.RECORDING_COMPLETENESS_TIMEOUT.compareTo(Duration.ofSeconds(8)) < 0);
     }
 
     @Test

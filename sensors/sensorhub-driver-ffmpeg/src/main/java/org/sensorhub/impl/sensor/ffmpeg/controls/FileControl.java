@@ -41,6 +41,11 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
     // slow camera GOP/startup while reserving three seconds for trailer flush, durable publication,
     // and command propagation before that outer deadline.
     static final Duration RECORDING_READINESS_TIMEOUT = Duration.ofSeconds(5);
+    // Five independently muxed video packets are the minimum input from which OSCAR can retain
+    // FIRST/QUARTER/MIDDLE/THREE_QUARTERS/LAST evidence. A short occupancy therefore receives a
+    // bounded post-roll instead of publishing an MP4 that can never enter five-frame retention.
+    static final int MINIMUM_RETAINABLE_VIDEO_PACKETS = 5;
+    static final Duration RECORDING_COMPLETENESS_TIMEOUT = Duration.ofSeconds(5);
 
     private final IBucketStore bucketStore;
     DataRecord commandData;
@@ -248,6 +253,11 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
                     }
                 } else {
                     try {
+                        if (saveFile) {
+                            fileOutput.awaitRecordingPacketCount(
+                                    MINIMUM_RETAINABLE_VIDEO_PACKETS,
+                                    RECORDING_COMPLETENESS_TIMEOUT);
+                        }
                         var processor = this.parentSensor.getProcessor();
                         if (processor == null) {
                             finishOutput(saveFile, this.fileOutput::closeFile,

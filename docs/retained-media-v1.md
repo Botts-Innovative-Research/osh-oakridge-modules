@@ -34,6 +34,11 @@ to 85 and must be from 1 through 100. Backend and Viewer enforce the same safety
 are checked with overflow-safe arithmetic before BGR or `BufferedImage` allocation, and verification
 rejects an oversized file before reading or decoding it.
 
+OSCAR-managed camera recordings wait, within a bounded close deadline, for at least five muxed
+video packets before a saved MP4 is published. Very short alarms therefore receive post-roll and
+remain eligible for the five distinct-frame contract. Legacy or external clips that still contain
+fewer than five decoded frames remain preserved as MP4s and receive a failed conversion ledger.
+
 The manifest records the JPEG quality plus the source object key, codec, duration, byte count,
 SHA-256 digest, rollback deadline, and source lifecycle state. Each JPEG records its semantic position, object key,
 content type, SHA-256 digest, byte count, width, height, decoded-frame ordinal, source PTS, PTS in

@@ -84,4 +84,37 @@ public class FileOutputRecordingReadinessTest {
         readiness.packetWritten(secondGeneration);
         assertTrue(readiness.await(secondGeneration, Duration.ofMillis(10)));
     }
+
+    @Test
+    public void retainedMediaGateWaitsForFivePacketsInTheCurrentGeneration() throws Exception {
+        FileOutput.RecordingReadiness readiness = new FileOutput.RecordingReadiness();
+        long generation = readiness.start();
+        CompletableFuture<Boolean> waiting = CompletableFuture.supplyAsync(() -> {
+            try {
+                return readiness.awaitPacketCount(generation, 5, Duration.ofSeconds(1));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(e);
+            }
+        });
+
+        for (int index = 0; index < 4; index++) readiness.packetWritten(generation);
+        assertFalse("Four packets must not satisfy five-frame retention readiness", waiting.isDone());
+        readiness.packetWritten(generation);
+        assertTrue(waiting.get(1, TimeUnit.SECONDS));
+    }
+
+    @Test
+    public void stalePacketsDoNotCountTowardTheNextGenerationMinimum() throws Exception {
+        FileOutput.RecordingReadiness readiness = new FileOutput.RecordingReadiness();
+        long first = readiness.start();
+        for (int index = 0; index < 5; index++) readiness.packetWritten(first);
+        assertTrue(readiness.awaitPacketCount(first, 5, Duration.ofMillis(10)));
+
+        long second = readiness.start();
+        for (int index = 0; index < 5; index++) readiness.packetWritten(first);
+        assertFalse(readiness.awaitPacketCount(second, 5, Duration.ofMillis(40)));
+        for (int index = 0; index < 5; index++) readiness.packetWritten(second);
+        assertTrue(readiness.awaitPacketCount(second, 5, Duration.ofMillis(10)));
+    }
 }

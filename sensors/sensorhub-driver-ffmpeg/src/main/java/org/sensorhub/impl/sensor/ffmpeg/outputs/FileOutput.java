@@ -373,15 +373,23 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         }
     }
 
-    /**
-     * Waits until this recording has successfully muxed its first independently decodable
-     * keyframe. The wait does not hold {@link #contextLock}, so the packet callback remains free to
-     * satisfy the gate on its dedicated listener executor.
-     *
-     * @throws IOException if the output fails, is stopped, or does not become ready in time
-     */
+    /** Waits for the first independently decodable packet of the current recording. */
     public void awaitRecordingReady(Duration timeout) throws IOException {
+        awaitRecordingPacketCount(1, timeout);
+    }
+
+    /**
+     * Waits until the current recording has successfully muxed at least {@code minimumPackets}.
+     * The wait does not hold {@link #contextLock}, so packet callbacks remain free to satisfy the
+     * gate on their dedicated listener executor.
+     *
+     * @throws IOException if the output fails, is stopped, or does not reach the bound in time
+     */
+    public void awaitRecordingPacketCount(int minimumPackets, Duration timeout) throws IOException {
         Objects.requireNonNull(timeout, "timeout");
+        if (minimumPackets <= 0) {
+            throw new IllegalArgumentException("minimumPackets must be positive");
+        }
         if (timeout.isZero() || timeout.isNegative()) {
             throw new IllegalArgumentException("timeout must be positive");
         }
@@ -389,10 +397,12 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         long expectedGeneration = recordingGeneration;
         final boolean ready;
         try {
-            ready = recordingReadiness.await(expectedGeneration, timeout);
+            ready = recordingReadiness.awaitPacketCount(
+                    expectedGeneration, minimumPackets, timeout);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IOException("Interrupted while waiting for a decodable video keyframe", e);
+            throw new IOException("Interrupted while waiting for " + minimumPackets
+                    + " decodable video packets", e);
         }
         if (ready) {
             return;
@@ -400,13 +410,15 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
         IOException failure = writeFailure;
         if (failure != null) {
-            throw new IOException("Video output failed before its first decodable keyframe", failure);
+            throw new IOException("Video output failed before it muxed " + minimumPackets
+                    + " decodable packets", failure);
         }
         if (!isWriting()) {
-            throw new IOException("Video output stopped before its first decodable keyframe");
+            throw new IOException("Video output stopped before it muxed " + minimumPackets
+                    + " decodable packets");
         }
-        throw new IOException("Video input did not produce a decodable keyframe within "
-                + timeout.toSeconds() + " seconds");
+        throw new IOException("Video input did not produce " + minimumPackets
+                + " decodable packets within " + timeout.toSeconds() + " seconds");
     }
 
     /** True only after this recording has successfully muxed at least one packet. */
@@ -712,32 +724,26 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
     }
 
     /**
-     * Generation-scoped one-shot gate for the first successfully muxed packet. A packet callback
-     * from an old recording can never release a newer recording, and the common post-ready packet
-     * path avoids synchronization.
+     * Generation-scoped progress gate for successfully muxed packets. A packet callback from an
+     * old recording can never release a newer recording.
      */
     static final class RecordingReadiness {
         private long generation;
         private boolean active;
-        private volatile boolean ready;
+        private int packetCount;
 
         synchronized long start() {
             generation++;
             active = true;
-            ready = false;
+            packetCount = 0;
             notifyAll();
             return generation;
         }
 
-        void packetWritten(long expectedGeneration) {
-            if (ready) {
-                return;
-            }
-            synchronized (this) {
-                if (active && generation == expectedGeneration && !ready) {
-                    ready = true;
-                    notifyAll();
-                }
+        synchronized void packetWritten(long expectedGeneration) {
+            if (active && generation == expectedGeneration) {
+                packetCount++;
+                notifyAll();
             }
         }
 
@@ -750,14 +756,22 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
         synchronized boolean await(long expectedGeneration, Duration timeout)
                 throws InterruptedException {
+            return awaitPacketCount(expectedGeneration, 1, timeout);
+        }
+
+        synchronized boolean awaitPacketCount(long expectedGeneration, int minimumPackets,
+                                              Duration timeout) throws InterruptedException {
+            if (minimumPackets <= 0) {
+                throw new IllegalArgumentException("minimumPackets must be positive");
+            }
             long remainingNanos = timeout.toNanos();
             long deadline = System.nanoTime() + remainingNanos;
-            while (active && generation == expectedGeneration && !ready
+            while (active && generation == expectedGeneration && packetCount < minimumPackets
                     && remainingNanos > 0) {
                 TimeUnit.NANOSECONDS.timedWait(this, remainingNanos);
                 remainingNanos = deadline - System.nanoTime();
             }
-            return generation == expectedGeneration && active && ready;
+            return generation == expectedGeneration && active && packetCount >= minimumPackets;
         }
     }
 
