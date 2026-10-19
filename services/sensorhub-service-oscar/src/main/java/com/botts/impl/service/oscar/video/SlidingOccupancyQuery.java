@@ -8,6 +8,7 @@ import com.botts.impl.service.oscar.media.RetentionReconciliationCheckpoint;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.data.IObsData;
+import org.sensorhub.api.datastore.ICancellableDataStore;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.api.datastore.obs.ObsFilter;
@@ -58,6 +59,10 @@ public final class SlidingOccupancyQuery {
     private final Clock clock;
 
     private final Object cycleLock = new Object();
+    private final Object operationLock = new Object();
+    private volatile boolean stopRequested;
+    private ICancellableDataStore.CancellableOperation activeOperation;
+    private RuntimeException operationFailure;
     private ScheduledExecutorService executor;
     private ScheduledFuture<?> future;
 
@@ -119,8 +124,13 @@ public final class SlidingOccupancyQuery {
         if (executor != null && !executor.isTerminated())
             throw new IllegalStateException(
                     "Video-retention worker from the previous generation has not terminated");
+        if (operationFailure != null)
+            throw new IllegalStateException(
+                    "Video-retention datastore operation did not close cleanly; recreate the module",
+                    operationFailure);
         executor = null;
         future = null;
+        stopRequested = false;
         executor = newExecutor();
         long delayMillis = Math.max(1_000L, batchWindowLength.toMillis());
         // Fixed delay prevents a slow catch-up cycle from building an immediate fixed-rate backlog.
@@ -137,21 +147,82 @@ public final class SlidingOccupancyQuery {
     }
 
     private void runCycleLocked() {
+        if (shouldStop())
+            return;
         try {
             beforeQueryAction.run();
         } catch (Exception e) {
-            logger.warn("Retained-media maintenance cycle failed; occupancy scanning will continue", e);
+            if (shouldStop())
+                logger.debug("Retained-media maintenance stopped during module shutdown");
+            else
+                logger.warn("Retained-media maintenance cycle failed; occupancy scanning will continue", e);
         }
 
+        if (shouldStop())
+            return;
         try {
-            scanEligibleOccupancies();
+            scanEligibleOccupanciesCancellable();
         } catch (Exception e) {
             // The current window is intentionally not checkpointed. A later cycle repeats it.
-            logger.warn("Exception while querying occupancy media retention window", e);
+            if (shouldStop())
+                logger.debug("Occupancy media retention query cancelled during module shutdown");
+            else
+                logger.warn("Exception while querying occupancy media retention window", e);
         }
     }
 
+    /**
+     * A PostGIS query can be waiting in the driver when the scheduler is interrupted. Bind the
+     * whole federated scan to the datastore's thread-local cancellation scope so stop() can abort
+     * only this worker's statements before PostgreSQL is stopped.
+     */
+    private void scanEligibleOccupanciesCancellable() throws IOException {
+        ICancellableDataStore.CancellableOperation operation =
+                beginCancellableDataStoreOperation();
+        RuntimeException closeFailure = null;
+        synchronized (operationLock) {
+            activeOperation = operation;
+        }
+        try {
+            if (shouldStop()) {
+                if (operation != null)
+                    operation.cancel();
+                return;
+            }
+            scanEligibleOccupancies();
+        } finally {
+            if (operation != null) {
+                try {
+                    operation.close();
+                } catch (RuntimeException failure) {
+                    closeFailure = failure;
+                }
+            }
+            synchronized (operationLock) {
+                if (activeOperation == operation)
+                    activeOperation = null;
+                if (closeFailure != null && operationFailure == null)
+                    operationFailure = closeFailure;
+            }
+            if (closeFailure != null)
+                throw closeFailure;
+        }
+    }
+
+    ICancellableDataStore.CancellableOperation beginCancellableDataStoreOperation() {
+        // PostGIS cancellation scopes are thread-bound across its linked stores. Opening one on
+        // the configured registry is therefore sufficient for the federated query on this thread.
+        for (var database : hub.getDatabaseRegistry().getObsSystemDatabases()) {
+            var observationStore = database.getObservationStore();
+            if (observationStore instanceof ICancellableDataStore cancellable)
+                return cancellable.beginCancellableOperation();
+        }
+        return null;
+    }
+
     private void scanEligibleOccupancies() throws IOException {
+        if (shouldStop())
+            return;
         Instant now = clock.instant();
         Instant eligibleThrough = subtractClamped(now, retentionOffset);
         RetentionScanCheckpoint checkpoint = cursorStore.read()
@@ -168,7 +239,7 @@ public final class SlidingOccupancyQuery {
         Instant processedThrough = checkpoint.processedThrough();
         if (plan.hasWork()) {
             Instant windowStart = plan.startInclusive();
-            while (windowStart.isBefore(plan.endInclusive())) {
+            while (!shouldStop() && windowStart.isBefore(plan.endInclusive())) {
                 Instant windowEnd = minimum(addClamped(windowStart, batchWindowLength),
                         plan.endInclusive());
                 if (!processWindow(windowStart, windowEnd, true))
@@ -180,7 +251,8 @@ public final class SlidingOccupancyQuery {
             }
         }
 
-        reconcileHistoricalOccupancies(processedThrough, eligibleThrough);
+        if (!shouldStop())
+            reconcileHistoricalOccupancies(processedThrough, eligibleThrough);
     }
 
     private RetentionScanCheckpoint initializeCheckpoint(Instant eligibleThrough, Instant now) {
@@ -255,7 +327,7 @@ public final class SlidingOccupancyQuery {
             // every entry succeeds, and durable observation markers make replay idempotent. Stream
             // entries instead of materializing/sorting an unbounded event-time window in memory.
             var iterator = entries.iterator();
-            while (iterator.hasNext()) {
+            while (!shouldStop() && iterator.hasNext()) {
                 Map.Entry<BigId, IObsData> entry = iterator.next();
                 IObsData observation = entry.getValue();
                 String observationId = identityResolver.publicObservationId(entry.getKey());
@@ -276,11 +348,13 @@ public final class SlidingOccupancyQuery {
                             observation.getResultTime(), clock.instant()));
             }
         }
-        return true;
+        return !shouldStop();
     }
 
     private void reconcileHistoricalOccupancies(Instant forwardProcessedThrough,
                                                 Instant eligibleThrough) throws IOException {
+        if (shouldStop())
+            return;
         Instant reconcileBefore = overlapStart(forwardProcessedThrough, lateArrivalOverlap);
         if (!RETENTION_EPOCH.isBefore(reconcileBefore))
             return;
@@ -364,17 +438,42 @@ public final class SlidingOccupancyQuery {
         java.util.Objects.requireNonNull(unit, "unit");
         if (timeout <= 0)
             throw new IllegalArgumentException("Video-retention stop timeout must be positive");
+        long budgetNanos = Math.max(1L, unit.toNanos(timeout));
+        long startedAt = System.nanoTime();
+        stopRequested = true;
         if (future != null)
             future.cancel(true);
+        RuntimeException cancellationFailure = null;
+        ICancellableDataStore.CancellableOperation operation;
+        synchronized (operationLock) {
+            operation = activeOperation;
+        }
+        if (operation != null) {
+            try {
+                operation.cancel();
+            } catch (RuntimeException failure) {
+                cancellationFailure = failure;
+                synchronized (operationLock) {
+                    if (operationFailure == null)
+                        operationFailure = failure;
+                }
+            }
+        }
         ScheduledExecutorService stopping = executor;
         if (stopping == null) {
             future = null;
+            if (cancellationFailure != null)
+                throw new IllegalStateException(
+                        "Could not cancel the occupancy-retention datastore operation",
+                        cancellationFailure);
             return;
         }
         stopping.shutdownNow();
         boolean terminated;
         try {
-            terminated = stopping.awaitTermination(timeout, unit);
+            long elapsed = Math.max(0L, System.nanoTime() - startedAt);
+            long remaining = Math.max(1L, budgetNanos - Math.min(budgetNanos, elapsed));
+            terminated = stopping.awaitTermination(remaining, TimeUnit.NANOSECONDS);
         } catch (InterruptedException e) {
             stopping.shutdownNow();
             Thread.currentThread().interrupt();
@@ -384,9 +483,21 @@ public final class SlidingOccupancyQuery {
         if (!terminated)
             throw new IllegalStateException(
                     "Occupancy retention worker did not terminate within the stop deadline");
+        RuntimeException unsafeFailure;
+        synchronized (operationLock) {
+            unsafeFailure = operationFailure;
+        }
+        if (unsafeFailure != null)
+            throw new IllegalStateException(
+                    "Occupancy retention stopped, but datastore cancellation or scope cleanup failed",
+                    unsafeFailure);
         if (executor == stopping)
             executor = null;
         future = null;
+    }
+
+    private boolean shouldStop() {
+        return stopRequested || Thread.currentThread().isInterrupted();
     }
 
     private static Duration duration(TemporalAmount amount, String field) {

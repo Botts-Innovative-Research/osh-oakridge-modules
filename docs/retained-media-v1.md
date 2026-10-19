@@ -26,6 +26,12 @@ A media set is keyed by all three stable identities:
 - the lane system UID; and
 - the camera system UID.
 
+The lane value is resolved by walking the occupancy datastream system's OSH parent chain until the
+authoritative `urn:osh:system:lane:*` system is found. The PostgreSQL system store exposes this
+relationship through `ISystemDescStore.getParent`. A missing relationship is a retryable,
+fail-closed publication error: OSCAR never substitutes the RPM UID or `unknown-lane` in a committed
+manifest.
+
 Schema version 1 is committed only when five distinct decoded source frames have been written.
 Their semantic positions are `FIRST`, `QUARTER`, `MIDDLE`, `THREE_QUARTERS`, and `LAST`. Each
 asset is a separately decodable, opaque baseline sRGB JPEG. The configured JPEG quality defaults
@@ -172,6 +178,12 @@ most `maintenanceWorkLimit` direct-addressed catalog-reconciliation, sharded lif
 retry entries per cycle (200 total by default); their queue heads/cursors are durable. Media failures that have a
 durable retry index entry do not block unrelated occupancies, while failure to persist either the
 job or its retry marker keeps the current observation window uncheckpointed for safe replay.
+
+The scheduled scan is also one cancellable datastore operation. During module stop, OSCAR first
+closes admission, interrupts bounded media maintenance, cancels only the scanner's active
+PostgreSQL statements, and waits for the worker to terminate before reporting success. A timed-out
+worker or failed cancellation remains a module-stop failure; restart never claims success while an
+old scanner can still mutate state.
 
 Storage-pressure cleanup considers only complete catalogued media sets. It deletes a set as a unit,
 writes `DELETING` before removing assets, and removes the manifest last, so an interrupted cleanup

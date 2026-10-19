@@ -27,9 +27,9 @@ public final class MediaIdentityResolver {
         var database = hub.getDatabaseRegistry().getFederatedDatabase();
         var dataStream = database.getDataStreamStore().get(new DataStreamKey(observation.getDataStreamID()));
         if (dataStream == null || dataStream.getSystemID() == null)
-            return "unknown-lane";
+            throw new IllegalStateException(
+                    "Cannot resolve retained-media lane without a datastream system identity");
 
-        String fallback = dataStream.getSystemID().getUniqueID();
         BigId systemId = dataStream.getSystemID().getInternalID();
         for (int depth = 0; systemId != null && depth < 32; depth++) {
             var entry = database.getSystemDescStore().getCurrentVersionEntry(systemId);
@@ -37,15 +37,15 @@ public final class MediaIdentityResolver {
                 String uid = entry.getValue().getUniqueIdentifier();
                 if (uid != null && uid.startsWith(LANE_UID_PREFIX))
                     return uid;
-                if (uid != null && !uid.isBlank())
-                    fallback = uid;
             }
             BigId parent = database.getSystemDescStore().getParent(systemId);
             if (parent == null || parent.equals(systemId) || BigId.NONE.equals(parent))
                 break;
             systemId = parent;
         }
-        return fallback == null || fallback.isBlank() ? "unknown-lane" : fallback;
+        throw new IllegalStateException(
+                "Cannot resolve an authoritative OSCAR lane UID for retained media datastream "
+                        + observation.getDataStreamID());
     }
 
     public String cameraUid(String legacyVideoPath) {

@@ -196,6 +196,8 @@ public class VideoRetention {
     }
 
     void runMaintenanceCycle() throws IOException {
+        if (Thread.currentThread().isInterrupted())
+            return;
         Instant now = Instant.now();
         try {
             reclaimMetadata();
@@ -207,6 +209,8 @@ public class VideoRetention {
         }
         if (frameCount == 0)
             return;
+        if (Thread.currentThread().isInterrupted())
+            return;
         MediaMaintenanceCheckpoint checkpoint = mediaStore.readMaintenanceCheckpoint()
                 .orElseGet(() -> initializeMaintenanceCheckpoint(now));
         int catalogLimit = Math.max(1, maintenanceWorkLimit / 3);
@@ -214,12 +218,16 @@ public class VideoRetention {
         int retryLimit = Math.max(1, maintenanceWorkLimit - catalogLimit - lifecycleLimit);
 
         sweepCommittedCatalog(catalogLimit);
+        if (Thread.currentThread().isInterrupted())
+            return;
         checkpoint = checkpoint.withCatalog("", Instant.now());
         mediaStore.writeMaintenanceCheckpoint(checkpoint);
 
         MaintenanceSweep lifecycle = sweepMaintenance(
                 MediaMaintenanceJob.Kind.SOURCE_LIFECYCLE,
                 checkpoint.lifecycleCursor(), lifecycleLimit, now);
+        if (Thread.currentThread().isInterrupted())
+            return;
         checkpoint = checkpoint.withLifecycle(lifecycle.cursor(), Instant.now());
         mediaStore.writeMaintenanceCheckpoint(checkpoint);
 
@@ -248,7 +256,7 @@ public class VideoRetention {
         // direct-addressed; neither work nor memory grows with the number of retained manifests.
         long cycleTail = mediaStore.catalogQueueTail();
         int inspected = 0;
-        while (inspected < entryLimit) {
+        while (!Thread.currentThread().isInterrupted() && inspected < entryLimit) {
             var next = mediaStore.inspectCatalogHead();
             if (next.isEmpty() || next.get().sequence() >= cycleTail)
                 return;
@@ -302,7 +310,7 @@ public class VideoRetention {
         MediaMaintenanceCheckpoint.Cursor cursor = initial;
         int inspected = 0;
         int completedShards = 0;
-        while (inspected < entryLimit
+        while (!Thread.currentThread().isInterrupted() && inspected < entryLimit
                 && completedShards < MAX_EMPTY_MAINTENANCE_SHARDS_PER_SWEEP) {
             int requested = entryLimit - inspected;
             List<MediaSetStore.MaintenanceEntry> entries = mediaStore.listMaintenance(
@@ -314,6 +322,8 @@ public class VideoRetention {
             }
 
             for (MediaSetStore.MaintenanceEntry entry : entries) {
+                if (Thread.currentThread().isInterrupted())
+                    break;
                 inspected++;
                 MediaMaintenanceJob job = entry.job();
                 if (!job.dueAt().isAfter(now))

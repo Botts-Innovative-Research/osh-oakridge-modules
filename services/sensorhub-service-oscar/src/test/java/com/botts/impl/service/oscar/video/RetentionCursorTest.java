@@ -12,7 +12,13 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.sensorhub.api.ISensorHub;
+import org.sensorhub.api.database.IDatabaseRegistry;
+import org.sensorhub.api.database.IFederatedDatabase;
+import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.DataStoreException;
+import org.sensorhub.api.datastore.ICancellableDataStore;
+import org.sensorhub.api.datastore.obs.IDataStreamStore;
+import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 
 import java.io.IOException;
@@ -29,6 +35,7 @@ import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import static org.junit.Assert.*;
 
@@ -524,6 +531,123 @@ public class RetentionCursorTest {
         int stableMutations = mutations.get();
         Thread.sleep(50L);
         assertEquals(stableMutations, mutations.get());
+    }
+
+    @Test
+    public void stopCancelsActiveDatastoreQueryBeforeReportingTermination() throws Exception {
+        CountDownLatch queryStarted = new CountDownLatch(1);
+        CountDownLatch queryReleased = new CountDownLatch(1);
+        AtomicInteger cancellations = new AtomicInteger();
+        AtomicInteger closes = new AtomicInteger();
+        ICancellableDataStore.CancellableOperation operation =
+                new ICancellableDataStore.CancellableOperation() {
+                    private volatile boolean cancelled;
+
+                    @Override
+                    public void cancel() {
+                        if (!cancelled) {
+                            cancelled = true;
+                            cancellations.incrementAndGet();
+                            queryReleased.countDown();
+                        }
+                    }
+
+                    @Override
+                    public boolean isCancellationRequested() {
+                        return cancelled;
+                    }
+
+                    @Override
+                    public void close() {
+                        closes.incrementAndGet();
+                    }
+                };
+
+        IDataStreamStore dataStreams = (IDataStreamStore) Proxy.newProxyInstance(
+                IDataStreamStore.class.getClassLoader(), new Class<?>[]{IDataStreamStore.class},
+                (proxy, method, arguments) -> method.getName().equals("select")
+                        ? Stream.empty() : defaultProxyValue(method.getReturnType()));
+        IObsStore observations = (IObsStore) Proxy.newProxyInstance(
+                IObsStore.class.getClassLoader(),
+                new Class<?>[]{IObsStore.class, ICancellableDataStore.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "beginCancellableOperation" -> operation;
+                    case "getDataStreams" -> dataStreams;
+                    case "selectEntries" -> {
+                        queryStarted.countDown();
+                        awaitIgnoringInterrupts(queryReleased);
+                        yield Stream.empty();
+                    }
+                    default -> defaultProxyValue(method.getReturnType());
+                });
+        IObsSystemDatabase localDatabase = (IObsSystemDatabase) Proxy.newProxyInstance(
+                IObsSystemDatabase.class.getClassLoader(),
+                new Class<?>[]{IObsSystemDatabase.class},
+                (proxy, method, arguments) -> method.getName().equals("getObservationStore")
+                        ? observations : defaultProxyValue(method.getReturnType()));
+        IFederatedDatabase federated = (IFederatedDatabase) Proxy.newProxyInstance(
+                IFederatedDatabase.class.getClassLoader(),
+                new Class<?>[]{IFederatedDatabase.class},
+                (proxy, method, arguments) -> method.getName().equals("getObservationStore")
+                        ? observations : defaultProxyValue(method.getReturnType()));
+        IDatabaseRegistry registry = (IDatabaseRegistry) Proxy.newProxyInstance(
+                IDatabaseRegistry.class.getClassLoader(),
+                new Class<?>[]{IDatabaseRegistry.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "getFederatedDatabase" -> federated;
+                    case "getObsSystemDatabases" -> List.of(localDatabase);
+                    default -> defaultProxyValue(method.getReturnType());
+                });
+        ISensorHub hub = (ISensorHub) Proxy.newProxyInstance(
+                ISensorHub.class.getClassLoader(), new Class<?>[]{ISensorHub.class},
+                (proxy, method, arguments) -> method.getName().equals("getDatabaseRegistry")
+                        ? registry : defaultProxyValue(method.getReturnType()));
+
+        RetentionScanCheckpoint atEpoch = RetentionScanCheckpoint.at(Instant.EPOCH, Instant.EPOCH);
+        SlidingOccupancyQuery.CursorStore cursorStore = new SlidingOccupancyQuery.CursorStore() {
+            @Override public Optional<RetentionScanCheckpoint> read() { return Optional.of(atEpoch); }
+            @Override public void write(RetentionScanCheckpoint checkpoint) { }
+            @Override public Optional<RetentionReconciliationCheckpoint> readReconciliation() {
+                return Optional.empty();
+            }
+            @Override public void writeReconciliation(RetentionReconciliationCheckpoint checkpoint) { }
+            @Override public boolean isProcessed(String observationId, Instant resultTime) {
+                return false;
+            }
+            @Override public void markProcessed(RetentionProcessedObservation marker) { }
+        };
+        SlidingOccupancyQuery query = new SlidingOccupancyQuery(hub, Duration.ofDays(1),
+                ignored -> true, Duration.ZERO, Duration.ofDays(1), cursorStore, () -> { },
+                Clock.fixed(Instant.EPOCH.plusSeconds(10), ZoneOffset.UTC), Duration.ZERO,
+                Duration.ofDays(1));
+
+        query.start();
+        assertTrue("Retention query did not enter the datastore", queryStarted.await(2, TimeUnit.SECONDS));
+        query.stop(2, TimeUnit.SECONDS);
+        assertEquals("Stop must cancel the scoped datastore query", 1, cancellations.get());
+        assertEquals("The worker must close its own datastore scope", 1, closes.get());
+    }
+
+    private static Object defaultProxyValue(Class<?> type) {
+        if (!type.isPrimitive())
+            return null;
+        if (type == boolean.class)
+            return false;
+        if (type == char.class)
+            return '\0';
+        if (type == byte.class)
+            return (byte) 0;
+        if (type == short.class)
+            return (short) 0;
+        if (type == int.class)
+            return 0;
+        if (type == long.class)
+            return 0L;
+        if (type == float.class)
+            return 0F;
+        if (type == double.class)
+            return 0D;
+        return null;
     }
 
     private static void awaitIgnoringInterrupts(CountDownLatch latch) {
