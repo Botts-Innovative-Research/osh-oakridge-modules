@@ -19,6 +19,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -272,14 +273,15 @@ final class CameraRecordingCoordinator {
         List<CompletableFuture<Optional<String>>> paths = new ArrayList<>(recording.attempts.size());
         for (Attempt attempt : recording.attempts) {
             CompletableFuture<ICommandStatus> closeStatus = enqueue(attempt.target,
-                    () -> recording.saveDecision.thenCompose(save -> {
+                    recording.saveDecision, () -> {
                         // If the exposed open failed or timed out, a late underlying open may still
                         // complete. Its ordered close must be a discard, never an orphan-producing
                         // save based on stale lane state.
                         boolean openSucceeded = !attempt.openStatus.isCompletedExceptionally()
                                 && isSuccessful(attempt.openStatus.getNow(null));
+                        boolean save = recording.saveDecision.join();
                         return attempt.target.close(save && openSucceeded);
-                    }), true);
+                    }, true);
             CompletableFuture<Optional<String>> path = attempt.openStatus
                     .handle((status, error) -> error == null && isSuccessful(status))
                     .thenCombine(closeStatus.handle((status, error) -> {
@@ -401,11 +403,19 @@ final class CameraRecordingCoordinator {
     private CompletableFuture<ICommandStatus> enqueue(
             CameraTarget target, Supplier<CompletableFuture<ICommandStatus>> command,
             boolean cleanup) {
+        return enqueue(target, CompletableFuture.completedFuture(null), command, cleanup);
+    }
+
+    private CompletableFuture<ICommandStatus> enqueue(
+            CameraTarget target, CompletableFuture<?> submissionGate,
+            Supplier<CompletableFuture<ICommandStatus>> command, boolean cleanup) {
+        Objects.requireNonNull(submissionGate, "submissionGate");
         CompletableFuture<ICommandStatus> result = new CompletableFuture<>();
         // The serialization barrier is released only by the real camera future. The surrounding
         // occupancy wait is bounded; keeping this result attached to the real future lets a late
         // successful close reveal and delete any final file after that wait has been invalidated.
         CompletableFuture<Void> operationDone = new CompletableFuture<>();
+        AtomicBoolean operationFinished = new AtomicBoolean();
         CompletableFuture<Void> tail = operationDone.handle((ignored, failure) -> null);
         CompletableFuture<Void> predecessor;
         Object key = Objects.requireNonNull(target.serializationKey(), "serializationKey");
@@ -428,47 +438,60 @@ final class CameraRecordingCoordinator {
         // Register the chain before invoking user/camera code. Even if another thread queues the
         // next command immediately, it will wait for this result.
         predecessor.whenComplete((ignored, predecessorFailure) -> {
-            // Bound the camera operation itself, not its legitimate FIFO wait. Starting this
-            // watchdog when enqueue() is called makes a close or next open inherit time spent
-            // behind the preceding command. In particular, the bounded first-keyframe gate can
-            // consume most of that inherited deadline and falsely quarantine a healthy camera.
-            // A genuinely hung predecessor has its own watchdog, while pending/MAX_PENDING keep
-            // the not-yet-started portion of this queue bounded.
-            CompletableFuture.delayedExecutor(commandTimeout.toMillis(), TimeUnit.MILLISECONDS)
-                    .execute(() -> {
-                        boolean timedOut = false;
-                        synchronized (queueLock) {
-                            // Recheck under the queue lock so completion at the deadline cannot
-                            // race this task into a stale quarantine after operationDone settled.
-                            if (!operationDone.isDone()) {
-                                queue.quarantined = true;
-                                timedOut = true;
+            submissionGate.whenComplete((gateValue, gateFailure) -> {
+                if (gateFailure != null) {
+                    result.completeExceptionally(unwrap(gateFailure));
+                    operationDone.complete(null);
+                    return;
+                }
+
+                // Bound the camera operation itself, not its legitimate FIFO or save-decision
+                // wait. Starting this watchdog when enqueue() is called makes a close or next
+                // open inherit time spent behind the preceding command. Starting it merely when
+                // the FIFO turn begins still makes CLOSE inherit the bounded alarm decision wait.
+                // A genuinely hung predecessor has its own watchdog; decisionTimeout and
+                // pending/MAX_PENDING independently bound the pre-submission portions.
+                CompletableFuture.delayedExecutor(commandTimeout.toMillis(), TimeUnit.MILLISECONDS)
+                        .execute(() -> {
+                            boolean timedOut = false;
+                            synchronized (queueLock) {
+                                // submitted completion marks operationFinished before it completes
+                                // the exposed result. That result may run synchronous dependents,
+                                // so operationDone alone could still look incomplete and cause a
+                                // stale quarantine after the real camera operation had settled.
+                                if (!operationFinished.get()) {
+                                    queue.quarantined = true;
+                                    timedOut = true;
+                                }
                             }
-                        }
-                        if (timedOut) {
-                            // Quarantine bounds the chain, but keep observing the real result. A
-                            // late successful CLOSE can publish a final object; invalidated
-                            // Recording.retain must see that authoritative path so it can delete
-                            // the orphan candidate.
-                            logger.error("Timed out waiting for camera {} command; quarantining its "
-                                    + "queue until the real operation completes", target.cameraId());
-                        }
-                    });
-            final CompletableFuture<ICommandStatus> submitted;
-            try {
-                submitted = Objects.requireNonNull(command.get(),
-                        "Camera command returned a null future");
-            } catch (Throwable failure) {
-                result.completeExceptionally(failure);
-                operationDone.complete(null);
-                return;
-            }
-            submitted.whenComplete((status, failure) -> {
-                if (failure == null)
-                    result.complete(status);
-                else
-                    result.completeExceptionally(unwrap(failure));
-                operationDone.complete(null);
+                            if (timedOut) {
+                                // Quarantine bounds the chain, but keep observing the real result.
+                                // A late successful CLOSE can publish a final object; invalidated
+                                // Recording.retain must see that authoritative path so it can
+                                // delete the orphan candidate.
+                                logger.error("Timed out waiting for camera {} command; quarantining "
+                                        + "its queue until the real operation completes",
+                                        target.cameraId());
+                            }
+                        });
+                final CompletableFuture<ICommandStatus> submitted;
+                try {
+                    submitted = Objects.requireNonNull(command.get(),
+                            "Camera command returned a null future");
+                } catch (Throwable failure) {
+                    operationFinished.set(true);
+                    result.completeExceptionally(failure);
+                    operationDone.complete(null);
+                    return;
+                }
+                submitted.whenComplete((status, failure) -> {
+                    operationFinished.set(true);
+                    if (failure == null)
+                        result.complete(status);
+                    else
+                        result.completeExceptionally(unwrap(failure));
+                    operationDone.complete(null);
+                });
             });
         });
 

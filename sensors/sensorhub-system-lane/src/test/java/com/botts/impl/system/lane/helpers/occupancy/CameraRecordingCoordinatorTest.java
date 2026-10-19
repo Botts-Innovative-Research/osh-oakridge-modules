@@ -377,7 +377,7 @@ public class CameraRecordingCoordinatorTest {
     @Test
     public void queuedCommandGetsFullExecutionTimeoutWithoutCrossGenerationContamination()
             throws Exception {
-        Duration operationTimeout = Duration.ofMillis(400);
+        Duration operationTimeout = Duration.ofSeconds(2);
         CameraRecordingCoordinator coordinator =
                 new CameraRecordingCoordinator(operationTimeout, Duration.ofSeconds(2));
         FakeCamera camera = new FakeCamera("urn:osh:camera:keyframe-gated");
@@ -391,14 +391,14 @@ public class CameraRecordingCoordinatorTest {
 
         // Model a successful first-keyframe wait that consumes most of the per-operation bound.
         // The close has already been enqueued, but its own deadline must not start yet.
-        Thread.sleep(250);
+        Thread.sleep(1_000);
         firstOpen.complete(accepted());
         Invocation firstClose = camera.take();
 
         // Cross the close's old enqueue-relative deadline while keeping its actual execution
         // below the same bound. Before the fix this quarantined the healthy camera and rejected
         // the next generation's open.
-        Thread.sleep(200);
+        Thread.sleep(1_500);
         CameraRecordingCoordinator.Recording second = coordinator.begin(
                 firstStart.plusSeconds(1), "second-keyframe-gated", List.of(camera));
 
@@ -423,6 +423,63 @@ public class CameraRecordingCoordinatorTest {
 
         first.invalidate();
         second.invalidate();
+    }
+
+    @Test
+    public void mismatchedOccupancyDecisionWaitDoesNotConsumeCameraOperationTimeout()
+            throws Exception {
+        Duration commandTimeout = Duration.ofMillis(500);
+        Duration decisionTimeout = Duration.ofMillis(1_500);
+        CameraRecordingCoordinator coordinator =
+                new CameraRecordingCoordinator(commandTimeout, decisionTimeout);
+        OccupancyRecordingRegistry registry = new OccupancyRecordingRegistry();
+        FakeCamera camera = new FakeCamera("urn:osh:camera:decision-gated");
+        Instant firstStart = Instant.parse("2026-10-18T12:37:00Z");
+
+        CameraRecordingCoordinator.Recording first = coordinator.begin(firstStart,
+                "first-decision-gated", List.of(camera));
+        camera.take().complete(accepted());
+        registry.register(first, registry.epoch());
+        assertTrue(coordinator.finish(first, false));
+
+        // Reproduce the native startup sequence: the occupancy callback cannot find an exact
+        // start-time match, returns null, and therefore leaves the recording's bounded fallback
+        // to make the save/discard decision. The camera-operation timeout is deliberately much
+        // shorter than that decision wait so counting pre-submission time fails deterministically.
+        CompletableFuture<OccupancyRecordingRegistry.Resolution> mismatch =
+                CompletableFuture.supplyAsync(() -> registry.resolve(
+                        occupancy(firstStart.plusSeconds(5), false), Duration.ofMillis(800),
+                        coordinator::finish));
+        assertNull(mismatch.get(2, TimeUnit.SECONDS));
+        assertNull("CLOSE must remain behind the bounded alarm decision",
+                camera.calls.poll(200, TimeUnit.MILLISECONDS));
+        Invocation firstClose = camera.take();
+        assertEquals(Operation.CLOSE, firstClose.operation);
+        assertFalse("The fallback must discard an undecided occupancy", firstClose.save);
+
+        // The decision wait has consumed three complete camera-operation timeouts. Before the
+        // fix, the watchdog quarantined this healthy camera long before fallback submitted CLOSE.
+        // The real CLOSE has only just begun, so it must receive its own full operation timeout.
+        CameraRecordingCoordinator.Recording second = coordinator.begin(
+                firstStart.plusSeconds(1), "second-decision-gated", List.of(camera));
+        firstClose.complete(accepted());
+        assertEquals(List.of(), first.videoPaths().get(2, TimeUnit.SECONDS));
+
+        Invocation secondOpen = camera.take();
+        assertEquals(Operation.OPEN, secondOpen.operation);
+        assertEquals(second.fileName(), secondOpen.fileName);
+        secondOpen.complete(accepted());
+        second.decide(false);
+        assertTrue(coordinator.finish(second, false));
+        Invocation secondClose = camera.take();
+        assertEquals(Operation.CLOSE, secondClose.operation);
+        assertFalse(secondClose.save);
+        secondClose.complete(accepted());
+        assertEquals(List.of(), second.videoPaths().get(2, TimeUnit.SECONDS));
+
+        first.invalidate();
+        second.invalidate();
+        registry.clear();
     }
 
     @Test
