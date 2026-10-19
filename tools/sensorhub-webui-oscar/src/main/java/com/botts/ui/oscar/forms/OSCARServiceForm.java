@@ -202,6 +202,9 @@ public class OSCARServiceForm extends GenericConfigForm {
     }
 
     static void recordUploadedObjectKey(TextField persistentPathField, String objectKey) {
-        persistentPathField.setValue(objectKey);
+        Property<String> configuredPath = persistentPathField.getPropertyDataSource();
+        if (configuredPath == null)
+            throw new IllegalStateException("Uploaded object path field is not bound");
+        configuredPath.setValue(objectKey);
     }
 }

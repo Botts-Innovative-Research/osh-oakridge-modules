@@ -14,6 +14,7 @@ public class OSCARServiceFormUploadTest {
         TextField field = new TextField();
         field.setPropertyDataSource(configuredPath);
         field.setBuffered(false);
+        field.setReadOnly(true);
 
         OSCARServiceForm.recordUploadedObjectKey(field, "canonical-50-lanes.csv");
 
