@@ -149,7 +149,7 @@ public class OSCARServiceForm extends GenericConfigForm {
                                 "Unable to load file from {0}").replace("{0}", objectKey),
                                 new IllegalStateException(message));
                         } else {
-                            recordUploadedObjectKey((Field<String>) field, objectKey);
+                            recordUploadedObjectKey(textField, objectKey);
                             DisplayUtils.showOperationSuccessful(trConfig(
                                 OSCARServiceForm.class,
                                 "ui.loadSucceeded",
@@ -201,7 +201,7 @@ public class OSCARServiceForm extends GenericConfigForm {
         return field;
     }
 
-    static void recordUploadedObjectKey(Field<String> field, String objectKey) {
-        field.setValue(objectKey);
+    static void recordUploadedObjectKey(TextField persistentPathField, String objectKey) {
+        persistentPathField.setValue(objectKey);
     }
 }
