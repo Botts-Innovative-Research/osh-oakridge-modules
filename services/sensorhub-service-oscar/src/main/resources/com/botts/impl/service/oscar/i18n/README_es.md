@@ -108,7 +108,7 @@ Use el selector de idioma de la parte superior de la administración o de OSCAR 
 
 - **Cargar** envía inmediatamente el archivo; en el caso del CSV, crea los carriles en el registro activo de módulos en memoria. No escribe la configuración persistente de los módulos.
 - **Aplicar cambios** confirma el formulario del módulo mostrado y actualiza su configuración en ejecución.
-- **Guardar** en el encabezado escribe la configuración completa para conservarla después de reiniciar.
+- **Guardar** en el encabezado abre un diálogo de confirmación. Seleccione **Sí** y espere **Configuración de SensorHub guardada**; solo entonces se escribe la configuración completa para conservarla después de reiniciar.
 
 Después de configurar, use **Aplicar cambios** cuando esté disponible y luego **Guardar**. El mensaje de carga correcta demuestra que el archivo fue aceptado, no que todos los dispositivos se conectaron ni que todo quedó persistido.
 
@@ -264,7 +264,7 @@ La importación masiva es preferible para muchos carriles. En un sitio existente
 ![CSV cargado](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/16-csv-upload-success.png)
 
 4. Abra **Sensores** e inspeccione cada carril y sus submódulos RPM/cámara. La carga es asíncrona; espere a que aparezcan todas las filas.
-5. Corrija valores por carril, aplique cambios y use **Guardar** globalmente tras validar. Hasta que el guardado global termine correctamente, los carriles importados existen solo en memoria y pueden desaparecer al reiniciar.
+5. Corrija valores por carril, aplique cambios, use **Guardar** globalmente, confirme **Sí** y espere **Configuración de SensorHub guardada**. Abrir el diálogo sin seleccionar **Sí** no guarda. Hasta que el guardado global termine correctamente, los carriles importados existen solo en memoria y pueden desaparecer al reiniciar.
 6. Durante la ventana de verificación planificada, reinicie OSCAR con el comando admitido de despliegue, inicie sesión de nuevo y confirme que todos los carriles previstos y sus hijos RPM/cámara reaparecen en **Sensores**. No dé por terminada la importación hasta superar esta comprobación tras el reinicio.
 
 ![Carriles importados](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/17-sensors-overview.png)
@@ -730,7 +730,7 @@ destrucción de registros.
 
 - [ ] Imagen orientada al norte, recortada y PNG/JPG/JPEG.
 - [ ] Límites válidos, ordenados y no cero.
-- [ ] Carga correcta, Aplicar cambios y Guardar realizados.
+- [ ] La carga fue correcta, se aplicaron los cambios, se confirmó Guardar con Sí y apareció el mensaje de configuración guardada.
 - [ ] Viewer usa la extensión del plano y los marcadores están alineados.
 
 ### Carriles y dispositivos
@@ -739,7 +739,7 @@ destrucción de registros.
 - [ ] Tipo/host/puerto/opciones del RPM correctos.
 - [ ] Tipo, host/puerto, credenciales, ruta/códec y búfer de cámaras correctos.
 - [ ] Hijos esperados en estado Iniciado; un fallo de hardware no bloquea la validación de otros carriles.
-- [ ] Guardado global tras importación o alta manual.
+- [ ] Guardado global confirmado con Sí tras importación o alta manual; apareció el mensaje de configuración guardada.
 
 ### Viewer
 
@@ -783,7 +783,7 @@ destrucción de registros.
 | Nodo remoto falla tras recargar | La sesión necesita cookie válida; Basic requiere reintroducir secretos. Compruebe TLS, CORS, rutas, puerto y permisos. |
 | No se genera el QR de alarma | Confirme carril disponible y observaciones gamma/neutrón retenidas en el intervalo. Si no cabe en un solo QR, use el archivo de alarma descargable. |
 | El QR no se escanea/importa | Aumente brillo o use el PNG a tamaño original; como alternativa importe `.oscar-alarm.json`. Un fallo de integridad exige una nueva exportación, no omitir la validación. |
-| Cambios desaparecen al reiniciar | Aplique el formulario y después pulse Guardar global. |
+| Cambios desaparecen al reiniciar | Aplique el formulario, pulse Guardar global, confirme Sí y espere el mensaje de configuración guardada antes de reiniciar. |
 
 Para soporte, registre versión OSCAR, navegador, carril/ocupación, hora y zona, estados y logs saneados. Elimine contraseñas, tokens, claves privadas y evidencias sensibles.
 

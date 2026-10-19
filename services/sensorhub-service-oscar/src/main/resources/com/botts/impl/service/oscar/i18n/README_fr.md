@@ -108,7 +108,7 @@ Utilisez le sélecteur de langue en haut de l'administration ou d'OSCAR Viewer. 
 
 - **Téléverser** envoie immédiatement le fichier ; pour le CSV, cela crée les voies dans le registre actif des modules en mémoire. Cette action n'écrit pas la configuration persistante des modules.
 - **Appliquer les modifications** valide le formulaire du module affiché et met à jour sa configuration en cours d'exécution.
-- **Enregistrer** dans l'en-tête écrit toute la configuration afin qu'elle survive à un redémarrage.
+- **Enregistrer** dans l'en-tête ouvre une boîte de confirmation. Sélectionnez **Oui** et attendez **Configuration de SensorHub enregistrée** ; alors seulement la configuration complète est écrite afin de survivre à un redémarrage.
 
 Après toute configuration, utilisez **Appliquer les modifications** lorsqu'il est disponible, puis **Enregistrer**. Un message de téléversement réussi prouve que le fichier a été accepté, pas que tous les appareils se connectent ni que tout est persistant.
 
@@ -264,7 +264,7 @@ L'importation en masse est recommandée pour de nombreuses voies. Sur un site ex
 ![CSV téléversé](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/16-csv-upload-success.png)
 
 4. Ouvrez **Capteurs** et inspectez chaque voie et ses sous-modules RPM/caméra. Le chargement est asynchrone ; attendez l'apparition de toutes les lignes.
-5. Corrigez les valeurs par voie, appliquez les changements, puis utilisez l'action globale **Enregistrer** après validation. Tant que cet enregistrement global n'a pas réussi, les voies importées n'existent qu'en mémoire et peuvent disparaître au redémarrage.
+5. Corrigez les valeurs par voie, appliquez les changements, utilisez l'action globale **Enregistrer**, confirmez **Oui**, puis attendez **Configuration de SensorHub enregistrée**. Ouvrir la boîte sans sélectionner **Oui** n'enregistre rien. Tant que cet enregistrement global n'a pas réussi, les voies importées n'existent qu'en mémoire et peuvent disparaître au redémarrage.
 6. Pendant la fenêtre de vérification planifiée, redémarrez OSCAR avec la commande de déploiement prise en charge, reconnectez-vous et vérifiez que toutes les voies attendues et leurs enfants RPM/caméra réapparaissent sous **Capteurs**. Ne considérez pas l'importation comme terminée avant la réussite de ce contrôle après redémarrage.
 
 ![Voies importées](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/17-sensors-overview.png)
@@ -730,7 +730,7 @@ reprise et destruction des documents.
 
 - [ ] Image nord en haut, bien recadrée, PNG/JPG/JPEG.
 - [ ] Limites valides, ordonnées et non nulles.
-- [ ] Téléversement réussi, modifications appliquées et configuration enregistrée.
+- [ ] Téléversement réussi, modifications appliquées, Enregistrer confirmé avec Oui et message d'enregistrement affiché.
 - [ ] Viewer utilise l'étendue du plan et les marqueurs sont alignés.
 
 ### Voies et appareils
@@ -739,7 +739,7 @@ reprise et destruction des documents.
 - [ ] Type/hôte/port/options RPM corrects.
 - [ ] Type, hôte/port, identifiants, chemin/codec et tampon des caméras corrects.
 - [ ] Enfants attendus démarrés ; une panne matérielle ne bloque pas la validation des autres voies.
-- [ ] Enregistrement global après import ou création.
+- [ ] Enregistrement global confirmé avec Oui après import ou création ; le message d'enregistrement s'est affiché.
 
 ### Viewer
 
@@ -783,7 +783,7 @@ reprise et destruction des documents.
 | Nœud distant refusé après rechargement | La session exige un cookie valide; Basic exige de ressaisir les secrets. Vérifiez TLS, CORS, chemins, port et droits. |
 | QR d'alarme impossible à générer | Vérifiez la voie et les observations gamma/neutron conservées sur l'intervalle. Si un seul QR ne suffit pas, utilisez le fichier d'alarme téléchargeable. |
 | QR impossible à scanner/importer | Augmentez la luminosité ou utilisez le PNG à sa taille d'origine; sinon importez `.oscar-alarm.json`. Un échec d'intégrité impose un nouvel export, jamais le contournement du contrôle. |
-| Modifications perdues au redémarrage | Appliquez le formulaire, puis utilisez Enregistrer globalement. |
+| Modifications perdues au redémarrage | Appliquez le formulaire, utilisez Enregistrer globalement, confirmez Oui et attendez le message d'enregistrement avant de redémarrer. |
 
 Pour l'assistance, relevez version OSCAR, navigateur, voie/occupation, heure et fuseau, états et journaux nettoyés. Retirez mots de passe, jetons, clés privées et preuves sensibles.
 

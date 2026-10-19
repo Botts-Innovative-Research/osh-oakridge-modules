@@ -108,7 +108,7 @@ Use the language selector at the top of the administration interface or OSCAR Vi
 
 - **Upload** immediately sends the selected file to OSCAR and, for CSV, creates new lanes in the active in-memory module registry. It does not write the persisted module configuration.
 - **Apply Changes** commits the currently displayed module form and updates that module's runtime configuration.
-- **Save** in the administration header writes the complete module configuration so it survives a restart.
+- **Save** in the administration header opens a confirmation dialog. Select **Yes** and wait for **SensorHub Configuration Saved**; only then has the complete module configuration been written so it survives a restart.
 
 After any successful setup, use **Apply Changes** where available and then **Save**. An upload-success message proves that the file was accepted; it does not by itself prove that every device can connect or that all changes have been persisted.
 
@@ -270,7 +270,7 @@ Bulk import is the preferred way to create many lanes. For an existing site, fir
 ![Successful CSV upload](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/16-csv-upload-success.png)
 
 4. Open **Sensors** and inspect every new lane and its generated RPM/camera submodules. Loading is asynchronous, so allow time for all rows to appear.
-5. Correct any per-lane values, use **Apply Changes**, and select the global **Save** after validation. Until global Save succeeds, imported lanes exist only in memory and can disappear on restart.
+5. Correct any per-lane values, use **Apply Changes**, select the global **Save**, confirm **Yes**, and wait for **SensorHub Configuration Saved**. Opening the confirmation dialog without selecting **Yes** does not save. Until global Save succeeds, imported lanes exist only in memory and can disappear on restart.
 6. During the planned verification window, restart OSCAR with the supported deployment command, sign in again, and confirm that every expected lane and its RPM/camera children reappear under **Sensors**. Do not accept the import as complete until it passes this restart check.
 
 ![Imported lanes in Sensors](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/17-sensors-overview.png)
@@ -760,7 +760,7 @@ records-destruction requirements.
 
 - [ ] Image is north-up, tightly cropped, and uses PNG/JPG/JPEG.
 - [ ] Lower-left and upper-right values are valid, correctly ordered, and not zero.
-- [ ] Upload reports success; Apply Changes and global Save were used.
+- [ ] Upload reports success; Apply Changes was used; global Save was confirmed with Yes; the saved notification appeared.
 - [ ] Viewer starts at the diagram extent; image alignment and lane-marker positions are correct.
 
 ### Lanes and devices
@@ -769,7 +769,7 @@ records-destruction requirements.
 - [ ] RPM type, host, port, and type-specific options match the device.
 - [ ] Every camera type, host/port, credentials, path/codec, and buffer value is correct.
 - [ ] Expected child modules exist and reach Started; failed hardware in one lane does not block validation of other lanes.
-- [ ] Global Save was selected after import/manual setup.
+- [ ] Global Save was selected and confirmed with Yes after import/manual setup; the saved notification appeared.
 
 ### Viewer
 
@@ -813,7 +813,7 @@ records-destruction requirements.
 | Federated node disappears or rejects requests after reload | Session nodes need a valid remote cookie; Basic-only secrets are intentionally memory-only and must be re-entered. Verify TLS, CORS, paths, port, and remote authorization. |
 | Alarm QR cannot be generated | Confirm the event's lane is available and its gamma or neutron datastream has retained observations for the event interval. Very large optional metadata may exceed one-code capacity; use the downloadable alarm file when QR transfer is not possible. |
 | Alarm QR will not scan/import | Increase display brightness or use the downloaded PNG at original size. Otherwise import the `.oscar-alarm.json` file. An integrity failure means the package is incomplete or changed; obtain a new export rather than bypassing validation. |
-| Changes disappear after restart | Apply the module form, then use the administration header's global Save. |
+| Changes disappear after restart | Apply the module form, use the administration header's global Save, confirm Yes, and wait for the saved notification before restarting. |
 
 When collecting support data, record the OSCAR version, browser, affected lane/occupancy ID, timestamp and timezone, module status/errors, and sanitized browser/server logs. Remove passwords, tokens, private keys, and sensitive evidence before sharing.
 
