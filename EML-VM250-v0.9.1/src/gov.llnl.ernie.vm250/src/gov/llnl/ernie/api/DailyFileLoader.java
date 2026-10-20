@@ -229,7 +229,7 @@ public class DailyFileLoader
     if (parameters == null)
     {
       ErnieVM250Package.LOGGER.log(
-              Level.WARNING, "No setup information found");
+              Level.FINE, "No setup information found; using default parameters");
       parameters = defaultParameters;
     }
 

@@ -64,6 +64,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
     final int MAX_PACKET_QUEUE_SIZE = 1000;
     private final TimestampNormalizer timestampNormalizer = new TimestampNormalizer();
+    private boolean timestampDiscontinuityLogged;
     private long packetsWritten;
     private volatile long recordingGeneration;
     private volatile long packetsDroppedBeforeInitialKeyFrame;
@@ -218,6 +219,7 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 this.headerWritten = false;
                 this.packetsWritten = 0;
                 this.packetsDroppedBeforeInitialKeyFrame = 0;
+                this.timestampDiscontinuityLogged = false;
                 // A newly opened recording must not begin in the middle of a GOP. Besides being
                 // independently decodable, the first successfully muxed keyframe is the readiness
                 // boundary used by FileControl before it acknowledges the open command.
@@ -465,7 +467,13 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
         avPacket.duration(normalized.duration());
         avPacket.time_base(timeBase);
         if (normalized.discontinuity()) {
-            logger.warn("Video timestamp discontinuity detected; rebasing the output timeline");
+            if (!timestampDiscontinuityLogged) {
+                logger.warn("Video timestamp discontinuity detected; rebasing the output timeline. "
+                        + "Further discontinuities for this recording are logged at debug level.");
+                timestampDiscontinuityLogged = true;
+            } else {
+                logger.debug("Video timestamp discontinuity detected; rebasing the output timeline");
+            }
         }
     }
 
