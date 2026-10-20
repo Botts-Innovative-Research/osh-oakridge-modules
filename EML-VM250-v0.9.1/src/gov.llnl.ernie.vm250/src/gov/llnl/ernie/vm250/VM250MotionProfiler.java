@@ -77,7 +77,7 @@ public class VM250MotionProfiler implements AnalysisPreprocessor
     {
       bestVelocity = DEFAULT_VELOCITY; // approximate mean of velocity distribution
       Logger.getLogger(VM250MotionProfiler.class.getName()).log(
-              Level.FINE, String.format(
+              Level.WARNING, String.format(
                       "No velocity reading for scan, assuming %f m/s.", DEFAULT_VELOCITY));
       // not currently sending to fallback:
       //record.addFault(VM250Record.Fault.MISSING_VELOCITY);

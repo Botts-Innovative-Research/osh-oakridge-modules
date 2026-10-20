@@ -84,6 +84,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     public void doInit() throws SensorHubException {
         super.doInit();
 
+        RepetitiveWarningFilter.install();
+
         RapiscanThreadPoolManager.getInstance().registerSensor();
 
         tryConnection();
