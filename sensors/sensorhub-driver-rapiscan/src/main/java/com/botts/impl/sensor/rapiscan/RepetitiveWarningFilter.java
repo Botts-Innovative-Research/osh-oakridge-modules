@@ -11,7 +11,7 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
 /** Rate-limits expected per-scan fallback warnings without hiding other EML diagnostics. */
-final class RepetitiveWarningFilter implements Filter {
+public final class RepetitiveWarningFilter implements Filter {
     private static final long INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(10);
     private static final String MISSING_SETUP = "No setup information found";
     private static final String MISSING_VELOCITY = "No velocity reading for scan, assuming ";
@@ -25,7 +25,7 @@ final class RepetitiveWarningFilter implements Filter {
         this.delegate = delegate;
     }
 
-    static void install() {
+    public static void install() {
         install(ErnieVM250Package.LOGGER);
         install(Logger.getLogger(VM250MotionProfiler.class.getName()));
         installHandlers(Logger.getLogger(""));

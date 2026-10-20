@@ -1,6 +1,7 @@
 package com.botts.impl.sensor.rapiscan.eml;
 
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
+import com.botts.impl.sensor.rapiscan.RepetitiveWarningFilter;
 import gov.llnl.ernie.analysis.AnalysisException;
 import gov.llnl.ernie.api.ERNIE_lane;
 import gov.llnl.ernie.api.Results;
@@ -94,6 +95,11 @@ public class EMLService implements IEventListener {
 
 
                 Stream<String> stream = Stream.of(streamArray);
+                // SensorHub may reload JUL configuration after module initialization,
+                // clearing programmatic filters. Reassert the lightweight filter at
+                // the call site so the per-occupancy EML fallback warning cannot flood
+                // production logs after a runtime logging reconfiguration.
+                RepetitiveWarningFilter.install();
                 results = ernieLane.process(stream);
             } catch (ReaderException | AnalysisException | IOException e) {
                 throw new RuntimeException(e);
