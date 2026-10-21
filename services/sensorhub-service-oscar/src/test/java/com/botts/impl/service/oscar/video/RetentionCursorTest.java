@@ -547,6 +547,19 @@ public class RetentionCursorTest {
                     public void cancel() {
                         if (!cancelled) {
                             cancelled = true;
+                            long deadline = System.nanoTime()
+                                    + TimeUnit.MILLISECONDS.toNanos(500L);
+                            while (true) {
+                                long remaining = deadline - System.nanoTime();
+                                if (remaining <= 0)
+                                    break;
+                                try {
+                                    TimeUnit.NANOSECONDS.sleep(remaining);
+                                } catch (InterruptedException ignored) {
+                                    // A driver cancellation can be interrupt-resistant. The
+                                    // module-registry request phase must still remain non-blocking.
+                                }
+                            }
                             cancellations.incrementAndGet();
                             queryReleased.countDown();
                         }
@@ -623,7 +636,13 @@ public class RetentionCursorTest {
 
         query.start();
         assertTrue("Retention query did not enter the datastore", queryStarted.await(2, TimeUnit.SECONDS));
-        query.stop(2, TimeUnit.SECONDS);
+        long requestStarted = System.nanoTime();
+        query.requestStop();
+        long requestMillis = TimeUnit.NANOSECONDS.toMillis(
+                System.nanoTime() - requestStarted);
+        assertTrue("Video cancellation must not block the OSCAR stop request phase",
+                requestMillis < 250L);
+        query.awaitStop(2, TimeUnit.SECONDS);
         assertEquals("Stop must cancel the scoped datastore query", 1, cancellations.get());
         assertEquals("The worker must close its own datastore scope", 1, closes.get());
     }

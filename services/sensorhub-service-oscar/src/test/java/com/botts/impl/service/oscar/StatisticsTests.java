@@ -15,6 +15,7 @@ import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
+import org.sensorhub.api.datastore.ICancellableDataStore;
 import org.sensorhub.api.datastore.TemporalFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.module.ModuleEvent;
@@ -115,6 +116,33 @@ public class StatisticsTests {
         assertEquals(stablePublications, publications.get());
     }
 
+    @Test
+    public void statisticsStopCancelsDatabaseWorkWithoutBlockingTheRequestPhase() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch cancellationReleasedQuery = new CountDownLatch(1);
+        CountDownLatch exited = new CountDownLatch(1);
+        AtomicInteger cancellations = new AtomicInteger();
+        AtomicInteger closes = new AtomicInteger();
+        StatisticsOutput blocking = new CancellableBlockingStatisticsOutput(
+                (OSCARSystem) statsOutput.getParentProducer(),
+                hub.getDatabaseRegistry().getFederatedDatabase(), started,
+                cancellationReleasedQuery, exited, cancellations, closes);
+
+        blocking.start();
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+        long requestStarted = System.nanoTime();
+        blocking.requestStop();
+        long requestMillis = TimeUnit.NANOSECONDS.toMillis(
+                System.nanoTime() - requestStarted);
+        assertTrue("Cancellation delivery must not block the module-registry thread",
+                requestMillis < 250L);
+
+        blocking.awaitStop(2, TimeUnit.SECONDS);
+        assertTrue(exited.await(1, TimeUnit.SECONDS));
+        assertEquals(1, cancellations.get());
+        assertEquals(1, closes.get());
+    }
+
     private static void awaitIgnoringInterrupts(CountDownLatch latch) {
         boolean interrupted = false;
         while (true) {
@@ -127,6 +155,20 @@ public class StatisticsTests {
         }
         if (interrupted)
             Thread.interrupted();
+    }
+
+    private static void sleepIgnoringInterrupts(long millis) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis);
+        while (true) {
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0)
+                return;
+            try {
+                TimeUnit.NANOSECONDS.sleep(remaining);
+            } catch (InterruptedException ignored) {
+                // Model a JDBC cancellation request which does not promptly honor interruption.
+            }
+        }
     }
 
     private static final class BlockingStatisticsOutput extends StatisticsOutput {
@@ -149,10 +191,67 @@ public class StatisticsTests {
         }
 
         @Override
-        public void publishLatestStatistics() {
+        protected void publishLatestStatisticsWithinScope() {
             started.countDown();
             awaitIgnoringInterrupts(release);
             publications.incrementAndGet();
+            exited.countDown();
+        }
+    }
+
+    private static final class CancellableBlockingStatisticsOutput extends StatisticsOutput {
+        private final CountDownLatch started;
+        private final CountDownLatch cancellationReleasedQuery;
+        private final CountDownLatch exited;
+        private final AtomicInteger cancellations;
+        private final AtomicInteger closes;
+
+        private CancellableBlockingStatisticsOutput(OSCARSystem parent,
+                                                    IObsSystemDatabase database,
+                                                    CountDownLatch started,
+                                                    CountDownLatch cancellationReleasedQuery,
+                                                    CountDownLatch exited,
+                                                    AtomicInteger cancellations,
+                                                    AtomicInteger closes) {
+            super(parent, database, 60);
+            this.started = started;
+            this.cancellationReleasedQuery = cancellationReleasedQuery;
+            this.exited = exited;
+            this.cancellations = cancellations;
+            this.closes = closes;
+        }
+
+        @Override
+        protected ICancellableDataStore.CancellableOperation beginCancellableDataStoreOperation() {
+            return new ICancellableDataStore.CancellableOperation() {
+                private volatile boolean cancelled;
+
+                @Override
+                public void cancel() {
+                    if (!cancelled) {
+                        cancelled = true;
+                        sleepIgnoringInterrupts(500L);
+                        cancellations.incrementAndGet();
+                        cancellationReleasedQuery.countDown();
+                    }
+                }
+
+                @Override
+                public boolean isCancellationRequested() {
+                    return cancelled;
+                }
+
+                @Override
+                public void close() {
+                    closes.incrementAndGet();
+                }
+            };
+        }
+
+        @Override
+        protected void publishLatestStatisticsWithinScope() {
+            started.countDown();
+            awaitIgnoringInterrupts(cancellationReleasedQuery);
             exited.countDown();
         }
     }

@@ -62,6 +62,8 @@ public final class SlidingOccupancyQuery {
     private final Object operationLock = new Object();
     private volatile boolean stopRequested;
     private ICancellableDataStore.CancellableOperation activeOperation;
+    private boolean cancellationStarted;
+    private boolean cancellationComplete = true;
     private RuntimeException operationFailure;
     private ScheduledExecutorService executor;
     private ScheduledFuture<?> future;
@@ -131,6 +133,10 @@ public final class SlidingOccupancyQuery {
         executor = null;
         future = null;
         stopRequested = false;
+        synchronized (operationLock) {
+            cancellationStarted = false;
+            cancellationComplete = true;
+        }
         executor = newExecutor();
         long delayMillis = Math.max(1_000L, batchWindowLength.toMillis());
         // Fixed delay prevents a slow catch-up cycle from building an immediate fixed-rate backlog.
@@ -182,13 +188,14 @@ public final class SlidingOccupancyQuery {
         RuntimeException closeFailure = null;
         synchronized (operationLock) {
             activeOperation = operation;
+            cancellationStarted = false;
+            cancellationComplete = true;
+            if (stopRequested && operation != null)
+                startOperationCancellationLocked(operation);
         }
         try {
-            if (shouldStop()) {
-                if (operation != null)
-                    operation.cancel();
+            if (shouldStop())
                 return;
-            }
             scanEligibleOccupancies();
         } finally {
             if (operation != null) {
@@ -203,6 +210,7 @@ public final class SlidingOccupancyQuery {
                     activeOperation = null;
                 if (closeFailure != null && operationFailure == null)
                     operationFailure = closeFailure;
+                operationLock.notifyAll();
             }
             if (closeFailure != null)
                 throw closeFailure;
@@ -439,43 +447,63 @@ public final class SlidingOccupancyQuery {
         if (timeout <= 0)
             throw new IllegalArgumentException("Video-retention stop timeout must be positive");
         long budgetNanos = Math.max(1L, unit.toNanos(timeout));
-        long startedAt = System.nanoTime();
+        long deadline = System.nanoTime() + budgetNanos;
+        requestStop();
+        awaitStop(Math.max(1L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+    }
+
+    /**
+     * Signals the scheduler and its datastore operation without waiting. Driver cancellation is
+     * delegated to a daemon helper because a JDBC cancellation request can itself block.
+     */
+    public synchronized void requestStop() {
         stopRequested = true;
-        if (future != null)
-            future.cancel(true);
-        RuntimeException cancellationFailure = null;
         ICancellableDataStore.CancellableOperation operation;
         synchronized (operationLock) {
             operation = activeOperation;
+            if (operation != null)
+                startOperationCancellationLocked(operation);
         }
-        if (operation != null) {
-            try {
-                operation.cancel();
-            } catch (RuntimeException failure) {
-                cancellationFailure = failure;
-                synchronized (operationLock) {
-                    if (operationFailure == null)
-                        operationFailure = failure;
-                }
-            }
-        }
+        if (future != null)
+            future.cancel(true);
         ScheduledExecutorService stopping = executor;
-        if (stopping == null) {
+        if (stopping == null)
             future = null;
-            if (cancellationFailure != null)
-                throw new IllegalStateException(
-                        "Could not cancel the occupancy-retention datastore operation",
-                        cancellationFailure);
-            return;
-        }
-        stopping.shutdownNow();
+        else
+            stopping.shutdownNow();
+    }
+
+    /** Waits truthfully for a stop that has already been requested. */
+    public synchronized void awaitStop(long timeout, TimeUnit unit) {
+        java.util.Objects.requireNonNull(unit, "unit");
+        if (timeout <= 0)
+            throw new IllegalArgumentException("Video-retention stop timeout must be positive");
+        long budgetNanos = Math.max(1L, unit.toNanos(timeout));
+        long deadline = System.nanoTime() + budgetNanos;
+        ScheduledExecutorService stopping = executor;
         boolean terminated;
         try {
-            long elapsed = Math.max(0L, System.nanoTime() - startedAt);
-            long remaining = Math.max(1L, budgetNanos - Math.min(budgetNanos, elapsed));
-            terminated = stopping.awaitTermination(remaining, TimeUnit.NANOSECONDS);
+            if (stopping == null || stopping.isTerminated()) {
+                terminated = true;
+            } else {
+                long remaining = Math.max(1L, deadline - System.nanoTime());
+                terminated = stopping.awaitTermination(remaining, TimeUnit.NANOSECONDS);
+            }
+            if (terminated) {
+                synchronized (operationLock) {
+                    while (cancellationStarted && !cancellationComplete) {
+                        long remaining = deadline - System.nanoTime();
+                        if (remaining <= 0) {
+                            terminated = false;
+                            break;
+                        }
+                        TimeUnit.NANOSECONDS.timedWait(operationLock, remaining);
+                    }
+                }
+            }
         } catch (InterruptedException e) {
-            stopping.shutdownNow();
+            if (stopping != null)
+                stopping.shutdownNow();
             Thread.currentThread().interrupt();
             throw new IllegalStateException(
                     "Interrupted while waiting for occupancy retention thread to stop", e);
@@ -494,6 +522,34 @@ public final class SlidingOccupancyQuery {
         if (executor == stopping)
             executor = null;
         future = null;
+    }
+
+    private void startOperationCancellationLocked(
+            ICancellableDataStore.CancellableOperation operation) {
+        if (cancellationStarted)
+            return;
+        cancellationStarted = true;
+        cancellationComplete = false;
+        Thread cancellationThread = new Thread(() -> {
+            try {
+                operation.cancel();
+            } catch (Throwable failure) {
+                RuntimeException runtimeFailure = failure instanceof RuntimeException runtime
+                        ? runtime : new IllegalStateException(
+                                "Occupancy-retention datastore cancellation failed", failure);
+                synchronized (operationLock) {
+                    if (operationFailure == null)
+                        operationFailure = runtimeFailure;
+                }
+            } finally {
+                synchronized (operationLock) {
+                    cancellationComplete = true;
+                    operationLock.notifyAll();
+                }
+            }
+        }, "OSCAR-video-retention-cancel");
+        cancellationThread.setDaemon(true);
+        cancellationThread.start();
     }
 
     private boolean shouldStop() {

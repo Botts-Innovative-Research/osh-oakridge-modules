@@ -70,24 +70,49 @@ public class StoragePressureRetention {
         java.util.Objects.requireNonNull(unit, "unit");
         if (timeout <= 0)
             throw new IllegalArgumentException("Storage-pressure stop timeout must be positive");
+
+        long budgetNanos = Math.max(1L, unit.toNanos(timeout));
+        long deadline = System.nanoTime() + budgetNanos;
+        requestStop();
+        awaitStop(Math.max(1L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+    }
+
+    /** Signals the scheduled cleanup immediately without waiting for its worker. */
+    public void requestStop() {
         synchronized (lifecycleMonitor) {
             ScheduledExecutorService stopping = scheduler;
             if (stopping == null)
                 return;
             stopping.shutdownNow();
-            boolean terminated;
-            try {
-                terminated = stopping.awaitTermination(timeout, unit);
-            } catch (InterruptedException error) {
-                stopping.shutdownNow();
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException(
-                        "Interrupted while waiting for storage-pressure retention to stop", error);
-            }
-            if (!terminated)
-                throw new IllegalStateException(
-                        "Storage-pressure retention worker did not terminate within the stop deadline");
-            scheduler = null;
+        }
+    }
+
+    /** Waits truthfully for a stop that has already been requested. */
+    public void awaitStop(long timeout, TimeUnit unit) {
+        java.util.Objects.requireNonNull(unit, "unit");
+        if (timeout <= 0)
+            throw new IllegalArgumentException("Storage-pressure stop timeout must be positive");
+        ScheduledExecutorService stopping;
+        synchronized (lifecycleMonitor) {
+            stopping = scheduler;
+        }
+        if (stopping == null)
+            return;
+        boolean terminated;
+        try {
+            terminated = stopping.awaitTermination(timeout, unit);
+        } catch (InterruptedException error) {
+            stopping.shutdownNow();
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "Interrupted while waiting for storage-pressure retention to stop", error);
+        }
+        if (!terminated)
+            throw new IllegalStateException(
+                    "Storage-pressure retention worker did not terminate within the stop deadline");
+        synchronized (lifecycleMonitor) {
+            if (scheduler == stopping)
+                scheduler = null;
         }
     }
 

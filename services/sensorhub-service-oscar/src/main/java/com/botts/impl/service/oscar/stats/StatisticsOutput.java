@@ -8,6 +8,7 @@ import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.api.database.IObsSystemDatabase;
+import org.sensorhub.api.datastore.ICancellableDataStore;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.resource.ResourceKey;
@@ -26,6 +27,8 @@ import java.util.HashMap;
 import java.util.Set;
 import java.util.Collection;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
@@ -54,6 +57,12 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     private final int samplingPeriod;
 
     private final Object lifecycleMonitor = new Object();
+    private final Object workMonitor = new Object();
+    private final Set<StatisticsWork> activeWork = new java.util.HashSet<>();
+    private final ThreadLocal<Boolean> operationScope =
+            ThreadLocal.withInitial(() -> Boolean.FALSE);
+    private final AtomicReference<RuntimeException> unsafeStopFailure = new AtomicReference<>();
+    private volatile boolean stopRequested;
     private ScheduledExecutorService service;
     private final IObsSystemDatabase database;
     private Map<String, Set<BigId>> observedPropertyToDataStreamIds;
@@ -104,6 +113,16 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         synchronized (lifecycleMonitor) {
             if (service != null && !service.isTerminated())
                 return;
+            RuntimeException priorFailure = unsafeStopFailure.get();
+            if (priorFailure != null)
+                throw new IllegalStateException(
+                        "Statistics output cannot restart after unsafe datastore cancellation", priorFailure);
+            synchronized (workMonitor) {
+                if (!activeWork.isEmpty())
+                    throw new IllegalStateException(
+                            "Statistics output still has active database work");
+                stopRequested = false;
+            }
             service = Executors.newSingleThreadScheduledExecutor(runnable -> {
                 Thread thread = new Thread(runnable, "OSCAR-statistics");
                 thread.setDaemon(true);
@@ -122,28 +141,94 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         java.util.Objects.requireNonNull(unit, "unit");
         if (timeout <= 0)
             throw new IllegalArgumentException("Statistics stop timeout must be positive");
+
+        long budgetNanos = Math.max(1L, unit.toNanos(timeout));
+        long deadline = System.nanoTime() + budgetNanos;
+        requestStop();
+        awaitStop(Math.max(1L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+    }
+
+    /**
+     * Interrupts the scheduler and asynchronously cancels every scoped datastore operation.
+     * Driver cancellation is never run on the module-registry thread because it may itself block.
+     */
+    public void requestStop() {
+        java.util.List<StatisticsWork> workToCancel;
         synchronized (lifecycleMonitor) {
-            ScheduledExecutorService stopping = service;
-            if (stopping == null)
-                return;
-            stopping.shutdownNow();
-            boolean terminated;
-            try {
-                terminated = stopping.awaitTermination(timeout, unit);
-            } catch (InterruptedException error) {
-                stopping.shutdownNow();
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException(
-                        "Interrupted while waiting for statistics output to stop", error);
+            synchronized (workMonitor) {
+                stopRequested = true;
+                workToCancel = new java.util.ArrayList<>(activeWork);
             }
-            if (!terminated)
-                throw new IllegalStateException(
-                        "Statistics output worker did not terminate within the stop deadline");
-            service = null;
+            workToCancel.forEach(StatisticsWork::requestCancellation);
+            if (service != null)
+                service.shutdownNow();
         }
     }
 
-    public void publishLatestStatistics() {
+    /**
+     * Waits for scheduler termination, database-scope closure, and cancellation completion.
+     * A successful return therefore guarantees that no statistics worker can publish later.
+     */
+    public void awaitStop(long timeout, TimeUnit unit) {
+        java.util.Objects.requireNonNull(unit, "unit");
+        if (timeout <= 0)
+            throw new IllegalArgumentException("Statistics stop timeout must be positive");
+        long budgetNanos = Math.max(1L, unit.toNanos(timeout));
+        long deadline = System.nanoTime() + budgetNanos;
+        ScheduledExecutorService stopping;
+        synchronized (lifecycleMonitor) {
+            stopping = service;
+        }
+        try {
+            while (true) {
+                boolean schedulerTerminated = stopping == null || stopping.isTerminated();
+                boolean workTerminated;
+                synchronized (workMonitor) {
+                    workTerminated = activeWork.isEmpty();
+                }
+                if (schedulerTerminated && workTerminated)
+                    break;
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0)
+                    throw new IllegalStateException(
+                            "Statistics output worker did not terminate within the stop deadline");
+                long slice = Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(50));
+                if (!schedulerTerminated) {
+                    stopping.awaitTermination(slice, TimeUnit.NANOSECONDS);
+                } else {
+                    synchronized (workMonitor) {
+                        if (!activeWork.isEmpty())
+                            TimeUnit.NANOSECONDS.timedWait(workMonitor, slice);
+                    }
+                }
+            }
+        } catch (InterruptedException error) {
+            if (stopping != null)
+                stopping.shutdownNow();
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "Interrupted while waiting for statistics output to stop", error);
+        }
+
+        RuntimeException unsafeFailure = unsafeStopFailure.get();
+        if (unsafeFailure != null)
+            throw new IllegalStateException(
+                    "Statistics output stopped, but datastore cancellation or scope cleanup failed",
+                    unsafeFailure);
+        synchronized (lifecycleMonitor) {
+            if (service == stopping)
+                service = null;
+        }
+    }
+
+    public final void publishLatestStatistics() {
+        runCancellableStatistics(() -> {
+            publishLatestStatisticsWithinScope();
+            return null;
+        });
+    }
+
+    protected void publishLatestStatisticsWithinScope() {
         initializeDataStreamMapping();
         getLogger().info("Starting stats counting...");
         long currentTime = System.currentTimeMillis();
@@ -190,6 +275,10 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     }
 
     protected BigId waitForLatestObservationId() {
+        return runCancellableStatistics(this::waitForLatestObservationIdWithinScope);
+    }
+
+    private BigId waitForLatestObservationIdWithinScope() {
         try {
             final List<BigId> result = new ArrayList<>();
 
@@ -225,8 +314,10 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     }
 
     public int populateDataBlock(DataBlock dataBlock, int i, Instant start, Instant end, Collection<String> laneUIDs) {
-        Statistics stats = getStats(start, end, laneUIDs);
-        return populateDataBlockWithStats(dataBlock, i, stats);
+        return runCancellableStatistics(() -> {
+            Statistics stats = getStats(start, end, laneUIDs);
+            return populateDataBlockWithStats(dataBlock, i, stats);
+        });
     }
 
     private int populateDataBlockWithStats(DataBlock dataBlock, int i, Statistics stats) {
@@ -332,6 +423,160 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         Statistics allTime = getLastObservationCount(result, 0);
 
         return new LastStatisticObservationData(timestamp, allTime);
+    }
+
+    private <T> T runCancellableStatistics(Supplier<T> operation) {
+        if (Boolean.TRUE.equals(operationScope.get()))
+            return operation.get();
+
+        StatisticsWork work;
+        synchronized (workMonitor) {
+            if (stopRequested)
+                throw new CancellationException("Statistics output is stopping");
+            work = new StatisticsWork();
+            activeWork.add(work);
+        }
+
+        ICancellableDataStore.CancellableOperation datastoreOperation = null;
+        boolean operationAttached = false;
+        boolean scopeClosed = true;
+        Throwable primaryFailure = null;
+        Throwable closeFailure = null;
+        try {
+            try {
+                datastoreOperation = beginCancellableDataStoreOperation();
+            } catch (RuntimeException | Error error) {
+                latchUnsafeStopFailure(asRuntimeFailure(error,
+                        "Datastore operation-scope creation failed"));
+                throw error;
+            }
+            work.attachOperation(datastoreOperation);
+            operationAttached = true;
+            operationScope.set(Boolean.TRUE);
+            if (stopRequested) {
+                work.requestCancellation();
+                throw new CancellationException("Statistics output is stopping");
+            }
+            return operation.get();
+        } catch (RuntimeException | Error error) {
+            primaryFailure = error;
+            throw error;
+        } finally {
+            operationScope.remove();
+            if (!operationAttached)
+                work.attachOperation(null);
+            if (datastoreOperation != null) {
+                try {
+                    datastoreOperation.close();
+                } catch (RuntimeException | Error error) {
+                    scopeClosed = false;
+                    closeFailure = error;
+                    latchUnsafeStopFailure(asRuntimeFailure(error,
+                            "Datastore operation-scope cleanup failed"));
+                }
+            }
+            work.workerFinished(scopeClosed);
+            if (closeFailure != null) {
+                if (primaryFailure != null)
+                    primaryFailure.addSuppressed(closeFailure);
+                else if (closeFailure instanceof RuntimeException runtime)
+                    throw runtime;
+                else
+                    throw (Error) closeFailure;
+            }
+        }
+    }
+
+    protected ICancellableDataStore.CancellableOperation beginCancellableDataStoreOperation() {
+        var observationStore = database.getObservationStore();
+        return observationStore instanceof ICancellableDataStore cancellable
+                ? cancellable.beginCancellableOperation() : null;
+    }
+
+    private void latchUnsafeStopFailure(RuntimeException failure) {
+        unsafeStopFailure.compareAndSet(null, failure);
+    }
+
+    private static RuntimeException asRuntimeFailure(Throwable failure, String message) {
+        return failure instanceof RuntimeException runtime
+                ? runtime : new IllegalStateException(message, failure);
+    }
+
+    private final class StatisticsWork {
+        private ICancellableDataStore.CancellableOperation operation;
+        private boolean operationAttached;
+        private boolean cancellationRequested;
+        private boolean cancellationComplete = true;
+        private boolean cancellationStarted;
+        private boolean workerComplete;
+        private boolean scopeClosed;
+
+        void attachOperation(ICancellableDataStore.CancellableOperation attachedOperation) {
+            synchronized (workMonitor) {
+                if (operationAttached)
+                    return;
+                operation = attachedOperation;
+                operationAttached = true;
+                if (cancellationRequested && operation != null)
+                    startCancellationLocked();
+                else if (cancellationRequested)
+                    cancellationComplete = true;
+                removeIfCompleteLocked();
+            }
+        }
+
+        void requestCancellation() {
+            synchronized (workMonitor) {
+                cancellationRequested = true;
+                if (operationAttached) {
+                    if (operation != null)
+                        startCancellationLocked();
+                    else
+                        cancellationComplete = true;
+                } else {
+                    cancellationComplete = false;
+                }
+                removeIfCompleteLocked();
+            }
+        }
+
+        private void startCancellationLocked() {
+            if (cancellationStarted)
+                return;
+            cancellationStarted = true;
+            cancellationComplete = false;
+            Thread cancellationThread = new Thread(() -> {
+                try {
+                    operation.cancel();
+                } catch (Throwable error) {
+                    latchUnsafeStopFailure(asRuntimeFailure(error,
+                            "Datastore cancellation failed"));
+                } finally {
+                    synchronized (workMonitor) {
+                        cancellationComplete = true;
+                        removeIfCompleteLocked();
+                    }
+                }
+            }, "OSCAR-statistics-cancel");
+            cancellationThread.setDaemon(true);
+            cancellationThread.start();
+        }
+
+        void workerFinished(boolean closedCleanly) {
+            synchronized (workMonitor) {
+                workerComplete = true;
+                scopeClosed = closedCleanly;
+                removeIfCompleteLocked();
+            }
+        }
+
+        private void removeIfCompleteLocked() {
+            if (workerComplete && scopeClosed
+                    && (!cancellationRequested || cancellationComplete)) {
+                activeWork.remove(this);
+                workMonitor.notifyAll();
+            }
+        }
     }
 
     private Statistics getLastObservationCount(DataBlock dataBlock, int index) {

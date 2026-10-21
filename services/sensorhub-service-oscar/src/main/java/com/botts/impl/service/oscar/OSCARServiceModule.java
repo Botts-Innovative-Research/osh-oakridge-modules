@@ -206,14 +206,29 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
         long deadline = System.nanoTime() + STOP_BUDGET_NANOS;
         SensorHubException failure = null;
         failure = runStopStep(failure, "base OSCAR module", this::stopBaseModule);
+
+        // Cancellation must be broadcast before waiting for any one worker. A JDBC call can
+        // legitimately take the whole bounded stop interval to acknowledge cancellation. If the
+        // workers were stopped serially, that first wait would leave every later service running
+        // and give it an already-expired deadline. The request phase is deliberately non-blocking;
+        // the await phase below remains truthful and shares this one module-registry-safe deadline.
+        failure = runStopStep(failure, "statistics output stop request",
+                this::requestStatisticsOutputStop);
+        failure = runStopStep(failure, "database purger stop request",
+                this::requestDatabasePurgerStop);
+        failure = runStopStep(failure, "video retention stop request",
+                this::requestVideoRetentionStop);
+        failure = runStopStep(failure, "storage-pressure retention stop request",
+                this::requestStoragePressureRetentionStop);
+
         failure = runStopStep(failure, "statistics output",
-                () -> stopStatisticsOutput(deadline));
+                () -> awaitStatisticsOutputStop(deadline));
         failure = runStopStep(failure, "database purger",
-                () -> stopDatabasePurger(deadline));
+                () -> awaitDatabasePurgerStop(deadline));
         failure = runStopStep(failure, "video retention",
-                () -> stopVideoRetention(deadline));
+                () -> awaitVideoRetentionStop(deadline));
         failure = runStopStep(failure, "storage-pressure retention",
-                () -> stopStoragePressureRetention(deadline));
+                () -> awaitStoragePressureRetentionStop(deadline));
         failure = runStopStep(failure, "Web ID object handler", this::unregisterWebIdHandler);
         failure = runStopStep(failure, "retained-media object handler", this::unregisterMediaHandler);
         if (failure != null)
@@ -241,26 +256,46 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
         super.doStop();
     }
 
-    void stopStatisticsOutput(long deadline) {
+    void requestStatisticsOutputStop() {
         if (statsOutput != null)
-            statsOutput.stop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
+            statsOutput.requestStop();
     }
 
-    void stopDatabasePurger(long deadline) throws SensorHubException {
+    void requestDatabasePurgerStop() {
+        if (databasePurger != null)
+            databasePurger.requestStop();
+    }
+
+    void requestVideoRetentionStop() {
+        if (videoRetention != null)
+            videoRetention.requestStop();
+    }
+
+    void requestStoragePressureRetentionStop() {
+        if (storagePressureRetention != null)
+            storagePressureRetention.requestStop();
+    }
+
+    void awaitStatisticsOutputStop(long deadline) {
+        if (statsOutput != null)
+            statsOutput.awaitStop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
+    }
+
+    void awaitDatabasePurgerStop(long deadline) throws SensorHubException {
         if (databasePurger == null)
             return;
-        databasePurger.stop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
+        databasePurger.awaitStop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
         databasePurger = null;
     }
 
-    void stopVideoRetention(long deadline) {
+    void awaitVideoRetentionStop(long deadline) {
         if (videoRetention != null)
-            videoRetention.stop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
+            videoRetention.awaitStop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
     }
 
-    void stopStoragePressureRetention(long deadline) {
+    void awaitStoragePressureRetentionStop(long deadline) {
         if (storagePressureRetention != null)
-            storagePressureRetention.stop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
+            storagePressureRetention.awaitStop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
     }
 
     private static long remainingStopNanos(long deadline) {

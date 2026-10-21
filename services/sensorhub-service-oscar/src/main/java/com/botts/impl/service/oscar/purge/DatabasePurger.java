@@ -193,6 +193,18 @@ public class DatabasePurger {
             budgetNanos = 1;
         long deadline = System.nanoTime() + budgetNanos;
 
+        requestStop();
+        awaitStop(Math.max(1L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+    }
+
+    /**
+     * Signals every purger task and active datastore scope without waiting for termination.
+     * This phase is intentionally separate so the parent OSCAR module can broadcast shutdown to
+     * all of its independent maintenance workers before any one slow JDBC cancellation consumes
+     * the shared module-registry deadline.
+     */
+    public void requestStop() {
+
         log.info("Stopping database purger...");
         List<MaintenanceWork> workToCancel;
         synchronized (maintenanceMonitor) {
@@ -211,6 +223,24 @@ public class DatabasePurger {
         ScheduledExecutorService activeScheduler = scheduler;
         if (activeScheduler != null && !activeScheduler.isTerminated())
             activeScheduler.shutdownNow();
+    }
+
+    /**
+     * Waits for a previously requested stop. Success means both the scheduler and every
+     * cancellable maintenance scope have actually terminated.
+     */
+    public void awaitStop(long timeout, TimeUnit unit) throws SensorHubException {
+        Objects.requireNonNull(unit, "unit");
+        if (timeout <= 0)
+            throw new IllegalArgumentException("Database purger stop timeout must be positive");
+
+        long requestedNanos = unit.toNanos(timeout);
+        long maximumNanos = TimeUnit.MILLISECONDS.toNanos(STOP_TIMEOUT_MILLIS);
+        long budgetNanos = Math.min(requestedNanos, maximumNanos);
+        if (budgetNanos <= 0)
+            budgetNanos = 1;
+        long deadline = System.nanoTime() + budgetNanos;
+        ScheduledExecutorService activeScheduler = scheduler;
         boolean terminated;
         try {
             terminated = awaitMaintenanceShutdown(activeScheduler, deadline);

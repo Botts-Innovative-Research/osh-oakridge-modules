@@ -386,11 +386,30 @@ public class VideoRetention {
     }
 
     public synchronized void stop(long timeout, java.util.concurrent.TimeUnit unit) {
+        java.util.Objects.requireNonNull(unit, "unit");
+        if (timeout <= 0)
+            throw new IllegalArgumentException("Video-retention stop timeout must be positive");
+        long budgetNanos = Math.max(1L, unit.toNanos(timeout));
+        long deadline = System.nanoTime() + budgetNanos;
+        requestStop();
+        awaitStop(Math.max(1L, deadline - System.nanoTime()),
+                java.util.concurrent.TimeUnit.NANOSECONDS);
+    }
+
+    /** Signals the retention scanner without waiting for its database worker. */
+    public synchronized void requestStop() {
+        if (!hasStarted)
+            return;
+        retentionQuery.requestStop();
+    }
+
+    /** Waits for a previously requested retention stop. */
+    public synchronized void awaitStop(long timeout, java.util.concurrent.TimeUnit unit) {
         if (!hasStarted) {
             return;
         }
 
-        retentionQuery.stop(timeout, unit);
+        retentionQuery.awaitStop(timeout, unit);
         hasStarted = false;
     }
 
