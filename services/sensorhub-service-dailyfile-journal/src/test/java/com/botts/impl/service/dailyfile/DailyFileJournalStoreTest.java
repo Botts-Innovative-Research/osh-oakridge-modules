@@ -26,14 +26,18 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static org.junit.Assert.assertEquals;
@@ -158,8 +162,10 @@ public class DailyFileJournalStoreTest {
         assertEquals(validSize + Integer.BYTES, Files.size(open));
 
         try (DailyFileJournalStore recovered = newStore()) {
-            assertEquals(validSize, Files.size(open));
             recovered.openWriter("lane-recovery").append("B", first.plusSeconds(1));
+            long oneFrameBytes = validSize - DailyFileJournalStore.SEGMENT_HEADER_BYTES;
+            assertEquals("The partial tail must be removed before the next frame is appended",
+                    validSize + oneFrameBytes, Files.size(open));
             clock.set(LocalDate.ofInstant(first, NEW_YORK).plusDays(1)
                     .atStartOfDay(NEW_YORK).toInstant().plusSeconds(1));
             recovered.sealCompletedDays(clock.instant());
@@ -168,6 +174,34 @@ public class DailyFileJournalStoreTest {
         assertEquals("A,12-00-00.961,16-00-00.961\r\n"
                         + "B,12-00-01.961,16-00-01.961\r\n",
                 Files.readString(publishedFile("lane-recovery", LocalDate.of(2026, 10, 16))));
+    }
+
+    @Test
+    public void recoversOlderCurrentDayOpenBeforeSealingIt() throws Exception {
+        String laneId = "lane-multiple-open-recovery";
+        Instant timestamp = clock.instant();
+        LocalDate day = LocalDate.ofInstant(timestamp, NEW_YORK);
+        try (DailyFileJournalStore initial = newStore()) {
+            initial.openWriter(laneId).append("A", timestamp);
+        }
+
+        Path dayDirectory = laneDirectory(laneId).resolve(day.toString());
+        Path firstOpen = dayDirectory.resolve("000000.open");
+        long validSize = Files.size(firstOpen);
+        Path secondOpen = dayDirectory.resolve("000001.open");
+        Files.copy(firstOpen, secondOpen);
+        Files.write(firstOpen, ByteBuffer.allocate(Integer.BYTES).putInt(500).array(),
+                StandardOpenOption.APPEND);
+
+        try (DailyFileJournalStore recovered = newStore()) {
+            recovered.openWriter(laneId).append("B", timestamp.plusSeconds(1));
+            assertEquals("An older open segment must be tail-recovered before sealing",
+                    validSize, Files.size(dayDirectory.resolve("000000.seg")));
+            clock.set(day.plusDays(1).atStartOfDay(NEW_YORK).toInstant().plusSeconds(1));
+            recovered.sealCompletedDays(clock.instant());
+        }
+
+        assertEquals(3, Files.readAllLines(publishedFile(laneId, day)).size());
     }
 
     @Test
@@ -182,8 +216,12 @@ public class DailyFileJournalStoreTest {
         bytes[bytes.length - 1] ^= 0x01;
         Files.write(open, bytes);
 
-        IOException failure = assertThrows(IOException.class, this::newStore);
-        assertTrue(failure.getMessage().contains("CRC mismatch"));
+        try (DailyFileJournalStore recovered = newStore()) {
+            IOException failure = assertThrows(IOException.class,
+                    () -> recovered.openWriter("lane-crc")
+                            .append("next", timestamp.plusSeconds(1)));
+            assertTrue(failure.getMessage().contains("CRC mismatch"));
+        }
     }
 
     @Test
@@ -325,7 +363,7 @@ public class DailyFileJournalStoreTest {
     }
 
     @Test
-    public void immutablePublicationMismatchFailsRecovery() throws Exception {
+    public void immutablePublicationMismatchIsNotAuthorizedAfterRestart() throws Exception {
         Instant timestamp = clock.instant();
         LocalDate day = LocalDate.ofInstant(timestamp, NEW_YORK);
         DailyFileJournalStore store = newStore();
@@ -336,8 +374,13 @@ public class DailyFileJournalStoreTest {
 
         Path csv = publishedFile("lane-immutable", day);
         Files.writeString(csv, "tampered\r\n", StandardOpenOption.TRUNCATE_EXISTING);
-        IOException failure = assertThrows(IOException.class, this::newStore);
-        assertTrue(failure.getMessage().contains("Refusing to replace immutable daily file"));
+        try (DailyFileJournalStore recovered = newStore()) {
+            DailyFileJournalStore.DayWindow window =
+                    DailyFileJournalStore.DayWindow.forDate(day, NEW_YORK);
+            assertFalse("A tampered publication must never authorize hot-data deletion",
+                    recovered.isPublished("lane-immutable",
+                            window.startInclusive(), window.endExclusive()));
+        }
     }
 
     @Test
@@ -660,7 +703,10 @@ public class DailyFileJournalStoreTest {
                 sealed.size() >= 2);
         Files.delete(sealed.get(0));
 
-        try (DailyFileJournalStore ignored = newStore()) {
+        try (DailyFileJournalStore recovered = newStore()) {
+            assertTrue("Restart must not block readiness on historical deletion recovery",
+                    Files.exists(staged));
+            recovered.maintainBoundedLifecycle(clock.instant());
             assertFalse("Restart must finish the durable deletion state",
                     Files.exists(staged));
             assertFalse(Files.exists(dayDirectory));
@@ -692,12 +738,118 @@ public class DailyFileJournalStoreTest {
             }
             Files.write(segment, new byte[]{0x01}, StandardOpenOption.APPEND);
 
-            // The startup recovery above already verified the immutable CSV against the journal.
             // A bounded periodic pass must use the durable publication record rather than reading
             // and rendering the complete historical segment again.
             recovered.maintainBoundedLifecycle(clock.instant());
             assertTrue(Files.readString(publishedFile(laneId, day))
                     .startsWith("published-once,"));
+        }
+    }
+
+    @Test
+    public void restartAcceptsLiveWriterBeforeBoundedHistoricalRecovery() throws Exception {
+        String historicalLane = "lane-historical-backlog";
+        Instant historicalTimestamp = clock.instant();
+        LocalDate historicalDay = LocalDate.ofInstant(historicalTimestamp, NEW_YORK);
+        try (DailyFileJournalStore initial = newStore()) {
+            initial.openWriter(historicalLane).append("historical", historicalTimestamp);
+        }
+
+        clock.set(historicalDay.plusDays(1).atStartOfDay(NEW_YORK).toInstant().plusSeconds(1));
+        Path historicalPublication = publishedFile(historicalLane, historicalDay);
+        try (DailyFileJournalStore restarted = newStore()) {
+            assertFalse("Historical rendering must not block service readiness",
+                    Files.exists(historicalPublication));
+
+            DailyFileWriterHandle liveWriter = restarted.openWriter(historicalLane);
+            liveWriter.append("live", clock.instant());
+            assertFalse(Files.exists(historicalPublication));
+
+            restarted.maintainBoundedLifecycle(clock.instant());
+            assertTrue("Bounded maintenance must eventually publish historical records",
+                    Files.isRegularFile(historicalPublication));
+        }
+    }
+
+    @Test
+    public void boundedRecoveryPublishesBacklogForAttachedIdleLane() throws Exception {
+        String laneId = "lane-idle-after-restart";
+        Instant historicalTimestamp = clock.instant();
+        LocalDate historicalDay = LocalDate.ofInstant(historicalTimestamp, NEW_YORK);
+        try (DailyFileJournalStore initial = newStore()) {
+            initial.openWriter(laneId).append("historical", historicalTimestamp);
+        }
+
+        clock.set(historicalDay.plusDays(1).atStartOfDay(NEW_YORK).toInstant().plusSeconds(1));
+        Path publication = publishedFile(laneId, historicalDay);
+        try (DailyFileJournalStore restarted = newStore()) {
+            restarted.openWriter(laneId);
+            restarted.maintainBoundedLifecycle(clock.instant());
+            assertTrue("An attached but disconnected lane must not pin old journal data forever",
+                    Files.isRegularFile(publication));
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void exactHistoricalRecoveryClaimSurvivesConcurrentLiveRollover() throws Exception {
+        String laneId = "lane-recovery-claim";
+        Instant first = clock.instant();
+        LocalDate claimedDay = LocalDate.ofInstant(first, NEW_YORK).minusDays(1);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try (DailyFileJournalStore store = newStore();
+             DailyFileWriterHandle writer = store.openWriter(laneId)) {
+            writer.append("current", first);
+
+            Field lanesField = DailyFileJournalStore.class.getDeclaredField("lanes");
+            lanesField.setAccessible(true);
+            Object laneState = ((Map<String, Object>) lanesField.get(store)).get(laneId);
+            Field lockField = laneState.getClass().getDeclaredField("lock");
+            Field recoveryDayField = laneState.getClass()
+                    .getDeclaredField("historicalRecoveryDay");
+            Field recoveryCompleteField = laneState.getClass()
+                    .getDeclaredField("historicalRecoveryComplete");
+            lockField.setAccessible(true);
+            recoveryDayField.setAccessible(true);
+            recoveryCompleteField.setAccessible(true);
+            ReentrantLock laneLock = (ReentrantLock) lockField.get(laneState);
+            Condition recoveryComplete = (Condition) recoveryCompleteField.get(laneState);
+
+            laneLock.lock();
+            try {
+                recoveryDayField.set(laneState, claimedDay);
+            } finally {
+                laneLock.unlock();
+            }
+
+            Instant nextDay = first.plus(Duration.ofDays(1));
+            writer.append("next-day", nextDay);
+
+            CountDownLatch appendStarted = new CountDownLatch(1);
+            Future<?> lateAppend = executor.submit(() -> {
+                appendStarted.countDown();
+                writer.append("late-historical",
+                        claimedDay.atTime(12, 0).atZone(NEW_YORK).toInstant());
+                return null;
+            });
+            assertTrue(appendStarted.await(1, TimeUnit.SECONDS));
+            assertThrows("An append for the claimed day must wait even after rollover",
+                    TimeoutException.class, () -> lateAppend.get(100, TimeUnit.MILLISECONDS));
+
+            laneLock.lock();
+            try {
+                recoveryDayField.set(laneState, null);
+                recoveryComplete.signalAll();
+            } finally {
+                laneLock.unlock();
+            }
+
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> lateAppend.get(1, TimeUnit.SECONDS));
+            assertTrue(failure.getCause() instanceof IOException);
+            assertTrue(failure.getCause().getMessage().contains("Out-of-order"));
+        } finally {
+            executor.shutdownNow();
         }
     }
 

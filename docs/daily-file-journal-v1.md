@@ -48,11 +48,21 @@ Closing a writer or the service also forces its active segment. `maxSegmentBytes
 `maxSegmentAgeSeconds` rotate the current segment by forcing it and atomically renaming `.open` to
 `.seg` before a new `.open` is created.
 
-At startup, every `.open` segment is scanned frame by frame. A short final header or payload is an
-interrupted append and is truncated back to the last valid frame, then forced. A complete frame with
-an invalid length, timestamp, or CRC is treated as corruption and fails service initialization; it
-is never silently skipped. Completed prior days are sealed and publication is retried. Ledger files
-are atomically replaced after every force and after successful publication.
+Service readiness performs only root, confinement, and durable metadata validation; it does not
+rescan and re-render every historical lane/day before emitting `STARTED`. On the first append for a
+lane, that lane's current `.open` segment is scanned frame by frame before the new record is
+accepted. A short final header or payload is an interrupted append and is truncated back to the last
+valid frame, then forced. A complete frame with an invalid length, timestamp, or CRC is treated as
+corruption and the append fails; it is never silently skipped.
+
+Completed prior days and interrupted deletion state are recovered by a separate bounded lifecycle
+pass. It visits at most 16 lane/day entries per minute, including older days belonging to a lane
+that is actively receiving today's records. The active-day comparison is synchronized briefly, but
+historical CRC validation and CSV rendering do not hold the live lane writer lock. A durable
+complete ledger/manifest/CSV record is a fast path, so normal restarts do not reread and rewrite
+large published days. Incomplete prior days are CRC-validated, sealed, and published; errors remain
+visible and the day cannot authorize database cleanup. Ledger files are atomically replaced after
+every force and after successful publication.
 
 The journal requires same-directory atomic rename support. Initialization or publication fails on a
 filesystem that cannot provide it. The journal and publication directories must remain under the
@@ -158,8 +168,10 @@ recovery point. Do not restart OSCAR until the comparison completes.
 
 ## Module configuration
 
-Add project `:sensorhub-service-dailyfile-journal` to the distribution and load this module before
-the RPM drivers:
+Add project `:sensorhub-service-dailyfile-journal` to the distribution and configure it for
+automatic startup with the RPM drivers. SensorHub starts non-database modules concurrently, so JSON
+array order is not a dependency mechanism; required clients wait for the registered service's
+`STARTED` event:
 
 ```json
 {
@@ -253,11 +265,11 @@ Useful checks after local midnight are:
 4. The corresponding ledger state is `PUBLISHED` and its window exactly matches the manifest.
 5. Logs contain no CRC, immutable-publication, atomic-rename, or periodic-force error.
 
-If startup reports a truncated tail, the service has already removed only the incomplete final
-frame and forced the repair. If it reports a CRC mismatch or immutable-publication mismatch, keep
-all files, stop the affected driver, and copy the lane/day directory plus CSV, manifest, and ledger
-for investigation. Do not delete a conflicting artifact to make startup succeed without first
-preserving it as evidence.
+If the first append or bounded historical-maintenance log reports a truncated tail, the service has
+already removed only the incomplete final frame and forced the repair. If it reports a CRC mismatch
+or immutable-publication mismatch, keep all files, stop the affected driver, and copy the lane/day
+directory plus CSV, manifest, and ledger for investigation. Do not delete a conflicting artifact to
+make recovery succeed without first preserving it as evidence.
 
 Disk-full and permission failures are fail-visible. Required drivers stop accepting their input
 reader after an append error; operators should restore writable space/permissions and restart the
@@ -292,7 +304,8 @@ OSCAR_IT_ARCHIVE_DIR=/path/to/disposable/archive \
 
 The journal suite covers exact legacy bytes, full-UID filename hashing, SHA-256 manifests, persisted
 publication validation, backup-gated sealed-segment expiry, durable purge checkpoints, DST windows,
-size/age rotation, partial-tail recovery, CRC corruption, oversize-record rejection, and concurrent
-per-lane writers. Purger safety tests cover exact midnight scheduling, DST windows, manifest gating,
+size/age rotation, lazy current-day partial-tail recovery, bounded same-lane historical restart
+recovery, CRC corruption, oversize-record rejection, and concurrent per-lane writers. Purger safety
+tests cover exact midnight scheduling, DST windows, manifest gating,
 exclusive end boundaries, post-publication hourly retry, bounded oldest-first restart catch-up,
 unsealed-day retention, lane-scoped occupancy, and delegated high-volume lifecycle.

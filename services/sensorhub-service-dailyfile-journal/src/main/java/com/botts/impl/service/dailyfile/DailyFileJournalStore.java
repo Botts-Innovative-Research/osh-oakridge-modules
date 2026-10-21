@@ -182,7 +182,13 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
         createConfinedDirectories(this.rootDirectory, observationPurgeCheckpointDirectory);
         createConfinedDirectories(this.rootDirectory, publicationDirectory);
         validateOrInitializeJournalMetadata();
-        recover();
+
+        // Historical recovery can require reading and rendering millions of records. Running it
+        // here delays the module's STARTED event and can make every required RPM client time out,
+        // after which SensorHub does not retry those stopped modules. Current-day crash recovery is
+        // already performed lazily by LaneState.openDay before the first new append. Older days and
+        // interrupted retention work are handled by the bounded lifecycle pass below, after live
+        // writers have had an opportunity to attach.
 
         if (startScheduler) {
             forceScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -672,19 +678,19 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
 
         lifecycleLock.lock();
         try {
-            // A recovered lane need not have been opened by a driver yet.
+            // A recovered lane need not have been opened by a driver yet. Active lanes are also
+            // safe here because recoverHistoricalDay coordinates with their per-lane lock and
+            // skips only the exact day currently accepting records.
             try (DirectoryStream<Path> laneDirs = Files.newDirectoryStream(segmentsDirectory)) {
                 for (Path laneDir : laneDirs) {
                     if (!Files.isDirectory(laneDir, LinkOption.NOFOLLOW_LINKS))
                         continue;
                     String laneId = readLaneId(laneDir);
-                    if (!lanes.containsKey(laneId)) {
-                        try {
-                            sealRecoveredCompletedDays(laneId, laneDir,
-                                    LocalDate.ofInstant(now, zoneId));
-                        } catch (IOException e) {
-                            failure = merge(failure, e);
-                        }
+                    try {
+                        sealRecoveredCompletedDays(laneId, laneDir,
+                                LocalDate.ofInstant(now, zoneId));
+                    } catch (IOException e) {
+                        failure = merge(failure, e);
                     }
                 }
             }
@@ -1136,32 +1142,6 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
         }
     }
 
-    private void recover() throws IOException {
-        LocalDate today = LocalDate.ofInstant(clock.instant(), zoneId);
-        try (DirectoryStream<Path> laneDirs = Files.newDirectoryStream(segmentsDirectory)) {
-            for (Path laneDir : laneDirs) {
-                if (!Files.isDirectory(laneDir, LinkOption.NOFOLLOW_LINKS))
-                    continue;
-                resumeStagedDeletions(laneDir);
-                String laneId = readLaneId(laneDir);
-                try (DirectoryStream<Path> dayDirs = Files.newDirectoryStream(laneDir)) {
-                    for (Path dayDir : dayDirs) {
-                        if (!Files.isDirectory(dayDir, LinkOption.NOFOLLOW_LINKS))
-                            continue;
-                        LocalDate day;
-                        try {
-                            day = LocalDate.parse(dayDir.getFileName().toString());
-                        } catch (RuntimeException e) {
-                            log.warn("Ignoring unrecognized daily-file journal directory {}", dayDir);
-                            continue;
-                        }
-                        recoverDay(laneId, dayDir, day, today);
-                    }
-                }
-            }
-        }
-    }
-
     private void validateOrInitializeJournalMetadata() throws IOException {
         Path metadata = journalDirectory.resolve("journal-metadata.v1.json");
         if (Files.exists(metadata, LinkOption.NOFOLLOW_LINKS)) {
@@ -1199,21 +1179,6 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
         atomicWrite(metadata, json.getBytes(StandardCharsets.UTF_8));
     }
 
-    private void recoverDay(String laneId, Path dayDir, LocalDate day, LocalDate today) throws IOException {
-        List<Path> openSegments = listSegments(dayDir, ".open");
-        for (Path segment : openSegments)
-            recoverOpenSegment(segment);
-
-        if (day.isBefore(today)) {
-            for (Path segment : openSegments)
-                sealSegmentFile(segment);
-            publishDay(laneId, day, dayDir);
-        } else if (day.equals(today) && openSegments.size() > 1) {
-            for (int i = 0; i < openSegments.size() - 1; i++)
-                sealSegmentFile(openSegments.get(i));
-        }
-    }
-
     private void sealRecoveredCompletedDays(String laneId, Path laneDir, LocalDate today) throws IOException {
         try (DirectoryStream<Path> dayDirs = Files.newDirectoryStream(laneDir)) {
             for (Path dayDir : dayDirs) {
@@ -1227,11 +1192,61 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
                 }
                 if (!day.isBefore(today))
                     continue;
-                for (Path segment : listSegments(dayDir, ".open")) {
-                    recoverOpenSegment(segment);
-                    sealSegmentFile(segment);
+                recoverHistoricalDay(laneId, day, dayDir);
+            }
+        }
+    }
+
+    /**
+     * Recovers one completed day without racing a live writer for the same lane.
+     *
+     * <p>A lane can be active for today's records while older, crash-interrupted days still need
+     * publication. The lane lock is held only long enough to compare the monotonically increasing
+     * active day. Once the recovered day is older, its directory can be processed without pausing
+     * live appends. A lightweight exact-day recovery claim remains set while the lane lock is
+     * released, so even a concurrent rollover that resets the active day cannot race a late append
+     * into the directory being published. Only an append targeting that claimed historical day
+     * waits. This lets idle/disconnected backlogs converge without blocking the separate force
+     * scheduler for other lanes. Complete historical publications take the metadata fast path and
+     * are not re-rendered on every restart.</p>
+     */
+    private void recoverHistoricalDay(String laneId, LocalDate day, Path dayDirectory)
+            throws IOException {
+        LaneState activeLane = lanes.get(laneId);
+        boolean recoveryClaimed = false;
+        if (activeLane != null) {
+            activeLane.lock.lock();
+            try {
+                if (activeLane.historicalRecoveryDay != null)
+                    return;
+                if (activeLane.activeDay != null && !day.isBefore(activeLane.activeDay))
+                    return;
+                activeLane.historicalRecoveryDay = day;
+                recoveryClaimed = true;
+            } finally {
+                activeLane.lock.unlock();
+            }
+        }
+
+        try {
+            List<Path> openSegments = listSegments(dayDirectory, ".open");
+            for (Path segment : openSegments) {
+                recoverOpenSegment(segment);
+                sealSegmentFile(segment);
+            }
+            if (!openSegments.isEmpty() || !hasCompletePublicationRecord(laneId, day))
+                publishDay(laneId, day, dayDirectory);
+        } finally {
+            if (recoveryClaimed) {
+                activeLane.lock.lock();
+                try {
+                    if (day.equals(activeLane.historicalRecoveryDay)) {
+                        activeLane.historicalRecoveryDay = null;
+                        activeLane.historicalRecoveryComplete.signalAll();
+                    }
+                } finally {
+                    activeLane.lock.unlock();
                 }
-                publishDay(laneId, day, dayDir);
             }
         }
     }
@@ -1257,19 +1272,11 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
             if (!recoveryDays.isEmpty())
                 recoveryMaintenanceCursor = recoveryDays.get(recoveryDays.size() - 1).key;
             for (JournalDay journalDay : recoveryDays) {
-                if (!journalDay.day.isBefore(today) || lanes.containsKey(journalDay.laneId))
+                if (!journalDay.day.isBefore(today))
                     continue;
                 try {
-                    List<Path> openSegments = listSegments(journalDay.dayDirectory, ".open");
-                    for (Path segment : openSegments) {
-                        recoverOpenSegment(segment);
-                        sealSegmentFile(segment);
-                    }
-                    if (!openSegments.isEmpty()
-                            || !hasCompletePublicationRecord(journalDay.laneId, journalDay.day)) {
-                        publishDay(journalDay.laneId, journalDay.day,
-                                journalDay.dayDirectory);
-                    }
+                    recoverHistoricalDay(journalDay.laneId, journalDay.day,
+                            journalDay.dayDirectory);
                 } catch (IOException | RuntimeException e) {
                     failure = merge(failure, e instanceof IOException io ? io
                             : new IOException("Unable to maintain recovered journal day "
@@ -2113,7 +2120,9 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
         private final String laneId;
         private final Path laneDirectory;
         private final ReentrantLock lock = new ReentrantLock();
+        private final Condition historicalRecoveryComplete = lock.newCondition();
         private LocalDate activeDay;
+        private LocalDate historicalRecoveryDay;
         private Path dayDirectory;
         private Path openSegment;
         private FileChannel channel;
@@ -2140,6 +2149,16 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
                             terminalFailure);
 
                 LocalDate recordDay = LocalDate.ofInstant(record.timestamp(), zoneId);
+                while (recordDay.equals(historicalRecoveryDay)) {
+                    try {
+                        historicalRecoveryComplete.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("Interrupted while waiting for historical daily-file "
+                                + "recovery for " + laneId + " on " + recordDay, e);
+                    }
+                    ensureOpen();
+                }
                 byte[] payload = encodeRecord(record);
                 int frameBytes = FRAME_HEADER_BYTES + payload.length;
                 if (SEGMENT_HEADER_BYTES + frameBytes > maxSegmentBytes)
@@ -2280,8 +2299,10 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
             createConfinedDirectories(laneDirectory, dayDirectory);
             List<Path> opens = listSegments(dayDirectory, ".open");
             if (opens.size() > 1) {
-                for (int i = 0; i < opens.size() - 1; i++)
+                for (int i = 0; i < opens.size() - 1; i++) {
+                    recoverOpenSegment(opens.get(i));
                     sealSegmentFile(opens.get(i));
+                }
                 opens = listSegments(dayDirectory, ".open");
             }
 
