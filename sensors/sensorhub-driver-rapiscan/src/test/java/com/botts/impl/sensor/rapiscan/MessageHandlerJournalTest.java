@@ -188,6 +188,39 @@ public class MessageHandlerJournalTest {
         }
     }
 
+    @Test
+    public void stopInterruptsAnActiveReaderWithoutCancellingItsCompletionSignal() throws Exception {
+        String line = "TC,111111,111111,111111,111111";
+        RapiscanSensor sensor = mock(RapiscanSensor.class);
+        DailyFileJournalConnection journal = mock(DailyFileJournalConnection.class);
+        when(sensor.getLogger()).thenReturn(LoggerFactory.getLogger(MessageHandlerJournalTest.class));
+        when(sensor.getUniqueIdentifier()).thenReturn("urn:test:rapiscan:interrupt-stop");
+        when(sensor.getConfiguration()).thenReturn(new RapiscanConfig());
+        when(sensor.getDailyFileJournal()).thenReturn(journal);
+        CountDownLatch appendEntered = new CountDownLatch(1);
+        CountDownLatch readerInterrupted = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            appendEntered.countDown();
+            try {
+                new CountDownLatch(1).await();
+            } catch (InterruptedException expected) {
+                readerInterrupted.countDown();
+                Thread.currentThread().interrupt();
+            }
+            return null;
+        }).when(journal).append(eq(line), any(Instant.class));
+
+        MessageHandler handler = new MessageHandler(new ByteArrayInputStream(
+                (line + "\r\n").getBytes(StandardCharsets.UTF_8)), sensor);
+        org.junit.Assert.assertTrue(appendEntered.await(1, TimeUnit.SECONDS));
+        handler.requestStop();
+        handler.awaitStop(100L);
+
+        org.junit.Assert.assertTrue(
+                "stop must interrupt a reader that remains active past the graceful interval",
+                readerInterrupted.await(1, TimeUnit.SECONDS));
+    }
+
     private static final class CloseGatedLineInputStream extends InputStream {
         private final byte[] contents;
         private final CountDownLatch readEntered = new CountDownLatch(1);

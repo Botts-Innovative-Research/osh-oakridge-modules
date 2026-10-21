@@ -14,7 +14,6 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -53,7 +52,7 @@ public class MessageHandler {
     private volatile long timeSinceLastMessage;
 
     private final InputStream msgIn;
-    private Future<?> messageReaderFuture;
+    private volatile Thread messageReaderThread;
     private final AtomicBoolean hasStarted = new AtomicBoolean(false);
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
     private final CountDownLatch readerStopped = new CountDownLatch(1);
@@ -87,7 +86,8 @@ public class MessageHandler {
         bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
 
         try {
-            messageReaderFuture = RapiscanThreadPoolManager.getInstance().submitMessageReader(() -> {
+            RapiscanThreadPoolManager.getInstance().submitMessageReader(() -> {
+                messageReaderThread = Thread.currentThread();
                 parentSensor.getLogger().debug("Message reader started for sensor {}", parentSensor.getUniqueIdentifier());
 
                 try {
@@ -148,6 +148,7 @@ public class MessageHandler {
                     }
                 } finally {
                     isRunning.set(false);
+                    messageReaderThread = null;
                     readerStopped.countDown();
                     parentSensor.getLogger().debug("Message reader exiting for sensor {}", parentSensor.getUniqueIdentifier());
                 }
@@ -203,9 +204,10 @@ public class MessageHandler {
                 + TimeUnit.MILLISECONDS.toNanos(warningMillis);
         try {
             long gracefulNanos = TimeUnit.MILLISECONDS.toNanos(warningMillis / 2);
-            if (!readerStopped.await(gracefulNanos, TimeUnit.NANOSECONDS) &&
-                    messageReaderFuture != null) {
-                messageReaderFuture.cancel(true);
+            if (!readerStopped.await(gracefulNanos, TimeUnit.NANOSECONDS)) {
+                Thread activeReader = messageReaderThread;
+                if (activeReader != null)
+                    activeReader.interrupt();
             }
             long remaining = deadlineNanos - System.nanoTime();
             if (readerStopped.getCount() != 0 &&
@@ -223,9 +225,9 @@ public class MessageHandler {
                 readerStopped.await();
             }
         } catch (InterruptedException e) {
-            if (messageReaderFuture != null) {
-                messageReaderFuture.cancel(true);
-            }
+            Thread activeReader = messageReaderThread;
+            if (activeReader != null)
+                activeReader.interrupt();
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted while stopping Rapiscan message reader", e);
         }
