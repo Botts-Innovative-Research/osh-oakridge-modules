@@ -195,6 +195,47 @@ public class DatabasePurgerSafetyTest {
     }
 
     @Test
+    public void deletionRevalidatesEligibilityAfterConcurrentDataStreamMutation() throws Exception {
+        BigId system = addSystem(null, "urn:test:lane:delete-stream-race");
+        BigId daily = addDataStream(system, "urn:test:lane:delete-stream-race", "dailyFile",
+                dailyFileStructure());
+        BigId replacementSystem = addSystem(null,
+                "urn:test:lane:delete-stream-race-replacement");
+        BigId replacementStream = addDataStream(replacementSystem,
+                "urn:test:lane:delete-stream-race-replacement", "dailyFile",
+                dailyFileStructure());
+        DatabasePurger.DayWindow window = DatabasePurger.previousCompletedDayWindow(
+                NOW, ZoneOffset.UTC);
+        addStringObservation(daily, window.startInclusive().plusSeconds(1),
+                "moved-before-delete");
+
+        Map.Entry<BigId, IObsData> selected;
+        try (var entries = database.getObservationStore().selectEntries(new ObsFilter.Builder()
+                .withDataStreams(daily).build())) {
+            selected = entries.findFirst().orElseThrow();
+        }
+        IObsData moved = ObsData.Builder.from(selected.getValue())
+                .withDataStream(replacementStream)
+                .build();
+        AtomicBoolean mutationRan = new AtomicBoolean();
+        IObsSystemDatabase racingDatabase = databaseThatMutatesBeforeFirstDelete(
+                selected.getKey(), moved, mutationRan);
+
+        ToggleJournal journal = new ToggleJournal(ZoneOffset.UTC);
+        journal.published.set(true);
+        new DatabasePurger(racingDatabase, bucketStore, 0, journal, ZoneOffset.UTC,
+                Clock.fixed(NOW, ZoneOffset.UTC)).exportAndPurgeDailyFileData(window);
+
+        assertTrue("The fixture must move the observation after selection and before deletion",
+                mutationRan.get());
+        IObsData remaining = database.getObservationStore().get(selected.getKey());
+        assertTrue("A row moved to another stream must survive guarded deletion",
+                remaining != null);
+        assertEquals(replacementStream, remaining.getDataStreamID());
+        assertEquals(window.startInclusive().plusSeconds(1), remaining.getPhenomenonTime());
+    }
+
+    @Test
     public void hourlyDailyFileCatchUpIsDurableBoundedAndOldestFirstAcrossRestart() throws Exception {
         BigId system = addSystem(null, "urn:test:lane:catch-up");
         BigId daily = addDataStream(system, "urn:test:lane:catch-up", "dailyFile",

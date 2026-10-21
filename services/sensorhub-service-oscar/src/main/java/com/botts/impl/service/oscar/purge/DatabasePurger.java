@@ -917,7 +917,6 @@ public class DatabasePurger {
         ObsFilter filter = new ObsFilter.Builder()
                 .withDataStreams(dataStreamId)
                 .withPhenomenonTime(halfOpenTimeRange(start, end))
-                .withValuePredicate(obs -> isInsideHalfOpenWindow(obs.getPhenomenonTime(), start, end))
                 .withLimit(1)
                 .build();
         try (var observations = database.getObservationStore().select(filter)) {
@@ -1039,11 +1038,6 @@ public class DatabasePurger {
             var candidates = new ObsFilter.Builder()
                     .withDataStreams(dataStreamIds)
                     .withPhenomenonTime(halfOpenTimeRange(start, end))
-                    // H2 and some SQL stores use an inclusive cursor for the
-                    // index scan. The predicate enforces the immutable
-                    // [start,end) contract before the limit is applied.
-                    .withValuePredicate(obs -> isInsideHalfOpenWindow(
-                            obs.getPhenomenonTime(), start, end))
                     .withLimit(DELETE_BATCH_SIZE)
                     .build();
 
@@ -1070,7 +1064,13 @@ public class DatabasePurger {
                             .withInternalIDs(observationIds)
                             .withDataStreams(dataStreamIds)
                             .withPhenomenonTime(halfOpenTimeRange(start, end))
-                            .withValuePredicate(obs -> isInsideHalfOpenWindow(
+                            // Revalidate in the datastore after selection. Some stores optimize
+                            // internal-ID removal and otherwise bypass secondary filter fields;
+                            // this bounded predicate protects rows concurrently moved out of the
+                            // immutable retention window. The ID list caps the candidate set, so
+                            // it does not cause the unbounded multi-stream scan avoided above.
+                            .withValuePredicate(obs -> dataStreamIds.contains(
+                                    obs.getDataStreamID()) && isInsideHalfOpenWindow(
                                     obs.getPhenomenonTime(), start, end))
                             .build());
             if (deleted == 0) {
@@ -1100,8 +1100,6 @@ public class DatabasePurger {
         var filter = new ObsFilter.Builder()
             .withDataStreams(Set.of(dataStreamId))
             .withPhenomenonTime(halfOpenTimeRange(startTime, endTime))
-            .withValuePredicate(obs -> isInsideHalfOpenWindow(
-                    obs.getPhenomenonTime(), startTime, endTime))
             .build();
 
         Map<String, String> metadata = new HashMap<>();

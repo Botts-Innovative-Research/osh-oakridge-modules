@@ -1064,6 +1064,87 @@ public class DailyFileJournalStoreTest {
     }
 
     @Test
+    public void offlineLegacyMigrationRejectsUnexpectedLedgerTreeEntries() throws Exception {
+        Path unexpectedLaneRoot = Files.createDirectories(root.resolve("unexpected-ledger-lane"));
+        Path unexpectedLedgerRoot = Files.createDirectories(
+                unexpectedLaneRoot.resolve(".dailyfile-journal/ledger"));
+        Files.createDirectories(unexpectedLaneRoot.resolve(".dailyfile-journal/segments"));
+        Files.writeString(unexpectedLedgerRoot.resolve("orphan.json"),
+                "{\"zoneId\":\"America/New_York\"}", StandardCharsets.UTF_8);
+
+        IOException unexpectedLane = assertThrows(IOException.class,
+                () -> DailyFileJournalStore.migrateLegacyJournalIndex(
+                        unexpectedLaneRoot, config));
+        assertTrue(unexpectedLane.getMessage().contains("unexpected lane entry"));
+        assertFalse(Files.exists(unexpectedLaneRoot.resolve(
+                ".dailyfile-journal/journal-metadata.v1.json")));
+
+        Path unexpectedEntryRoot = Files.createDirectories(root.resolve("unexpected-ledger-entry"));
+        Path ledgerLane = Files.createDirectories(
+                unexpectedEntryRoot.resolve(".dailyfile-journal/ledger/legacy-lane"));
+        Files.createDirectories(unexpectedEntryRoot.resolve(".dailyfile-journal/segments"));
+        Files.writeString(ledgerLane.resolve("leftover.tmp"), "unexpected",
+                StandardCharsets.UTF_8);
+
+        IOException unexpectedEntry = assertThrows(IOException.class,
+                () -> DailyFileJournalStore.migrateLegacyJournalIndex(
+                        unexpectedEntryRoot, config));
+        assertTrue(unexpectedEntry.getMessage().contains("unexpected entry"));
+        assertFalse(Files.exists(unexpectedEntryRoot.resolve(
+                ".dailyfile-journal/journal-metadata.v1.json")));
+
+        Path invalidDayRoot = Files.createDirectories(root.resolve("invalid-ledger-day"));
+        Path invalidDayLane = Files.createDirectories(
+                invalidDayRoot.resolve(".dailyfile-journal/ledger/legacy-lane"));
+        Files.createDirectories(invalidDayRoot.resolve(".dailyfile-journal/segments"));
+        Files.writeString(invalidDayLane.resolve("not-a-day.json"),
+                "{\"zoneId\":\"America/New_York\"}", StandardCharsets.UTF_8);
+
+        IOException invalidDay = assertThrows(IOException.class,
+                () -> DailyFileJournalStore.migrateLegacyJournalIndex(invalidDayRoot, config));
+        assertTrue(invalidDay.getMessage().contains("unrecognized day entry"));
+        assertFalse(Files.exists(invalidDayRoot.resolve(
+                ".dailyfile-journal/journal-metadata.v1.json")));
+    }
+
+    @Test
+    public void offlineLegacyMigrationRejectsLinkedLedgerEntries() throws Exception {
+        Path linkedLaneRoot = Files.createDirectories(root.resolve("linked-ledger-lane"));
+        Path ledgerRoot = Files.createDirectories(
+                linkedLaneRoot.resolve(".dailyfile-journal/ledger"));
+        Files.createDirectories(linkedLaneRoot.resolve(".dailyfile-journal/segments"));
+        Path outsideLane = Files.createDirectories(root.resolve("outside-ledger-lane"));
+        Files.writeString(outsideLane.resolve("2026-10-01.json"),
+                "{\"zoneId\":\"America/New_York\"}", StandardCharsets.UTF_8);
+        try {
+            Files.createSymbolicLink(ledgerRoot.resolve("linked-lane"), outsideLane);
+        } catch (UnsupportedOperationException | IOException e) {
+            return;
+        }
+
+        IOException linkedLane = assertThrows(IOException.class,
+                () -> DailyFileJournalStore.migrateLegacyJournalIndex(linkedLaneRoot, config));
+        assertTrue(linkedLane.getMessage().contains("unexpected lane entry"));
+        assertFalse(Files.exists(linkedLaneRoot.resolve(
+                ".dailyfile-journal/journal-metadata.v1.json")));
+
+        Path linkedFileRoot = Files.createDirectories(root.resolve("linked-ledger-file"));
+        Path linkedFileLane = Files.createDirectories(
+                linkedFileRoot.resolve(".dailyfile-journal/ledger/legacy-lane"));
+        Files.createDirectories(linkedFileRoot.resolve(".dailyfile-journal/segments"));
+        Path outsideLedger = root.resolve("outside-ledger.json");
+        Files.writeString(outsideLedger, "{\"zoneId\":\"America/New_York\"}",
+                StandardCharsets.UTF_8);
+        Files.createSymbolicLink(linkedFileLane.resolve("2026-10-01.json"), outsideLedger);
+
+        IOException linkedFile = assertThrows(IOException.class,
+                () -> DailyFileJournalStore.migrateLegacyJournalIndex(linkedFileRoot, config));
+        assertTrue(linkedFile.getMessage().contains("unexpected entry"));
+        assertFalse(Files.exists(linkedFileRoot.resolve(
+                ".dailyfile-journal/journal-metadata.v1.json")));
+    }
+
+    @Test
     public void offlineLegacyMigrationRejectsUnexpectedAndMisboundSegmentTreeEntries()
             throws Exception {
         Path unexpectedRoot = Files.createDirectories(root.resolve("unexpected-entry"));

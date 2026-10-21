@@ -284,23 +284,31 @@ rename, or delete `.open`, `.seg`, ledger, CSV, or manifest files while the serv
 
 A journal created by the earlier 3.9.2 preview has metadata/segments but no durable lifecycle work
 index. Startup deliberately refuses that journal instead of doing an unbounded historical tree walk
-on the module thread. Stop OSCAR, make the journal volume writable to the OSCAR container user, and
-run the included restartable migration once, using the exact configured storage root and `zoneId`:
+on the module thread. The packaged Windows and Linux `oscar upgrade` commands stop the application
+tier and run this migration automatically before startup. The following direct command is for
+recovery or custom deployments only; stop OSCAR first and make the journal volume writable to the
+OSCAR container user. Prefer reading the persisted configuration so a customized root, journal
+directory, or calendar zone cannot be accidentally bypassed:
 
 ```sh
-docker compose run --rm --no-deps --user 10001:10001 --entrypoint java oscar \
-  -cp '/opt/oscar/lib/*' \
-  com.botts.impl.service.dailyfile.DailyFileJournalIndexMigration \
-  /var/lib/oscar UTC .dailyfile-journal
+docker compose run --rm --no-deps --user 10001:10001 --entrypoint sh oscar -eu -c '
+  umask 077
+  exec java -cp "/opt/oscar/lib/*" \
+    com.botts.impl.service.dailyfile.DailyFileJournalIndexMigration \
+    --config /var/lib/oscar/config.json
+'
 ```
 
-The optional third argument is `journalDirectory` and defaults to `.dailyfile-journal`. Adjust
-`/var/lib/oscar` and `UTC` to match the deployment configuration. The tool validates every existing
-ledger's zone, indexes normal day directories plus interrupted `delete-pending`/`deleting` state,
-and publishes `journal-metadata.v1.json` only after the complete index is durable. It is offline and
-may take time proportional to retained history, but it cannot delay live startup because OSCAR is
-stopped. A crash or error leaves an explicit migration marker; rerun the same command. Work-marker
-creation is idempotent, and ordinary startup stays blocked until the final metadata commit succeeds.
+The tool requires a regular, non-symlink configuration no larger than 16 MiB, parses the module
+array strictly, rejects duplicate Daily File Journal modules, resolves relative `rootDirectory`
+against the configuration directory, and skips without mutation when the module is absent. For an
+isolated recovery where no OSCAR configuration is available, the legacy explicit form remains
+`<storage-root> <zone-id> [journal-directory]`; every value must exactly match the original site.
+The tool validates every existing ledger's zone, indexes normal day directories plus interrupted
+`delete-pending`/`deleting` state, and publishes `journal-metadata.v1.json` only after the complete
+index is durable. It is offline and may take time proportional to retained history. A crash or error
+leaves an explicit migration marker and may leave already durable, idempotent work markers; rerun
+the same command. Ordinary startup stays blocked until the final metadata commit succeeds.
 
 Useful checks after local midnight are:
 

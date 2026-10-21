@@ -1405,11 +1405,23 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
         try (DirectoryStream<Path> laneDirectories = Files.newDirectoryStream(ledgerDirectory)) {
             for (Path laneDirectory : laneDirectories) {
                 if (!Files.isDirectory(laneDirectory, LinkOption.NOFOLLOW_LINKS)
-                        || Files.isSymbolicLink(laneDirectory))
-                    continue;
-                try (DirectoryStream<Path> ledgers = Files.newDirectoryStream(laneDirectory,
-                        "*.json")) {
+                        || Files.isSymbolicLink(laneDirectory)) {
+                    throw new IOException("Legacy journal ledger root contains a linked or "
+                            + "unexpected lane entry: " + laneDirectory);
+                }
+                try (DirectoryStream<Path> ledgers = Files.newDirectoryStream(laneDirectory)) {
                     for (Path ledger : ledgers) {
+                        String name = ledger.getFileName().toString();
+                        if (!isRegularFileNoFollow(ledger) || !name.endsWith(".json")) {
+                            throw new IOException("Legacy journal ledger lane contains a linked "
+                                    + "or unexpected entry: " + ledger);
+                        }
+                        try {
+                            LocalDate.parse(name.substring(0, name.length() - 5));
+                        } catch (RuntimeException invalidDay) {
+                            throw new IOException("Legacy journal ledger has an unrecognized day "
+                                    + "entry: " + ledger, invalidDay);
+                        }
                         JsonObject json = readJsonObject(ledger, "publication ledger");
                         if (!configuredZone.getId().equals(requiredText(json, "zoneId"))) {
                             throw new IOException("Configured daily-file zone " + configuredZone
