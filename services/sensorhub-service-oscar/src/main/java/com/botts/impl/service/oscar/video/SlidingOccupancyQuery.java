@@ -126,17 +126,21 @@ public final class SlidingOccupancyQuery {
         if (executor != null && !executor.isTerminated())
             throw new IllegalStateException(
                     "Video-retention worker from the previous generation has not terminated");
-        if (operationFailure != null)
-            throw new IllegalStateException(
-                    "Video-retention datastore operation did not close cleanly; recreate the module",
-                    operationFailure);
-        executor = null;
-        future = null;
-        stopRequested = false;
         synchronized (operationLock) {
+            if (activeOperation != null || (cancellationStarted && !cancellationComplete))
+                throw new IllegalStateException(
+                        "Video-retention datastore cancellation from the previous generation "
+                                + "has not completed");
+            if (operationFailure != null)
+                throw new IllegalStateException(
+                        "Video-retention datastore operation did not close cleanly; recreate the module",
+                        operationFailure);
             cancellationStarted = false;
             cancellationComplete = true;
         }
+        executor = null;
+        future = null;
+        stopRequested = false;
         executor = newExecutor();
         long delayMillis = Math.max(1_000L, batchWindowLength.toMillis());
         // Fixed delay prevents a slow catch-up cycle from building an immediate fixed-rate backlog.

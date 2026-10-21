@@ -22,6 +22,7 @@ import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,6 +34,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
@@ -537,6 +539,9 @@ public class RetentionCursorTest {
     public void stopCancelsActiveDatastoreQueryBeforeReportingTermination() throws Exception {
         CountDownLatch queryStarted = new CountDownLatch(1);
         CountDownLatch queryReleased = new CountDownLatch(1);
+        CountDownLatch cancellationStarted = new CountDownLatch(1);
+        CountDownLatch releaseCancellation = new CountDownLatch(1);
+        CountDownLatch scopeClosed = new CountDownLatch(1);
         AtomicInteger cancellations = new AtomicInteger();
         AtomicInteger closes = new AtomicInteger();
         ICancellableDataStore.CancellableOperation operation =
@@ -547,21 +552,12 @@ public class RetentionCursorTest {
                     public void cancel() {
                         if (!cancelled) {
                             cancelled = true;
-                            long deadline = System.nanoTime()
-                                    + TimeUnit.MILLISECONDS.toNanos(500L);
-                            while (true) {
-                                long remaining = deadline - System.nanoTime();
-                                if (remaining <= 0)
-                                    break;
-                                try {
-                                    TimeUnit.NANOSECONDS.sleep(remaining);
-                                } catch (InterruptedException ignored) {
-                                    // A driver cancellation can be interrupt-resistant. The
-                                    // module-registry request phase must still remain non-blocking.
-                                }
-                            }
                             cancellations.incrementAndGet();
+                            cancellationStarted.countDown();
+                            // Let the scheduler worker terminate while this driver-cancellation
+                            // helper deliberately remains in flight.
                             queryReleased.countDown();
+                            awaitIgnoringInterrupts(releaseCancellation);
                         }
                     }
 
@@ -573,6 +569,7 @@ public class RetentionCursorTest {
                     @Override
                     public void close() {
                         closes.incrementAndGet();
+                        scopeClosed.countDown();
                     }
                 };
 
@@ -635,16 +632,47 @@ public class RetentionCursorTest {
                 Duration.ofDays(1));
 
         query.start();
-        assertTrue("Retention query did not enter the datastore", queryStarted.await(2, TimeUnit.SECONDS));
-        long requestStarted = System.nanoTime();
-        query.requestStop();
-        long requestMillis = TimeUnit.NANOSECONDS.toMillis(
-                System.nanoTime() - requestStarted);
-        assertTrue("Video cancellation must not block the OSCAR stop request phase",
-                requestMillis < 250L);
-        query.awaitStop(2, TimeUnit.SECONDS);
-        assertEquals("Stop must cancel the scoped datastore query", 1, cancellations.get());
-        assertEquals("The worker must close its own datastore scope", 1, closes.get());
+        try {
+            assertTrue("Retention query did not enter the datastore",
+                    queryStarted.await(2, TimeUnit.SECONDS));
+            long requestStarted = System.nanoTime();
+            query.requestStop();
+            long requestMillis = TimeUnit.NANOSECONDS.toMillis(
+                    System.nanoTime() - requestStarted);
+            assertTrue("Video cancellation must not block the OSCAR stop request phase",
+                    requestMillis < 250L);
+            assertTrue(cancellationStarted.await(2, TimeUnit.SECONDS));
+            assertTrue("The scheduler worker did not close its datastore scope",
+                    scopeClosed.await(2, TimeUnit.SECONDS));
+
+            assertThrows("Stop must remain truthful while the cancellation helper is active",
+                    IllegalStateException.class,
+                    () -> query.awaitStop(100, TimeUnit.MILLISECONDS));
+            assertTrue("The fixture must isolate the old helper after scheduler termination",
+                    scheduler(query).isTerminated());
+            assertThrows("A terminated scheduler cannot restart over its old cancellation helper",
+                    IllegalStateException.class, query::start);
+
+            releaseCancellation.countDown();
+            query.awaitStop(2, TimeUnit.SECONDS);
+            assertEquals("Stop must cancel the scoped datastore query", 1, cancellations.get());
+            assertEquals("The worker must close its own datastore scope", 1, closes.get());
+        } finally {
+            releaseCancellation.countDown();
+            try {
+                query.requestStop();
+                query.awaitStop(2, TimeUnit.SECONDS);
+            } catch (RuntimeException ignored) {
+                // Preserve the primary assertion if fixture setup failed.
+            }
+        }
+    }
+
+    private static ScheduledExecutorService scheduler(SlidingOccupancyQuery query)
+            throws ReflectiveOperationException {
+        Field field = SlidingOccupancyQuery.class.getDeclaredField("executor");
+        field.setAccessible(true);
+        return (ScheduledExecutorService) field.get(query);
     }
 
     private static Object defaultProxyValue(Class<?> type) {

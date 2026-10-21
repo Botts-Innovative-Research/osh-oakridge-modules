@@ -153,16 +153,27 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
      * Driver cancellation is never run on the module-registry thread because it may itself block.
      */
     public void requestStop() {
-        java.util.List<StatisticsWork> workToCancel;
         synchronized (lifecycleMonitor) {
             synchronized (workMonitor) {
                 stopRequested = true;
-                workToCancel = new java.util.ArrayList<>(activeWork);
+                requestActiveWorkCancellationLocked();
             }
-            workToCancel.forEach(StatisticsWork::requestCancellation);
             if (service != null)
                 service.shutdownNow();
         }
+    }
+
+    /**
+     * Marks every currently active operation as cancellation-pending while {@link #workMonitor}
+     * is still held. This closes the finish-versus-cancel race: a worker cannot remove itself
+     * between discovery and marking, so a successful await also proves its cancellation helper
+     * completed.
+     */
+    void requestActiveWorkCancellationLocked() {
+        if (!Thread.holdsLock(workMonitor))
+            throw new IllegalStateException("Statistics work monitor must be held");
+        new java.util.ArrayList<>(activeWork)
+                .forEach(StatisticsWork::requestCancellation);
     }
 
     /**
