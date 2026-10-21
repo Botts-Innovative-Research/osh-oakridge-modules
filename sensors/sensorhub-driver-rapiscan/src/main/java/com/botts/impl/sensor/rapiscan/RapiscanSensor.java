@@ -34,6 +34,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Sensor driver for the ... providing sensor description, output registration,
@@ -45,6 +46,8 @@ import java.util.concurrent.TimeUnit;
 public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     private static final Logger logger = LoggerFactory.getLogger(RapiscanSensor.class);
+    private static final long RECONNECT_CONFIRMATION_NANOS = TimeUnit.SECONDS.toNanos(1);
+    private static final long NO_RECONNECT_TIMEOUT = Long.MIN_VALUE;
 
     // Utilities
     private MessageHandler messageHandler;
@@ -77,6 +80,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     private ScheduledFuture<?> heartbeatFuture;
     RobustConnection connection;
     private boolean isRunning;
+    private final AtomicBoolean reconnectPending = new AtomicBoolean();
+    private long reconnectTimeoutObservedAtNanos = NO_RECONNECT_TIMEOUT;
 //    private Thread tcpConnectionThread;
     //private static final Object heartbeatLock = new Object();
 
@@ -260,6 +265,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     @Override
     protected void afterStart() {
         // Begin heartbeat check
+        reconnectPending.set(false);
+        resetReconnectTimeoutConfirmation();
         isRunning = true;
         heartbeatFuture = RapiscanThreadPoolManager.getInstance().scheduleHeartbeat(
                 this::heartbeatCheck,
@@ -283,6 +290,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         logger.info("Stopping RapiscanSensor {}...", getUniqueIdentifier());
 
         isRunning = false;
+        resetReconnectTimeoutConfirmation();
 
         if (heartbeatFuture != null) {
             heartbeatFuture.cancel(true);
@@ -452,18 +460,27 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                 connectionStatusOutput.onNewMessage(isReceivingMsg);
             }
 
-            if (!isReceivingMsg) {
-                long reconnectTimeout = config.commSettings.connection.connectTimeout;
-                if (timeSinceMsg > reconnectTimeout) {
-                    logger.warn("Connection timeout after {}ms, attempting reconnect", timeSinceMsg);
+            long reconnectTimeout = config.commSettings.connection.connectTimeout;
+            if (isReceivingMsg || timeSinceMsg <= reconnectTimeout) {
+                resetReconnectTimeoutConfirmation();
+                return;
+            }
 
-                    if (isRunning && connection != null) {
-                        try {
-                            connection.reconnect();
-                        } catch (Exception e) {
-                            logger.error("Reconnect failed", e);
-                        }
-                    }
+            // Scheduled fixed-rate heartbeats can run late during JVM or host startup stalls and
+            // then execute their missed ticks back-to-back. Require the timeout to remain true for
+            // one real second before restarting this module, so one delayed tick cannot trigger a
+            // synchronized reconnect storm across every lane.
+            if (!reconnectTimeoutConfirmed(System.nanoTime()))
+                return;
+
+            if (isRunning && connection != null && reconnectPending.compareAndSet(false, true)) {
+                logger.warn("Connection timeout persisted after {}ms; attempting reconnect", timeSinceMsg);
+                try {
+                    connection.reconnect();
+                } catch (Exception e) {
+                    reconnectPending.set(false);
+                    resetReconnectTimeoutConfirmation();
+                    logger.error("Reconnect failed", e);
                 }
             }
 
@@ -472,5 +489,17 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                 logger.error("Error during heartbeat check", e);
             }
         }
+    }
+
+    synchronized boolean reconnectTimeoutConfirmed(long nowNanos) {
+        if (reconnectTimeoutObservedAtNanos == NO_RECONNECT_TIMEOUT) {
+            reconnectTimeoutObservedAtNanos = nowNanos;
+            return false;
+        }
+        return nowNanos - reconnectTimeoutObservedAtNanos >= RECONNECT_CONFIRMATION_NANOS;
+    }
+
+    synchronized void resetReconnectTimeoutConfirmation() {
+        reconnectTimeoutObservedAtNanos = NO_RECONNECT_TIMEOUT;
     }
 }

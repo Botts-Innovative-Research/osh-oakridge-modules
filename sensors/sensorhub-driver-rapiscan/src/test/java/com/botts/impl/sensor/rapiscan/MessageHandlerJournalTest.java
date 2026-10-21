@@ -10,6 +10,8 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
@@ -64,7 +66,7 @@ public class MessageHandlerJournalTest {
     }
 
     @Test
-    public void stopWaitsForFinalJournalAppendBeforeWriterClose() throws Exception {
+    public void stopWaitsPastWarningForFinalJournalAppendBeforeWriterClose() throws Exception {
         String input = "TC,111111,111111,111111,111111\r\n";
         RapiscanSensor sensor = mock(RapiscanSensor.class);
         DailyFileJournalConnection journal = mock(DailyFileJournalConnection.class);
@@ -98,14 +100,16 @@ public class MessageHandlerJournalTest {
         ExecutorService executor = Executors.newSingleThreadExecutor();
         Future<?> stop = executor.submit(() -> {
             try {
-                handler.stop();
+                handler.requestStop();
+                handler.awaitStop(100L);
             } catch (java.io.IOException error) {
                 throw new RuntimeException(error);
             }
         });
         try {
-            Thread.sleep(100L);
-            org.junit.Assert.assertFalse("stop must join the journal append", stop.isDone());
+            Thread.sleep(200L);
+            org.junit.Assert.assertFalse(
+                    "stop must keep waiting after the warning threshold", stop.isDone());
             releaseAppend.countDown();
             stop.get(2, TimeUnit.SECONDS);
             journal.close();
@@ -139,6 +143,49 @@ public class MessageHandlerJournalTest {
 
         verify(journal).append(eq(line), any(Instant.class));
         verify(dailyFileOutput, never()).onNewMessage(anyString(), any(Instant.class));
+    }
+
+    @Test
+    public void heartbeatTracksReceiptBeforeSlowJournalAppendCompletes() throws Exception {
+        String line = "TC,111111,111111,111111,111111";
+        RapiscanSensor sensor = mock(RapiscanSensor.class);
+        DailyFileJournalConnection journal = mock(DailyFileJournalConnection.class);
+        DailyFileOutput dailyFileOutput = mock(DailyFileOutput.class);
+        when(sensor.getLogger()).thenReturn(LoggerFactory.getLogger(MessageHandlerJournalTest.class));
+        when(sensor.getUniqueIdentifier()).thenReturn("urn:test:rapiscan:receipt-heartbeat");
+        when(sensor.getConfiguration()).thenReturn(new RapiscanConfig());
+        when(sensor.getDailyFileJournal()).thenReturn(journal);
+        when(sensor.getDailyFileOutput()).thenReturn(dailyFileOutput);
+        when(journal.shouldPublishLegacyObservation()).thenReturn(true);
+        CountDownLatch appendEntered = new CountDownLatch(1);
+        CountDownLatch releaseAppend = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            appendEntered.countDown();
+            releaseAppend.await(5, TimeUnit.SECONDS);
+            return null;
+        }).when(journal).append(eq(line), any(Instant.class));
+
+        PipedInputStream input = new PipedInputStream();
+        PipedOutputStream rpm = new PipedOutputStream(input);
+        MessageHandler handler = new MessageHandler(input, sensor);
+        try {
+            var lastMessage = MessageHandler.class.getDeclaredField("timeSinceLastMessage");
+            lastMessage.setAccessible(true);
+            lastMessage.setLong(handler, 0L);
+            rpm.write((line + "\n").getBytes(StandardCharsets.UTF_8));
+            rpm.flush();
+            org.junit.Assert.assertTrue(appendEntered.await(1, TimeUnit.SECONDS));
+            org.junit.Assert.assertTrue(
+                    "receipt must update the heartbeat timestamp before journal append returns",
+                    lastMessage.getLong(handler) > 0L);
+            org.junit.Assert.assertTrue(
+                    "heartbeat must observe the newly received line while its journal append drains",
+                    handler.getTimeSinceLastMessage() < 1_000L);
+        } finally {
+            releaseAppend.countDown();
+            handler.stop();
+            rpm.close();
+        }
     }
 
     private static final class CloseGatedLineInputStream extends InputStream {

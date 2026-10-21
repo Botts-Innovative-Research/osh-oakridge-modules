@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MessageHandler {
-    private static final long STOP_TIMEOUT_MILLIS = 2_000L;
+    private static final long STOP_WARNING_MILLIS = 2_000L;
 
     private final RapiscanSensor parentSensor;
 
@@ -109,8 +109,12 @@ public class MessageHandler {
                             continue;
 
                         // Daily-file phenomenon time and Occupancy.startTime share this exact
-                        // millisecond correlation key.
-                        Instant receivedAt = Instant.ofEpochMilli(System.currentTimeMillis());
+                        // millisecond correlation key. Record receipt before durable journal I/O
+                        // so a slow append cannot make the heartbeat mistake healthy RPM traffic
+                        // for a dead connection and start an unnecessary reconnect.
+                        long receivedAtMillis = System.currentTimeMillis();
+                        timeSinceLastMessage = receivedAtMillis;
+                        Instant receivedAt = Instant.ofEpochMilli(receivedAtMillis);
                         var journal = parentSensor.getDailyFileJournal();
                         if (journal != null) {
                             try {
@@ -131,7 +135,6 @@ public class MessageHandler {
                                 if (journal == null || journal.shouldPublishLegacyObservation())
                                     parentSensor.getDailyFileOutput().onNewMessage(msgLine, receivedAt);
                                 onNewMainChar(csvList.get(0)[0], csvList.get(0), receivedAt);
-                                timeSinceLastMessage = System.currentTimeMillis();
                             }
                         } catch (Exception e) {
                             if (isRunning.get()) {
@@ -186,22 +189,39 @@ public class MessageHandler {
     }
 
     public synchronized void awaitStop() throws IOException {
+        awaitStop(STOP_WARNING_MILLIS);
+    }
+
+    synchronized void awaitStop(long warningMillis) throws IOException {
         if (!hasStarted.get())
             return;
 
+        if (warningMillis < 2)
+            throw new IllegalArgumentException("Rapiscan stop warning interval must be at least 2 ms");
+
         long deadlineNanos = System.nanoTime()
-                + TimeUnit.MILLISECONDS.toNanos(STOP_TIMEOUT_MILLIS);
+                + TimeUnit.MILLISECONDS.toNanos(warningMillis);
         try {
-            long gracefulNanos = TimeUnit.MILLISECONDS.toNanos(STOP_TIMEOUT_MILLIS / 2);
+            long gracefulNanos = TimeUnit.MILLISECONDS.toNanos(warningMillis / 2);
             if (!readerStopped.await(gracefulNanos, TimeUnit.NANOSECONDS) &&
                     messageReaderFuture != null) {
                 messageReaderFuture.cancel(true);
             }
             long remaining = deadlineNanos - System.nanoTime();
             if (readerStopped.getCount() != 0 &&
-                    (remaining <= 0 || !readerStopped.await(remaining, TimeUnit.NANOSECONDS)))
-                throw new IOException("Rapiscan message reader did not stop within "
-                        + STOP_TIMEOUT_MILLIS + " ms");
+                    (remaining <= 0 || !readerStopped.await(remaining, TimeUnit.NANOSECONDS))) {
+                // A reader can be inside a non-interruptible durable journal append while a
+                // loaded Windows deployment is reconnecting many lanes. Closing the writer or
+                // reporting a clean stop here would lose the final accepted line; throwing leaves
+                // AbstractModule in STOPPING and makes the automatic reconnect fail permanently.
+                // Keep the module honestly STOPPING until that append drains, then let doStop()
+                // close the writer before the replacement reader is started.
+                parentSensor.getLogger().warn(
+                        "Rapiscan message reader is still draining after {} ms; " +
+                                "waiting before closing the daily-file journal",
+                        warningMillis);
+                readerStopped.await();
+            }
         } catch (InterruptedException e) {
             if (messageReaderFuture != null) {
                 messageReaderFuture.cancel(true);

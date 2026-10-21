@@ -12,7 +12,7 @@ To use the Rapiscan Sensor Module, you have the option to configure three separa
 
 - The driver connects to the rpm through a tcp connection and parses gamma and neutron data and publishes it to the OpenSensorHub framework.
 - Each newly established RPM connection publishes a clear tamper baseline before processing device messages. A later `TT` message marks tamper active and a later `TC` message clears it again.
-- Each active connection owns one pooled message reader. Reconnect closes the old socket, requests reader termination, and waits up to five seconds before continuing; end-of-stream exits cleanly instead of repeatedly reopening the same input.
+- Each active connection owns one pooled message reader. Raw receipt time is recorded before journal and message processing, and a stale connection must remain timed out for a real-time confirmation interval before one reconnect is attempted. Reconnect closes the old socket, interrupts a delayed reader after two seconds, and waits for any in-flight durable journal append to finish before closing that journal and restarting; end-of-stream exits cleanly instead of repeatedly reopening the same input.
 - TCP connection allows the driver to connect to the RPM. You will need to provide and ip address, port and possibly a username and password.
 - The EML service is for the VM250 RPM lanes only. Only configure this item if your lane is VM 250.
 

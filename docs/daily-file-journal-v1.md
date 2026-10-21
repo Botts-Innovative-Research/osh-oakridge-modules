@@ -81,12 +81,14 @@ task that does not quiesce within the bound makes module shutdown fail visibly r
 clean stop or wait forever; the process must then be treated as not cleanly stopped.
 
 Rapiscan, RS350, and Aspect mark their readers as stopping before they close the input source, then
-join the corresponding source worker within a two-second driver bound before closing the writer
-handle. This ordering suppresses expected transport-close errors and lets an append already inside
-durable I/O finish before the handle releases its service lease. A source worker that does not
-terminate fails module stop visibly and keeps the writer attached; the driver never reports a clean
-stop by closing the journal underneath a live reader. RS350 closes its writer as soon as source
-capture has drained, independently of deferred WebID/notifier shutdown.
+join the corresponding source worker before closing the writer handle. This ordering suppresses
+expected transport-close errors and lets an append already inside durable I/O finish before the
+handle releases its service lease. RS350 and Aspect fail module stop if their source worker misses
+the two-second driver bound. Rapiscan interrupts its reader and emits a warning at the same bound,
+but remains honestly `STOPPING` until an in-flight durable append drains; this prevents a loaded
+multi-lane reconnect from becoming permanently stuck in error without ever closing the journal
+underneath a live reader. RS350 closes its writer as soon as source capture has drained,
+independently of deferred WebID/notifier shutdown.
 
 ## Day boundary and publication
 

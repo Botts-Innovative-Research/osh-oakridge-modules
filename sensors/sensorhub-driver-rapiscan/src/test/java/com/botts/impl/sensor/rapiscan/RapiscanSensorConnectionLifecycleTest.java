@@ -7,8 +7,11 @@ import org.sensorhub.impl.module.RobustConnectionConfig;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class RapiscanSensorConnectionLifecycleTest {
 
@@ -34,6 +37,22 @@ public class RapiscanSensorConnectionLifecycleTest {
                 "connected", "tamper:false", "reader-started",
                 "connected", "tamper:false", "reader-started"
         ), sensor.events);
+    }
+
+    @Test
+    public void oneLateHeartbeatCannotTriggerFleetReconnect() {
+        var sensor = new RapiscanSensor();
+        long firstLateCheck = TimeUnit.SECONDS.toNanos(30);
+
+        assertFalse(sensor.reconnectTimeoutConfirmed(firstLateCheck));
+        assertFalse(sensor.reconnectTimeoutConfirmed(
+                firstLateCheck + TimeUnit.MILLISECONDS.toNanos(999)));
+        assertTrue(sensor.reconnectTimeoutConfirmed(
+                firstLateCheck + TimeUnit.SECONDS.toNanos(1)));
+
+        sensor.resetReconnectTimeoutConfirmation();
+        assertFalse(sensor.reconnectTimeoutConfirmed(
+                firstLateCheck + TimeUnit.SECONDS.toNanos(20)));
     }
 
     private static class RecordingSensor extends RapiscanSensor {
