@@ -135,6 +135,11 @@ public record MediaManifest(
             return new Source(objectKey, sha256, bytes, codec, durationMicros,
                     rollbackDeleteAfter, replacement);
         }
+
+        public Source withRollbackDeleteAfter(Instant replacement) {
+            return new Source(objectKey, sha256, bytes, codec, durationMicros,
+                    replacement, state);
+        }
     }
 
     public record Asset(

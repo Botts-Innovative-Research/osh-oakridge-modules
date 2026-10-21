@@ -314,6 +314,284 @@ public class RetainedMediaBackendTest {
     }
 
     @Test
+    public void rollbackGraceStartsAfterSuccessfulManifestPublication() throws Exception {
+        Path root = temporaryFolder.newFolder("publication-anchored-grace").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        bucketStore.createBucket(MediaSetStore.VIDEO_BUCKET);
+        String sourceKey = "clips/publication-anchored/source.ts";
+        Path source = Path.of(bucketStore.getWritableResourceURI(
+                MediaSetStore.VIDEO_BUCKET, sourceKey));
+        Files.copy(bundledH264Fixture(), source);
+
+        Instant creationTime = Instant.parse("2026-01-01T00:00:00Z");
+        Instant publicationCommitTime = creationTime.plus(Duration.ofHours(6));
+        Duration grace = Duration.ofHours(24);
+        MutableClock clock = new MutableClock(creationTime);
+        MediaSetStore store = new MediaSetStore(bucketStore);
+        store.setInitialPublicationCommitHookForTest(
+                () -> clock.set(publicationCommitTime));
+        MediaSetStore.Identity identity = new MediaSetStore.Identity(
+                "publication-anchored-event", "lane", "camera");
+        RetainedMediaBackend backend = new RetainedMediaBackend(bucketStore, store,
+                new JpegFrameExtractor(85), grace, clock, LoggerFactory.getLogger(getClass()));
+
+        assertTrue(backend.process(identity, "videos/" + sourceKey));
+        MediaManifest manifest = store.findManifest(identity).orElseThrow();
+        MediaPublicationCommit publication = store.readPublicationCommit(identity).orElseThrow();
+        assertEquals(MediaPublicationCommit.State.COMMITTED, publication.state());
+        assertEquals(publicationCommitTime, publication.committedAt());
+        assertEquals(publicationCommitTime.plus(grace), publication.rollbackDeleteAfter());
+        assertEquals(publication.rollbackDeleteAfter(),
+                manifest.source().rollbackDeleteAfter());
+        assertTrue("Extraction time must not consume source rollback grace",
+                manifest.source().rollbackDeleteAfter().isAfter(
+                        manifest.createdAt().plus(grace)));
+        assertTrue(bucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, sourceKey));
+    }
+
+    @Test
+    public void restartFinalizesCrashAfterProvisionalManifestWithoutShorteningGrace()
+            throws Exception {
+        Path root = temporaryFolder.newFolder("provisional-manifest-restart").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        bucketStore.createBucket(MediaSetStore.VIDEO_BUCKET);
+        String sourceKey = "clips/provisional-restart/source.ts";
+        Path source = Path.of(bucketStore.getWritableResourceURI(
+                MediaSetStore.VIDEO_BUCKET, sourceKey));
+        Files.copy(bundledH264Fixture(), source);
+
+        Instant firstAttempt = Instant.parse("2026-01-01T00:00:00Z");
+        Instant restartTime = firstAttempt.plus(Duration.ofHours(8));
+        Duration grace = Duration.ofHours(24);
+        MutableClock initialClock = new MutableClock(firstAttempt);
+        MediaSetStore initialStore = new MediaSetStore(bucketStore);
+        initialStore.setInitialPublicationCommitHookForTest(() -> {
+            throw new SimulatedPublicationCrash();
+        });
+        MediaSetStore.Identity identity = new MediaSetStore.Identity(
+                "provisional-restart-event", "lane", "camera");
+        RetainedMediaBackend initialBackend = new RetainedMediaBackend(bucketStore, initialStore,
+                new JpegFrameExtractor(85), grace, initialClock,
+                LoggerFactory.getLogger(getClass()));
+
+        assertFalse(initialBackend.process(identity, "videos/" + sourceKey));
+        MediaManifest provisional = initialStore.findManifest(identity).orElseThrow();
+        assertEquals(Instant.MAX, provisional.source().rollbackDeleteAfter());
+        assertEquals(MediaPublicationCommit.State.RESERVED,
+                initialStore.readPublicationCommit(identity).orElseThrow().state());
+        assertTrue(bucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, sourceKey));
+
+        FileSystemBucketStore restartedBucketStore = new FileSystemBucketStore(root);
+        MediaSetStore restartedStore = new MediaSetStore(restartedBucketStore);
+        Clock restartedClock = Clock.fixed(restartTime, ZoneOffset.UTC);
+        RetainedMediaBackend restartedBackend = new RetainedMediaBackend(restartedBucketStore,
+                restartedStore, new JpegFrameExtractor(85), grace, restartedClock,
+                LoggerFactory.getLogger(getClass()));
+        assertTrue(restartedBackend.process(identity, "videos/" + sourceKey));
+
+        MediaPublicationCommit publication = restartedStore.readPublicationCommit(identity)
+                .orElseThrow();
+        MediaManifest repaired = restartedStore.findManifest(identity).orElseThrow();
+        assertEquals(MediaPublicationCommit.State.COMMITTED, publication.state());
+        assertEquals(restartTime, publication.committedAt());
+        assertEquals(restartTime.plus(grace), repaired.source().rollbackDeleteAfter());
+        assertTrue(restartedBucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, sourceKey));
+    }
+
+    @Test
+    public void restartClockRollbackCannotBackdateProvisionalPublicationGrace()
+            throws Exception {
+        Path root = temporaryFolder.newFolder("provisional-clock-rollback").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        bucketStore.createBucket(MediaSetStore.VIDEO_BUCKET);
+        String sourceKey = "clips/provisional-clock-rollback/source.ts";
+        Path source = Path.of(bucketStore.getWritableResourceURI(
+                MediaSetStore.VIDEO_BUCKET, sourceKey));
+        Files.copy(bundledH264Fixture(), source);
+
+        Instant firstAttempt = Instant.parse("2026-01-02T00:00:00Z");
+        Instant rolledBackRestart = firstAttempt.minus(Duration.ofHours(12));
+        Duration grace = Duration.ofHours(24);
+        MediaSetStore.Identity identity = new MediaSetStore.Identity(
+                "provisional-clock-rollback-event", "lane", "camera");
+        MediaSetStore initialStore = new MediaSetStore(bucketStore);
+        initialStore.setInitialPublicationCommitHookForTest(() -> {
+            throw new SimulatedPublicationCrash();
+        });
+        RetainedMediaBackend initialBackend = new RetainedMediaBackend(bucketStore, initialStore,
+                new JpegFrameExtractor(85), grace, Clock.fixed(firstAttempt, ZoneOffset.UTC),
+                LoggerFactory.getLogger(getClass()));
+
+        assertFalse(initialBackend.process(identity, "videos/" + sourceKey));
+        MediaManifest provisional = initialStore.findManifest(identity).orElseThrow();
+        assertEquals(firstAttempt, provisional.createdAt());
+        assertEquals(Instant.MAX, provisional.source().rollbackDeleteAfter());
+
+        FileSystemBucketStore restartedBucketStore = new FileSystemBucketStore(root);
+        MediaSetStore restartedStore = new MediaSetStore(restartedBucketStore);
+        RetainedMediaBackend restartedBackend = new RetainedMediaBackend(restartedBucketStore,
+                restartedStore, new JpegFrameExtractor(85), grace,
+                Clock.fixed(rolledBackRestart, ZoneOffset.UTC),
+                LoggerFactory.getLogger(getClass()));
+        assertTrue(restartedBackend.process(identity, "videos/" + sourceKey));
+
+        MediaPublicationCommit publication = restartedStore.readPublicationCommit(identity)
+                .orElseThrow();
+        MediaManifest repaired = restartedStore.findManifest(identity).orElseThrow();
+        assertEquals("A backwards restart clock must not predate durable publication",
+                provisional.createdAt(), publication.committedAt());
+        assertEquals(provisional.createdAt().plus(grace),
+                publication.rollbackDeleteAfter());
+        assertEquals(publication.rollbackDeleteAfter(),
+                repaired.source().rollbackDeleteAfter());
+        assertTrue(restartedBucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, sourceKey));
+    }
+
+    @Test
+    public void catalogReconciliationFinalizesProvisionalManifestBeforeClearingRetry()
+            throws Exception {
+        Path root = temporaryFolder.newFolder("provisional-catalog-restart").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        bucketStore.createBucket(MediaSetStore.VIDEO_BUCKET);
+        String sourceKey = "clips/provisional-catalog/source.ts";
+        Path source = Path.of(bucketStore.getWritableResourceURI(
+                MediaSetStore.VIDEO_BUCKET, sourceKey));
+        Files.copy(bundledH264Fixture(), source);
+
+        Instant firstAttempt = Instant.parse("2026-01-01T00:00:00Z");
+        Instant restartTime = firstAttempt.plus(Duration.ofHours(8));
+        Duration grace = Duration.ofHours(24);
+        MediaSetStore initialStore = new MediaSetStore(bucketStore);
+        initialStore.setInitialPublicationCommitHookForTest(() -> {
+            throw new SimulatedPublicationCrash();
+        });
+        MediaSetStore.Identity identity = new MediaSetStore.Identity(
+                "provisional-catalog-event", "lane", "camera");
+        RetainedMediaBackend initialBackend = new RetainedMediaBackend(bucketStore, initialStore,
+                new JpegFrameExtractor(85), grace, Clock.fixed(firstAttempt, ZoneOffset.UTC),
+                LoggerFactory.getLogger(getClass()));
+
+        assertFalse(initialBackend.process(identity, "videos/" + sourceKey));
+        assertTrue(initialStore.maintenanceExists(MediaMaintenanceJob.Kind.RETRY, identity));
+        assertEquals(Instant.MAX, initialStore.findManifest(identity).orElseThrow()
+                .source().rollbackDeleteAfter());
+
+        MediaSetStore restartedStore = new MediaSetStore(new FileSystemBucketStore(root));
+        MediaManifest provisional = restartedStore.findManifest(identity).orElseThrow();
+        restartedStore.reconcileCommittedManifest(new MediaSetStore.ManifestEntry(
+                restartedStore.manifestKey(identity), provisional), restartTime);
+
+        MediaPublicationCommit publication = restartedStore.readPublicationCommit(identity)
+                .orElseThrow();
+        MediaManifest repaired = restartedStore.findManifest(identity).orElseThrow();
+        assertEquals(MediaPublicationCommit.State.COMMITTED, publication.state());
+        assertEquals(restartTime, publication.committedAt());
+        assertEquals(restartTime.plus(grace), repaired.source().rollbackDeleteAfter());
+        assertEquals(MediaJobLedger.JobState.PUBLISHED,
+                restartedStore.readLedger(identity).orElseThrow().state());
+        assertFalse("Catalog recovery may clear retry only after provisional finalization",
+                restartedStore.maintenanceExists(MediaMaintenanceJob.Kind.RETRY, identity));
+        assertTrue(restartedStore.maintenanceExists(
+                MediaMaintenanceJob.Kind.SOURCE_LIFECYCLE, identity));
+        assertTrue(Files.exists(source));
+    }
+
+    @Test
+    public void lostManifestStartsFreshGraceInsteadOfReusingExpiredCommit() throws Exception {
+        Path root = temporaryFolder.newFolder("lost-manifest-fresh-grace").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        bucketStore.createBucket(MediaSetStore.VIDEO_BUCKET);
+        String sourceKey = "clips/lost-manifest/source.ts";
+        Path source = Path.of(bucketStore.getWritableResourceURI(
+                MediaSetStore.VIDEO_BUCKET, sourceKey));
+        Files.copy(bundledH264Fixture(), source);
+
+        Duration grace = Duration.ofHours(1);
+        Instant initialTime = Instant.parse("2026-01-01T00:00:00Z");
+        MediaSetStore.Identity identity = new MediaSetStore.Identity(
+                "lost-manifest-event", "lane", "camera");
+        MediaSetStore initialStore = new MediaSetStore(bucketStore);
+        RetainedMediaBackend initialBackend = new RetainedMediaBackend(bucketStore, initialStore,
+                new JpegFrameExtractor(85), grace, Clock.fixed(initialTime, ZoneOffset.UTC),
+                LoggerFactory.getLogger(getClass()));
+        assertTrue(initialBackend.process(identity, "videos/" + sourceKey));
+        MediaPublicationCommit oldPublication = initialStore.readPublicationCommit(identity)
+                .orElseThrow();
+        initialStore.deleteVideoObjectDurably(initialStore.manifestKey(identity));
+
+        Instant restartTime = oldPublication.rollbackDeleteAfter().plus(Duration.ofHours(8));
+        FileSystemBucketStore restartedBucketStore = new FileSystemBucketStore(root);
+        MediaSetStore restartedStore = new MediaSetStore(restartedBucketStore);
+        RetainedMediaBackend restartedBackend = new RetainedMediaBackend(restartedBucketStore,
+                restartedStore, new JpegFrameExtractor(85), grace,
+                Clock.fixed(restartTime, ZoneOffset.UTC), LoggerFactory.getLogger(getClass()));
+        assertTrue(restartedBackend.process(identity, "videos/" + sourceKey));
+
+        MediaPublicationCommit replacement = restartedStore.readPublicationCommit(identity)
+                .orElseThrow();
+        MediaManifest republished = restartedStore.findManifest(identity).orElseThrow();
+        assertEquals(restartTime, replacement.committedAt());
+        assertEquals(restartTime.plus(grace), replacement.rollbackDeleteAfter());
+        assertEquals(replacement.rollbackDeleteAfter(),
+                republished.source().rollbackDeleteAfter());
+        assertTrue("Republishing lost metadata must not consume the source immediately",
+                restartedBucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, sourceKey));
+    }
+
+    @Test
+    public void samePathReplacementCannotInheritPriorManifestGenerationDeadline()
+            throws Exception {
+        Path root = temporaryFolder.newFolder("same-path-new-generation").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        bucketStore.createBucket(MediaSetStore.VIDEO_BUCKET);
+        String sourceKey = "clips/same-path-generation/source.ts";
+        Path source = Path.of(bucketStore.getWritableResourceURI(
+                MediaSetStore.VIDEO_BUCKET, sourceKey));
+        Files.copy(bundledH264Fixture(), source);
+
+        Duration grace = Duration.ofHours(1);
+        Instant initialTime = Instant.parse("2026-01-01T00:00:00Z");
+        MediaSetStore.Identity identity = new MediaSetStore.Identity(
+                "same-path-generation-event", "lane", "camera");
+        MediaSetStore initialStore = new MediaSetStore(bucketStore);
+        RetainedMediaBackend initialBackend = new RetainedMediaBackend(bucketStore, initialStore,
+                new JpegFrameExtractor(85), grace, Clock.fixed(initialTime, ZoneOffset.UTC),
+                LoggerFactory.getLogger(getClass()));
+        assertTrue(initialBackend.process(identity, "videos/" + sourceKey));
+        MediaManifest firstManifest = initialStore.findManifest(identity).orElseThrow();
+        initialStore.deleteVideoObjectDurably(initialStore.manifestKey(identity));
+
+        // A valid MPEG-TS null packet changes the source generation without changing its path or
+        // disturbing the decodable stream.
+        byte[] nullPacket = new byte[188];
+        java.util.Arrays.fill(nullPacket, (byte) 0xff);
+        nullPacket[0] = 0x47;
+        nullPacket[1] = 0x1f;
+        nullPacket[2] = (byte) 0xff;
+        nullPacket[3] = 0x10;
+        Files.write(source, nullPacket, StandardOpenOption.APPEND);
+        assertNotEquals(firstManifest.source().sha256(), MediaSetStore.sha256(source));
+
+        Instant restartTime = firstManifest.source().rollbackDeleteAfter()
+                .plus(Duration.ofHours(8));
+        FileSystemBucketStore restartedBucketStore = new FileSystemBucketStore(root);
+        MediaSetStore restartedStore = new MediaSetStore(restartedBucketStore);
+        RetainedMediaBackend restartedBackend = new RetainedMediaBackend(restartedBucketStore,
+                restartedStore, new JpegFrameExtractor(85), grace,
+                Clock.fixed(restartTime, ZoneOffset.UTC), LoggerFactory.getLogger(getClass()));
+        assertTrue(restartedBackend.process(identity, "videos/" + sourceKey));
+
+        MediaManifest replacement = restartedStore.findManifest(identity).orElseThrow();
+        MediaPublicationCommit publication = restartedStore.readPublicationCommit(identity)
+                .orElseThrow();
+        assertNotEquals(firstManifest.source().sha256(), replacement.source().sha256());
+        assertEquals(MediaSetStore.sha256(source), replacement.source().sha256());
+        assertEquals(restartTime, publication.committedAt());
+        assertEquals(restartTime.plus(grace), replacement.source().rollbackDeleteAfter());
+        assertTrue(restartedBucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, sourceKey));
+    }
+
+    @Test
     public void sourceDeletionCommitsOnlyAfterDurableUnlinkAndRecoversAfterRestart()
             throws Exception {
         Path root = temporaryFolder.newFolder("durable-source-delete").toPath();
@@ -445,6 +723,8 @@ public class RetainedMediaBackendTest {
         Files.delete(source);
         Files.delete(Path.of(bucketStore.getResourceURI(
                 MediaSetStore.VIDEO_BUCKET, store.ledgerKey(identity))));
+        Files.delete(Path.of(bucketStore.getResourceURI(
+                MediaSetStore.VIDEO_BUCKET, store.publicationCommitKey(identity))));
         Files.delete(manifestPath);
         Files.delete(setDirectory);
         Files.write(setDirectory, new byte[]{1}, StandardOpenOption.CREATE_NEW);
@@ -832,6 +1112,40 @@ public class RetainedMediaBackendTest {
     }
 
     @Test
+    public void maintenancePagingUsesBoundedListingAndRotatesOfferedWork() throws Exception {
+        Path root = temporaryFolder.newFolder("bounded-maintenance-listing").toPath();
+        BoundedMaintenanceBucketStore bucketStore = new BoundedMaintenanceBucketStore(root);
+        MediaSetStore store = new MediaSetStore(bucketStore);
+        int shard = 0x4d;
+        List<MediaSetStore.Identity> identities = identitiesInMaintenanceShard(shard, 12);
+        for (MediaSetStore.Identity identity : identities) {
+            store.enqueueMaintenance(new MediaMaintenanceJob(
+                    MediaMaintenanceJob.CURRENT_SCHEMA_VERSION,
+                    MediaMaintenanceJob.Kind.RETRY,
+                    identity.eventId(), identity.laneUid(), identity.cameraUid(),
+                    "videos/clips/" + identity.eventId() + ".mp4", Instant.EPOCH, 1));
+        }
+
+        List<MediaSetStore.MaintenanceEntry> first = store.listMaintenance(
+                MediaMaintenanceJob.Kind.RETRY, shard, "", 5);
+        List<MediaSetStore.MaintenanceEntry> second = store.listMaintenance(
+                MediaMaintenanceJob.Kind.RETRY, shard, first.get(first.size() - 1).key(), 5);
+
+        assertEquals(5, first.size());
+        assertEquals(5, second.size());
+        Set<MediaSetStore.Identity> firstIdentities = first.stream()
+                .map(entry -> entry.job().identity()).collect(java.util.stream.Collectors.toSet());
+        assertTrue("Offered entries must rotate away so the next bounded page makes progress",
+                second.stream().noneMatch(entry -> firstIdentities.contains(entry.job().identity())));
+        assertEquals("Maintenance paging must never call an unbounded prefix listing",
+                0, bucketStore.unboundedPrefixCalls);
+        assertEquals(2, bucketStore.boundedPrefixCalls);
+        for (MediaSetStore.MaintenanceEntry entry : first)
+            assertTrue(store.maintenanceExists(MediaMaintenanceJob.Kind.RETRY,
+                    entry.job().identity()));
+    }
+
+    @Test
     public void selectionUsesFirstQuartilesAndLastWithoutDuplicateFrames() {
         List<JpegFrameExtractor.FramePoint> timeline = java.util.stream.LongStream.range(0, 9)
                 .mapToObj(index -> new JpegFrameExtractor.FramePoint(index, index * 10, index))
@@ -852,6 +1166,19 @@ public class RetainedMediaBackendTest {
                 return List.copyOf(matching);
         }
         throw new AssertionError("Unable to find identities sharing one deletion-index shard");
+    }
+
+    private static List<MediaSetStore.Identity> identitiesInMaintenanceShard(int shard, int count) {
+        List<MediaSetStore.Identity> identities = new ArrayList<>(count);
+        for (int candidate = 0; candidate < 100_000 && identities.size() < count; candidate++) {
+            MediaSetStore.Identity identity = new MediaSetStore.Identity(
+                    "maintenance-event-" + candidate, "lane", "camera");
+            if (Integer.parseInt(identity.mediaSetId().substring(0, 2), 16) == shard)
+                identities.add(identity);
+        }
+        if (identities.size() != count)
+            throw new AssertionError("Unable to find identities sharing one maintenance shard");
+        return List.copyOf(identities);
     }
 
     private static void writeProcessedIndex(Path index, int records, int firstValue)
@@ -943,6 +1270,59 @@ public class RetainedMediaBackendTest {
                 IOException.class, () -> restarted.cleanupUncommittedFrames(identity));
         Files.delete(orphan.getParent());
         restarted.cleanupUncommittedFrames(identity);
+    }
+
+    private static final class MutableClock extends Clock {
+        private volatile Instant instant;
+
+        private MutableClock(Instant instant) {
+            this.instant = instant;
+        }
+
+        private void set(Instant instant) {
+            this.instant = instant;
+        }
+
+        @Override
+        public ZoneOffset getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(java.time.ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
+    }
+
+    private static final class SimulatedPublicationCrash extends RuntimeException {
+    }
+
+    private static final class BoundedMaintenanceBucketStore extends FileSystemBucketStore {
+        private int unboundedPrefixCalls;
+        private int boundedPrefixCalls;
+
+        private BoundedMaintenanceBucketStore(Path root) throws IOException {
+            super(root);
+        }
+
+        @Override
+        public List<String> listObjects(String bucketName, String keyPrefix)
+                throws DataStoreException {
+            unboundedPrefixCalls++;
+            throw new AssertionError("Maintenance must not enumerate an unbounded shard");
+        }
+
+        @Override
+        public List<String> listObjects(String bucketName, String keyPrefix, String keySuffix,
+                                        int limit) throws DataStoreException {
+            boundedPrefixCalls++;
+            return super.listObjects(bucketName, keyPrefix, keySuffix, limit);
+        }
     }
 
     /** Simulates a crash boundary where unlink succeeds but its parent cannot be fsynced. */

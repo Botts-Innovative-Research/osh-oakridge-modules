@@ -145,19 +145,41 @@ Il associe une image PNG/JPG/JPEG à ses limites inférieur gauche et supérieur
 
 | Champ | Défaut | Comportement |
 | --- | ---: | --- |
-| Âge avant conservation de cinq images (jours) | 0 | Zéro rend une occupation terminée et éligible convertible en exactement cinq JPEG conservés au prochain cycle borné de conservation. |
-| Période de requête vidéo (minutes) | 1 | Intervalle de recherche des vidéos éligibles. Une valeur plus grande regroupe davantage d'enregistrements. |
+| Âge avant conservation de cinq images (jours) | 1 | Âge à partir duquel la vidéo source d'une occupation peut être convertie en exactement cinq JPEG conservés. |
+| Période de requête vidéo (minutes) | 5 | Intervalle de recherche des vidéos nouvellement éligibles ; c'est aussi la largeur maximale en temps d'événement de chaque requête à la base. |
 | Rattrapage maximal de conservation (heures) | 6 | Plage maximale de temps d'événement historique traitée par cycle. Le reliquat reprend depuis un curseur durable. |
-| Chevauchement des arrivées tardives (heures) | 24 | Intervalle récent réinterrogé pour les occupations validées après le passage du curseur ; les identifiants durables évitent les doublons. |
-| Rapprochement historique par cycle (heures) | 24 | Ancien intervalle revalidé par cycle pour réparer les médias non catalogués sans analyse complète de l'historique. |
+| Tolérance des arrivées tardives (heures) | 24 | Délai avant que le curseur contigu des arrivées tardives ne finalise un instant d'événement. Les validations dans cette tolérance ne peuvent pas être omises. |
+| Période de balayage des arrivées tardives (minutes) | 360 | Délai minimal entre les recherches d'une nouvelle limite sûre retardée. Un balayage figé interrompu reprend au cycle de cinq minutes suivant. |
+| Rattrapage des arrivées tardives par cycle (heures) | 2 | Portion maximale d'un balayage retardé actif traitée en un cycle ; le travail est divisé en fenêtres de base de données de cinq minutes. |
+| Rapprochement historique par cycle (heures) | 24 | Portion maximale d'un balayage complet et figé de l'historique traitée en un cycle. La progression active et la fin figée survivent au redémarrage. |
+| Période de rapprochement historique (heures) | 24 | Délai après un balayage historique complet avant de recommencer à l'occupation éligible la plus ancienne. Ceci récupère les validations postérieures à la tolérance. |
+| Période de rafraîchissement des flux d'occupation (minutes) | 15 | Fréquence de résolution des noms de sortie d'occupation en identifiants de flux mis en cache et utilisés directement par les requêtes. |
 | Limite de travail de maintenance des médias | 200 | Nombre maximal d'entrées de rapprochement du catalogue, de nouvelle tentative et de cycle de vie source examinées par cycle. |
-| Limite de récupération des métadonnées multimédias | 200 | Nombre maximal d'heures UTC d'observations traitées récupérées par cycle, y compris les heures absentes. Chaque heure utilise douze accès fixes de cinq minutes ; ce n'est pas un nombre d'occupations. |
+| Limite de récupération des métadonnées multimédias | 200 | Nombre maximal d'heures UTC d'observations traitées récupérées par cycle, y compris les heures absentes. La récupération ne dépasse jamais le curseur retardé durable ni la limite courante imposée par l'horloge. Chaque heure utilise douze accès fixes de cinq minutes ; ce n'est pas un nombre d'occupations. |
 | Activer la conservation d'images | activé | Activé : convertit les anciens clips en un ensemble exact de cinq JPEG. Désactivé : utilise la suppression historique. |
 | Nombre d'images conservées | 5 | Le schéma v1 exige exactement cinq images lorsque la conservation est activée. |
 | Qualité JPEG conservée | 85 | Qualité d'encodage JPEG sRGB de base de 1 à 100. |
 | Délai de retour arrière de la source (heures) | 24 | Durée minimale de conservation du clip original après validation des cinq JPEG et de leur manifeste. |
 
-Ces paramètres concernent la vidéo historique d'occupation, pas le direct. Choisissez-les selon la politique de conservation des preuves.
+Ces paramètres concernent la vidéo historique d'occupation, pas le direct. L'analyseur emploie un
+curseur avant durable et ne reparcourt pas tout l'historique à chaque intervalle. Les travaux en
+échec et le nettoyage de la source après le délai utilisent des index durables et bornés distincts.
+Le curseur retardé et le rapprochement répété, complet et figé de l'historique rendent finalement
+visibles les occupations tardives ou précédemment non cataloguées, sans balayage illimité au
+redémarrage ni limite mobile pouvant distancer la réparation. Après une correction arrière de
+l'horloge, les balayages figés actifs s'arrêtent à la limite d'éligibilité courante sans perdre leur
+fin durable. Un flux sans plage temporelle de résultats exploitable est sondé directement ; la
+découverte initiale revient prudemment au début de l'époque uniquement si ce flux contient une
+occupation éligible, au lieu de se fier à la plage plus récente d'un autre flux. Un flux vide sans
+plage ne force pas ce retour. Avec les valeurs par défaut, la conversion commence lorsque le clip a
+24 heures et le MP4 source est conservé 24 heures supplémentaires après une publication réussie ;
+la suppression normale de la source ne survient donc pas avant environ 48 heures après l'occupation.
+Les cinq JPEG restent la représentation probatoire conservée. Choisissez des valeurs conformes à la
+politique de conservation des preuves du site avant d'activer le nettoyage.
+
+Les environnements de régression jetables peuvent volontairement fixer l'âge d'éligibilité à 0 jour
+et la période de requête à 1 minute afin d'accélérer les tests déterministes. Ces valeurs sont
+réservées aux tests ; ne les copiez pas dans une configuration de production.
 
 ### 4.4 Onglet Conservation sous pression de stockage
 
@@ -174,8 +196,8 @@ La purge sous pression ne supprime que les objets éligibles du compartiment `vi
 
 Les identifiants d'observations traitées partagent au plus douze fichiers exacts de cinq minutes
 avec somme de contrôle par heure UTC d'événement. Une heure complète n'est récupérée que si sa fin
-précède strictement le chevauchement durable des arrivées tardives, par douze accès directs bornés
-et sans parcours d'arbre. La mémoire reste ainsi bornée et le seuil par fichier dépasse 1,2 million
+précède strictement à la fois le curseur retardé durable et la limite courante imposée par l'horloge,
+par douze accès directs bornés et sans parcours d'arbre. La mémoire reste ainsi bornée et le seuil par fichier dépasse 1,2 million
 d'occupations réparties uniformément par heure. Un index compact exact, verrouillé par fichier,
 mémorise les suppressions sous pression sans un
 tombstone JSON permanent par caméra. Sauvegardez et restaurez comme une unité tout
@@ -660,19 +682,25 @@ Vérifiez voies/événements distants, ligne Nationale, rapport et événement a
 ## 12. Conservation des données et stockage
 
 Le profil standard 3.9.2 utilise la base PostgreSQL à plusieurs niveaux. Les enregistrements récents
-et opérationnels restent dans PostgreSQL. Les observations configurées de détecteurs à fort volume
-deviennent éligibles après 48 heures à un archivage par tâches d'arrière-plan bornées vers des
-fichiers Parquet catalogués et compressés en ZSTD. OSCAR ne supprime leurs lignes chaudes de
-PostgreSQL qu'après validation de l'archive, parité exacte chaud/froid et expiration d'un
-chevauchement supplémentaire de retour arrière de 24 heures, soit environ 72 heures au total, plus
-le délai du planificateur. Une conservation active sur une génération ou une observation bloque la
-suppression correspondante.
+et opérationnels restent dans PostgreSQL ; les observations configurées de détecteurs à fort volume
+de plus de deux jours sont copiées par des tâches d'arrière-plan bornées vers des fichiers Parquet
+catalogués et compressés en ZSTD. La suppression vérifiée des lignes chaudes est activée par défaut
+après une parité exacte chaud/froid et un délai de retour arrière d'un jour ; Parquet devient donc
+normalement la seule copie des lignes de base après environ 72 heures. La propriété de l'archive,
+l'intégrité des objets, la parité et les conservations actives de génération ou d'observation sont
+revérifiées avant la suppression et échouent de façon sûre.
 
 Chaque pilote RPM exige le journal direct des fichiers quotidiens. Il capture si possible
 l'enregistrement source avant analyse, puis publie la journée terminée sous forme de CSV historique
 immuable et de manifeste SHA-256. La conservation de la base ne doit jamais remplacer ce journal.
 La maintenance des états de connexion et le nettoyage, contrôlé par manifeste, des observations
 `dailyFile` historiques se poursuivent indépendamment.
+Les segments privés scellés du journal sont conservés pendant 30 jours à compter du moment le plus
+tardif entre la fermeture du jour et la publication réelle. Avec la valeur par défaut
+`requireBackupBeforeSealedJournalDeletion=false`, la suppression exige aussi la validation du CSV
+immuable, du manifeste et du registre, ainsi qu'une correspondance exacte entre la relecture des
+segments scellés actuels et le CSV publié. Le site peut activer ce paramètre afin d'exiger en plus la
+confirmation d'une sauvegarde vérifiée correspondante.
 
 Chaque nouvel enregistrement d'occupation est lié à la voie, la caméra, l'horodatage d'occupation
 et la génération immuable exacts. Les commandes caméra s'exécutent dans l'ordre, le nom source
@@ -683,31 +711,32 @@ ultérieur. Un chemin vide, dupliqué ou associé au mauvais événement ou à l
 nouveau fichier orphelin, est un défaut d'intégrité bloquant la version ; ne corrigez pas la base en
 devinant un nom de fichier.
 
-Chaque vidéo d'alarme terminée et éligible devient exactement cinq JPEG décodables séparément
-(première image, quart, milieu, trois quarts et dernière image) au prochain cycle borné de
-conservation. Le MP4 source reste disponible au moins 24 heures après la validation des cinq JPEG et
-de leur manifeste, ainsi qu'après tout échec de conversion ; les événements anciens ou non
+À partir d'un jour, chaque vidéo d'alarme éligible devient exactement cinq JPEG décodables
+séparément (première image, quart, milieu, trois quarts et dernière image). Après une publication
+réussie, la source est conservée pendant 24 heures supplémentaires de délai de retour arrière ; sa
+suppression normale ne survient donc pas avant environ 48 heures après l'occupation. Tout échec de
+conversion et toute conservation applicable préservent la source. Les événements anciens ou non
 convertis gardent la lecture historique. Le nettoyage sous pression ne peut enlever que des
 ensembles de médias retenus complets et éligibles. Il ne supprime ni fichiers quotidiens, rapports,
 décisions, vidéos historiques non cataloguées, ni archives Parquet.
 
-Les nouvelles installations utilisent `OSCAR_BACKUP_MODE=disabled` par défaut : aucune sauvegarde
-n'est planifiée et PostgreSQL n'archive pas continuellement les WAL à l'extérieur. Pendant `init` ou
-`upgrade`, un opérateur peut choisir explicitement le mode manuel `single` et un chemin absolu sur
-un disque secondaire. Dans ce mode, `backup` intègre par flux les WAL requis dans la sauvegarde de
-base PostgreSQL et publie atomiquement un unique instantané authentifié `CURRENT` contenant
-PostgreSQL, l'état OSCAR et l'archive froide ; `backup-verify` le valide. Le flux ne conserve aucun
-historique cumulatif, n'effectue aucun élagage automatique et exige la clé d'authentification séparée
-pour la vérification et la restauration. Un ancien chemin WAL peut être conservé inerte lors d'une
-mise à niveau afin d'éviter une modification destructive, mais les sauvegarde et restauration
-actuelles ne le montent, ne le lisent et ne l'écrivent pas.
+La sauvegarde gérée par OSCAR est désactivée par défaut. Dans ce mode, `backup`, `backup-verify`,
+`backup-prune` et `restore` sont refusées avant toute mutation. PostgreSQL s'exécute avec
+`archive_mode=off`, sans commande d'archivage externe ni montage WAL de l'hôte. Un site qui a besoin
+d'un point de reprise géré peut utiliser la mise à niveau validée pour choisir le mode `single` sur
+un chemin absolu d'un disque secondaire. Chaque sauvegarde manuelle est un instantané autonome dont
+les WAL nécessaires sont transférés dans la sauvegarde de base ; le nouvel instantané doit être
+vérifié avant le changement de `CURRENT` et la suppression de l'ancien instantané géré. La commande
+historique `backup-prune` est retirée.
 
 Utilisez les commandes `archive status`, `archive verify`, de conservation, d'export portable et de
-suppression avec simulation/jeton du lanceur de la version. Ne supprimez jamais à la main les
-fichiers catalogués. Une mise à niveau antérieure à 3.9.2 conserve l'ancienne base et configuration :
-elle ne crée pas tout le profil et n'active pas les sommes de contrôle PostgreSQL. Initialisez un
-nouveau déploiement 3.9.2 ou appliquez une migration de production validée séparément. Les guides de
-stockage de `documentation/` sont les procédures de référence.
+suppression avec simulation/jeton du lanceur, ainsi que `backup` et `backup-verify` uniquement en mode
+`single`. Protégez séparément la clé de chiffrement et conservez une copie hors hôte si la politique
+du site exige un autre domaine de défaillance. Ne supprimez jamais à la main les fichiers catalogués.
+Une mise à niveau antérieure à 3.9.2 conserve l'ancienne base et configuration : elle ne crée pas tout
+le profil et n'active pas les sommes de contrôle PostgreSQL. Initialisez un nouveau déploiement 3.9.2
+ou appliquez une migration de production validée séparément. Les guides de stockage de
+`documentation/` sont les procédures de référence.
 
 Utilisez le lanceur de la version pour arrêter ou redémarrer tout le déploiement. Il arrête d'abord
 la passerelle, laisse ensuite OSCAR vider ses files et enregistrer pendant que PostgreSQL reste
@@ -716,7 +745,7 @@ disponible, puis arrête PostgreSQL en dernier. N'exécutez pas
 simultanés peuvent retirer la base de données alors qu'OSCAR termine encore les écritures en file
 et l'arrêt de ses modules.
 
-Avant de modifier conservation, base, chemins, mode ou destination de sauvegarde, ou **Supprimer
+Avant de modifier conservation, base, chemins, mode de sauvegarde ou **Supprimer
 les données avec la voie**, confirmez les exigences de preuve, confidentialité, gel juridique,
 reprise et destruction des documents.
 
@@ -733,9 +762,8 @@ reprise et destruction des documents.
 - [ ] ID de nœud unique ; base, Web ID, statistiques et démarrage automatique vérifiés.
 - [ ] Conservation vidéo et pression examinées avant toute purge.
 - [ ] Une base/configuration 3.9.2 neuve ou une migration approuvée est utilisée ; l'état et l'intégrité de l'archive sont valides.
-- [ ] `OSCAR_BACKUP_MODE` est volontairement réglé sur `disabled`, ou le mode manuel `single` utilise un chemin absolu sur un disque secondaire ; s'il est activé, son unique instantané authentifié `CURRENT` est vérifié, sa clé externe est séquestrée séparément et un exercice de restauration isolé a réussi.
-- [ ] Une voie témoin publie CSV/manifeste depuis le journal ; un événement terminé produit rapidement cinq JPEG, son MP4 source reste 24 heures et les anciens événements restent lisibles.
-- [ ] Un échantillon contrôlé devient archivable à 48 heures et ses lignes PostgreSQL restent présentes jusqu'à la vérification archive/parité et l'expiration des 24 heures supplémentaires de chevauchement de retour arrière.
+- [ ] Le mode de sauvegarde est consigné. Le mode désactivé ne crée aucune sauvegarde gérée par OSCAR ; si `single` est activé, son instantané courant est vérifié, sa clé externe est séquestrée séparément et un exercice de restauration isolé a réussi.
+- [ ] Une voie témoin publie CSV/manifeste depuis le journal ; les événements retenus montrent cinq JPEG et les anciens restent lisibles.
 - [ ] Services de compartiments et OSCAR démarrés.
 
 ### Plan

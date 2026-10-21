@@ -5,6 +5,7 @@ import com.botts.impl.service.oscar.media.MediaMaintenanceCheckpoint;
 import com.botts.impl.service.oscar.media.MediaMaintenanceJob;
 import com.botts.impl.service.oscar.media.MediaJobLedger;
 import com.botts.impl.service.oscar.media.MediaSetStore;
+import com.botts.impl.service.oscar.media.RetentionLateArrivalCheckpoint;
 import com.botts.impl.service.oscar.media.RetentionScanCheckpoint;
 import com.botts.impl.service.oscar.media.RetentionProcessedObservation;
 import com.botts.impl.service.oscar.media.RetentionReconciliationCheckpoint;
@@ -12,14 +13,20 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.sensorhub.api.ISensorHub;
+import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.database.IDatabaseRegistry;
 import org.sensorhub.api.database.IFederatedDatabase;
 import org.sensorhub.api.database.IObsSystemDatabase;
+import org.sensorhub.api.data.IDataStreamInfo;
+import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.ICancellableDataStore;
 import org.sensorhub.api.datastore.obs.IDataStreamStore;
 import org.sensorhub.api.datastore.obs.IObsStore;
+import org.sensorhub.api.datastore.obs.DataStreamKey;
+import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
+import org.vast.util.TimeExtent;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -30,13 +37,18 @@ import java.nio.file.StandardOpenOption;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 import static org.junit.Assert.*;
@@ -66,6 +78,62 @@ public class RetentionCursorTest {
                 SlidingOccupancyQuery.overlapStart(cursor, Duration.ofHours(24)));
         assertEquals(Instant.EPOCH, SlidingOccupancyQuery.overlapStart(
                 Instant.EPOCH.plusSeconds(10), Duration.ofHours(24)));
+
+        Instant completed = Instant.parse("2026-01-01T00:00:00Z");
+        assertFalse(SlidingOccupancyQuery.isDue(completed,
+                completed.plus(Duration.ofHours(5)), Duration.ofHours(6)));
+        assertTrue(SlidingOccupancyQuery.isDue(completed,
+                completed.plus(Duration.ofHours(6)), Duration.ofHours(6)));
+        assertTrue("A backwards wall-clock correction must not suppress a sweep indefinitely",
+                SlidingOccupancyQuery.isDue(completed, completed.minusSeconds(1),
+                        Duration.ofHours(6)));
+    }
+
+    @Test
+    public void checkpointTransitionsNormalizeBackwardsClockCorrections() {
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        Instant end = start.plus(Duration.ofHours(4));
+        Instant future = start.plus(Duration.ofDays(2));
+        Instant corrected = start.plus(Duration.ofDays(1));
+
+        RetentionLateArrivalCheckpoint completedLate =
+                RetentionLateArrivalCheckpoint.idle(start, start)
+                        .begin(start, end, start)
+                        .complete(future);
+        RetentionLateArrivalCheckpoint restartedLate = completedLate.begin(
+                start, end, corrected);
+        assertEquals(corrected, restartedLate.lastCompletedAt());
+        RetentionLateArrivalCheckpoint activeLate = completedLate.begin(
+                start, end, future.plusSeconds(1));
+        assertEquals(corrected, activeLate.advance(
+                start.plusSeconds(1), corrected).lastCompletedAt());
+
+        RetentionReconciliationCheckpoint completedHistorical =
+                RetentionReconciliationCheckpoint.initial(start, start)
+                        .begin(start, end, start)
+                        .complete(future);
+        RetentionReconciliationCheckpoint restartedHistorical = completedHistorical.begin(
+                start, end, corrected);
+        assertEquals(corrected, restartedHistorical.lastCompletedAt());
+        RetentionReconciliationCheckpoint activeHistorical = completedHistorical.begin(
+                start, end, future.plusSeconds(1));
+        assertEquals(corrected, activeHistorical.advance(
+                start.plusSeconds(1), corrected).lastCompletedAt());
+    }
+
+    @Test
+    public void productionVideoRetentionDefaultsBeginFiveJpegReductionAfterOneDay() {
+        VideoRetentionConfig config = new VideoRetentionConfig();
+        assertEquals(1, config.timeToRetention);
+        assertTrue(config.enableFrameRetention);
+        assertEquals(5, config.frameRetentionCount);
+        assertEquals(24, config.sourceRollbackGraceHours);
+        assertEquals(5, config.videoQueryPeriod);
+        assertEquals(24, config.lateArrivalOverlapHours);
+        assertEquals(360, config.lateArrivalScanPeriodMinutes);
+        assertEquals(2, config.lateArrivalCatchUpHours);
+        assertEquals(24, config.reconciliationPeriodHours);
+        assertEquals(15, config.occupancyStreamRefreshMinutes);
     }
 
     @Test
@@ -86,6 +154,13 @@ public class RetentionCursorTest {
                 RetentionReconciliationCheckpoint.at(first, second);
         store.writeReconciliationCheckpoint(reconciliation);
         assertEquals(reconciliation, store.readReconciliationCheckpoint().orElseThrow());
+
+        RetentionLateArrivalCheckpoint lateArrival =
+                RetentionLateArrivalCheckpoint.idle(first, second)
+                        .begin(first, second, second)
+                        .advance(first.plusSeconds(60), second.plusSeconds(1));
+        store.writeLateArrivalCheckpoint(lateArrival);
+        assertEquals(lateArrival, store.readLateArrivalCheckpoint().orElseThrow());
 
         RetentionProcessedObservation processed = RetentionProcessedObservation.at(
                 "observation-id", first, second);
@@ -108,6 +183,453 @@ public class RetentionCursorTest {
             assertFalse("Atomic checkpoint publication must not leave partials",
                     files.anyMatch(path -> path.getFileName().toString().contains(".partial-")));
         }
+    }
+
+    @Test
+    public void legacyHistoricalCursorIsMigratedToAnImmediatelyDueFrozenSweep()
+            throws Exception {
+        Path root = temporaryFolder.newFolder("legacy-reconciliation-checkpoint").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        MediaSetStore store = new MediaSetStore(bucketStore);
+        Instant cursor = Instant.parse("2026-01-01T00:00:00Z");
+        Instant updated = cursor.plus(Duration.ofDays(1));
+        Path checkpointPath = Path.of(bucketStore.getWritableResourceURI(
+                MediaSetStore.VIDEO_BUCKET, MediaSetStore.RECONCILIATION_CHECKPOINT_KEY));
+        Files.writeString(checkpointPath, "{\"schemaVersion\":1,\"processedThrough\":\""
+                + cursor + "\",\"updatedAt\":\"" + updated + "\"}");
+
+        RetentionReconciliationCheckpoint migrated = store.readReconciliationCheckpoint()
+                .orElseThrow();
+        assertEquals(RetentionReconciliationCheckpoint.CURRENT_SCHEMA_VERSION,
+                migrated.schemaVersion());
+        assertEquals(cursor, migrated.processedThrough());
+        assertEquals(Instant.EPOCH, migrated.lastCompletedAt());
+        assertFalse(migrated.active());
+        assertTrue(SlidingOccupancyQuery.isDue(migrated.lastCompletedAt(), updated,
+                Duration.ofHours(24)));
+    }
+
+    @Test
+    public void historicalSweepKeepsFrozenEndAcrossRestartThenStartsANewCycle() {
+        BigId occupancyStreamId = BigId.fromLong(7, 43);
+        AtomicReference<Instant> earliest = new AtomicReference<>();
+        List<QueryWindow> windows = new ArrayList<>();
+        ISensorHub hub = recordingHub(occupancyStreamId, earliest, windows,
+                new AtomicInteger());
+        MutableClock clock = new MutableClock(Instant.parse("2026-01-10T00:00:00Z"));
+        Instant now = clock.instant();
+        Instant historicalStart = now.minus(Duration.ofHours(20));
+        Instant frozenEnd = now.minus(Duration.ofHours(10));
+        InMemoryCursorStore cursors = new InMemoryCursorStore();
+        cursors.forward.set(RetentionScanCheckpoint.at(now, now));
+        Instant safeThrough = now.minus(Duration.ofHours(2));
+        cursors.late.set(RetentionLateArrivalCheckpoint.idle(safeThrough, now)
+                .complete(now));
+        cursors.historical.set(RetentionReconciliationCheckpoint
+                .initial(historicalStart, now.minus(Duration.ofDays(1)))
+                .begin(historicalStart, frozenEnd, now.minus(Duration.ofDays(1)))
+                .advance(historicalStart.plus(Duration.ofHours(2)),
+                        now.minus(Duration.ofDays(1))));
+
+        newScanner(hub, cursors, clock, Duration.ofHours(2)).runCycle();
+        assertEquals(historicalStart.plus(Duration.ofHours(4)),
+                cursors.historical.get().processedThrough());
+        assertEquals(frozenEnd, cursors.historical.get().windowEnd());
+
+        // Recreate the scanner to model a process restart. The active sweep resumes immediately,
+        // even though its last completion time would otherwise be inside the 24-hour period.
+        clock.set(now.plus(Duration.ofHours(1)));
+        newScanner(hub, cursors, clock, Duration.ofHours(2)).runCycle();
+        assertEquals(historicalStart.plus(Duration.ofHours(6)),
+                cursors.historical.get().processedThrough());
+        assertEquals("The moving forward boundary must not extend an active historical sweep",
+                frozenEnd, cursors.historical.get().windowEnd());
+
+        newScanner(hub, cursors, clock, Duration.ofHours(2)).runCycle();
+        newScanner(hub, cursors, clock, Duration.ofHours(2)).runCycle();
+        assertFalse(cursors.historical.get().active());
+        assertEquals(frozenEnd, cursors.historical.get().processedThrough());
+        Instant completedAt = cursors.historical.get().lastCompletedAt();
+
+        clock.set(completedAt.plus(Duration.ofHours(23)));
+        newScanner(hub, cursors, clock, Duration.ofHours(2)).runCycle();
+        assertEquals("A completed full sweep must wait for its configured period", completedAt,
+                cursors.historical.get().lastCompletedAt());
+
+        clock.set(completedAt.plus(Duration.ofHours(24)));
+        newScanner(hub, cursors, clock, Duration.ofHours(2)).runCycle();
+        assertTrue("A new full-history cycle must be recorded after the period",
+                cursors.historical.get().lastCompletedAt().isAfter(completedAt));
+        assertFalse(cursors.historical.get().active());
+    }
+
+    @Test
+    public void oldObservationCommittedAfterLateSliceIsQueriedByNextHistoricalSweep() {
+        BigId occupancyStreamId = BigId.fromLong(7, 44);
+        Instant firstNow = Instant.parse("2026-01-10T00:00:00Z");
+        Instant oldResultTime = firstNow.minus(Duration.ofHours(3));
+        AtomicReference<Instant> earliest = new AtomicReference<>();
+        List<QueryWindow> windows = new ArrayList<>();
+        AtomicInteger oldObservationQueries = new AtomicInteger();
+        ISensorHub hub = recordingHub(occupancyStreamId, earliest, windows,
+                oldObservationQueries);
+        MutableClock clock = new MutableClock(firstNow);
+        InMemoryCursorStore cursors = new InMemoryCursorStore();
+        cursors.forward.set(RetentionScanCheckpoint.at(firstNow, firstNow));
+        Instant finalizedLateThrough = firstNow.minus(Duration.ofHours(2));
+        cursors.late.set(RetentionLateArrivalCheckpoint.idle(finalizedLateThrough, firstNow)
+                .complete(firstNow));
+        cursors.historical.set(RetentionReconciliationCheckpoint
+                .initial(finalizedLateThrough, firstNow.minus(Duration.ofDays(1)))
+                .begin(finalizedLateThrough, finalizedLateThrough,
+                        firstNow.minus(Duration.ofDays(1)))
+                .complete(firstNow));
+
+        // The old result is committed only after its late-arrival event-time slice was finalized.
+        earliest.set(oldResultTime);
+        clock.set(firstNow.plus(Duration.ofHours(24)));
+        newScanner(hub, cursors, clock, Duration.ofHours(48)).runCycle();
+
+        assertTrue("The next frozen historical sweep must query the newly visible old result",
+                oldObservationQueries.get() > 0);
+        assertTrue(windows.stream().anyMatch(window -> window.limit() != 1
+                && !oldResultTime.isBefore(window.start())
+                && !oldResultTime.isAfter(window.end())));
+        assertFalse(cursors.historical.get().active());
+    }
+
+    @Test
+    public void clockRollbackPausesActiveFrozenSweepsAtCurrentSafeBoundary() {
+        BigId occupancyStreamId = BigId.fromLong(7, 45);
+        List<QueryWindow> windows = new ArrayList<>();
+        ISensorHub hub = recordingHub(occupancyStreamId, new AtomicReference<>(), windows,
+                new AtomicInteger());
+        Instant now = Instant.parse("2026-01-10T00:00:00Z");
+        Instant futureForward = now.plus(Duration.ofHours(12));
+        Instant currentSafe = now.minus(Duration.ofHours(2));
+        InMemoryCursorStore cursors = new InMemoryCursorStore();
+        cursors.forward.set(RetentionScanCheckpoint.at(futureForward, futureForward));
+        cursors.late.set(RetentionLateArrivalCheckpoint
+                .idle(now.minus(Duration.ofHours(4)), now.minus(Duration.ofHours(1)))
+                .begin(now.minus(Duration.ofHours(4)),
+                        futureForward.minus(Duration.ofHours(2)), now.minus(Duration.ofHours(1))));
+        cursors.historical.set(RetentionReconciliationCheckpoint
+                .initial(now.minus(Duration.ofHours(6)), now.minus(Duration.ofHours(1)))
+                .begin(now.minus(Duration.ofHours(6)),
+                        futureForward.minus(Duration.ofHours(2)), now.minus(Duration.ofHours(1))));
+
+        SlidingOccupancyQuery query = new SlidingOccupancyQuery(hub, Duration.ofHours(1),
+                ignored -> true, Duration.ZERO, Duration.ofHours(24), cursors, () -> { },
+                Clock.fixed(now, ZoneOffset.UTC), Duration.ofHours(2), Duration.ofHours(6),
+                Duration.ofHours(24), Duration.ofHours(24), Duration.ofHours(24),
+                Duration.ofMinutes(15));
+        query.runCycle();
+
+        assertFalse(cursors.late.get().processedThrough().isAfter(currentSafe));
+        assertFalse(cursors.historical.get().processedThrough().isAfter(currentSafe));
+        assertTrue("The original frozen late bound must survive rollback",
+                cursors.late.get().windowEnd().isAfter(currentSafe));
+        assertTrue("The original frozen historical bound must survive rollback",
+                cursors.historical.get().windowEnd().isAfter(currentSafe));
+        assertTrue(cursors.late.get().active());
+        assertTrue(cursors.historical.get().active());
+        assertTrue(windows.stream().allMatch(window -> !window.end().isAfter(currentSafe)));
+
+        int pausedQueryCount = windows.size();
+        query.runCycle();
+        assertEquals("A frozen sweep at the rollback clamp must pause without replaying",
+                pausedQueryCount, windows.size());
+    }
+
+    @Test
+    public void zeroOverlapHistoricalSweepStillHonorsRollbackEligibilityCutoff() {
+        BigId occupancyStreamId = BigId.fromLong(7, 46);
+        List<QueryWindow> windows = new ArrayList<>();
+        ISensorHub hub = recordingHub(occupancyStreamId, new AtomicReference<>(), windows,
+                new AtomicInteger());
+        Instant now = Instant.parse("2026-01-10T00:00:00Z");
+        Instant futureForward = now.plus(Duration.ofHours(12));
+        InMemoryCursorStore cursors = new InMemoryCursorStore();
+        cursors.forward.set(RetentionScanCheckpoint.at(futureForward, futureForward));
+        cursors.historical.set(RetentionReconciliationCheckpoint
+                .initial(now.minus(Duration.ofHours(2)), now.minus(Duration.ofHours(1)))
+                .begin(now.minus(Duration.ofHours(2)), futureForward,
+                        now.minus(Duration.ofHours(1))));
+
+        SlidingOccupancyQuery query = new SlidingOccupancyQuery(hub, Duration.ofHours(1),
+                ignored -> true, Duration.ZERO, Duration.ofHours(24), cursors, () -> { },
+                Clock.fixed(now, ZoneOffset.UTC), Duration.ZERO, Duration.ofHours(6),
+                Duration.ofHours(24), Duration.ofHours(24), Duration.ofHours(24),
+                Duration.ofMinutes(15));
+        query.runCycle();
+
+        assertEquals(now, cursors.historical.get().processedThrough());
+        assertEquals(futureForward, cursors.historical.get().windowEnd());
+        assertTrue(cursors.historical.get().active());
+        assertTrue(windows.stream().allMatch(window -> !window.end().isAfter(now)));
+    }
+
+    @Test
+    public void emptyRangeLessOccupancyStreamUsesKnownEarliestRange() {
+        BigId rangedStream = BigId.fromLong(7, 47);
+        BigId rangeLessStream = BigId.fromLong(7, 48);
+        Instant knownBegin = Instant.EPOCH.plusSeconds(50 * 3600);
+        IDataStreamStore dataStreams = (IDataStreamStore) Proxy.newProxyInstance(
+                IDataStreamStore.class.getClassLoader(), new Class<?>[]{IDataStreamStore.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "selectKeys" -> Stream.of(
+                            new DataStreamKey(rangedStream), new DataStreamKey(rangeLessStream));
+                    case "selectEntries" -> Stream.of(
+                            dataStreamEntry(rangedStream, TimeExtent.instant(knownBegin)),
+                            dataStreamEntry(rangeLessStream, null));
+                    default -> defaultProxyValue(method.getReturnType());
+                });
+        IObsStore observations = emptyObservationStore(dataStreams);
+        ISensorHub hub = hubWithObservationStore(observations);
+        InMemoryCursorStore cursors = new InMemoryCursorStore();
+        Instant now = Instant.EPOCH.plusSeconds(100 * 3600);
+        SlidingOccupancyQuery query = new SlidingOccupancyQuery(hub, Duration.ofHours(1),
+                ignored -> true, Duration.ZERO, Duration.ofHours(1), cursors, () -> { },
+                Clock.fixed(now, ZoneOffset.UTC), Duration.ZERO, Duration.ofHours(6),
+                Duration.ofHours(2), Duration.ofHours(1), Duration.ofHours(24),
+                Duration.ofMinutes(15));
+
+        query.runCycle();
+
+        assertEquals("An empty unknown stream must not force a Unix-epoch backfill",
+                knownBegin.minusNanos(1).plus(Duration.ofHours(1)),
+                cursors.forward.get().processedThrough());
+    }
+
+    @Test
+    public void emptyPostgisSentinelRangeUsesFreshInitializationWindow() {
+        BigId emptyStream = BigId.fromLong(7, 49);
+        IDataStreamStore dataStreams = (IDataStreamStore) Proxy.newProxyInstance(
+                IDataStreamStore.class.getClassLoader(), new Class<?>[]{IDataStreamStore.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "selectKeys" -> Stream.of(new DataStreamKey(emptyStream));
+                    case "selectEntries" -> Stream.of(dataStreamEntry(emptyStream,
+                            TimeExtent.period(Instant.MIN, Instant.MAX)));
+                    default -> defaultProxyValue(method.getReturnType());
+                });
+        IObsStore observations = emptyObservationStore(dataStreams);
+        InMemoryCursorStore cursors = new InMemoryCursorStore();
+        Instant now = Instant.EPOCH.plusSeconds(100 * 3600);
+        SlidingOccupancyQuery query = new SlidingOccupancyQuery(
+                hubWithObservationStore(observations), Duration.ofHours(1), ignored -> true,
+                Duration.ZERO, Duration.ofHours(1), cursors, () -> { },
+                Clock.fixed(now, ZoneOffset.UTC), Duration.ZERO, Duration.ofHours(6),
+                Duration.ofHours(2), Duration.ofHours(1), Duration.ofHours(24),
+                Duration.ofMinutes(15));
+
+        query.runCycle();
+
+        assertEquals("PostGIS's empty MIN/MAX sentinel must not trigger an epoch backfill",
+                now, cursors.forward.get().processedThrough());
+    }
+
+    @Test
+    public void rangeLessOccupancyStreamWithEligibleRowForcesEpochFallback() {
+        BigId rangedStream = BigId.fromLong(7, 50);
+        BigId rangeLessStream = BigId.fromLong(7, 51);
+        IDataStreamStore dataStreams = (IDataStreamStore) Proxy.newProxyInstance(
+                IDataStreamStore.class.getClassLoader(), new Class<?>[]{IDataStreamStore.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "selectKeys" -> Stream.of(
+                            new DataStreamKey(rangedStream), new DataStreamKey(rangeLessStream));
+                    case "selectEntries" -> Stream.of(
+                            dataStreamEntry(rangedStream, TimeExtent.instant(
+                                    Instant.EPOCH.plusSeconds(50 * 3600))),
+                            dataStreamEntry(rangeLessStream, null));
+                    default -> defaultProxyValue(method.getReturnType());
+                });
+        IObsData eligibleObservation = (IObsData) Proxy.newProxyInstance(
+                IObsData.class.getClassLoader(), new Class<?>[]{IObsData.class},
+                (proxy, method, arguments) -> defaultProxyValue(method.getReturnType()));
+        AtomicInteger unknownStreamProbes = new AtomicInteger();
+        IObsStore observations = (IObsStore) Proxy.newProxyInstance(
+                IObsStore.class.getClassLoader(), new Class<?>[]{IObsStore.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "getDataStreams" -> dataStreams;
+                    case "selectEntries" -> {
+                        ObsFilter filter = (ObsFilter) arguments[0];
+                        if (filter.getLimit() == 1
+                                && Set.of(rangeLessStream).equals(
+                                filter.getDataStreamFilter().getInternalIDs())) {
+                            unknownStreamProbes.incrementAndGet();
+                            yield Stream.of(Map.entry(rangeLessStream, eligibleObservation));
+                        }
+                        yield Stream.empty();
+                    }
+                    default -> defaultProxyValue(method.getReturnType());
+                });
+        InMemoryCursorStore cursors = new InMemoryCursorStore();
+        Instant now = Instant.EPOCH.plusSeconds(100 * 3600);
+        SlidingOccupancyQuery query = new SlidingOccupancyQuery(
+                hubWithObservationStore(observations), Duration.ofHours(1), ignored -> true,
+                Duration.ZERO, Duration.ofHours(1), cursors, () -> { },
+                Clock.fixed(now, ZoneOffset.UTC), Duration.ZERO, Duration.ofHours(6),
+                Duration.ofHours(2), Duration.ofHours(1), Duration.ofHours(24),
+                Duration.ofMinutes(15));
+
+        query.runCycle();
+
+        assertTrue("Only the range-less stream must receive the bounded existence probe",
+                unknownStreamProbes.get() > 0);
+        assertEquals("A proven eligible row behind an unknown range needs gap-free backfill",
+                Instant.EPOCH.plus(Duration.ofHours(1)),
+                cursors.forward.get().processedThrough());
+    }
+
+    @Test
+    public void metadataReclamationNeverPassesDurableDelayedCursor() throws Exception {
+        Path root = temporaryFolder.newFolder("delayed-cursor-marker-prune").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        MediaSetStore store = new MediaSetStore(bucketStore);
+        Instant base = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.HOURS);
+        Instant alreadyDelayed = base.minus(Duration.ofHours(10)).plusSeconds(60);
+        Instant delayedBacklog = base.minus(Duration.ofHours(6)).plusSeconds(60);
+        RetentionProcessedObservation oldMarker = RetentionProcessedObservation.at(
+                "old-delayed-marker", alreadyDelayed, base);
+        RetentionProcessedObservation backlogMarker = RetentionProcessedObservation.at(
+                "unscanned-delayed-marker", delayedBacklog, base);
+        store.markObservationProcessed(oldMarker);
+        store.markObservationProcessed(backlogMarker);
+        store.writeRetentionScanCheckpoint(RetentionScanCheckpoint.at(base, base));
+        VideoRetention retention = retention(bucketStore, 0, 50, Duration.ofHours(4));
+
+        retention.runMaintenanceCycle();
+        assertTrue("No marker is reclaimable before the delayed cursor is initialized",
+                store.isObservationProcessed(oldMarker.observationId(), oldMarker.resultTime()));
+        assertTrue(store.isObservationProcessed(
+                backlogMarker.observationId(), backlogMarker.resultTime()));
+
+        Instant delayedCursor = base.minus(Duration.ofHours(8));
+        store.writeLateArrivalCheckpoint(RetentionLateArrivalCheckpoint
+                .idle(delayedCursor, base).complete(base));
+        retention.runMaintenanceCycle();
+        assertFalse(store.isObservationProcessed(oldMarker.observationId(), oldMarker.resultTime()));
+        assertTrue("A marker in the delayed cursor backlog must remain deduplicated",
+                store.isObservationProcessed(
+                        backlogMarker.observationId(), backlogMarker.resultTime()));
+
+        Instant safeThrough = base.minus(Duration.ofHours(4));
+        store.writeLateArrivalCheckpoint(RetentionLateArrivalCheckpoint
+                .idle(safeThrough, base).complete(base));
+        retention.runMaintenanceCycle();
+        assertFalse("The marker becomes reclaimable only after delayed scan success",
+                store.isObservationProcessed(
+                        backlogMarker.observationId(), backlogMarker.resultTime()));
+    }
+
+    @Test
+    public void completedLateArrivalSweepIsRateLimitedAndUsesCachedStreamIds() {
+        BigId occupancyStreamId = BigId.fromLong(7, 42);
+        AtomicInteger streamResolutions = new AtomicInteger();
+        AtomicInteger observationQueries = new AtomicInteger();
+        IDataStreamStore dataStreams = (IDataStreamStore) Proxy.newProxyInstance(
+                IDataStreamStore.class.getClassLoader(), new Class<?>[]{IDataStreamStore.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "selectKeys" -> {
+                        streamResolutions.incrementAndGet();
+                        yield Stream.of(new DataStreamKey(occupancyStreamId));
+                    }
+                    case "selectEntries" -> Stream.empty();
+                    default -> defaultProxyValue(method.getReturnType());
+                });
+        IObsStore observations = (IObsStore) Proxy.newProxyInstance(
+                IObsStore.class.getClassLoader(), new Class<?>[]{IObsStore.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "getDataStreams" -> dataStreams;
+                    case "selectEntries" -> {
+                        ObsFilter filter = (ObsFilter) arguments[0];
+                        assertEquals("Every observation query must use pre-resolved stream IDs",
+                                java.util.Set.of(occupancyStreamId),
+                                filter.getDataStreamFilter().getInternalIDs());
+                        observationQueries.incrementAndGet();
+                        yield Stream.empty();
+                    }
+                    default -> defaultProxyValue(method.getReturnType());
+                });
+        IFederatedDatabase federated = (IFederatedDatabase) Proxy.newProxyInstance(
+                IFederatedDatabase.class.getClassLoader(),
+                new Class<?>[]{IFederatedDatabase.class},
+                (proxy, method, arguments) -> method.getName().equals("getObservationStore")
+                        ? observations : defaultProxyValue(method.getReturnType()));
+        IDatabaseRegistry registry = (IDatabaseRegistry) Proxy.newProxyInstance(
+                IDatabaseRegistry.class.getClassLoader(),
+                new Class<?>[]{IDatabaseRegistry.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "getFederatedDatabase" -> federated;
+                    case "getObsSystemDatabases" -> List.of();
+                    default -> defaultProxyValue(method.getReturnType());
+                });
+        ISensorHub hub = (ISensorHub) Proxy.newProxyInstance(
+                ISensorHub.class.getClassLoader(), new Class<?>[]{ISensorHub.class},
+                (proxy, method, arguments) -> method.getName().equals("getDatabaseRegistry")
+                        ? registry : defaultProxyValue(method.getReturnType()));
+
+        AtomicReference<RetentionScanCheckpoint> forward = new AtomicReference<>();
+        AtomicReference<RetentionLateArrivalCheckpoint> late = new AtomicReference<>();
+        AtomicReference<RetentionReconciliationCheckpoint> historical = new AtomicReference<>();
+        SlidingOccupancyQuery.CursorStore cursorStore = new SlidingOccupancyQuery.CursorStore() {
+            @Override public Optional<RetentionScanCheckpoint> read() {
+                return Optional.ofNullable(forward.get());
+            }
+            @Override public void write(RetentionScanCheckpoint checkpoint) {
+                forward.set(checkpoint);
+            }
+            @Override public Optional<RetentionReconciliationCheckpoint> readReconciliation() {
+                return Optional.ofNullable(historical.get());
+            }
+            @Override public void writeReconciliation(
+                    RetentionReconciliationCheckpoint checkpoint) {
+                historical.set(checkpoint);
+            }
+            @Override public Optional<RetentionLateArrivalCheckpoint> readLateArrival() {
+                return Optional.ofNullable(late.get());
+            }
+            @Override public void writeLateArrival(RetentionLateArrivalCheckpoint checkpoint) {
+                late.set(checkpoint);
+            }
+            @Override public boolean isProcessed(String observationId, Instant resultTime) {
+                return false;
+            }
+            @Override public void markProcessed(RetentionProcessedObservation marker) {
+            }
+        };
+        Instant now = Instant.parse("2026-01-03T00:00:00Z");
+        SlidingOccupancyQuery query = new SlidingOccupancyQuery(hub, Duration.ofHours(1),
+                ignored -> true, Duration.ZERO, Duration.ofHours(1), cursorStore, () -> { },
+                Clock.fixed(now, ZoneOffset.UTC), Duration.ofHours(2), Duration.ofHours(6),
+                Duration.ofHours(2), Duration.ofHours(24), Duration.ofHours(24),
+                Duration.ofMinutes(15));
+
+        query.runCycle();
+        int firstCycleQueries = observationQueries.get();
+        assertTrue("The first cycle must perform bounded initialization/forward/sweep queries",
+                firstCycleQueries > 0);
+        assertNotNull(late.get());
+        assertFalse("The two-hour sweep must complete within its two-hour cycle budget",
+                late.get().active());
+
+        query.runCycle();
+        assertEquals("A completed overlap must not be replayed before its six-hour period",
+                firstCycleQueries, observationQueries.get());
+
+        // Simulate a crash after one half of a sweep was checkpointed.  The recent completion
+        // timestamp would normally rate-limit a new sweep, but active work must resume at once.
+        late.set(new RetentionLateArrivalCheckpoint(
+                RetentionLateArrivalCheckpoint.CURRENT_SCHEMA_VERSION,
+                now.minus(Duration.ofHours(4)), now.minus(Duration.ofHours(3)),
+                now.minus(Duration.ofHours(2)),
+                now, now));
+        query.runCycle();
+        assertTrue("An interrupted durable sweep must resume without waiting six hours",
+                observationQueries.get() > firstCycleQueries);
+        assertFalse(late.get().active());
+        assertEquals("Occupancy output names must be resolved once per cache period", 1,
+                streamResolutions.get());
     }
 
     @Test
@@ -575,8 +1097,11 @@ public class RetentionCursorTest {
 
         IDataStreamStore dataStreams = (IDataStreamStore) Proxy.newProxyInstance(
                 IDataStreamStore.class.getClassLoader(), new Class<?>[]{IDataStreamStore.class},
-                (proxy, method, arguments) -> method.getName().equals("select")
-                        ? Stream.empty() : defaultProxyValue(method.getReturnType()));
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "selectKeys" -> Stream.of(new DataStreamKey(BigId.fromLong(1, 1)));
+                    case "selectEntries" -> Stream.empty();
+                    default -> defaultProxyValue(method.getReturnType());
+                });
         IObsStore observations = (IObsStore) Proxy.newProxyInstance(
                 IObsStore.class.getClassLoader(),
                 new Class<?>[]{IObsStore.class, ICancellableDataStore.class},
@@ -675,6 +1200,185 @@ public class RetentionCursorTest {
         return (ScheduledExecutorService) field.get(query);
     }
 
+    private static SlidingOccupancyQuery newScanner(
+            ISensorHub hub, InMemoryCursorStore cursors, Clock clock,
+            Duration reconciliationCatchUp) {
+        return new SlidingOccupancyQuery(hub, Duration.ofHours(1), ignored -> true,
+                Duration.ZERO, Duration.ofHours(24), cursors, () -> { }, clock,
+                Duration.ofHours(2), Duration.ofHours(6), Duration.ofHours(24),
+                reconciliationCatchUp, Duration.ofHours(24), Duration.ofMinutes(15));
+    }
+
+    private static ISensorHub recordingHub(
+            BigId occupancyStreamId, AtomicReference<Instant> earliest,
+            List<QueryWindow> windows, AtomicInteger trackedTimeQueries) {
+        IDataStreamStore dataStreams = (IDataStreamStore) Proxy.newProxyInstance(
+                IDataStreamStore.class.getClassLoader(), new Class<?>[]{IDataStreamStore.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "selectKeys" -> Stream.of(new DataStreamKey(occupancyStreamId));
+                    case "selectEntries" -> {
+                        Instant value = earliest.get();
+                        if (value == null)
+                            yield Stream.empty();
+                        IDataStreamInfo info = (IDataStreamInfo) Proxy.newProxyInstance(
+                                IDataStreamInfo.class.getClassLoader(),
+                                new Class<?>[]{IDataStreamInfo.class},
+                                (infoProxy, infoMethod, infoArguments) ->
+                                        infoMethod.getName().equals("getResultTimeRange")
+                                                ? TimeExtent.instant(value)
+                                                : defaultProxyValue(infoMethod.getReturnType()));
+                        yield Stream.of(Map.entry(
+                                new DataStreamKey(occupancyStreamId), info));
+                    }
+                    default -> defaultProxyValue(method.getReturnType());
+                });
+        IObsStore observations = (IObsStore) Proxy.newProxyInstance(
+                IObsStore.class.getClassLoader(), new Class<?>[]{IObsStore.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "getDataStreams" -> dataStreams;
+                    case "selectEntries" -> {
+                        ObsFilter filter = (ObsFilter) arguments[0];
+                        if (filter.getResultTime() != null) {
+                            Instant start = filter.getResultTime().getMin();
+                            Instant end = filter.getResultTime().getMax();
+                            windows.add(new QueryWindow(start, end, filter.getLimit()));
+                            Instant tracked = earliest.get();
+                            if (tracked != null && filter.getLimit() != 1
+                                    && !tracked.isBefore(start) && !tracked.isAfter(end))
+                                trackedTimeQueries.incrementAndGet();
+                        }
+                        yield Stream.empty();
+                    }
+                    default -> defaultProxyValue(method.getReturnType());
+                });
+        IFederatedDatabase federated = (IFederatedDatabase) Proxy.newProxyInstance(
+                IFederatedDatabase.class.getClassLoader(),
+                new Class<?>[]{IFederatedDatabase.class},
+                (proxy, method, arguments) -> method.getName().equals("getObservationStore")
+                        ? observations : defaultProxyValue(method.getReturnType()));
+        IDatabaseRegistry registry = (IDatabaseRegistry) Proxy.newProxyInstance(
+                IDatabaseRegistry.class.getClassLoader(),
+                new Class<?>[]{IDatabaseRegistry.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "getFederatedDatabase" -> federated;
+                    case "getObsSystemDatabases" -> List.of();
+                    default -> defaultProxyValue(method.getReturnType());
+                });
+        return (ISensorHub) Proxy.newProxyInstance(ISensorHub.class.getClassLoader(),
+                new Class<?>[]{ISensorHub.class},
+                (proxy, method, arguments) -> method.getName().equals("getDatabaseRegistry")
+                        ? registry : defaultProxyValue(method.getReturnType()));
+    }
+
+    private static IDataStreamInfo dataStreamInfo(TimeExtent resultTimeRange) {
+        return (IDataStreamInfo) Proxy.newProxyInstance(IDataStreamInfo.class.getClassLoader(),
+                new Class<?>[]{IDataStreamInfo.class},
+                (proxy, method, arguments) -> method.getName().equals("getResultTimeRange")
+                        ? resultTimeRange : defaultProxyValue(method.getReturnType()));
+    }
+
+    private static Map.Entry<DataStreamKey, IDataStreamInfo> dataStreamEntry(
+            BigId streamId, TimeExtent resultTimeRange) {
+        return Map.entry(new DataStreamKey(streamId), dataStreamInfo(resultTimeRange));
+    }
+
+    private static IObsStore emptyObservationStore(IDataStreamStore dataStreams) {
+        return (IObsStore) Proxy.newProxyInstance(IObsStore.class.getClassLoader(),
+                new Class<?>[]{IObsStore.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "getDataStreams" -> dataStreams;
+                    case "selectEntries" -> Stream.empty();
+                    default -> defaultProxyValue(method.getReturnType());
+                });
+    }
+
+    private static ISensorHub hubWithObservationStore(IObsStore observations) {
+        IFederatedDatabase federated = (IFederatedDatabase) Proxy.newProxyInstance(
+                IFederatedDatabase.class.getClassLoader(),
+                new Class<?>[]{IFederatedDatabase.class},
+                (proxy, method, arguments) -> method.getName().equals("getObservationStore")
+                        ? observations : defaultProxyValue(method.getReturnType()));
+        IDatabaseRegistry registry = (IDatabaseRegistry) Proxy.newProxyInstance(
+                IDatabaseRegistry.class.getClassLoader(),
+                new Class<?>[]{IDatabaseRegistry.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "getFederatedDatabase" -> federated;
+                    case "getObsSystemDatabases" -> List.of();
+                    default -> defaultProxyValue(method.getReturnType());
+                });
+        return (ISensorHub) Proxy.newProxyInstance(ISensorHub.class.getClassLoader(),
+                new Class<?>[]{ISensorHub.class},
+                (proxy, method, arguments) -> method.getName().equals("getDatabaseRegistry")
+                        ? registry : defaultProxyValue(method.getReturnType()));
+    }
+
+    private record QueryWindow(Instant start, Instant end, long limit) {
+    }
+
+    private static final class InMemoryCursorStore implements SlidingOccupancyQuery.CursorStore {
+        private final AtomicReference<RetentionScanCheckpoint> forward = new AtomicReference<>();
+        private final AtomicReference<RetentionLateArrivalCheckpoint> late = new AtomicReference<>();
+        private final AtomicReference<RetentionReconciliationCheckpoint> historical =
+                new AtomicReference<>();
+
+        @Override public Optional<RetentionScanCheckpoint> read() {
+            return Optional.ofNullable(forward.get());
+        }
+
+        @Override public void write(RetentionScanCheckpoint checkpoint) {
+            forward.set(checkpoint);
+        }
+
+        @Override public Optional<RetentionReconciliationCheckpoint> readReconciliation() {
+            return Optional.ofNullable(historical.get());
+        }
+
+        @Override public void writeReconciliation(RetentionReconciliationCheckpoint checkpoint) {
+            historical.set(checkpoint);
+        }
+
+        @Override public Optional<RetentionLateArrivalCheckpoint> readLateArrival() {
+            return Optional.ofNullable(late.get());
+        }
+
+        @Override public void writeLateArrival(RetentionLateArrivalCheckpoint checkpoint) {
+            late.set(checkpoint);
+        }
+
+        @Override public boolean isProcessed(String observationId, Instant resultTime) {
+            return false;
+        }
+
+        @Override public void markProcessed(RetentionProcessedObservation marker) {
+        }
+    }
+
+    private static final class MutableClock extends Clock {
+        private final AtomicReference<Instant> now;
+
+        private MutableClock(Instant now) {
+            this.now = new AtomicReference<>(now);
+        }
+
+        private void set(Instant value) {
+            now.set(value);
+        }
+
+        @Override public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override public Clock withZone(ZoneId zone) {
+            if (!ZoneOffset.UTC.equals(zone))
+                throw new IllegalArgumentException("Test clock supports UTC only");
+            return this;
+        }
+
+        @Override public Instant instant() {
+            return now.get();
+        }
+    }
+
     private static Object defaultProxyValue(Class<?> type) {
         if (!type.isPrimitive())
             return null;
@@ -713,11 +1417,16 @@ public class RetentionCursorTest {
 
     private static VideoRetention retention(FileSystemBucketStore bucketStore, int frameCount,
                                             int metadataWorkLimit) {
+        return retention(bucketStore, frameCount, metadataWorkLimit, Duration.ZERO);
+    }
+
+    private static VideoRetention retention(FileSystemBucketStore bucketStore, int frameCount,
+                                            int metadataWorkLimit, Duration lateArrivalOverlap) {
         ISensorHub hub = (ISensorHub) Proxy.newProxyInstance(
                 ISensorHub.class.getClassLoader(), new Class<?>[]{ISensorHub.class},
                 (proxy, method, arguments) -> null);
         return new VideoRetention(hub, bucketStore, Duration.ofMinutes(1), Duration.ZERO,
-                frameCount, 85, Duration.ZERO, Duration.ofHours(1), 3, Duration.ZERO,
+                frameCount, 85, Duration.ZERO, Duration.ofHours(1), 3, lateArrivalOverlap,
                 Duration.ofHours(1), metadataWorkLimit);
     }
 

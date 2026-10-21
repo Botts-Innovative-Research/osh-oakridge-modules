@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -216,12 +217,13 @@ public class DailyFileJournalStoreTest {
         bytes[bytes.length - 1] ^= 0x01;
         Files.write(open, bytes);
 
+        IOException failure;
         try (DailyFileJournalStore recovered = newStore()) {
-            IOException failure = assertThrows(IOException.class,
+            failure = assertThrows(IOException.class,
                     () -> recovered.openWriter("lane-crc")
                             .append("next", timestamp.plusSeconds(1)));
-            assertTrue(failure.getMessage().contains("CRC mismatch"));
         }
+        assertTrue(failure.getMessage().contains("CRC mismatch"));
     }
 
     @Test
@@ -363,7 +365,7 @@ public class DailyFileJournalStoreTest {
     }
 
     @Test
-    public void immutablePublicationMismatchIsNotAuthorizedAfterRestart() throws Exception {
+    public void immutablePublicationMismatchFailsClosedWithoutReplayingAtStartup() throws Exception {
         Instant timestamp = clock.instant();
         LocalDate day = LocalDate.ofInstant(timestamp, NEW_YORK);
         DailyFileJournalStore store = newStore();
@@ -374,11 +376,12 @@ public class DailyFileJournalStoreTest {
 
         Path csv = publishedFile("lane-immutable", day);
         Files.writeString(csv, "tampered\r\n", StandardOpenOption.TRUNCATE_EXISTING);
-        try (DailyFileJournalStore recovered = newStore()) {
+        try (DailyFileJournalStore restarted = newStore()) {
             DailyFileJournalStore.DayWindow window =
                     DailyFileJournalStore.DayWindow.forDate(day, NEW_YORK);
-            assertFalse("A tampered publication must never authorize hot-data deletion",
-                    recovered.isPublished("lane-immutable",
+            assertFalse("Startup must stay bounded, while the immutable validation API still "
+                            + "fails closed on a tampered publication",
+                    restarted.isPublished("lane-immutable",
                             window.startInclusive(), window.endExclusive()));
         }
     }
@@ -448,6 +451,7 @@ public class DailyFileJournalStoreTest {
     @Test
     public void sealedJournalRetentionRequiresMatchingBackupConfirmation() throws Exception {
         config.sealedJournalRetentionDays = 1;
+        config.requireBackupBeforeSealedJournalDeletion = true;
         Instant timestamp = clock.instant();
         LocalDate day = LocalDate.ofInstant(timestamp, NEW_YORK);
         DailyFileJournalStore.DayWindow window =
@@ -478,14 +482,14 @@ public class DailyFileJournalStoreTest {
             assertFalse("A late segment absent from the confirmed backup invalidates the proof",
                     store.isBackupConfirmed("lane-backed-up", window.startInclusive(),
                             window.endExclusive()));
-            store.sealCompletedDays(clock.instant());
+            store.maintainBoundedLifecycle(clock.instant());
             assertTrue("Mismatched segment inventory must block journal pruning",
                     Files.isDirectory(backedUpDay));
 
             Files.delete(lateSegment);
             assertTrue(store.isBackupConfirmed("lane-backed-up", window.startInclusive(),
                     window.endExclusive()));
-            store.sealCompletedDays(clock.instant());
+            store.maintainBoundedLifecycle(clock.instant());
 
             assertFalse("Confirmed sealed segments may be removed after retention",
                     Files.exists(backedUpDay));
@@ -493,6 +497,156 @@ public class DailyFileJournalStoreTest {
                     Files.isDirectory(laneDirectory("lane-not-backed-up").resolve(day.toString())));
             assertTrue("Public CSV remains immutable after private segment expiry",
                     Files.isRegularFile(backedUpCsv));
+        }
+    }
+
+    @Test
+    public void publicationValidatedRetentionDeletesWithoutBackupAcrossRestart() throws Exception {
+        assertFalse("The shipped no-backup profile must not require an impossible receipt",
+                config.requireBackupBeforeSealedJournalDeletion);
+        config.sealedJournalRetentionDays = 1;
+        String laneId = "lane-publication-retention-restart";
+        Instant timestamp = clock.instant();
+        LocalDate day = LocalDate.ofInstant(timestamp, NEW_YORK);
+        DailyFileJournalStore.DayWindow window =
+                DailyFileJournalStore.DayWindow.forDate(day, NEW_YORK);
+
+        try (DailyFileJournalStore store = newStore()) {
+            store.openWriter(laneId).append("published-without-backup", timestamp);
+            clock.set(window.endExclusive().plusSeconds(1));
+            store.sealCompletedDays(clock.instant());
+            assertFalse(store.isBackupConfirmed(
+                    laneId, window.startInclusive(), window.endExclusive()));
+        }
+
+        Path dayDirectory = laneDirectory(laneId).resolve(day.toString());
+        Path csv = publishedFile(laneId, day);
+        Path manifest = Path.of(csv + ".manifest.v1.json");
+        Path ledger = ledgerFile(laneId, day);
+        assertTrue(Files.isDirectory(dayDirectory));
+        clock.set(window.endExclusive().plus(Duration.ofDays(1)).plusSeconds(2));
+
+        try (DailyFileJournalStore restarted = newStore()) {
+            restarted.maintainBoundedLifecycle(clock.instant());
+        }
+
+        assertFalse("A valid expired day must not grow forever when backups are disabled",
+                Files.exists(dayDirectory));
+        assertTrue(Files.isRegularFile(csv));
+        assertTrue(Files.isRegularFile(manifest));
+        assertTrue(Files.isRegularFile(ledger));
+    }
+
+    @Test
+    public void publicationOnlyRetentionFailsClosedOnArtifactAndSegmentMismatch()
+            throws Exception {
+        config.sealedJournalRetentionDays = 1;
+        String laneId = "lane-publication-retention-integrity";
+        Instant timestamp = clock.instant();
+        LocalDate day = LocalDate.ofInstant(timestamp, NEW_YORK);
+        DailyFileJournalStore.DayWindow window =
+                DailyFileJournalStore.DayWindow.forDate(day, NEW_YORK);
+
+        try (DailyFileJournalStore store = newStore()) {
+            store.openWriter(laneId).append("integrity-source", timestamp);
+            clock.set(window.endExclusive().plusSeconds(1));
+            store.sealCompletedDays(clock.instant());
+            Path dayDirectory = laneDirectory(laneId).resolve(day.toString());
+            Path csv = publishedFile(laneId, day);
+            Path manifest = Path.of(csv + ".manifest.v1.json");
+            Path ledger = ledgerFile(laneId, day);
+            byte[] originalCsv = Files.readAllBytes(csv);
+            String originalManifest = Files.readString(manifest, StandardCharsets.UTF_8);
+            String originalLedger = Files.readString(ledger, StandardCharsets.UTF_8);
+            clock.set(window.endExclusive().plus(Duration.ofDays(1)).plusSeconds(2));
+
+            Files.writeString(manifest, originalManifest.replace("\"recordCount\":1",
+                    "\"recordCount\":999"), StandardOpenOption.TRUNCATE_EXISTING);
+            store.maintainBoundedLifecycle(clock.instant());
+            assertTrue("A mismatched manifest must block private-source deletion",
+                    Files.isDirectory(dayDirectory));
+            Files.writeString(manifest, originalManifest, StandardOpenOption.TRUNCATE_EXISTING);
+
+            Files.writeString(csv, "tampered\r\n", StandardOpenOption.TRUNCATE_EXISTING);
+            store.maintainBoundedLifecycle(clock.instant());
+            assertTrue("A CSV checksum mismatch must block private-source deletion",
+                    Files.isDirectory(dayDirectory));
+            Files.write(csv, originalCsv, StandardOpenOption.TRUNCATE_EXISTING);
+
+            Files.writeString(ledger, originalLedger.replace("\"state\":\"PUBLISHED\"",
+                    "\"state\":\"OPEN\""), StandardOpenOption.TRUNCATE_EXISTING);
+            store.maintainBoundedLifecycle(clock.instant());
+            assertTrue("A non-published ledger must block private-source deletion",
+                    Files.isDirectory(dayDirectory));
+            Files.writeString(ledger, originalLedger, StandardOpenOption.TRUNCATE_EXISTING);
+
+            Path sealed;
+            try (var paths = Files.list(dayDirectory)) {
+                sealed = paths.filter(path -> path.toString().endsWith(".seg"))
+                        .findFirst().orElseThrow();
+            }
+            Path lateSegment = dayDirectory.resolve("999999.seg");
+            Files.copy(sealed, lateSegment);
+            store.maintainBoundedLifecycle(clock.instant());
+            assertTrue("A sealed segment absent from the immutable CSV must block deletion",
+                    Files.isDirectory(dayDirectory));
+            Files.delete(lateSegment);
+
+            store.maintainBoundedLifecycle(clock.instant());
+            assertFalse("Deletion may proceed only after every immutable artifact and source match",
+                    Files.exists(dayDirectory));
+        }
+    }
+
+    @Test
+    public void retentionStartsAtDelayedImmutablePublication() throws Exception {
+        config.sealedJournalRetentionDays = 1;
+        String laneId = "lane-delayed-publication-retention";
+        Instant publicationTime = clock.instant();
+        Instant oldTimestamp = publicationTime.minus(Duration.ofDays(10));
+        LocalDate oldDay = LocalDate.ofInstant(oldTimestamp, NEW_YORK);
+
+        try (DailyFileJournalStore store = newStore()) {
+            store.openWriter(laneId).append("delayed-publication", oldTimestamp);
+            store.sealCompletedDays(publicationTime);
+            Path dayDirectory = laneDirectory(laneId).resolve(oldDay.toString());
+            assertTrue("A newly published backlog day must receive the configured retention",
+                    Files.isDirectory(dayDirectory));
+
+            clock.set(publicationTime.plus(Duration.ofDays(1)).plusSeconds(1));
+            store.maintainBoundedLifecycle(clock.instant());
+            assertFalse(Files.exists(dayDirectory));
+        }
+    }
+
+    @Test
+    public void publicationValidatedPruningHonorsBoundedLifecycleDayLimit() throws Exception {
+        config.sealedJournalRetentionDays = 1;
+        String laneId = "lane-bounded-publication-pruning";
+        LocalDate today = LocalDate.ofInstant(clock.instant(), NEW_YORK);
+        try (DailyFileJournalStore store = newStore()) {
+            DailyFileWriterHandle writer = store.openWriter(laneId);
+            for (int daysAgo = 17; daysAgo >= 1; daysAgo--) {
+                Instant timestamp = today.minusDays(daysAgo).atTime(12, 0)
+                        .atZone(NEW_YORK).toInstant();
+                writer.append("prune-day-" + daysAgo, timestamp);
+            }
+            store.sealCompletedDays(clock.instant());
+            clock.set(clock.instant().plus(Duration.ofDays(1)).plusSeconds(1));
+
+            store.maintainBoundedLifecycle(clock.instant());
+            try (var paths = Files.list(laneDirectory(laneId))) {
+                assertEquals("One cycle must delete no more than the configured lifecycle cap",
+                        17 - DailyFileJournalStore.LIFECYCLE_MAINTENANCE_DAY_LIMIT,
+                        paths.filter(path -> Files.isDirectory(path)
+                                && !path.getFileName().toString().startsWith(".deleting-"))
+                                .count());
+            }
+
+            store.maintainBoundedLifecycle(clock.instant());
+            try (var paths = Files.list(laneDirectory(laneId))) {
+                assertEquals(0, paths.filter(Files::isDirectory).count());
+            }
         }
     }
 
@@ -686,10 +840,10 @@ public class DailyFileJournalStoreTest {
             writer.append("abcdefghijklmnopqrst", timestamp.plusMillis(1));
             clock.set(window.endExclusive().plusSeconds(1));
             store.sealCompletedDays(clock.instant());
-            Path csv = publishedFile(laneId, day);
-            store.confirmPublishedBackup(laneId, window.startInclusive(), window.endExclusive(),
-                    DailyFileJournalStore.sha256(csv), "s3://verified-backup/purge-recovery");
+            store.indexStagedDeletionForRecovery(laneId, day);
         }
+
+        clock.set(window.endExclusive().plus(Duration.ofDays(1)).plusSeconds(1));
 
         Path dayDirectory = laneDirectory(laneId).resolve(day.toString());
         Path staged = dayDirectory.resolveSibling(
@@ -703,15 +857,395 @@ public class DailyFileJournalStoreTest {
                 sealed.size() >= 2);
         Files.delete(sealed.get(0));
 
-        try (DailyFileJournalStore recovered = newStore()) {
-            assertTrue("Restart must not block readiness on historical deletion recovery",
+        // The atomic rename is the deletion commit point. A restart must finish that committed
+        // operation in the bounded pass even if the operator tightens policy before restart.
+        config.requireBackupBeforeSealedJournalDeletion = true;
+        try (DailyFileJournalStore restarted = newStore()) {
+            assertTrue("Startup itself must remain independent of retained history",
                     Files.exists(staged));
-            recovered.maintainBoundedLifecycle(clock.instant());
-            assertFalse("Restart must finish the durable deletion state",
+            restarted.maintainBoundedLifecycle(clock.instant());
+            assertFalse("Bounded recovery must finish the durable deletion state",
                     Files.exists(staged));
             assertFalse(Files.exists(dayDirectory));
             assertTrue("Immutable publication must survive private journal deletion",
                     Files.isRegularFile(publishedFile(laneId, day)));
+        }
+    }
+
+    @Test
+    public void uncommittedFrozenDeletionRestoresInsteadOfDeletingAfterCrash() throws Exception {
+        config.sealedJournalRetentionDays = 1;
+        String laneId = "lane-pending-purge-recovery";
+        Instant timestamp = clock.instant();
+        LocalDate day = LocalDate.ofInstant(timestamp, NEW_YORK);
+        DailyFileJournalStore.DayWindow window =
+                DailyFileJournalStore.DayWindow.forDate(day, NEW_YORK);
+        Path dayDirectory;
+        Path pending;
+
+        try (DailyFileJournalStore store = newStore()) {
+            store.openWriter(laneId).append("preserve-uncommitted-freeze", timestamp);
+            clock.set(window.endExclusive().plusSeconds(1));
+            store.sealCompletedDays(clock.instant());
+            store.indexStagedDeletionForRecovery(laneId, day);
+            dayDirectory = laneDirectory(laneId).resolve(day.toString());
+            pending = dayDirectory.resolveSibling(DailyFileJournalStore.deletionPendingName(day));
+            Files.move(dayDirectory, pending, StandardCopyOption.ATOMIC_MOVE);
+        }
+
+        config.sealedJournalRetentionDays = 365;
+        try (DailyFileJournalStore restarted = newStore()) {
+            assertTrue(Files.isDirectory(pending));
+            restarted.maintainBoundedLifecycle(clock.instant());
+            assertTrue("A PENDING freeze is not an authorization to delete",
+                    Files.isDirectory(dayDirectory));
+            assertFalse(Files.exists(pending));
+        }
+    }
+
+    @Test
+    public void lateSegmentCreatedAfterFreezeIsExcludedAndPreserved() throws Exception {
+        config.sealedJournalRetentionDays = 1;
+        String laneId = "lane-cross-process-late-segment";
+        Instant timestamp = clock.instant();
+        LocalDate day = LocalDate.ofInstant(timestamp, NEW_YORK);
+        DailyFileJournalStore.DayWindow window =
+                DailyFileJournalStore.DayWindow.forDate(day, NEW_YORK);
+
+        try (DailyFileJournalStore store = newStore()) {
+            store.openWriter(laneId).append("immutable-source", timestamp);
+            clock.set(window.endExclusive().plusSeconds(1));
+            store.sealCompletedDays(clock.instant());
+            Path dayDirectory = laneDirectory(laneId).resolve(day.toString());
+            Path sourceSegment;
+            try (var paths = Files.list(dayDirectory)) {
+                sourceSegment = paths.filter(path -> path.toString().endsWith(".seg"))
+                        .findFirst().orElseThrow();
+            }
+            byte[] lateBytes = Files.readAllBytes(sourceSegment);
+            store.setDeletionFreezeHookForTest(() -> {
+                try {
+                    Files.createDirectory(dayDirectory);
+                    Files.write(dayDirectory.resolve("late-cross-process.seg"), lateBytes,
+                            StandardOpenOption.CREATE_NEW);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+
+            clock.set(window.endExclusive().plus(Duration.ofDays(1)).plusSeconds(1));
+            store.maintainBoundedLifecycle(clock.instant());
+
+            assertTrue("A segment added through the post-freeze original path must survive",
+                    Files.isRegularFile(dayDirectory.resolve("late-cross-process.seg")));
+            assertFalse(Files.exists(dayDirectory.resolveSibling(
+                    DailyFileJournalStore.deletionPendingName(day))));
+            assertFalse(Files.exists(dayDirectory.resolveSibling(
+                    DailyFileJournalStore.deletionStagingName(day))));
+            assertTrue(Files.isRegularFile(publishedFile(laneId, day)));
+        }
+    }
+
+    @Test
+    public void startupIgnoresUnindexedHistoryUntilBoundedMigrationQueuesIt() throws Exception {
+        try (DailyFileJournalStore ignored = newStore()) {
+            // Establish metadata and an empty durable lifecycle index.
+        }
+        String laneId = "lane-legacy-unindexed";
+        LocalDate day = LocalDate.ofInstant(clock.instant(), NEW_YORK).minusDays(2);
+        Path laneDirectory = root.resolve(".dailyfile-journal/segments")
+                .resolve(DailyFileJournalStore.directoryId(laneId));
+        Files.createDirectories(laneDirectory.resolve(day.toString()));
+        Files.writeString(laneDirectory.resolve("lane.id"), laneId, StandardCharsets.UTF_8);
+        Files.writeString(laneDirectory.resolve(day.toString()).resolve("000000.open"),
+                "not-a-journal-segment", StandardCharsets.UTF_8);
+
+        try (DailyFileJournalStore bounded = newStore()) {
+            bounded.indexJournalDayForRecovery(laneId, day);
+            IOException failure = assertThrows(IOException.class,
+                    () -> bounded.maintainBoundedLifecycle(clock.instant()));
+            assertTrue(throwableMessagesContain(failure, "recovered journal day"));
+        }
+    }
+
+    @Test
+    public void offlineLegacyMigrationIndexesEveryDayAndCommitsMetadataLast() throws Exception {
+        String laneId = "lane-legacy-migration";
+        LocalDate day = LocalDate.ofInstant(clock.instant(), NEW_YORK).minusDays(2);
+        Path journal = root.resolve(".dailyfile-journal");
+        Path laneDirectory = journal.resolve("segments")
+                .resolve(DailyFileJournalStore.directoryId(laneId));
+        Path ledgerDirectory = journal.resolve("ledger/legacy-lane");
+        Files.createDirectories(laneDirectory.resolve(day.toString()));
+        Files.createDirectories(ledgerDirectory);
+        Files.writeString(laneDirectory.resolve("lane.id"), laneId, StandardCharsets.UTF_8);
+        Files.writeString(laneDirectory.resolve(day.toString()).resolve("000000.open"),
+                "not-a-journal-segment", StandardCharsets.UTF_8);
+        Files.writeString(ledgerDirectory.resolve(day + ".json"),
+                "{\"zoneId\":\"" + NEW_YORK.getId() + "\"}", StandardCharsets.UTF_8);
+
+        IOException blocked = assertThrows(IOException.class, this::newStore);
+        assertTrue(blocked.getMessage().contains("DailyFileJournalIndexMigration"));
+
+        assertEquals(1L, DailyFileJournalStore.migrateLegacyJournalIndex(root, config));
+        assertTrue(Files.isRegularFile(journal.resolve("journal-metadata.v1.json")));
+        assertFalse(Files.exists(journal.resolve(
+                DailyFileJournalStore.LEGACY_MIGRATION_MARKER)));
+        try (var markers = Files.walk(journal.resolve("lifecycle-queue-v1/recovery"))) {
+            assertEquals(1L, markers.filter(path -> path.toString().endsWith(".json")).count());
+        }
+        assertEquals("A completed migration is safely idempotent", 0L,
+                DailyFileJournalStore.migrateLegacyJournalIndex(root, config));
+
+        try (DailyFileJournalStore migrated = newStore()) {
+            IOException recoveryFailure = assertThrows(IOException.class,
+                    () -> migrated.maintainBoundedLifecycle(clock.instant()));
+            assertTrue(throwableMessagesContain(recoveryFailure, "recovered journal day"));
+        }
+    }
+
+    @Test
+    public void offlineLegacyMigrationUpgradesExistingMetadataWithUnindexedHistory()
+            throws Exception {
+        String laneId = "lane-legacy-metadata-upgrade";
+        LocalDate day = LocalDate.ofInstant(clock.instant(), NEW_YORK).minusDays(2);
+        Path journal = root.resolve(".dailyfile-journal");
+        Path laneDirectory = journal.resolve("segments")
+                .resolve(DailyFileJournalStore.directoryId(laneId));
+        Path ledgerDirectory = journal.resolve("ledger/legacy-lane");
+        Files.createDirectories(laneDirectory.resolve(day.toString()));
+        Files.createDirectories(ledgerDirectory);
+        Files.writeString(laneDirectory.resolve("lane.id"), laneId, StandardCharsets.UTF_8);
+        Files.writeString(laneDirectory.resolve(day.toString()).resolve("000000.open"),
+                "not-a-journal-segment", StandardCharsets.UTF_8);
+        Files.writeString(ledgerDirectory.resolve(day + ".json"),
+                "{\"zoneId\":\"" + NEW_YORK.getId() + "\"}", StandardCharsets.UTF_8);
+        Files.writeString(journal.resolve("journal-metadata.v1.json"), """
+                {
+                  "schemaVersion":1,
+                  "zoneId":"America/New_York"
+                }
+                """, StandardCharsets.UTF_8);
+
+        IOException blocked = assertThrows(IOException.class, this::newStore);
+        assertTrue(blocked.getMessage().contains("DailyFileJournalIndexMigration"));
+
+        assertEquals(1L, DailyFileJournalStore.migrateLegacyJournalIndex(root, config));
+        assertTrue(Files.readString(journal.resolve("journal-metadata.v1.json"))
+                .contains("\"lifecycleIndexVersion\":1"));
+        try (var markers = Files.walk(journal.resolve("lifecycle-queue-v1/recovery"))) {
+            assertEquals(1L, markers.filter(path -> path.toString().endsWith(".json")).count());
+        }
+
+        try (DailyFileJournalStore migrated = newStore()) {
+            IOException recoveryFailure = assertThrows(IOException.class,
+                    () -> migrated.maintainBoundedLifecycle(clock.instant()));
+            assertTrue(throwableMessagesContain(recoveryFailure, "recovered journal day"));
+        }
+    }
+
+    @Test
+    public void offlineLegacyMigrationRejectsZoneMismatchWithoutCommittingMetadata()
+            throws Exception {
+        Path journal = root.resolve(".dailyfile-journal");
+        Path ledgerDirectory = journal.resolve("ledger/legacy-lane");
+        Files.createDirectories(journal.resolve("segments"));
+        Files.createDirectories(ledgerDirectory);
+        Files.writeString(ledgerDirectory.resolve("2026-10-01.json"),
+                "{\"zoneId\":\"UTC\"}", StandardCharsets.UTF_8);
+
+        IOException mismatch = assertThrows(IOException.class,
+                () -> DailyFileJournalStore.migrateLegacyJournalIndex(root, config));
+        assertTrue(mismatch.getMessage().contains("does not match existing ledger"));
+        assertFalse(Files.exists(journal.resolve("journal-metadata.v1.json")));
+        assertTrue("A failed migration remains explicitly restartable",
+                Files.isRegularFile(journal.resolve(
+                        DailyFileJournalStore.LEGACY_MIGRATION_MARKER)));
+    }
+
+    @Test
+    public void offlineLegacyMigrationRejectsUnexpectedAndMisboundSegmentTreeEntries()
+            throws Exception {
+        Path unexpectedRoot = Files.createDirectories(root.resolve("unexpected-entry"));
+        Path unexpectedSegments = Files.createDirectories(
+                unexpectedRoot.resolve(".dailyfile-journal/segments"));
+        Files.writeString(unexpectedSegments.resolve("orphan.segment"), "unexpected",
+                StandardCharsets.UTF_8);
+
+        IOException unexpected = assertThrows(IOException.class,
+                () -> DailyFileJournalStore.migrateLegacyJournalIndex(unexpectedRoot, config));
+        assertTrue(unexpected.getMessage().contains("unexpected lane entry"));
+        assertFalse(Files.exists(unexpectedRoot.resolve(
+                ".dailyfile-journal/journal-metadata.v1.json")));
+
+        Path misboundRoot = Files.createDirectories(root.resolve("misbound-lane"));
+        String laneId = "urn:oscar:lane:migration-binding";
+        Path wrongLaneDirectory = Files.createDirectories(
+                misboundRoot.resolve(".dailyfile-journal/segments/not-the-lane-id")
+                        .resolve("2026-10-14")).getParent();
+        Files.writeString(wrongLaneDirectory.resolve("lane.id"), laneId,
+                StandardCharsets.UTF_8);
+
+        IOException misbound = assertThrows(IOException.class,
+                () -> DailyFileJournalStore.migrateLegacyJournalIndex(misboundRoot, config));
+        assertTrue(misbound.getMessage().contains("not bound to its directory"));
+        assertFalse(Files.exists(misboundRoot.resolve(
+                ".dailyfile-journal/journal-metadata.v1.json")));
+
+        Path malformedSegmentRoot = Files.createDirectories(root.resolve("malformed-segment"));
+        String malformedLaneId = "lane-malformed-segment";
+        Path malformedDay = Files.createDirectories(malformedSegmentRoot
+                .resolve(".dailyfile-journal/segments")
+                .resolve(DailyFileJournalStore.directoryId(malformedLaneId))
+                .resolve("2026-10-14"));
+        Files.writeString(malformedDay.getParent().resolve("lane.id"), malformedLaneId,
+                StandardCharsets.UTF_8);
+        Files.writeString(malformedDay.resolve("000001.extra.seg"), "unexpected",
+                StandardCharsets.UTF_8);
+
+        IOException malformedSegment = assertThrows(IOException.class,
+                () -> DailyFileJournalStore.migrateLegacyJournalIndex(
+                        malformedSegmentRoot, config));
+        assertTrue(malformedSegment.getMessage().contains("unexpected segment entry"));
+        assertFalse(Files.exists(malformedSegmentRoot.resolve(
+                ".dailyfile-journal/journal-metadata.v1.json")));
+    }
+
+    @Test
+    public void offlineLegacyMigrationRejectsLinkedDayAndSegmentEntries() throws Exception {
+        Path migrationRoot = Files.createDirectories(root.resolve("linked-history"));
+        String laneId = "lane-linked-history";
+        Path laneDirectory = Files.createDirectories(migrationRoot
+                .resolve(".dailyfile-journal/segments")
+                .resolve(DailyFileJournalStore.directoryId(laneId)));
+        Files.writeString(laneDirectory.resolve("lane.id"), laneId, StandardCharsets.UTF_8);
+        Path outsideDay = Files.createDirectories(root.resolve("outside-day"));
+        try {
+            Files.createSymbolicLink(laneDirectory.resolve("2026-10-14"), outsideDay);
+        } catch (UnsupportedOperationException | IOException e) {
+            return;
+        }
+
+        IOException linkedDay = assertThrows(IOException.class,
+                () -> DailyFileJournalStore.migrateLegacyJournalIndex(migrationRoot, config));
+        assertTrue(linkedDay.getMessage().contains("unexpected day entry"));
+        assertFalse(Files.exists(migrationRoot.resolve(
+                ".dailyfile-journal/journal-metadata.v1.json")));
+
+        Files.delete(laneDirectory.resolve("2026-10-14"));
+        Path dayDirectory = Files.createDirectory(laneDirectory.resolve("2026-10-14"));
+        Path outsideSegment = root.resolve("outside.seg");
+        Files.writeString(outsideSegment, "not-a-journal-segment", StandardCharsets.UTF_8);
+        Files.createSymbolicLink(dayDirectory.resolve("000000.seg"), outsideSegment);
+
+        IOException linkedSegment = assertThrows(IOException.class,
+                () -> DailyFileJournalStore.migrateLegacyJournalIndex(migrationRoot, config));
+        assertTrue(linkedSegment.getMessage().contains("unexpected segment entry"));
+        assertFalse(Files.exists(migrationRoot.resolve(
+                ".dailyfile-journal/journal-metadata.v1.json")));
+    }
+
+    @Test
+    public void retryRotationDoesNotStarveLaterWorkInOneShard() throws Exception {
+        LocalDate today = LocalDate.ofInstant(clock.instant(), NEW_YORK);
+        LocalDate historicalDay = today.minusDays(2);
+        int shard = 0x6a;
+        List<String> currentLanes = laneIdsForLifecycleShard(
+                "lane-ineligible-", today, shard,
+                DailyFileJournalStore.LIFECYCLE_MAINTENANCE_DAY_LIMIT);
+        String failingLane = laneIdsForLifecycleShard(
+                "lane-later-failure-", historicalDay, shard, 1).get(0);
+
+        try (DailyFileJournalStore store = newStore()) {
+            for (String lane : currentLanes)
+                createIndexedRecoveryDay(store, lane, today, false);
+            createIndexedRecoveryDay(store, failingLane, historicalDay, true);
+
+            boolean reachedLaterWork = false;
+            for (int pass = 0; pass < 2; pass++) {
+                try {
+                    store.maintainBoundedLifecycle(clock.instant());
+                } catch (IOException expected) {
+                    reachedLaterWork |= throwableMessagesContain(expected,
+                            "recovered journal day");
+                }
+            }
+            assertTrue("A full page of ineligible same-shard items must rotate behind later work",
+                    reachedLaterWork);
+        }
+    }
+
+    @Test
+    public void activeRecoveryPageCannotStarveDeletionOrEligiblePurge() throws Exception {
+        config.sealedJournalRetentionDays = 1;
+        String purgeLane = "lane-cross-kind-purge";
+        Instant timestamp = clock.instant();
+        LocalDate purgeDay = LocalDate.ofInstant(timestamp, NEW_YORK);
+        DailyFileJournalStore.DayWindow window =
+                DailyFileJournalStore.DayWindow.forDate(purgeDay, NEW_YORK);
+
+        try (DailyFileJournalStore store = newStore()) {
+            store.openWriter(purgeLane).append("published-before-retention", timestamp);
+            clock.set(window.endExclusive().plusSeconds(1));
+            store.sealCompletedDays(clock.instant());
+            Path purgeDayDirectory = laneDirectory(purgeLane).resolve(purgeDay.toString());
+
+            clock.set(clock.instant().plus(Duration.ofDays(1)).plusSeconds(1));
+            LocalDate activeDay = LocalDate.ofInstant(clock.instant(), NEW_YORK);
+            for (int index = 0;
+                 index < DailyFileJournalStore.LIFECYCLE_MAINTENANCE_DAY_LIMIT; index++) {
+                createIndexedRecoveryDay(store, "lane-active-recovery-" + index,
+                        activeDay, false);
+            }
+            store.indexStagedDeletionForRecovery(
+                    "lane-stale-deletion-marker", activeDay.minusDays(2));
+
+            store.maintainBoundedLifecycle(clock.instant());
+
+            assertFalse("A full active-day recovery page must not starve eligible purge work",
+                    Files.exists(purgeDayDirectory));
+            try (var deletionMarkers = Files.walk(
+                    root.resolve(".dailyfile-journal/lifecycle-queue-v1/deletion"))) {
+                assertEquals("Deletion recovery must receive an independent bounded share",
+                        0L, deletionMarkers
+                                .filter(path -> path.toString().endsWith(".json")).count());
+            }
+        }
+    }
+
+    @Test
+    public void malformedSameShardMarkersAreQuarantinedWithoutStarvation() throws Exception {
+        LocalDate historicalDay = LocalDate.ofInstant(clock.instant(), NEW_YORK).minusDays(2);
+        int shard = 0x35;
+        String failingLane = laneIdsForLifecycleShard(
+                "lane-after-corruption-", historicalDay, shard, 1).get(0);
+
+        try (DailyFileJournalStore store = newStore()) {
+            createIndexedRecoveryDay(store, failingLane, historicalDay, true);
+            Path shardDirectory = root.resolve(".dailyfile-journal/lifecycle-queue-v1/recovery")
+                    .resolve(String.format("%02x", shard));
+            for (int index = 0;
+                 index < DailyFileJournalStore.LIFECYCLE_MAINTENANCE_DAY_LIMIT; index++) {
+                Files.writeString(shardDirectory.resolve(String.format("corrupt-%02d.json", index)),
+                        "{not-json", StandardCharsets.UTF_8);
+            }
+
+            boolean reachedValidWork = false;
+            for (int pass = 0; pass < 2; pass++) {
+                try {
+                    store.maintainBoundedLifecycle(clock.instant());
+                } catch (IOException expected) {
+                    reachedValidWork |= throwableMessagesContain(expected,
+                            "recovered journal day");
+                }
+            }
+            assertTrue("Corrupt markers must not hide valid same-shard work", reachedValidWork);
+            Path quarantine = root.resolve(
+                    ".dailyfile-journal/lifecycle-queue-v1/recovery/quarantine");
+            try (var quarantined = Files.list(quarantine)) {
+                assertEquals(DailyFileJournalStore.LIFECYCLE_MAINTENANCE_DAY_LIMIT,
+                        quarantined.count());
+            }
         }
     }
 
@@ -876,6 +1410,8 @@ public class DailyFileJournalStoreTest {
             Path destinationLane = root.resolve(".dailyfile-journal/segments")
                     .resolve(DailyFileJournalStore.directoryId(laneId));
             copyTree(sourceLane, destinationLane);
+            for (int daysAgo = 17; daysAgo >= 1; daysAgo--)
+                live.indexJournalDayForRecovery(laneId, today.minusDays(daysAgo));
 
             live.maintainBoundedLifecycle(clock.instant());
             try (var paths = Files.list(root.resolve("dailyfiles"))) {
@@ -1303,6 +1839,12 @@ public class DailyFileJournalStoreTest {
                 + "_" + day + ".csv");
     }
 
+    private Path ledgerFile(String laneId, LocalDate day) {
+        return root.resolve(".dailyfile-journal/ledger")
+                .resolve(DailyFileJournalStore.directoryId(laneId))
+                .resolve(day + ".json");
+    }
+
     private Path onlyOpenSegment(String lane, LocalDate day) throws IOException {
         try (var paths = Files.list(laneDirectory(lane).resolve(day.toString()))) {
             return paths.filter(path -> path.toString().endsWith(".open")).findFirst().orElseThrow();
@@ -1322,6 +1864,43 @@ public class DailyFileJournalStoreTest {
                     })
                     .findFirst().orElseThrow();
         }
+    }
+
+    private void createIndexedRecoveryDay(DailyFileJournalStore store, String lane,
+                                          LocalDate day, boolean invalidOpenSegment)
+            throws IOException {
+        Path laneDirectory = root.resolve(".dailyfile-journal/segments")
+                .resolve(DailyFileJournalStore.directoryId(lane));
+        Path dayDirectory = laneDirectory.resolve(day.toString());
+        Files.createDirectories(dayDirectory);
+        Files.writeString(laneDirectory.resolve("lane.id"), lane, StandardCharsets.UTF_8);
+        if (invalidOpenSegment)
+            Files.writeString(dayDirectory.resolve("000000.open"), "not-a-journal-segment",
+                    StandardCharsets.UTF_8);
+        store.indexJournalDayForRecovery(lane, day);
+    }
+
+    private static List<String> laneIdsForLifecycleShard(String prefix, LocalDate day,
+                                                          int shard, int count)
+            throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        List<String> laneIds = new ArrayList<>(count);
+        for (int candidate = 0; laneIds.size() < count; candidate++) {
+            String laneId = prefix + candidate;
+            byte[] hash = digest.digest((laneId + "\u0000" + day)
+                    .getBytes(StandardCharsets.UTF_8));
+            if (Byte.toUnsignedInt(hash[0]) == shard)
+                laneIds.add(laneId);
+        }
+        return laneIds;
+    }
+
+    private static boolean throwableMessagesContain(Throwable failure, String text) {
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current.getMessage() != null && current.getMessage().contains(text))
+                return true;
+        }
+        return false;
     }
 
     private static void copyTree(Path source, Path destination) throws IOException {

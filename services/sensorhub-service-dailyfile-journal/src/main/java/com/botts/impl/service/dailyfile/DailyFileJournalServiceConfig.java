@@ -53,8 +53,12 @@ public class DailyFileJournalServiceConfig extends ModuleConfig {
     public int maxRecordBytes = 4 * 1024 * 1024;
 
     @DisplayInfo(label = "Sealed Journal Retention (days)",
-            desc = "Days to retain sealed journal segments after publication; deletion also requires a verified external-backup confirmation. Zero retains segments indefinitely.")
+            desc = "Days to retain sealed journal segments after the later of day close or immutable publication; zero retains segments indefinitely")
     public int sealedJournalRetentionDays = 30;
+
+    @DisplayInfo(label = "Require Backup Before Sealed Journal Deletion",
+            desc = "Require a matching verified external-backup confirmation before deleting an expired sealed journal day. When disabled, deletion still requires a valid immutable CSV, manifest, ledger, and an exact replay match to the sealed journal.")
+    public boolean requireBackupBeforeSealedJournalDeletion = false;
 
     public DailyFileJournalServiceConfig() {
         this.moduleClass = DailyFileJournalService.class.getCanonicalName();

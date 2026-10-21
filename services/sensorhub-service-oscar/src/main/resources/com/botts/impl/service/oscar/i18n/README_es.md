@@ -145,19 +145,41 @@ Selecciona una imagen PNG/JPG/JPEG y asigna los límites inferior izquierdo y su
 
 | Campo | Predeterminado | Comportamiento |
 | --- | ---: | --- |
-| Antigüedad antes de conservar cinco fotogramas (días) | 0 | Cero permite convertir una ocupación apta y finalizada en exactamente cinco JPEG conservados durante el siguiente ciclo limitado de retención. |
-| Periodo de consulta de vídeo (minutos) | 1 | Intervalo entre búsquedas de vídeos elegibles. Un periodo mayor agrupa más registros por consulta. |
+| Antigüedad antes de conservar cinco fotogramas (días) | 1 | Edad a partir de la cual el vídeo fuente de una ocupación puede convertirse en exactamente cinco JPEG conservados. |
+| Periodo de consulta de vídeo (minutos) | 5 | Intervalo entre búsquedas de vídeos recién elegibles; también es la anchura máxima de tiempo de evento de cada consulta a la base de datos. |
 | Recuperación máxima de retención (horas) | 6 | Intervalo máximo de tiempo histórico de eventos procesado por ciclo. El trabajo restante continúa desde un cursor duradero. |
-| Superposición de llegadas tardías (horas) | 24 | Intervalo reciente que se vuelve a consultar para ocupaciones confirmadas después de que avanzara el cursor; los ID duraderos evitan duplicados. |
-| Reconciliación histórica por ciclo (horas) | 24 | Intervalo antiguo que se revalida por ciclo para reparar medios sin catálogo sin recorrer todo el historial. |
+| Tolerancia de llegadas tardías (horas) | 24 | Retraso antes de que el cursor contiguo de llegadas tardías dé por definitivo un instante del evento. Las confirmaciones dentro de esta tolerancia no pueden omitirse. |
+| Periodo de barrido de llegadas tardías (minutos) | 360 | Demora mínima entre comprobaciones de un nuevo límite seguro retrasado. Un barrido congelado interrumpido continúa en el siguiente ciclo de cinco minutos. |
+| Recuperación de llegadas tardías por ciclo (horas) | 2 | Porción máxima de un barrido retrasado activo que se procesa en un ciclo; el trabajo se divide en ventanas de base de datos de cinco minutos. |
+| Reconciliación histórica por ciclo (horas) | 24 | Porción máxima de un barrido histórico completo y congelado que se procesa en un ciclo. El progreso activo y el límite final congelado sobreviven al reinicio. |
+| Periodo de reconciliación histórica (horas) | 24 | Demora tras completar un barrido histórico antes de reiniciarlo desde la ocupación elegible más antigua. Recupera confirmaciones posteriores a la tolerancia. |
+| Periodo de actualización de flujos de ocupación (minutos) | 15 | Frecuencia con la que los nombres de salida de ocupación se resuelven a ID de flujos de datos almacenados en caché y usados directamente por las consultas. |
 | Límite de trabajo de mantenimiento multimedia | 200 | Máximo de entradas de reconciliación del catálogo, reintento y ciclo de vida del origen inspeccionadas por ciclo. |
-| Límite de reclamación de metadatos multimedia | 200 | Máximo de intervalos horarios UTC de observaciones procesadas que se reclaman por ciclo, incluidas horas ausentes. Cada hora usa doce accesos fijos de cinco minutos; no es un recuento de ocupaciones. |
+| Límite de reclamación de metadatos multimedia | 200 | Máximo de intervalos horarios UTC de observaciones procesadas que se reclaman por ciclo, incluidas horas ausentes. La reclamación nunca rebasa el cursor retrasado duradero ni el límite horario actual. Cada hora usa doce accesos fijos de cinco minutos; no es un recuento de ocupaciones. |
 | Activar retención de fotogramas | activado | Activado: convierte clips antiguos en el conjunto exacto de cinco JPEG. Desactivado: usa el comportamiento de eliminación heredado. |
 | Número de fotogramas retenidos | 5 | El esquema v1 exige exactamente cinco cuando la retención está activada. |
 | Calidad JPEG retenida | 85 | Calidad de codificación JPEG sRGB de línea base de 1 a 100. |
 | Gracia de reversión del origen (horas) | 24 | Tiempo mínimo que se conserva el clip original después de confirmar los cinco JPEG y su manifiesto. |
 
-Estas opciones afectan al vídeo histórico de ocupación, no al flujo en directo. Defina valores compatibles con la política de evidencias del sitio.
+Estas opciones afectan al vídeo histórico de ocupación, no al flujo en directo. El escáner usa un
+cursor de avance duradero y no vuelve a recorrer todo el historial en cada intervalo. Los trabajos
+fallidos y la limpieza del origen tras la gracia usan índices duraderos y acotados independientes.
+El cursor retrasado y la reconciliación histórica completa, congelada y repetida hacen visibles las
+ocupaciones tardías o que habían quedado sin catálogo, sin un recorrido ilimitado al reiniciar ni un
+límite móvil que pueda adelantarse a la reparación. Tras corregir el reloj hacia atrás, los barridos
+congelados activos se detienen en el límite de elegibilidad actual sin perder su final duradero. Un
+flujo sin un intervalo de tiempo de resultados utilizable se consulta directamente; el descubrimiento
+inicial vuelve de forma segura al inicio de época solo si ese flujo contiene una ocupación elegible,
+en vez de confiar en el intervalo más reciente de otro flujo. Un flujo vacío sin intervalo no fuerza
+esa vuelta. Con los valores predeterminados, la conversión comienza cuando el clip tiene 24 horas y
+el MP4 fuente se conserva otras 24 horas después de publicarse correctamente, por lo que la
+eliminación normal del origen no ocurre antes de unas 48 horas desde la ocupación. Los cinco JPEG
+siguen siendo la representación probatoria conservada. Defina valores compatibles con la política
+de conservación de evidencias del sitio antes de activar la limpieza.
+
+Los entornos desechables de regresión pueden fijar deliberadamente la antigüedad de elegibilidad en
+0 días y el periodo de consulta en 1 minuto para acelerar pruebas deterministas. Son valores
+exclusivos de prueba; no los copie en una configuración de producción.
 
 ### 4.4 Pestaña Retención por presión de almacenamiento
 
@@ -174,8 +196,8 @@ La limpieza por presión solo elimina objetos elegibles del bucket `videos` en o
 
 Los ID de observaciones procesadas comparten como máximo doce archivos exactos de cinco minutos con
 suma de comprobación por hora UTC del evento. Una hora completa se elimina solo cuando termina
-estrictamente antes de la superposición duradera de llegadas tardías, mediante doce accesos directos
-limitados y sin recorrer el árbol. Esto mantiene la memoria acotada y eleva el umbral por archivo a
+estrictamente antes tanto del cursor retrasado duradero como del límite actual acotado por el reloj,
+mediante doce accesos directos limitados y sin recorrer el árbol. Esto mantiene la memoria acotada y eleva el umbral por archivo a
 más de 1,2 millones de ocupaciones distribuidas uniformemente por hora. Un
 índice compacto exacto, bloqueado por archivo, conserva las eliminaciones por presión sin una lápida
 JSON permanente por cámara. Copie y restaure como una unidad todo `videos/retained-media/v1`,
@@ -661,18 +683,25 @@ Verifique carriles/eventos del remoto, su fila Nacional, un informe y un evento 
 ## 12. Retención de datos y almacenamiento
 
 El perfil estándar 3.9.2 utiliza la base de datos PostgreSQL por niveles. Los registros recientes y
-operativos permanecen en PostgreSQL. Las observaciones configuradas de detectores de gran volumen
-pueden archivarse después de 48 horas mediante trabajos de fondo limitados en Parquet catalogado y
-comprimido con ZSTD. OSCAR solo elimina sus filas activas de PostgreSQL después de validar el
-archivo, confirmar la paridad exacta entre datos activos y fríos y completar otras 24 horas de
-superposición para reversión: unas 72 horas en total, más el retraso del planificador. Las
-retenciones activas de generación u observación impiden la eliminación correspondiente.
+operativos permanecen en PostgreSQL; las observaciones configuradas de detectores de gran volumen
+con más de dos días se copian mediante trabajos de fondo limitados a Parquet catalogado y comprimido
+con ZSTD. La eliminación verificada de filas calientes está activada de forma predeterminada tras la
+paridad exacta entre datos calientes y fríos y un día de gracia de reversión, por lo que Parquet suele
+quedar como única copia de las filas base después de unas 72 horas. Antes de eliminar se vuelven a
+comprobar, con fallo seguro, la propiedad del archivo, la integridad de los objetos, la paridad y las
+retenciones activas de generación u observación.
 
 Cada controlador RPM requiere el diario directo de archivos diarios. Captura el registro fuente
 antes del análisis cuando es posible y publica el día terminado como CSV heredado inmutable más un
 manifiesto SHA-256. La retención de la base de datos nunca debe sustituir este diario. El
 mantenimiento del estado de conexión y la limpieza, validada por manifiesto, de observaciones
 `dailyFile` heredadas continúan por separado.
+Los segmentos privados sellados del diario se conservan durante 30 días desde el momento posterior
+entre el cierre del día y la publicación real. Con el valor predeterminado
+`requireBackupBeforeSealedJournalDeletion=false`, la eliminación exige además validar el CSV
+inmutable, el manifiesto y el libro de estado, y que la reproducción exacta de los segmentos sellados
+actuales coincida con el CSV publicado. El sitio puede activar la opción para exigir como condición
+adicional la confirmación de una copia verificada coincidente.
 
 Cada nueva grabación de ocupación queda vinculada al carril, la cámara, la marca de tiempo de la
 ocupación y la generación inmutable exactos. Las órdenes de cámara se ejecutan en orden, el nombre
@@ -682,30 +711,31 @@ y los archivos parciales ocultos, se eliminan en vez de reutilizarse en un event
 ruta vacía, duplicada o asociada al evento o cámara equivocados, o un nuevo archivo huérfano, es un
 fallo de integridad que bloquea la versión; no repare la base adivinando un nombre de archivo.
 
-Cada vídeo de alarma apto y finalizado se convierte en exactamente cinco JPEG decodificables de
-forma independiente (primero, cuarto, centro, tres cuartos y último) durante el siguiente ciclo
-limitado de retención. El MP4 fuente se conserva al menos 24 horas después de confirmar los cinco
-JPEG y su manifiesto, y ante cualquier fallo de conversión; los eventos antiguos o no convertidos
-mantienen la reproducción heredada. La limpieza por presión solo puede quitar conjuntos completos
-y aptos de medios retenidos. No elimina archivos diarios, informes, adjudicaciones, vídeo heredado
-sin catálogo ni el archivo Parquet.
+A partir de un día, cada vídeo de alarma elegible se convierte en exactamente cinco JPEG
+decodificables de forma independiente (primero, cuarto, centro, tres cuartos y último). Tras una
+publicación correcta, el vídeo fuente se conserva durante otras 24 horas de gracia de reversión, por
+lo que la eliminación normal no ocurre antes de unas 48 horas desde la ocupación; cualquier fallo de
+conversión y toda retención aplicable lo conservan. Los eventos antiguos o no convertidos mantienen
+la reproducción heredada. La limpieza por presión solo puede quitar conjuntos completos y aptos de
+medios retenidos. No elimina archivos diarios, informes, adjudicaciones, vídeo heredado sin catálogo
+ni el archivo Parquet.
 
-Las instalaciones nuevas usan `OSCAR_BACKUP_MODE=disabled` de forma predeterminada: no se programa
-ninguna copia y PostgreSQL no archiva WAL externamente de manera continua. Durante `init` o
-`upgrade`, un operador puede seleccionar explícitamente el modo manual `single` y una ruta absoluta
-en una unidad secundaria. En ese modo, `backup` incorpora por streaming el WAL necesario en la
-copia base de PostgreSQL y publica atómicamente una única instantánea autenticada `CURRENT` con
-PostgreSQL, el estado OSCAR y el archivo frío; `backup-verify` la valida. El flujo no conserva un
-historial acumulativo ni realiza poda automática y exige la clave de autenticación separada para
-verificar y restaurar. Una ruta WAL heredada puede conservarse inerte durante la actualización para
-evitar cambios destructivos, pero la copia y restauración actuales no la montan, leen ni escriben.
+Las copias gestionadas por OSCAR están desactivadas de forma predeterminada. En ese modo, `backup`,
+`backup-verify`, `backup-prune` y `restore` se rechazan antes de cualquier cambio. PostgreSQL se
+ejecuta con `archive_mode=off`, sin orden de archivado externa ni montaje WAL del host. Un sitio que
+necesite un punto de recuperación gestionado puede usar la actualización validada para elegir el
+modo `single` en una ruta absoluta de una unidad secundaria. Cada copia manual es una instantánea
+autocontenida con el WAL necesario transmitido dentro de la copia base; la nueva instantánea debe
+verificarse antes de cambiar `CURRENT` y eliminar la instantánea gestionada anterior. El comando
+heredado `backup-prune` está retirado.
 
 Use los comandos `archive status`, `archive verify`, retenciones, exportación portátil y eliminación
-con vista previa y token del lanzador de la versión. Nunca borre directamente archivos catalogados.
-Una actualización anterior a 3.9.2 conserva la base y configuración anteriores: no crea todo el
-perfil ni activa las sumas de comprobación de PostgreSQL. Inicialice un despliegue 3.9.2 nuevo o
-aplique una migración de producción validada aparte. Las guías de almacenamiento de
-`documentation/` son los procedimientos autorizados.
+con vista previa y token del lanzador, y `backup` y `backup-verify` solo en modo `single`. Proteja por
+separado la clave de cifrado y conserve una copia externa si la política del sitio exige otro dominio
+de fallo. Nunca borre directamente archivos catalogados. Una actualización anterior a 3.9.2 conserva
+la base y configuración anteriores: no crea todo el perfil ni activa las sumas de comprobación de
+PostgreSQL. Inicialice un despliegue 3.9.2 nuevo o aplique una migración de producción validada aparte.
+Las guías de almacenamiento de `documentation/` son los procedimientos autorizados.
 
 Use el lanzador de la versión para `stop` y `restart` de todo el despliegue. Primero detiene la
 puerta de enlace, después permite que OSCAR vacíe sus colas y guarde mientras PostgreSQL sigue
@@ -714,7 +744,7 @@ disponible, y detiene PostgreSQL al final. No ejecute
 pueden retirar la base de datos mientras
 OSCAR todavía completa escrituras en cola y el cierre de módulos.
 
-Antes de cambiar retención, base, rutas, modo o destino de copia, o **Eliminar datos al eliminar
+Antes de cambiar retención, base, rutas, modo de copia o **Eliminar datos al eliminar
 el carril**, confirme las obligaciones de evidencia, privacidad, retención legal, recuperación y
 destrucción de registros.
 
@@ -731,9 +761,8 @@ destrucción de registros.
 - [ ] ID de nodo único; base de datos, Web ID, estadísticas y Auto Start revisados.
 - [ ] Retención de vídeo y presión revisadas antes de activar limpieza.
 - [ ] Se usó una base/configuración 3.9.2 nueva o una migración aprobada; el estado y la integridad del archivo son correctos.
-- [ ] `OSCAR_BACKUP_MODE` está intencionadamente en `disabled`, o el modo manual `single` usa una ruta absoluta en una unidad secundaria; si está activo, su única instantánea autenticada `CURRENT` se verifica, su clave externa está custodiada aparte y se superó una restauración aislada.
-- [ ] Un carril de muestra publica CSV/manifiesto desde el diario; un evento finalizado genera pronto cinco JPEG, su MP4 fuente permanece 24 horas y los eventos heredados siguen reproduciéndose.
-- [ ] Una muestra controlada puede archivarse a las 48 horas y sus filas de PostgreSQL permanecen hasta completar la verificación del archivo/paridad y otras 24 horas de superposición para reversión.
+- [ ] Se ha registrado el modo de copia. El modo desactivado no crea copias gestionadas por OSCAR; si se activa `single`, su instantánea actual se verifica, la clave externa se custodia aparte y se ha superado una restauración aislada.
+- [ ] Un carril de muestra publica CSV/manifiesto desde el diario; eventos retenidos muestran cinco JPEG y los heredados siguen reproduciéndose.
 - [ ] Servicios de buckets y OSCAR están iniciados.
 
 ### Plano

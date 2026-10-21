@@ -52,6 +52,13 @@ seconds, and asset lifecycle state. The decoded-frame ordinal, rather than the J
 that the five selections are distinct; a motionless clip can legitimately encode identical image
 content at different times.
 
+The private `.publication-commit.json` record separates publication intent from publication commit.
+The first manifest is provisional and cannot authorize source deletion; after that manifest is
+durable, OSCAR records the actual commit time and rewrites the manifest with the complete configured
+rollback grace. Restart reconciliation completes an interrupted reservation conservatively. If a
+manifest is lost, its orphaned commit is reset before rebuilding so new content cannot inherit an
+expired source-deletion deadline.
+
 Internal objects use this layout in the `videos` bucket:
 
 ```text
@@ -63,12 +70,16 @@ retained-media/v1/events/{base64url-event}/
     frame-04.jpg
     frame-05.jpg
     manifest.json
+    .publication-commit.json
     .job.json
 
 retained-media/v1/deletion-index/{first-byte}/{first-two-bytes}.idx
 retained-media/v1/deletion-index/{first-byte}/.index.lock
 retained-media/v1/retention-processed-index/{19-digit-UTC-epoch-hour}-{00..11}.idx
 retained-media/v1/retention-processed-index/.index.lock
+retained-media/v1/.retention-scan-checkpoint.json
+retained-media/v1/.retention-late-arrival-checkpoint.json
+retained-media/v1/.retention-reconciliation-checkpoint.json
 retained-media/v1/.metadata-reclamation-checkpoint.json
 ```
 
@@ -91,6 +102,15 @@ exponential backoff (five minutes initially, capped at 24 hours). A successful f
 preserves the source until its rollback deadline. The default grace is 24 hours; a separate durable
 lifecycle-index item advances deletion later, so source cleanup does not depend on repeatedly
 querying historical observations.
+
+Rollback grace begins only after a manifest has been successfully and durably published; extraction
+and JPEG encoding time never consume it. Initial publication first writes a durable
+`.publication-commit.json` intent, publishes a fail-safe provisional manifest whose source deadline
+is infinite, then records the successful manifest commit time and rewrites the manifest with exactly
+`commit time + configured grace`. A crash before that timestamp is recorded leaves the source
+undeletable; restart commits at the later recovery time and repairs the manifest. A crash after the
+timestamp but before the final rewrite reuses the durable timestamp. Terminal media-set deletion
+removes this internal record with the ledger and manifest.
 
 Every manifest publication reserves a direct-addressed catalog-reconciliation slot and a pressure
 slot before `manifest.json` is renamed. A crash before the rename leaves a harmless stale slot; a
@@ -146,19 +166,30 @@ The occupancy scan itself is forward-only. Its high-water mark is stored as
 protocol as manifests. On a new empty installation the cursor begins one normal query window before
 the current eligibility cutoff, closing the concurrent-first-write race without an unbounded scan.
 On an upgrade it begins at the earliest eligible occupancy result-time range exposed by the OSH
-datastream catalog. If an eligible record exists but a custom store cannot expose a range, the
-bounded fallback seed is durably written before the first epoch-based query. A restart therefore
-resumes the saved position instead of beginning again at epoch. Closed window boundaries are
+datastream catalog. A targeted stream without a usable range is probed directly; if it contains an
+eligible occupancy, the aggregate minimum is unknowable even when another stream has a valid range,
+so OSCAR uses the safe epoch fallback. An empty range-less stream does not force that fallback. The
+bounded fallback seed is durably written before the first query.
+A restart therefore resumes the saved position instead of beginning again at epoch. Closed window boundaries are
 intentionally replayed and are safe because media identities are idempotent.
 
 A strictly advancing event-time cursor alone could miss a record committed after its old timestamp
-window was scanned. Each cycle therefore rescans `lateArrivalOverlapHours` immediately behind the
-forward cursor (24 hours by default). Processed observation IDs are stored as exact 32-byte
+window was scanned. OSCAR therefore maintains a second, contiguous event-time cursor delayed by
+`lateArrivalOverlapHours` (24 hours by default). A timestamp is not finalized by this cursor until
+the forward cursor is at least one overlap beyond it, so an observation committed within the
+configured lateness allowance is present when its delayed slice is scanned. Each frozen delayed
+sweep persists its start/end/current cursor and processes at most `lateArrivalCatchUpHours` per
+scheduler cycle. A completed sweep checks for a newer safe boundary after
+`lateArrivalScanPeriodMinutes` (six hours by default); an interrupted sweep resumes on the next
+scheduler cycle without waiting. This replaces the former full 24-hour replay on every query
+interval. Processed observation IDs are stored as exact 32-byte
 SHA-256-plus-CRC32C records in at most twelve compact five-minute files per UTC event-time hour; no
 occupancy creates its own marker inode. Reclamation advances by direct hour addresses and performs
 exactly twelve bounded probes per inspected hour; it never lists or walks a shard. An hour is
-eligible only when its end is **strictly before** the overlap's durable lower bound, so the hour
-containing the inclusive boundary remains protected. Each pass inspects at most
+eligible only when its end is **strictly before** both the delayed cursor's durable processed
+position and the current clock-bounded safe cutoff, so the delayed cursor's unscanned backlog and
+the hour containing the inclusive boundary remain protected. No processed markers are reclaimed
+until the delayed cursor has been durably initialized. Each pass inspects at most
 `metadataReclamationWorkLimit` hours, including missing hours, and persists the next hour only after
 all twelve files are gone and each unlink or confirmed absence has crossed a fresh parent-directory
 durability barrier. The file count is therefore bounded by twelve times the overlap plus a
@@ -167,12 +198,26 @@ inside that window. Historical reconciliation
 deliberately neither consults nor rewrites this index, so it cannot recreate reclaimed state.
 Reclamation also runs in legacy `frameRetentionCount=0` mode; corrupt index metadata is reported
 and retried but does not prevent independent catalog, lifecycle, or retry maintenance. A separate durable
-reconciliation cursor also revalidates `reconciliationCatchUpHours` of older history per cycle (24
-hours by default), deliberately ignoring processed markers so lost catalog state is eventually
-rebuilt without a full-history scan.
+reconciliation checkpoint snapshots a fixed end boundary and revalidates at most
+`reconciliationCatchUpHours` of older history per scheduler cycle (24 hours by default). Active
+sweeps continue on successive cycles and survive restart until that frozen end is reached; the
+moving eligibility boundary cannot outrun them. After a complete sweep, OSCAR waits
+`reconciliationPeriodHours` (24 hours by default), finds the earliest eligible occupancy again, and
+starts the next frozen full-history sweep. This is the eventual-recovery path for observations
+committed after even the configured late-arrival allowance, as well as media whose ledger or catalog
+state was lost. Reconciliation deliberately ignores processed markers so it does not recreate
+reclaimed deduplication state. Legacy one-cursor reconciliation checkpoints are migrated into an
+immediately due frozen sweep. A backwards wall-clock correction normalizes future completion times
+without discarding active progress. If the correction moves the current cutoff behind a frozen
+late-arrival or historical end, the active sweep is paused/clamped at the current safe boundary and
+resumes toward its original durable end only after eligibility catches up. The same cutoff rule
+applies when the configured late-arrival allowance is zero.
 
 One scheduled cycle advances through no more than `maximumCatchUpHours` of event time (six hours by
-default), divided into `videoQueryPeriod` windows. Scheduling uses one low-priority thread with a
+default), divided into `videoQueryPeriod` windows (five minutes by default). Occupancy output names
+are resolved to fixed datastream IDs once per `occupancyStreamRefreshMinutes` interval (15 minutes
+by default), so every observation query uses an indexed ID predicate rather than repeating output-name
+resolution. Scheduling uses one low-priority thread with a
 fixed delay, so cycles cannot overlap or build a fixed-rate backlog. The same thread inspects at
 most `maintenanceWorkLimit` direct-addressed catalog-reconciliation, sharded lifecycle, and sharded
 retry entries per cycle (200 total by default); their queue heads/cursors are durable. Media failures that have a
@@ -222,17 +267,29 @@ bucket service.
 
 The existing video-retention configuration adds:
 
+- `timeToRetention` (default `1` day);
+- `videoQueryPeriod` (default `5` minutes);
 - `jpegQuality` (default `85`);
 - `sourceRollbackGraceHours` (default `24`);
 - `maximumCatchUpHours` (default `6`);
 - `lateArrivalOverlapHours` (default `24`);
+- `lateArrivalScanPeriodMinutes` (default `360`);
+- `lateArrivalCatchUpHours` (default `2`);
 - `reconciliationCatchUpHours` (default `24`);
+- `reconciliationPeriodHours` (default `24`);
+- `occupancyStreamRefreshMinutes` (default `15`);
 - `maintenanceWorkLimit` (default `200`); and
 - `metadataReclamationWorkLimit` (default `200`).
 
-Increasing `maximumCatchUpHours` clears a historical backlog faster but permits more database and
-transcoding work in one cycle. Increasing either reconciliation interval discovers older missing
-work faster at the cost of more database reads. Increasing `maintenanceWorkLimit` shortens catalog,
+With the defaults, frame conversion becomes eligible at 24 hours. The original MP4 then remains for
+at least the 24-hour rollback grace measured from successful manifest publication, so it is not
+normally removed before roughly 48 hours after the occupancy. The five JPEGs remain as the retained
+representation until a separate evidence or storage-pressure policy removes the media set.
+
+Increasing `maximumCatchUpHours` clears a forward backlog faster but permits more database and
+transcoding work in one cycle. Increasing either catch-up span discovers missing work faster at the
+cost of more database reads; decreasing a sweep period reduces discovery latency but runs it more
+often. Increasing `maintenanceWorkLimit` shortens catalog,
 retry, and lifecycle queue latency but performs more small storage operations per cycle.
 `metadataReclamationWorkLimit` counts directly addressed **UTC hour buckets**, not occupancies,
 five-minute files, or tombstones; each hour costs a fixed twelve probes and the default can reclaim
@@ -241,8 +298,8 @@ cycles to catch up after a long outage.
 
 Back up and restore the entire `videos/retained-media/v1` internal prefix as one consistency unit,
 using a point-in-time filesystem snapshot or a copy taken while the retention writer is stopped.
-The deletion indexes, metadata-reclamation checkpoint, scan/reconciliation checkpoints, manifests,
-ledgers, and queue state jointly prevent replay or resurrection. Empty `.index.lock` files are
+The deletion indexes, metadata-reclamation checkpoint, forward/late-arrival/historical scan
+checkpoints, manifests, ledgers, and queue state jointly prevent replay or resurrection. Empty `.index.lock` files are
 coordination artifacts and carry no logical state. Restoring only media assets while omitting
 internal metadata is unsupported.
 

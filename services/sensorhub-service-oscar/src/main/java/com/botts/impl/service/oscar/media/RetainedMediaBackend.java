@@ -65,7 +65,8 @@ public final class RetainedMediaBackend {
             String normalizedSourceKey = MediaSetStore.normalizedSourceKey(sourceObjectKey);
             Optional<MediaManifest> existing = mediaStore.findManifest(identity);
             if (existing.isPresent()) {
-                MediaManifest manifest = existing.get();
+                MediaManifest manifest = mediaStore.finalizeInitialPublication(
+                        identity, existing.get(), rollbackGrace, clock);
                 if (manifest.lifecycleState() == MediaManifest.LifecycleState.DELETING
                         || manifest.lifecycleState() == MediaManifest.LifecycleState.DELETED)
                     return true;
@@ -128,10 +129,11 @@ public final class RetainedMediaBackend {
                     MediaManifest.Hold.none(),
                     new MediaManifest.Source(sourceObjectKey, sourceHash, sourceBytes,
                             extraction.sourceCodec(), extraction.durationMicros(),
-                            createdAt.plus(rollbackGrace),
+                            Instant.MAX,
                             MediaManifest.SourceState.PRESERVED_FOR_ROLLBACK),
                     assets);
-            mediaStore.publishManifest(identity, manifest);
+            manifest = mediaStore.publishInitialManifest(identity, manifest,
+                    rollbackGrace, clock);
             mediaStore.writeLedger(identity,
                     ledger.transition(MediaJobLedger.JobState.PUBLISHED, "", Instant.now(clock)));
             log.info("Published retained media set {} for event {}, lane {}, camera {}",

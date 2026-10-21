@@ -145,13 +145,17 @@ This tab selects a PNG/JPG/JPEG and assigns its lower-left and upper-right geogr
 
 | Field | Default | Behavior |
 | --- | ---: | --- |
-| Age Before Five-Frame Retention (days) | 0 | Zero makes a completed eligible occupancy available for conversion to exactly five retained JPEGs on the next bounded retention cycle. |
-| Video Query Period (minutes) | 1 | Interval between searches for eligible occupancy videos. A larger interval processes more eligible records per query. |
+| Age Before Five-Frame Retention (days) | 1 | Age before an occupancy source video becomes eligible for conversion to exactly five retained JPEGs. |
+| Video Query Period (minutes) | 5 | Interval between searches for newly eligible occupancy videos; it is also the maximum event-time width of each database query. |
 | Maximum Retention Catch-up (hours) | 6 | Maximum historical event-time span processed in one cycle. Remaining backlog resumes from a durable cursor. |
-| Late-arrival Overlap (hours) | 24 | Recent interval rescanned for occupancies committed after the forward cursor passed their event time. Durable IDs suppress duplicate work. |
-| Historical Reconciliation per Cycle (hours) | 24 | Older interval revalidated each cycle to repair missing retained-media catalog state without an unbounded scan. |
+| Late-arrival Allowance (hours) | 24 | Delay before the contiguous late-arrival cursor finalizes an event timestamp. Commits inside this allowance cannot be skipped. |
+| Late-arrival Sweep Period (minutes) | 360 | Minimum delay between checks for a newer delayed safe boundary. An interrupted frozen sweep resumes on the next five-minute cycle. |
+| Late-arrival Catch-up per Cycle (hours) | 2 | Maximum portion of an active delayed sweep processed in one cycle; work is divided into five-minute database windows. |
+| Historical Reconciliation per Cycle (hours) | 24 | Maximum portion of an active frozen full-history sweep processed in one cycle. Active progress and the frozen end survive restart. |
+| Historical Reconciliation Period (hours) | 24 | Delay after a complete full-history sweep before restarting at the earliest eligible occupancy. This recovers commits later than the allowance. |
+| Occupancy Stream Refresh Period (minutes) | 15 | Frequency for resolving occupancy output names to cached datastream IDs used directly by observation queries. |
 | Media Maintenance Work Limit | 200 | Maximum catalog-reconciliation, sharded retry, and source-lifecycle entries inspected in one cycle. |
-| Media Metadata Reclamation Work Limit | 200 | Maximum direct-addressed UTC processed-observation hour buckets reclaimed in one cycle, including missing hours. Each hour is twelve fixed five-minute probes; it is not an occupancy count. |
+| Media Metadata Reclamation Work Limit | 200 | Maximum direct-addressed UTC processed-observation hour buckets reclaimed in one cycle, including missing hours. Reclamation never passes the durable delayed cursor or current cutoff. Each hour is twelve fixed five-minute probes; it is not an occupancy count. |
 | Enable Frame Retention | enabled | When enabled, old clips are converted to the exact-five retained JPEG set. When disabled, eligible clips use legacy deletion behavior. |
 | Retained Frame Count | 5 | Schema v1 requires exactly five when frame retention is enabled. |
 | Retained JPEG Quality | 85 | Baseline sRGB JPEG encoding quality from 1 through 100. |
@@ -159,10 +163,22 @@ This tab selects a PNG/JPG/JPEG and assigns its lower-left and upper-right geogr
 
 These settings affect historical occupancy video, not the live stream configuration. The scanner
 uses a durable forward cursor and never rescans all history on every interval. Failed media jobs and
-source cleanup after rollback grace use separate bounded, durable indexes. The overlap and slow
-historical reconciliation make late or previously uncatalogued occupancies eventually visible
-without an unbounded restart scan. Select values that satisfy site evidence-retention policy before
-enabling cleanup.
+source cleanup after rollback grace use separate bounded, durable indexes. The delayed cursor and
+repeating frozen full-history reconciliation make late or previously uncatalogued occupancies
+eventually visible without an unbounded restart scan or a moving boundary that can outrun repair.
+After a backwards clock correction, active frozen sweeps pause at the current eligibility cutoff
+without losing their durable end. A stream without a usable result-time range is probed directly;
+initial discovery falls back safely to the epoch only when that stream has an eligible occupancy,
+instead of trusting another stream's newer range. An empty range-less stream does not force fallback.
+With the defaults, conversion begins when the clip is 24 hours
+old and the source MP4 is retained for another 24 hours after successful publication, so normal
+source deletion is no earlier than roughly 48 hours after the occupancy. The five JPEGs remain as
+the retained evidence representation. Select values that satisfy site evidence-retention policy
+before enabling cleanup.
+
+Disposable regression fixtures may deliberately set the eligibility age to 0 days and the query
+period to 1 minute to accelerate deterministic tests. Those are test-only overrides; do not copy
+them into a production configuration.
 
 ### 4.4 Storage Pressure Retention Config tab
 
@@ -178,9 +194,10 @@ enabling cleanup.
 Pressure cleanup removes eligible objects only from the `videos` bucket in durable publication order; it never enumerates or sorts the retained-media tree during a pressure cycle. Daily CSV exports remain protected. Configure operating-system storage monitoring as well—this feature is an emergency pressure control, not a backup policy.
 
 Processed-observation IDs share at most twelve exact, checksummed five-minute files per UTC event
-hour. A complete hour is reclaimed only when its end is strictly behind the durable late-arrival
-overlap, using twelve bounded direct probes rather than a tree scan. This keeps the heap bounded
-while moving the single-file threshold above 1.2 million evenly distributed occupancies/hour.
+hour. A complete hour is reclaimed only when its end is strictly behind both the durable delayed
+cursor and the current clock-bounded cutoff, using twelve bounded direct probes rather than a tree
+scan. This keeps the heap bounded while moving the single-file threshold above 1.2 million evenly
+distributed occupancies/hour.
 Pressure deletion is remembered in an exact checksummed,
 file-locked compact index, replacing a permanent JSON tombstone per camera set without permitting
 historical reconciliation to recreate deleted media. Back up and restore the complete
@@ -696,16 +713,21 @@ Duplicate names and duplicate address/port pairs are rejected. **Edit** changes 
 ## 12. Data retention and storage behavior
 
 The standard 3.9.2 profile uses the tiered PostgreSQL database. Recent and operational records stay
-in PostgreSQL. Configured high-volume detector observations become eligible for bounded background
-archival to cataloged, ZSTD-compressed Parquet after 48 hours. OSCAR deletes their hot PostgreSQL
-rows only after archive validation and exact hot/cold parity succeed and a further 24-hour rollback
-overlap expires—about 72 hours total, plus scheduler delay. Active generation or observation holds
-block the corresponding deletion.
+in PostgreSQL; configured high-volume detector observations older than two days are copied in
+bounded background jobs to cataloged, ZSTD-compressed Parquet. Verified hot-row deletion is enabled
+by default after exact hot/cold parity and a one-day rollback grace, so Parquet normally becomes the
+only base-row copy after about 72 hours. Archive ownership, object integrity, parity, and active
+generation or observation holds are rechecked before deletion and fail closed.
 
 Each RPM driver requires the direct daily-file journal. It captures the source record before
 parsing where possible and publishes the completed day as an immutable legacy CSV plus SHA-256
 manifest. Database retention must never be used as a substitute for this journal. Connection-state
 maintenance and manifest-gated cleanup of legacy `dailyFile` observations continue independently.
+Private sealed journal segments are retained for 30 days after the later of day close or actual
+publication. With the default `requireBackupBeforeSealedJournalDeletion=false`, deletion also
+requires immutable CSV/manifest/ledger validation and an exact replay match from the current sealed
+segments to the published CSV. A site may enable the setting to require a matching verified-backup
+confirmation as an additional gate.
 
 Each new occupancy recording is bound to its exact lane, camera, occupancy timestamp, and immutable
 recording generation. Camera commands run in order, source names include a generation suffix, and
@@ -714,35 +736,36 @@ or late unpublished recordings and hidden partial files are removed instead of b
 later event. Treat a clip attached to the wrong event/camera, a duplicate/blank path, or a new orphan
 as a release-blocking integrity fault rather than repairing the database by guessing a filename.
 
-Completed eligible alarm clips become exactly five independently decodable JPEGs (first, quarter,
-middle, three-quarter, last) on the next bounded retention cycle. The source MP4 remains for at
-least 24 hours after the five JPEGs and their manifest are committed, and remains on every
-conversion failure; old or unconverted events retain legacy playback. Storage-pressure cleanup can
-remove only complete, eligible retained-media sets. It does not remove daily files, reports,
-adjudications, legacy uncataloged video, or the Parquet archive.
+At one day, eligible alarm clips become exactly five independently decodable JPEGs (first, quarter,
+middle, three-quarter, last). After successful publication, the source video remains for a further
+24-hour rollback grace, so normal source deletion is no earlier than roughly 48 hours after the
+occupancy; every conversion failure and applicable hold preserves it. Old or unconverted events
+retain legacy playback. Storage-pressure cleanup can remove only complete, eligible retained-media
+sets. It does not remove daily files, reports, adjudications, legacy uncataloged video, or the
+Parquet archive.
 
-Fresh installations default to `OSCAR_BACKUP_MODE=disabled`: no backup is scheduled and PostgreSQL
-does not continuously archive WAL externally. An operator may explicitly select the manual
-`single` mode and an absolute secondary-drive path during `init` or `upgrade`. In that mode,
-`backup` streams the required WAL into the PostgreSQL base backup and atomically publishes one
-authenticated `CURRENT` snapshot containing PostgreSQL, OSCAR state, and the cold archive;
-`backup-verify` validates it. The workflow keeps no cumulative backup history, performs no automatic
-backup pruning, and requires the separate authentication key for verification and restore. A legacy
-WAL path may be preserved inertly during upgrade to avoid destructive configuration changes, but
-current backup and restore do not mount, read, or write it.
+OSCAR-managed backup is disabled by default. In that mode, `backup`, `backup-verify`,
+`backup-prune`, and `restore` refuse before mutation. PostgreSQL runs with `archive_mode=off`, no
+external archive command, and no host WAL bind. A site that needs an OSCAR-managed recovery point
+may use the validated upgrade workflow to opt into `single` mode on an absolute secondary-drive
+path. Each manual backup is one self-contained snapshot with required WAL streamed into its base
+backup; the new snapshot must verify before `CURRENT` changes and the superseded managed snapshot
+is removed. The legacy `backup-prune` command is retired.
 
 Use the release launcher's `archive status`, `archive verify`, hold, portable-export, and tokenized
-dry-run/purge workflows. Never delete cataloged archive/media files directly. A pre-3.9.2 `upgrade`
-preserves its old database and configuration and does not create the full storage profile or enable
-PostgreSQL checksums; initialize a fresh 3.9.2 deployment or use a separately validated production
-migration. The packaged `documentation/` storage guides are the authoritative runbooks.
+dry-run/purge workflows, plus `backup` and `backup-verify` only in `single` mode. Protect the backup
+encryption key separately and retain an off-host copy if site policy requires another failure
+domain. Never delete cataloged archive/media files directly. A pre-3.9.2 `upgrade` preserves its old
+database and configuration and does not create the full storage profile or enable PostgreSQL
+checksums; initialize a fresh 3.9.2 deployment or use a separately validated production migration.
+The packaged `documentation/` storage guides are the authoritative runbooks.
 
 Use the release launcher for deployment-wide `stop` and `restart`. It stops the gateway first,
 then lets OSCAR drain and save while PostgreSQL remains available, and stops PostgreSQL last. Do
 not run an unscoped multi-service `docker compose stop` or `docker compose restart`: simultaneous
 signals can remove the database while OSCAR is still completing queued writes and module shutdown.
 
-Before changing retention, database selection, storage paths, backup mode or destination, or
+Before changing retention, database selection, storage paths, backup mode, or
 **Delete Data on Lane Removal**, confirm the site's evidence, privacy, legal-hold, recovery, and
 records-destruction requirements.
 
@@ -761,9 +784,8 @@ records-destruction requirements.
 - [ ] Database ID, Web ID root, statistics interval, and Auto Start match site policy.
 - [ ] Video and pressure-retention settings were reviewed before enabling cleanup.
 - [ ] A fresh 3.9.2 database/configuration or an approved migration was used; archive status and integrity verification pass.
-- [ ] `OSCAR_BACKUP_MODE` is intentionally `disabled`, or manual `single` mode uses an absolute secondary-drive path; if enabled, its one authenticated `CURRENT` snapshot verifies, its external key is escrowed separately, and an isolated restore drill has passed.
-- [ ] A sample lane publishes a journal-backed daily CSV/manifest; a completed event promptly produces five JPEGs, its source MP4 remains for 24 hours, and legacy events still play.
-- [ ] A controlled archive sample becomes eligible at 48 hours and its PostgreSQL rows remain until archive/parity verification and the additional 24-hour rollback overlap have passed.
+- [ ] Backup mode is recorded. Disabled mode creates no OSCAR-managed backup; if `single` is enabled, its current snapshot verifies, its external key is escrowed separately, and an isolated restore drill has passed.
+- [ ] A sample lane publishes a journal-backed daily CSV/manifest; retained events show five JPEGs while legacy events still play.
 - [ ] Bucket Storage Service and OSCAR Service Module are started.
 
 ### Site diagram

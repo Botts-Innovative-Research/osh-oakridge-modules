@@ -20,20 +20,32 @@ import org.sensorhub.api.config.DisplayInfo;
 public class VideoRetentionConfig {
 
     @DisplayInfo(label = "Age Before Five-Frame Retention (days)", desc = "Age in days before an occupancy source video is converted to exactly five retained JPEG images; the source MP4 remains through the configured rollback grace period.")
-    public int timeToRetention = 7;
+    public int timeToRetention = 1;
 
     @DisplayInfo(label = "Video Query Period (minutes)", desc = "Number of minutes between queries for occupancy video clips. " +
             "Larger values will result in more occupancies/video paths being loaded at once.")
-    public int videoQueryPeriod = 1;
+    public int videoQueryPeriod = 5;
 
     @DisplayInfo(label = "Maximum Retention Catch-up (hours)", desc = "Maximum event-time span processed by one scheduled retention cycle. The durable cursor resumes remaining history in later cycles.")
     public int maximumCatchUpHours = 6;
 
-    @DisplayInfo(label = "Late-arrival Overlap (hours)", desc = "Recent event-time interval rescanned for occupancies committed after the forward cursor passed them. Durable observation IDs prevent duplicate work.")
+    @DisplayInfo(label = "Late-arrival Allowance (hours)", desc = "Time allowed for a late commit before the contiguous delayed cursor finalizes an occupancy timestamp. Older late commits are recovered by full-history reconciliation.")
     public int lateArrivalOverlapHours = 24;
 
-    @DisplayInfo(label = "Historical Reconciliation per Cycle (hours)", desc = "Older event-time span slowly rechecked per cycle to repair uncatalogued media without an unbounded scan.")
+    @DisplayInfo(label = "Late-arrival Sweep Period (minutes)", desc = "Minimum time between checks for a newer delayed safe boundary. Interrupted frozen sweeps resume immediately from their durable cursor.")
+    public int lateArrivalScanPeriodMinutes = 360;
+
+    @DisplayInfo(label = "Late-arrival Catch-up per Cycle (hours)", desc = "Maximum event-time span of an active late-arrival sweep processed by one scheduled cycle.")
+    public int lateArrivalCatchUpHours = 2;
+
+    @DisplayInfo(label = "Historical Reconciliation per Cycle (hours)", desc = "Maximum event-time span processed per scheduler cycle while an active full-history sweep advances toward its frozen end.")
     public int reconciliationCatchUpHours = 24;
+
+    @DisplayInfo(label = "Historical Reconciliation Period (hours)", desc = "Delay after a complete frozen full-history sweep before starting again at the earliest eligible occupancy. Active and failed sweeps resume on the next cycle.")
+    public int reconciliationPeriodHours = 24;
+
+    @DisplayInfo(label = "Occupancy Stream Refresh Period (minutes)", desc = "How often the retention scanner refreshes its cached occupancy datastream IDs. Observation queries use these IDs directly instead of repeatedly resolving output names.")
+    public int occupancyStreamRefreshMinutes = 15;
 
     @DisplayInfo(label = "Media Maintenance Work Limit", desc = "Maximum catalog-reconciliation, source-lifecycle, and retry entries inspected per scheduled cycle.")
     public int maintenanceWorkLimit = 200;

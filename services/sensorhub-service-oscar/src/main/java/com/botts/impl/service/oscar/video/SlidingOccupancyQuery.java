@@ -2,6 +2,7 @@ package com.botts.impl.service.oscar.video;
 
 import com.botts.impl.service.oscar.media.MediaIdentityResolver;
 import com.botts.impl.service.oscar.media.MediaSetStore;
+import com.botts.impl.service.oscar.media.RetentionLateArrivalCheckpoint;
 import com.botts.impl.service.oscar.media.RetentionScanCheckpoint;
 import com.botts.impl.service.oscar.media.RetentionProcessedObservation;
 import com.botts.impl.service.oscar.media.RetentionReconciliationCheckpoint;
@@ -22,14 +23,16 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.TemporalAmount;
-import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -50,7 +53,11 @@ public final class SlidingOccupancyQuery {
     private final Duration retentionOffset;
     private final Duration maximumCatchUp;
     private final Duration lateArrivalOverlap;
+    private final Duration lateArrivalScanPeriod;
+    private final Duration lateArrivalCatchUp;
     private final Duration reconciliationCatchUp;
+    private final Duration reconciliationPeriod;
+    private final Duration occupancyStreamRefreshPeriod;
     private final QueryAction afterQueryAction;
     private final CycleAction beforeQueryAction;
     private final ISensorHub hub;
@@ -67,6 +74,10 @@ public final class SlidingOccupancyQuery {
     private RuntimeException operationFailure;
     private ScheduledExecutorService executor;
     private ScheduledFuture<?> future;
+    private Set<BigId> cachedOccupancyStreamIds = Set.of();
+    private Instant occupancyStreamsRefreshedAt = Instant.MIN;
+    private Instant occupancyStreamsRefreshAfter = Instant.MIN;
+    private boolean occupancyStreamsInitialized;
 
     public SlidingOccupancyQuery(ISensorHub hub, TemporalAmount batchWindowLength,
                                  QueryAction afterQueryAction, TemporalAmount retentionOffset,
@@ -74,12 +85,32 @@ public final class SlidingOccupancyQuery {
                                  CycleAction beforeQueryAction,
                                  TemporalAmount lateArrivalOverlap,
                                  TemporalAmount reconciliationCatchUp) {
+        this(hub, batchWindowLength, afterQueryAction, retentionOffset, maximumCatchUp,
+                mediaStore, beforeQueryAction, lateArrivalOverlap, Duration.ofHours(6),
+                Duration.ofHours(2), reconciliationCatchUp, Duration.ofHours(24),
+                Duration.ofMinutes(15));
+    }
+
+    public SlidingOccupancyQuery(ISensorHub hub, TemporalAmount batchWindowLength,
+                                 QueryAction afterQueryAction, TemporalAmount retentionOffset,
+                                 TemporalAmount maximumCatchUp, MediaSetStore mediaStore,
+                                 CycleAction beforeQueryAction,
+                                 TemporalAmount lateArrivalOverlap,
+                                 TemporalAmount lateArrivalScanPeriod,
+                                 TemporalAmount lateArrivalCatchUp,
+                                 TemporalAmount reconciliationCatchUp,
+                                 TemporalAmount reconciliationPeriod,
+                                 TemporalAmount occupancyStreamRefreshPeriod) {
         this(hub, duration(batchWindowLength, "video query period"), afterQueryAction,
                 duration(retentionOffset, "video retention offset"),
                 duration(maximumCatchUp, "maximum retention catch-up"),
                 new MediaCursorStore(mediaStore), beforeQueryAction, Clock.systemUTC(),
                 duration(lateArrivalOverlap, "late-arrival overlap"),
-                duration(reconciliationCatchUp, "reconciliation catch-up"));
+                duration(lateArrivalScanPeriod, "late-arrival scan period"),
+                duration(lateArrivalCatchUp, "late-arrival catch-up"),
+                duration(reconciliationCatchUp, "reconciliation catch-up"),
+                duration(reconciliationPeriod, "reconciliation period"),
+                duration(occupancyStreamRefreshPeriod, "occupancy stream refresh period"));
     }
 
     SlidingOccupancyQuery(ISensorHub hub, Duration batchWindowLength,
@@ -87,6 +118,20 @@ public final class SlidingOccupancyQuery {
                           Duration maximumCatchUp, CursorStore cursorStore,
                           CycleAction beforeQueryAction, Clock clock,
                           Duration lateArrivalOverlap, Duration reconciliationCatchUp) {
+        this(hub, batchWindowLength, afterQueryAction, retentionOffset, maximumCatchUp,
+                cursorStore, beforeQueryAction, clock, lateArrivalOverlap, Duration.ofHours(6),
+                Duration.ofHours(2), reconciliationCatchUp, Duration.ofHours(24),
+                Duration.ofMinutes(15));
+    }
+
+    SlidingOccupancyQuery(ISensorHub hub, Duration batchWindowLength,
+                          QueryAction afterQueryAction, Duration retentionOffset,
+                          Duration maximumCatchUp, CursorStore cursorStore,
+                          CycleAction beforeQueryAction, Clock clock,
+                          Duration lateArrivalOverlap, Duration lateArrivalScanPeriod,
+                          Duration lateArrivalCatchUp, Duration reconciliationCatchUp,
+                          Duration reconciliationPeriod,
+                          Duration occupancyStreamRefreshPeriod) {
         if (batchWindowLength.isZero() || batchWindowLength.isNegative())
             throw new IllegalArgumentException("Video query period must be positive");
         if (retentionOffset.isNegative())
@@ -95,15 +140,29 @@ public final class SlidingOccupancyQuery {
             throw new IllegalArgumentException("Maximum retention catch-up must be positive");
         if (lateArrivalOverlap.isNegative())
             throw new IllegalArgumentException("Late-arrival overlap must not be negative");
+        if (lateArrivalScanPeriod.isZero() || lateArrivalScanPeriod.isNegative())
+            throw new IllegalArgumentException("Late-arrival scan period must be positive");
+        if (lateArrivalCatchUp.isZero() || lateArrivalCatchUp.isNegative())
+            throw new IllegalArgumentException("Late-arrival catch-up must be positive");
         if (reconciliationCatchUp.isZero() || reconciliationCatchUp.isNegative())
             throw new IllegalArgumentException("Reconciliation catch-up must be positive");
+        if (reconciliationPeriod.isZero() || reconciliationPeriod.isNegative())
+            throw new IllegalArgumentException("Reconciliation period must be positive");
+        if (occupancyStreamRefreshPeriod.isZero()
+                || occupancyStreamRefreshPeriod.isNegative())
+            throw new IllegalArgumentException(
+                    "Occupancy stream refresh period must be positive");
         this.hub = java.util.Objects.requireNonNull(hub, "hub");
         this.batchWindowLength = batchWindowLength;
         this.afterQueryAction = java.util.Objects.requireNonNull(afterQueryAction, "afterQueryAction");
         this.retentionOffset = retentionOffset;
         this.maximumCatchUp = maximumCatchUp;
         this.lateArrivalOverlap = lateArrivalOverlap;
+        this.lateArrivalScanPeriod = lateArrivalScanPeriod;
+        this.lateArrivalCatchUp = lateArrivalCatchUp;
         this.reconciliationCatchUp = reconciliationCatchUp;
+        this.reconciliationPeriod = reconciliationPeriod;
+        this.occupancyStreamRefreshPeriod = occupancyStreamRefreshPeriod;
         this.cursorStore = java.util.Objects.requireNonNull(cursorStore, "cursorStore");
         this.beforeQueryAction = beforeQueryAction == null ? () -> { } : beforeQueryAction;
         this.clock = java.util.Objects.requireNonNull(clock, "clock");
@@ -237,15 +296,10 @@ public final class SlidingOccupancyQuery {
             return;
         Instant now = clock.instant();
         Instant eligibleThrough = subtractClamped(now, retentionOffset);
+        Set<BigId> occupancyStreamIds = occupancyStreamIds(now);
         RetentionScanCheckpoint checkpoint = cursorStore.read()
-                .orElseGet(() -> initializeCheckpoint(eligibleThrough, now));
-        // Revisit one bounded recent interval every cycle. Durable processed-observation IDs make
-        // this cheap while still discovering records committed after their event-time window was
-        // first scanned.
-        Instant overlapStart = overlapStart(checkpoint.processedThrough(), lateArrivalOverlap);
-        if (overlapStart.isBefore(checkpoint.processedThrough())
-                && !processWindow(overlapStart, checkpoint.processedThrough(), true))
-            return;
+                .orElseGet(() -> initializeCheckpoint(
+                        eligibleThrough, now, occupancyStreamIds));
 
         ScanPlan plan = plan(checkpoint.processedThrough(), eligibleThrough, maximumCatchUp);
         Instant processedThrough = checkpoint.processedThrough();
@@ -254,7 +308,7 @@ public final class SlidingOccupancyQuery {
             while (!shouldStop() && windowStart.isBefore(plan.endInclusive())) {
                 Instant windowEnd = minimum(addClamped(windowStart, batchWindowLength),
                         plan.endInclusive());
-                if (!processWindow(windowStart, windowEnd, true))
+                if (!processWindow(windowStart, windowEnd, true, occupancyStreamIds))
                     return;
                 Instant checkpointTime = clock.instant();
                 cursorStore.write(RetentionScanCheckpoint.at(windowEnd, checkpointTime));
@@ -263,20 +317,26 @@ public final class SlidingOccupancyQuery {
             }
         }
 
-        if (!shouldStop())
-            reconcileHistoricalOccupancies(processedThrough, eligibleThrough);
+        if (!shouldStop()) {
+            reconcileLateArrivals(processedThrough, eligibleThrough, occupancyStreamIds);
+            reconcileHistoricalOccupancies(processedThrough, eligibleThrough,
+                    occupancyStreamIds);
+        }
     }
 
-    private RetentionScanCheckpoint initializeCheckpoint(Instant eligibleThrough, Instant now) {
+    private RetentionScanCheckpoint initializeCheckpoint(Instant eligibleThrough, Instant now,
+                                                          Set<BigId> occupancyStreamIds) {
         try {
             IObsStore observationStore = hub.getDatabaseRegistry().getFederatedDatabase()
                     .getObservationStore();
-            Optional<Instant> earliest = findEarliestEligibleTime(observationStore, eligibleThrough);
+            Optional<Instant> earliest = findEarliestEligibleTime(
+                    observationStore, eligibleThrough, occupancyStreamIds);
             Instant seed;
             if (earliest.isPresent()) {
                 Instant first = maximum(RETENTION_EPOCH, earliest.get());
                 seed = first.equals(RETENTION_EPOCH) ? RETENTION_EPOCH : first.minusNanos(1);
-            } else if (hasEligibleOccupancy(observationStore, eligibleThrough)) {
+            } else if (hasEligibleOccupancy(
+                    observationStore, eligibleThrough, occupancyStreamIds)) {
                 // Some custom stores cannot expose dynamic datastream ranges. Epoch is safe, and
                 // maximumCatchUp still strictly bounds every cycle. Persist before doing any scan
                 // so a restart never repeats initialization work or resets progress.
@@ -301,24 +361,50 @@ public final class SlidingOccupancyQuery {
     }
 
     private Optional<Instant> findEarliestEligibleTime(IObsStore observationStore,
-                                                        Instant eligibleThrough) {
-        DataStreamFilter occupancyStreams = occupancyStreams();
-        try (Stream<org.sensorhub.api.data.IDataStreamInfo> streams =
-                     observationStore.getDataStreams().select(occupancyStreams)) {
-            return streams.map(info -> info.getResultTimeRange())
-                    .filter(java.util.Objects::nonNull)
-                    .map(range -> range.begin())
-                    .filter(java.util.Objects::nonNull)
-                    .filter(begin -> !begin.isAfter(eligibleThrough))
-                    .min(Comparator.naturalOrder());
+                                                        Instant eligibleThrough,
+                                                        Set<BigId> occupancyStreamIds) {
+        if (occupancyStreamIds.isEmpty())
+            return Optional.empty();
+        DataStreamFilter occupancyStreams = new DataStreamFilter.Builder()
+                .withInternalIDs(occupancyStreamIds).build();
+        Set<BigId> streamsNeedingProbe = new HashSet<>(occupancyStreamIds);
+        Instant earliest = null;
+        try (Stream<Map.Entry<org.sensorhub.api.datastore.obs.DataStreamKey,
+                org.sensorhub.api.data.IDataStreamInfo>> streams =
+                     observationStore.getDataStreams().selectEntries(occupancyStreams)) {
+            var iterator = streams.iterator();
+            while (iterator.hasNext()) {
+                var entry = iterator.next();
+                var info = entry.getValue();
+                var range = info == null ? null : info.getResultTimeRange();
+                Instant begin = range == null ? null : range.begin();
+                // Null ranges are permitted by custom stores, while PostGIS represents an empty
+                // stream with [Instant.MIN, Instant.MAX]. Neither is proof that historical rows
+                // exist. Keep that stream in the targeted probe set instead of forcing a
+                // decades-long epoch scan for a fresh/empty installation.
+                if (begin == null || Instant.MIN.equals(begin))
+                    continue;
+                if (entry.getKey() != null)
+                    streamsNeedingProbe.remove(entry.getKey().getInternalID());
+                if (!begin.isAfter(eligibleThrough)
+                        && (earliest == null || begin.isBefore(earliest)))
+                    earliest = begin;
+            }
         }
+        // A range-less stream can still contain eligible rows in a custom or partially migrated
+        // store. Probe only those streams, with a limit of one, and use epoch only when the probe
+        // proves that an unknown range really contains historical work.
+        if (hasEligibleOccupancy(observationStore, eligibleThrough, streamsNeedingProbe))
+            return Optional.of(RETENTION_EPOCH);
+        return Optional.ofNullable(earliest);
     }
 
-    private boolean hasEligibleOccupancy(IObsStore observationStore, Instant eligibleThrough) {
-        if (eligibleThrough.isBefore(RETENTION_EPOCH))
+    private boolean hasEligibleOccupancy(IObsStore observationStore, Instant eligibleThrough,
+                                         Set<BigId> occupancyStreamIds) {
+        if (occupancyStreamIds.isEmpty() || eligibleThrough.isBefore(RETENTION_EPOCH))
             return false;
         ObsFilter filter = new ObsFilter.Builder()
-                .withDataStreams(occupancyStreams())
+                .withDataStreams(occupancyStreamIds)
                 .withResultTimeDuring(RETENTION_EPOCH, eligibleThrough)
                 .withLimit(1)
                 .build();
@@ -328,9 +414,12 @@ public final class SlidingOccupancyQuery {
     }
 
     private boolean processWindow(Instant startInclusive, Instant endInclusive,
-                                  boolean skipProcessed) throws IOException {
+                                  boolean skipProcessed,
+                                  Set<BigId> occupancyStreamIds) throws IOException {
+        if (occupancyStreamIds.isEmpty())
+            return true;
         ObsFilter filter = new ObsFilter.Builder()
-                .withDataStreams(occupancyStreams())
+                .withDataStreams(occupancyStreamIds)
                 .withResultTimeDuring(startInclusive, endInclusive)
                 .build();
         try (Stream<Map.Entry<BigId, IObsData>> entries = hub.getDatabaseRegistry()
@@ -363,43 +452,135 @@ public final class SlidingOccupancyQuery {
         return !shouldStop();
     }
 
+    private void reconcileLateArrivals(Instant forwardProcessedThrough,
+                                       Instant eligibleThrough,
+                                       Set<BigId> occupancyStreamIds) throws IOException {
+        if (shouldStop() || lateArrivalOverlap.isZero())
+            return;
+        Instant now = clock.instant();
+        // A result timestamp is finalized only after the configured lateness allowance has
+        // elapsed.  Unlike repeatedly replaying a moving window, this durable delayed cursor is
+        // contiguous: every event-time instant up to safeThrough belongs to exactly one frozen
+        // sweep.  A record committed within lateArrivalOverlap therefore cannot arrive after its
+        // late-arrival slice has been finalized.
+        Instant safeThrough = overlapStart(
+                minimum(forwardProcessedThrough, eligibleThrough), lateArrivalOverlap);
+        RetentionLateArrivalCheckpoint checkpoint = cursorStore.readLateArrival()
+                .orElseGet(() -> initializeLateArrivalCheckpoint(
+                        safeThrough, now));
+        if (!checkpoint.active()) {
+            if (!isDue(checkpoint.lastCompletedAt(), now, lateArrivalScanPeriod))
+                return;
+            Instant start = checkpoint.processedThrough();
+            if (!start.isBefore(safeThrough)) {
+                // Also normalizes a future completion timestamp after a backwards clock change.
+                if (checkpoint.lastCompletedAt().isAfter(now))
+                    cursorStore.writeLateArrival(checkpoint.complete(now));
+                return;
+            }
+            checkpoint = checkpoint.begin(start, safeThrough, now);
+            cursorStore.writeLateArrival(checkpoint);
+        }
+
+        // A wall-clock correction can move the current eligibility cutoff behind a previously
+        // frozen end. Keep that durable end for recovery, but never query beyond today's safe
+        // boundary. The active sweep simply pauses once its cursor reaches the clamp.
+        Instant allowedEnd = minimum(checkpoint.windowEnd(), safeThrough);
+        Instant cycleEnd = minimum(addClamped(
+                checkpoint.processedThrough(), lateArrivalCatchUp), allowedEnd);
+        Instant cursor = checkpoint.processedThrough();
+        while (!shouldStop() && cursor.isBefore(cycleEnd)) {
+            Instant windowEnd = minimum(addClamped(cursor, batchWindowLength), cycleEnd);
+            if (!processWindow(cursor, windowEnd, true, occupancyStreamIds))
+                return;
+            cursor = windowEnd;
+            Instant checkpointTime = clock.instant();
+            checkpoint = cursor.equals(checkpoint.windowEnd())
+                    ? checkpoint.complete(checkpointTime)
+                    : checkpoint.advance(cursor, checkpointTime);
+            cursorStore.writeLateArrival(checkpoint);
+        }
+    }
+
+    private RetentionLateArrivalCheckpoint initializeLateArrivalCheckpoint(
+            Instant safeThrough, Instant now) {
+        try {
+            // Seed one lateness allowance behind the first safe boundary. This recovers the
+            // bounded pre-upgrade band while keeping every subsequent sweep gap-free.
+            Instant seed = overlapStart(safeThrough, lateArrivalOverlap);
+            RetentionLateArrivalCheckpoint checkpoint =
+                    RetentionLateArrivalCheckpoint.idle(seed, now);
+            cursorStore.writeLateArrival(checkpoint);
+            return checkpoint;
+        } catch (IOException e) {
+            throw new IllegalStateException(
+                    "Unable to durably initialize late-arrival retention cursor", e);
+        }
+    }
+
     private void reconcileHistoricalOccupancies(Instant forwardProcessedThrough,
-                                                Instant eligibleThrough) throws IOException {
+                                                Instant eligibleThrough,
+                                                Set<BigId> occupancyStreamIds) throws IOException {
         if (shouldStop())
             return;
-        Instant reconcileBefore = overlapStart(forwardProcessedThrough, lateArrivalOverlap);
+        Instant reconcileBefore = overlapStart(
+                minimum(forwardProcessedThrough, eligibleThrough), lateArrivalOverlap);
         if (!RETENTION_EPOCH.isBefore(reconcileBefore))
             return;
 
         IObsStore observationStore = hub.getDatabaseRegistry().getFederatedDatabase()
                 .getObservationStore();
+        Instant now = clock.instant();
         RetentionReconciliationCheckpoint checkpoint = cursorStore.readReconciliation()
-                .orElseGet(() -> initializeReconciliationCheckpoint(
-                        observationStore, eligibleThrough, reconcileBefore));
-        Instant start = checkpoint.processedThrough();
-        if (!start.isBefore(reconcileBefore)) {
-            start = reconciliationSeed(observationStore, eligibleThrough, reconcileBefore);
-            cursorStore.writeReconciliation(
-                    RetentionReconciliationCheckpoint.at(start, clock.instant()));
+                .orElseGet(() -> initializeReconciliationCheckpoint(observationStore,
+                        eligibleThrough, reconcileBefore, occupancyStreamIds));
+
+        if (!checkpoint.active()) {
+            if (!isDue(checkpoint.lastCompletedAt(), now, reconciliationPeriod))
+                return;
+            Instant start = reconciliationSeed(observationStore, eligibleThrough,
+                    reconcileBefore, occupancyStreamIds);
+            // Both bounds are persisted before the first query. The moving eligibility boundary
+            // cannot outrun a sweep because an active sweep always resumes this frozen end.
+            checkpoint = checkpoint.begin(start, reconcileBefore, now);
+            cursorStore.writeReconciliation(checkpoint);
+            if (!checkpoint.active()) {
+                cursorStore.writeReconciliation(checkpoint.complete(now));
+                return;
+            }
         }
 
-        Instant end = minimum(addClamped(start, reconciliationCatchUp), reconcileBefore);
-        if (!start.isBefore(end))
-            return;
+        // Preserve an active sweep's frozen end across clock rollback, while clamping this cycle
+        // to the current eligibility boundary. This applies when overlap is zero as well.
+        Instant allowedEnd = minimum(checkpoint.windowEnd(), reconcileBefore);
+        Instant cycleEnd = minimum(addClamped(checkpoint.processedThrough(),
+                reconciliationCatchUp), allowedEnd);
         // Reconciliation deliberately revalidates even a previously processed observation. This
         // slowly repairs media whose ledger/catalog was lost, without an unbounded restart scan.
-        if (!processWindow(start, end, false))
-            return;
-        cursorStore.writeReconciliation(
-                RetentionReconciliationCheckpoint.at(end, clock.instant()));
+        Instant cursor = checkpoint.processedThrough();
+        while (!shouldStop() && cursor.isBefore(cycleEnd)) {
+            Instant windowEnd = minimum(addClamped(cursor, batchWindowLength), cycleEnd);
+            if (!processWindow(cursor, windowEnd, false, occupancyStreamIds))
+                return;
+            cursor = windowEnd;
+            Instant checkpointTime = clock.instant();
+            checkpoint = cursor.equals(checkpoint.windowEnd())
+                    ? checkpoint.complete(checkpointTime)
+                    : checkpoint.advance(cursor, checkpointTime);
+            // Persist every successful query window. A crash replays at most one idempotent
+            // boundary window rather than losing the remainder of the frozen sweep.
+            cursorStore.writeReconciliation(checkpoint);
+        }
     }
 
     private RetentionReconciliationCheckpoint initializeReconciliationCheckpoint(
-            IObsStore observationStore, Instant eligibleThrough, Instant reconcileBefore) {
+            IObsStore observationStore, Instant eligibleThrough, Instant reconcileBefore,
+            Set<BigId> occupancyStreamIds) {
         try {
-            Instant seed = reconciliationSeed(observationStore, eligibleThrough, reconcileBefore);
+            Instant seed = reconciliationSeed(observationStore, eligibleThrough, reconcileBefore,
+                    occupancyStreamIds);
             RetentionReconciliationCheckpoint checkpoint =
-                    RetentionReconciliationCheckpoint.at(seed, clock.instant());
+                    RetentionReconciliationCheckpoint.initial(seed, clock.instant());
             // Persist before scanning so every restart resumes the same bounded sweep.
             cursorStore.writeReconciliation(checkpoint);
             return checkpoint;
@@ -410,20 +591,45 @@ public final class SlidingOccupancyQuery {
     }
 
     private Instant reconciliationSeed(IObsStore observationStore, Instant eligibleThrough,
-                                       Instant reconcileBefore) {
+                                       Instant reconcileBefore,
+                                       Set<BigId> occupancyStreamIds) {
         Optional<Instant> earliest = findEarliestEligibleTime(observationStore,
-                minimum(eligibleThrough, reconcileBefore));
+                minimum(eligibleThrough, reconcileBefore), occupancyStreamIds);
         if (earliest.isPresent()) {
             Instant first = maximum(RETENTION_EPOCH, earliest.get());
             return first.equals(RETENTION_EPOCH) ? RETENTION_EPOCH : first.minusNanos(1);
         }
-        if (hasEligibleOccupancy(observationStore, minimum(eligibleThrough, reconcileBefore)))
+        if (hasEligibleOccupancy(observationStore,
+                minimum(eligibleThrough, reconcileBefore), occupancyStreamIds))
             return RETENTION_EPOCH;
         return reconcileBefore;
     }
 
-    private static DataStreamFilter occupancyStreams() {
-        return new DataStreamFilter.Builder().withOutputNames(OccupancyOutput.NAME).build();
+    private Set<BigId> occupancyStreamIds(Instant now) {
+        if (occupancyStreamsInitialized && !now.isBefore(occupancyStreamsRefreshedAt)
+                && now.isBefore(occupancyStreamsRefreshAfter))
+            return cachedOccupancyStreamIds;
+        try (Stream<org.sensorhub.api.datastore.obs.DataStreamKey> keys =
+                     hub.getDatabaseRegistry().getFederatedDatabase().getObservationStore()
+                             .getDataStreams().selectKeys(new DataStreamFilter.Builder()
+                                     .withOutputNames(OccupancyOutput.NAME).build())) {
+            Set<BigId> resolved = keys.map(key -> key.getInternalID())
+                    .collect(Collectors.toUnmodifiableSet());
+            cachedOccupancyStreamIds = resolved;
+            occupancyStreamsInitialized = true;
+            occupancyStreamsRefreshedAt = now;
+            occupancyStreamsRefreshAfter = addClamped(now, occupancyStreamRefreshPeriod);
+            return resolved;
+        } catch (RuntimeException failure) {
+            if (!occupancyStreamsInitialized)
+                throw failure;
+            occupancyStreamsRefreshedAt = now;
+            occupancyStreamsRefreshAfter = addClamped(now,
+                    minimum(occupancyStreamRefreshPeriod, Duration.ofMinutes(1)));
+            logger.warn("Unable to refresh occupancy datastream IDs; retaining the last " +
+                    "successful cache until the next retry", failure);
+            return cachedOccupancyStreamIds;
+        }
     }
 
     static ScanPlan plan(Instant processedThrough, Instant eligibleThrough, Duration maximumCatchUp) {
@@ -440,6 +646,18 @@ public final class SlidingOccupancyQuery {
 
     static Instant overlapStart(Instant processedThrough, Duration overlap) {
         return maximum(RETENTION_EPOCH, subtractClamped(processedThrough, overlap));
+    }
+
+    static boolean isDue(Instant lastCompletedAt, Instant now, Duration period) {
+        java.util.Objects.requireNonNull(lastCompletedAt, "lastCompletedAt");
+        java.util.Objects.requireNonNull(now, "now");
+        java.util.Objects.requireNonNull(period, "period");
+        if (period.isZero() || period.isNegative())
+            throw new IllegalArgumentException("period must be positive");
+        // A restored checkpoint from a machine whose wall clock was ahead must not suppress
+        // reconciliation indefinitely after a clock correction.
+        return lastCompletedAt.isAfter(now)
+                || !now.isBefore(addClamped(lastCompletedAt, period));
     }
 
     public void stop() {
@@ -588,6 +806,10 @@ public final class SlidingOccupancyQuery {
         return left.compareTo(right) <= 0 ? left : right;
     }
 
+    private static Duration minimum(Duration left, Duration right) {
+        return left.compareTo(right) <= 0 ? left : right;
+    }
+
     private static Instant maximum(Instant left, Instant right) {
         return left.compareTo(right) >= 0 ? left : right;
     }
@@ -620,6 +842,14 @@ public final class SlidingOccupancyQuery {
 
         void writeReconciliation(RetentionReconciliationCheckpoint checkpoint) throws IOException;
 
+        default Optional<RetentionLateArrivalCheckpoint> readLateArrival() throws IOException {
+            return Optional.empty();
+        }
+
+        default void writeLateArrival(RetentionLateArrivalCheckpoint checkpoint)
+                throws IOException {
+        }
+
         boolean isProcessed(String observationId, Instant resultTime) throws IOException;
 
         void markProcessed(RetentionProcessedObservation marker) throws IOException;
@@ -649,6 +879,17 @@ public final class SlidingOccupancyQuery {
         public void writeReconciliation(RetentionReconciliationCheckpoint checkpoint)
                 throws IOException {
             mediaStore.writeReconciliationCheckpoint(checkpoint);
+        }
+
+        @Override
+        public Optional<RetentionLateArrivalCheckpoint> readLateArrival() throws IOException {
+            return mediaStore.readLateArrivalCheckpoint();
+        }
+
+        @Override
+        public void writeLateArrival(RetentionLateArrivalCheckpoint checkpoint)
+                throws IOException {
+            mediaStore.writeLateArrivalCheckpoint(checkpoint);
         }
 
         @Override

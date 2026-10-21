@@ -23,6 +23,8 @@ files/
     ledger/{lane-directory}/{YYYY-MM-DD}.json
     backup-confirmations/{lane-directory}/{YYYY-MM-DD}.json
     observation-purge-checkpoints/{full-feed-uid-hash}.json
+    lifecycle-queue-v1/{recovery,purge,deletion}/{00..ff}/{work-id}.json
+    lifecycle-cursors.v1.json
   dailyfiles/
     {readable-lane-suffix}-{full-lane-uid-hash}_{YYYY-MM-DD}.csv
     {readable-lane-suffix}-{full-lane-uid-hash}_{YYYY-MM-DD}.csv.manifest.v1.json
@@ -48,21 +50,25 @@ Closing a writer or the service also forces its active segment. `maxSegmentBytes
 `maxSegmentAgeSeconds` rotate the current segment by forcing it and atomically renaming `.open` to
 `.seg` before a new `.open` is created.
 
-Service readiness performs only root, confinement, and durable metadata validation; it does not
-rescan and re-render every historical lane/day before emitting `STARTED`. On the first append for a
-lane, that lane's current `.open` segment is scanned frame by frame before the new record is
-accepted. A short final header or payload is an interrupted append and is truncated back to the last
-valid frame, then forced. A complete frame with an invalid length, timestamp, or CRC is treated as
-corruption and the append fails; it is never silently skipped.
+Service readiness performs only root, confinement, durable metadata, and fixed-size cursor
+validation; it does not enumerate or render retained history before emitting `STARTED`. On the first
+append for a lane, that lane's current `.open` segments are scanned frame by frame before a new
+record is accepted. Every older `.open` is tail-recovered before it is renamed `.seg`. A short final
+header or payload is an interrupted append and is truncated back to the last valid frame, then
+forced. A complete frame with an invalid length, timestamp, or CRC is corruption and the append or
+historical recovery fails; it is never silently skipped.
 
-Completed prior days and interrupted deletion state are recovered by a separate bounded lifecycle
-pass. It visits at most 16 lane/day entries per minute, including older days belonging to a lane
-that is actively receiving today's records. The active-day comparison is synchronized briefly, but
-historical CRC validation and CSV rendering do not hold the live lane writer lock. A durable
-complete ledger/manifest/CSV record is a fast path, so normal restarts do not reread and rewrite
-large published days. Incomplete prior days are CRC-validated, sealed, and published; errors remain
-visible and the day cannot authorize database cleanup. Ledger files are atomically replaced after
-every force and after successful publication.
+Before creating a lane/day segment, the writer durably reserves a recovery work item in a 256-way
+sharded queue. Completed prior days, retention candidates, and interrupted deletion state are then
+handled by a separate bounded lifecycle pass. It inspects at most 16 items of each selected work
+class per minute without walking the lane/day tree. Selected retry work is atomically rotated behind
+the shard cursor before validation, so an ineligible/failing item cannot hide later work in the same
+shard; malformed markers are retained in a quarantine directory and reported. The cursor is
+durable across restarts. Older days belonging to a lane actively receiving today's records remain
+eligible: an exact-day claim briefly coordinates with that lane without holding its lock during CRC
+validation or CSV rendering. A fully validated ledger/manifest/CSV publication takes a metadata
+fast path and is not replayed on every restart. Ledger files are atomically replaced after every
+force and after successful publication.
 
 The journal requires same-directory atomic rename support. Initialization or publication fails on a
 filesystem that cannot provide it. The journal and publication directories must remain under the
@@ -134,24 +140,38 @@ store is open, the first catch-up is deferred once for the whole service—witho
 deletion—and the next hourly cycle resumes from the unchanged durable checkpoints. The legacy
 no-journal CSV exporter remains once daily.
 
-Sealed private `.seg` files are not deleted merely because the public CSV exists. After the
-coordinated backup has passed its structural, HMAC, PostgreSQL, archive-generation, and payload
-checks and has been atomically marked `VERIFIED`, the backup workflow runs the offline confirmation
-CLI against its securely extracted `oscar-state` snapshot. The CLI requires exact equality between
-snapshot and stopped live state for every sealed segment name, byte count, and SHA-256; it also
-validates the published CSV, manifest, and ledger. It rejects linked, open, missing, extra, or
-changed entries. All lane/day candidates are validated before any receipt is written. The CLI then
-writes the exact immutable segment inventories with the authenticated backup ID and state-archive
-hash, flushes them, and atomically publishes one confirmation-set marker last. That immutable marker
-enumerates the exact relative path and SHA-256 of every member; receipts created without this 3.9.2
-set protocol, absent from the index, or changed afterward cannot authorize pruning. A late validation
-error, write failure, or interruption therefore cannot expose a partially confirmed set. The marker
-index is parsed and bounded once per running store, while each retention check revalidates the
-marker's no-follow file identity and hashes only its current small receipt. Deleting or replacing a
-loaded marker fails closed without repeated whole-set filesystem scans. The journal recomputes each segment
-inventory immediately before pruning, so a late old-day segment also invalidates the receipt. Only a matching
-committed receipt and elapsed
-`sealedJournalRetentionDays` permit removal. A value of `0` disables segment pruning. CSVs,
+Sealed private `.seg` files are not deleted merely because the public CSV exists. With the shipped
+`requireBackupBeforeSealedJournalDeletion=false` policy, a lane/day becomes eligible only after
+`sealedJournalRetentionDays` from the later of day close or the manifest's immutable `publishedAt`.
+The journal then revalidates the CSV, v1 manifest, and `PUBLISHED` ledger, replays every current
+sealed segment with CRC and day-window validation, and requires the rendered byte count and SHA-256
+to match the published CSV exactly. A linked, open, missing, extra, corrupt, late, or mismatched
+segment therefore blocks deletion. The lifecycle worker first atomically freezes the exact day at a
+private `delete-pending` pathname, then performs the final exact replay/backup authorization against
+that frozen snapshot. A failed check or crash before authorization restores it. A second atomic
+rename to `deleting` is the destructive commit point, after which restart only finishes removal.
+Anything recreated at the original path by a misconfigured second process is excluded from that
+authorization, preserved, and queued for explicit recovery.
+
+Sites that require an external recovery copy before source-journal deletion can set
+`requireBackupBeforeSealedJournalDeletion=true`. After a coordinated backup has passed its
+structural, HMAC, PostgreSQL, archive-generation, and payload checks and has been atomically marked
+`VERIFIED`, the backup workflow runs the offline confirmation CLI against its securely extracted
+`oscar-state` snapshot. The CLI requires exact equality between snapshot and stopped live state for
+every sealed segment name, byte count, and SHA-256; it also validates the published CSV, manifest,
+and ledger. It rejects linked, open, missing, extra, or changed entries. All lane/day candidates are
+validated before any receipt is written. The CLI then writes the exact immutable segment inventories
+with the authenticated backup ID and state-archive hash, flushes them, and atomically publishes one
+confirmation-set marker last. That immutable marker enumerates the exact relative path and SHA-256
+of every member; receipts created without this 3.9.2 set protocol, absent from the index, or changed
+afterward cannot authorize pruning. A late validation error, write failure, or interruption therefore
+cannot expose a partially confirmed set. The marker index is parsed and bounded once per running
+store, while each retention check revalidates the marker's no-follow file identity and hashes only
+its current small receipt. Deleting or replacing a loaded marker fails closed without repeated
+whole-set filesystem scans. The journal recomputes each segment inventory immediately before
+pruning, so a late old-day segment also invalidates the receipt.
+
+A `sealedJournalRetentionDays` value of `0` disables segment pruning in either mode. Published CSVs,
 manifests, ledgers, confirmations, and purge checkpoints remain application state.
 
 With OSCAR stopped and the already authenticated state archive extracted read-only at
@@ -190,6 +210,7 @@ array order is not a dependency mechanism; required clients wait for the registe
   "maxSegmentAgeSeconds": 900,
   "maxRecordBytes": 4194304,
   "sealedJournalRetentionDays": 30,
+  "requireBackupBeforeSealedJournalDeletion": false,
   "id": "daily-file-journal",
   "autoStart": true,
   "moduleClass": "com.botts.impl.service.dailyfile.DailyFileJournalService",
@@ -259,6 +280,28 @@ Treat the journal root as application state, not as a scratch or bucket-cache di
 with the corresponding configuration and preserve file permissions. Do not edit, concatenate,
 rename, or delete `.open`, `.seg`, ledger, CSV, or manifest files while the service is running.
 
+### One-time lifecycle-index migration
+
+A journal created by the earlier 3.9.2 preview has metadata/segments but no durable lifecycle work
+index. Startup deliberately refuses that journal instead of doing an unbounded historical tree walk
+on the module thread. Stop OSCAR, make the journal volume writable to the OSCAR container user, and
+run the included restartable migration once, using the exact configured storage root and `zoneId`:
+
+```sh
+docker compose run --rm --no-deps --user 10001:10001 --entrypoint java oscar \
+  -cp '/opt/oscar/lib/*' \
+  com.botts.impl.service.dailyfile.DailyFileJournalIndexMigration \
+  /var/lib/oscar UTC .dailyfile-journal
+```
+
+The optional third argument is `journalDirectory` and defaults to `.dailyfile-journal`. Adjust
+`/var/lib/oscar` and `UTC` to match the deployment configuration. The tool validates every existing
+ledger's zone, indexes normal day directories plus interrupted `delete-pending`/`deleting` state,
+and publishes `journal-metadata.v1.json` only after the complete index is durable. It is offline and
+may take time proportional to retained history, but it cannot delay live startup because OSCAR is
+stopped. A crash or error leaves an explicit migration marker; rerun the same command. Work-marker
+creation is idempotent, and ordinary startup stays blocked until the final metadata commit succeeds.
+
 Useful checks after local midnight are:
 
 1. A prior-day CSV and `.manifest.v1.json` both exist.
@@ -271,7 +314,9 @@ If the first append or bounded historical-maintenance log reports a truncated ta
 already removed only the incomplete final frame and forced the repair. If it reports a CRC mismatch
 or immutable-publication mismatch, keep all files, stop the affected driver, and copy the lane/day
 directory plus CSV, manifest, and ledger for investigation. Do not delete a conflicting artifact to
-make recovery succeed without first preserving it as evidence.
+make recovery succeed without first preserving it as evidence. Quarantined lifecycle markers must
+also be preserved; correct the malformed marker's source or restore the item from a verified backup
+before removing its quarantine copy.
 
 Disk-full and permission failures are fail-visible. Required drivers stop accepting their input
 reader after an append error; operators should restore writable space/permissions and restart the
@@ -305,9 +350,13 @@ OSCAR_IT_ARCHIVE_DIR=/path/to/disposable/archive \
 ```
 
 The journal suite covers exact legacy bytes, full-UID filename hashing, SHA-256 manifests, persisted
-publication validation, backup-gated sealed-segment expiry, durable purge checkpoints, DST windows,
-size/age rotation, lazy current-day partial-tail recovery, bounded same-lane historical restart
-recovery, CRC corruption, oversize-record rejection, and concurrent per-lane writers. Purger safety
-tests cover exact midnight scheduling, DST windows, manifest gating,
-exclusive end boundaries, post-publication hourly retry, bounded oldest-first restart catch-up,
-unsealed-day retention, lane-scoped occupancy, and delegated high-volume lifecycle.
+publication validation, default publication-validated and optional backup-gated sealed-segment
+expiry, delayed-publication retention, source/artifact mismatch rejection, bounded pruning,
+freeze/authorization races, committed and uncommitted deletion restart recovery, durable sharded
+queue rotation and corrupt-marker quarantine, restartable legacy-index migration, active-lane
+historical recovery, complete-publication fast paths, durable purge checkpoints, DST windows,
+size/age rotation, multi-open partial-tail recovery, CRC corruption, oversize-record rejection, and
+concurrent per-lane writers.
+Purger safety tests cover exact midnight scheduling, DST windows, manifest gating, exclusive end
+boundaries, post-publication hourly retry, bounded oldest-first restart catch-up, unsealed-day
+retention, lane-scoped occupancy, and delegated high-volume lifecycle.

@@ -61,6 +61,7 @@ public class VideoRetention {
     private final int maintenanceWorkLimit;
     private final int metadataReclamationWorkLimit;
     private final Duration lateArrivalOverlap;
+    private final Duration retentionOffset;
 
     SlidingOccupancyQuery retentionQuery;
 
@@ -103,6 +104,20 @@ public class VideoRetention {
                           Duration rollbackGrace, Duration maximumCatchUp,
                           int maintenanceWorkLimit, Duration lateArrivalOverlap,
                           Duration reconciliationCatchUp, int metadataReclamationWorkLimit) {
+        this(hub, bucketStore, queryPeriod, retentionTimeOffset, frameCount, jpegQuality,
+                rollbackGrace, maximumCatchUp, maintenanceWorkLimit, lateArrivalOverlap,
+                Duration.ofHours(6), Duration.ofHours(2), reconciliationCatchUp,
+                Duration.ofHours(24), Duration.ofMinutes(15), metadataReclamationWorkLimit);
+    }
+
+    public VideoRetention(ISensorHub hub, IBucketStore bucketStore, TemporalAmount queryPeriod,
+                          TemporalAmount retentionTimeOffset, int frameCount, int jpegQuality,
+                          Duration rollbackGrace, Duration maximumCatchUp,
+                          int maintenanceWorkLimit, Duration lateArrivalOverlap,
+                          Duration lateArrivalScanPeriod, Duration lateArrivalCatchUp,
+                          Duration reconciliationCatchUp, Duration reconciliationPeriod,
+                          Duration occupancyStreamRefreshPeriod,
+                          int metadataReclamationWorkLimit) {
         this.bucketStore = bucketStore;
         this.frameCount = frameCount;
         if (maximumCatchUp == null || maximumCatchUp.isZero() || maximumCatchUp.isNegative())
@@ -116,6 +131,15 @@ public class VideoRetention {
         this.metadataReclamationWorkLimit = metadataReclamationWorkLimit;
         this.lateArrivalOverlap = java.util.Objects.requireNonNull(
                 lateArrivalOverlap, "lateArrivalOverlap");
+        try {
+            this.retentionOffset = Duration.from(java.util.Objects.requireNonNull(
+                    retentionTimeOffset, "retentionTimeOffset"));
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException(
+                    "Video retention offset must be a fixed duration", e);
+        }
+        if (retentionOffset.isNegative())
+            throw new IllegalArgumentException("Video retention offset must not be negative");
 
         if (frameCount != 0 && frameCount != MediaManifest.RETAINED_FRAME_COUNT)
             throw new IllegalArgumentException(
@@ -135,12 +159,16 @@ public class VideoRetention {
         retentionQuery = new SlidingOccupancyQuery(hub,
                 queryPeriod,
                 queryAction,
-                retentionTimeOffset,
+                retentionOffset,
                 maximumCatchUp,
                 mediaStore,
                 this::runMaintenanceCycle,
                 lateArrivalOverlap,
-                reconciliationCatchUp);
+                lateArrivalScanPeriod,
+                lateArrivalCatchUp,
+                reconciliationCatchUp,
+                reconciliationPeriod,
+                occupancyStreamRefreshPeriod);
     }
 
     public synchronized void start() {
@@ -200,7 +228,7 @@ public class VideoRetention {
             return;
         Instant now = Instant.now();
         try {
-            reclaimMetadata();
+            reclaimMetadata(now);
         } catch (IOException e) {
             // A corrupt processed-observation bucket is fail-visible and may pause the matching
             // scan window, but it must never starve independent catalog/lifecycle/retry recovery.
@@ -237,17 +265,44 @@ public class VideoRetention {
         mediaStore.writeMaintenanceCheckpoint(checkpoint);
     }
 
-    private void reclaimMetadata() throws IOException {
+    private void reclaimMetadata(Instant now) throws IOException {
         var scanCheckpoint = mediaStore.readRetentionScanCheckpoint();
         if (scanCheckpoint.isPresent()) {
+            Instant eligibleThrough = subtractClamped(now, retentionOffset);
+            Instant boundedForward = minimum(
+                    scanCheckpoint.get().processedThrough(), eligibleThrough);
             Instant retainFrom = SlidingOccupancyQuery.overlapStart(
-                    scanCheckpoint.get().processedThrough(), lateArrivalOverlap);
+                    boundedForward, lateArrivalOverlap);
+            if (!lateArrivalOverlap.isZero()) {
+                var lateCheckpoint = mediaStore.readLateArrivalCheckpoint();
+                if (lateCheckpoint.isEmpty()) {
+                    // The delayed cursor has not established its durable lower bound yet. Keep all
+                    // markers; its initialization may need the full pre-upgrade overlap.
+                    return;
+                }
+                // Markers are safe to reclaim only behind both the current clock-bounded cutoff
+                // and the last successfully scanned delayed event-time cursor.
+                retainFrom = minimum(retainFrom,
+                        lateCheckpoint.get().processedThrough());
+            }
             MediaSetStore.ProcessedObservationPruneResult result =
                     mediaStore.pruneProcessedObservations(
                             retainFrom, metadataReclamationWorkLimit);
             if (result.deleted() > 0)
                 logger.debug("Pruned {} of {} inspected processed-observation index buckets",
                         result.deleted(), result.inspected());
+        }
+    }
+
+    private static Instant minimum(Instant left, Instant right) {
+        return left.compareTo(right) <= 0 ? left : right;
+    }
+
+    private static Instant subtractClamped(Instant instant, Duration duration) {
+        try {
+            return instant.minus(duration);
+        } catch (java.time.DateTimeException | ArithmeticException e) {
+            return Instant.MIN;
         }
     }
 
@@ -314,7 +369,7 @@ public class VideoRetention {
                 && completedShards < MAX_EMPTY_MAINTENANCE_SHARDS_PER_SWEEP) {
             int requested = entryLimit - inspected;
             List<MediaSetStore.MaintenanceEntry> entries = mediaStore.listMaintenance(
-                    kind, cursor.shard(), cursor.afterKey(), requested);
+                    kind, cursor.shard(), "", requested);
             if (entries.isEmpty()) {
                 cursor = nextShard(cursor.shard());
                 completedShards++;
@@ -328,7 +383,9 @@ public class VideoRetention {
                 MediaMaintenanceJob job = entry.job();
                 if (!job.dueAt().isAfter(now))
                     processMaintenanceJob(job);
-                cursor = new MediaMaintenanceCheckpoint.Cursor(cursor.shard(), entry.key());
+                // listMaintenance durably rotates every offered item behind this shard before
+                // returning it, so the shard itself is the complete progress cursor.
+                cursor = new MediaMaintenanceCheckpoint.Cursor(cursor.shard(), "");
                 if (inspected >= entryLimit)
                     break;
             }

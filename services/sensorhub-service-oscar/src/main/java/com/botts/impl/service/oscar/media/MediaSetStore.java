@@ -3,6 +3,7 @@ package com.botts.impl.service.oscar.media;
 import com.botts.api.service.bucket.IBucketStore;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonDeserializer;
 import com.google.gson.JsonSerializer;
 import org.sensorhub.api.datastore.DataStoreException;
@@ -24,6 +25,8 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -59,6 +62,8 @@ public final class MediaSetStore {
             "retained-media/v1/.maintenance-checkpoint.json";
     public static final String RECONCILIATION_CHECKPOINT_KEY =
             "retained-media/v1/.retention-reconciliation-checkpoint.json";
+    public static final String LATE_ARRIVAL_CHECKPOINT_KEY =
+            "retained-media/v1/.retention-late-arrival-checkpoint.json";
     public static final String PRESSURE_QUEUE_STATE_KEY =
             "retained-media/v1/.pressure-queue-state.json";
     public static final String CATALOG_QUEUE_STATE_KEY =
@@ -82,6 +87,7 @@ public final class MediaSetStore {
             "retained-media/v1/deletion-index/";
     private static final String MANIFEST_FILE = "manifest.json";
     private static final String LEDGER_FILE = ".job.json";
+    private static final String PUBLICATION_COMMIT_FILE = ".publication-commit.json";
     private static final String PARTIAL_MARKER = ".partial-";
     private static final String BUCKET_PATH_ANCHOR = ".oscar-retained-media-path-anchor";
     private static final int MAX_INTERNAL_JSON_BYTES = 1024 * 1024;
@@ -130,6 +136,7 @@ public final class MediaSetStore {
     private final Map<String, ExactIndexSnapshot> exactIndexCache =
             new LinkedHashMap<>(EXACT_INDEX_CACHE_MAX_ENTRIES + 1, 0.75f, true);
     private int exactIndexCacheRecordCount;
+    private volatile Runnable initialPublicationCommitHook = () -> { };
 
     public MediaSetStore(IBucketStore bucketStore) throws DataStoreException {
         this.bucketStore = Objects.requireNonNull(bucketStore, "bucketStore");
@@ -176,6 +183,10 @@ public final class MediaSetStore {
 
     public String ledgerKey(Identity identity) {
         return baseKey(identity) + "/" + LEDGER_FILE;
+    }
+
+    public String publicationCommitKey(Identity identity) {
+        return baseKey(identity) + "/" + PUBLICATION_COMMIT_FILE;
     }
 
     public String frameKey(Identity identity, int oneBasedIndex) {
@@ -359,6 +370,127 @@ public final class MediaSetStore {
         ensureManifestMaintenance(identity, manifest);
     }
 
+    /**
+     * Publishes a new manifest with a fail-safe infinite provisional deadline, then records the
+     * successful manifest commit time durably and replaces the manifest with the exact deadline.
+     * A crash in either gap preserves the source; {@link #finalizeInitialPublication} resumes it.
+     */
+    public synchronized MediaManifest publishInitialManifest(
+            Identity identity, MediaManifest manifest, Duration rollbackGrace, Clock clock)
+            throws IOException {
+        Objects.requireNonNull(rollbackGrace, "rollbackGrace");
+        Objects.requireNonNull(clock, "clock");
+        if (rollbackGrace.isNegative() || rollbackGrace.getNano() != 0)
+            throw new IllegalArgumentException("Rollback grace must be whole, non-negative seconds");
+        long graceSeconds = rollbackGrace.getSeconds();
+        MediaPublicationCommit publication = reservePublicationCommit(identity, graceSeconds);
+
+        if (publication.state() == MediaPublicationCommit.State.RESERVED) {
+            MediaManifest provisional = manifest.withSource(
+                    manifest.source().withRollbackDeleteAfter(Instant.MAX));
+            publishManifest(identity, provisional);
+            initialPublicationCommitHook.run();
+            publication = publication.committed(publicationCommitAnchor(manifest, clock));
+            atomicWriteJson(publicationCommitKey(identity), publication,
+                    MediaPublicationCommit.class);
+            manifest = provisional;
+        }
+        MediaManifest committed = manifest.withSource(manifest.source()
+                .withRollbackDeleteAfter(publication.rollbackDeleteAfter()));
+        publishManifest(identity, committed);
+        return committed;
+    }
+
+    /** Repairs a crash after the provisional manifest commit without shortening rollback grace. */
+    public synchronized MediaManifest finalizeInitialPublication(
+            Identity identity, MediaManifest manifest, Duration configuredGrace, Clock clock)
+            throws IOException {
+        Optional<MediaPublicationCommit> found = readPublicationCommit(identity);
+        if (found.isEmpty()) {
+            if (Instant.MAX.equals(manifest.source().rollbackDeleteAfter()))
+                throw new IOException("Provisional retained-media manifest has no publication intent");
+            return manifest; // Compatible v1 publication created before commit anchoring.
+        }
+        MediaPublicationCommit publication = found.get();
+        if (publication.state() == MediaPublicationCommit.State.RESERVED) {
+            publication = publication.committed(publicationCommitAnchor(manifest, clock));
+            atomicWriteJson(publicationCommitKey(identity), publication,
+                    MediaPublicationCommit.class);
+        } else if (publication.committedAt().isBefore(manifest.createdAt())) {
+            // A previous version could backdate the durable commit if the wall clock moved
+            // backwards across the provisional-publication crash window. Never let that record
+            // shorten the grace period for an already durable manifest.
+            publication = publication.committed(manifest.createdAt());
+            atomicWriteJson(publicationCommitKey(identity), publication,
+                    MediaPublicationCommit.class);
+        }
+        MediaManifest repaired = manifest.withSource(manifest.source()
+                .withRollbackDeleteAfter(publication.rollbackDeleteAfter()));
+        if (!repaired.equals(manifest))
+            publishManifest(identity, repaired);
+        return repaired;
+    }
+
+    private static Instant publicationCommitAnchor(MediaManifest manifest, Clock clock) {
+        Instant now = Instant.now(clock);
+        return now.isBefore(manifest.createdAt()) ? manifest.createdAt() : now;
+    }
+
+    synchronized MediaPublicationCommit reservePublicationCommit(Identity identity,
+                                                                  long graceSeconds)
+            throws IOException {
+        Optional<MediaPublicationCommit> existing = readPublicationCommit(identity);
+        if (existing.isPresent()) {
+            MediaPublicationCommit publication = existing.get();
+            if (!publication.mediaSetId().equals(identity.mediaSetId()))
+                throw new IOException("Retained-media publication intent does not match identity");
+            if (bucketStore.objectExists(VIDEO_BUCKET, manifestKey(identity))) {
+                if (publication.rollbackGraceSeconds() != graceSeconds)
+                    throw new IOException(
+                            "Retained-media publication intent does not match configured grace");
+                return publication;
+            }
+
+            // A committed timestamp belongs only to the manifest generation that followed it.
+            // If that manifest was durably lost, re-publication is a new generation even when the
+            // source object key was reused. Resetting to RESERVED prevents an expired deadline
+            // from being inherited by newly decoded content at the same path.
+            MediaPublicationCommit replacement = MediaPublicationCommit.reserved(
+                    identity.mediaSetId(), graceSeconds);
+            atomicWriteJson(publicationCommitKey(identity), replacement,
+                    MediaPublicationCommit.class);
+            return replacement;
+        }
+        MediaPublicationCommit reserved = MediaPublicationCommit.reserved(
+                identity.mediaSetId(), graceSeconds);
+        atomicWriteJson(publicationCommitKey(identity), reserved,
+                MediaPublicationCommit.class);
+        return reserved;
+    }
+
+    Optional<MediaPublicationCommit> readPublicationCommit(Identity identity) throws IOException {
+        Optional<MediaPublicationCommit> found = readInternalJson(
+                publicationCommitKey(identity), MediaPublicationCommit.class);
+        if (found.isEmpty())
+            return found;
+        MediaPublicationCommit publication = found.get();
+        try {
+            publication = new MediaPublicationCommit(publication.schemaVersion(),
+                    publication.mediaSetId(), publication.rollbackGraceSeconds(),
+                    publication.state(), publication.committedAt(),
+                    publication.rollbackDeleteAfter());
+        } catch (RuntimeException e) {
+            throw new IOException("Invalid retained-media publication commit", e);
+        }
+        if (!publication.mediaSetId().equals(identity.mediaSetId()))
+            throw new IOException("Retained-media publication commit identity mismatch");
+        return Optional.of(publication);
+    }
+
+    void setInitialPublicationCommitHookForTest(Runnable hook) {
+        initialPublicationCommitHook = Objects.requireNonNull(hook, "hook");
+    }
+
     /** Ensures a committed manifest has the matching durable source-lifecycle index state. */
     public synchronized void ensureManifestMaintenance(Identity identity, MediaManifest manifest)
             throws IOException {
@@ -395,15 +527,58 @@ public final class MediaSetStore {
 
     public Optional<RetentionReconciliationCheckpoint> readReconciliationCheckpoint()
             throws IOException {
-        return readInternalJson(RECONCILIATION_CHECKPOINT_KEY,
-                RetentionReconciliationCheckpoint.class);
+        if (!bucketStore.objectExists(VIDEO_BUCKET, RECONCILIATION_CHECKPOINT_KEY))
+            return Optional.empty();
+        String json = readBoundedJson(RECONCILIATION_CHECKPOINT_KEY);
+        try {
+            JsonObject object = GSON.fromJson(json, JsonObject.class);
+            if (object == null)
+                throw new IOException("Internal media JSON is empty: "
+                        + RECONCILIATION_CHECKPOINT_KEY);
+            RetentionReconciliationCheckpoint checkpoint;
+            if (object.has("windowStart")) {
+                checkpoint = GSON.fromJson(json, RetentionReconciliationCheckpoint.class);
+            } else {
+                LegacyReconciliationCheckpoint legacy = GSON.fromJson(
+                        json, LegacyReconciliationCheckpoint.class);
+                validateLegacyReconciliationCheckpoint(legacy);
+                // The legacy cursor had no frozen upper bound and could move at the same rate as
+                // the eligibility boundary forever.  Preserve its event-time position only as an
+                // initialization hint and make a complete frozen sweep immediately due.
+                checkpoint = RetentionReconciliationCheckpoint.initial(
+                        legacy.processedThrough(), legacy.updatedAt());
+            }
+            validateReconciliationCheckpoint(checkpoint);
+            return Optional.of(checkpoint);
+        } catch (IOException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new IOException("Invalid internal media JSON "
+                    + RECONCILIATION_CHECKPOINT_KEY, e);
+        }
     }
 
     public synchronized void writeReconciliationCheckpoint(
             RetentionReconciliationCheckpoint checkpoint) throws IOException {
-        Objects.requireNonNull(checkpoint, "checkpoint");
+        validateReconciliationCheckpoint(checkpoint);
         atomicWriteJson(RECONCILIATION_CHECKPOINT_KEY, checkpoint,
                 RetentionReconciliationCheckpoint.class);
+    }
+
+    public Optional<RetentionLateArrivalCheckpoint> readLateArrivalCheckpoint()
+            throws IOException {
+        return readInternalJson(LATE_ARRIVAL_CHECKPOINT_KEY,
+                RetentionLateArrivalCheckpoint.class).map(checkpoint -> {
+                    validateLateArrivalCheckpoint(checkpoint);
+                    return checkpoint;
+                });
+    }
+
+    public synchronized void writeLateArrivalCheckpoint(
+            RetentionLateArrivalCheckpoint checkpoint) throws IOException {
+        validateLateArrivalCheckpoint(checkpoint);
+        atomicWriteJson(LATE_ARRIVAL_CHECKPOINT_KEY, checkpoint,
+                RetentionLateArrivalCheckpoint.class);
     }
 
     /** Exact time-bucketed lookup with no per-observation marker inode or stale cache. */
@@ -449,7 +624,7 @@ public final class MediaSetStore {
 
     /**
      * Deletes at most {@code workLimit} deterministic hourly index buckets whose end is strictly
-     * before the forward scanner's durable late-arrival boundary. Each hour has twelve
+     * before the caller's durable late-arrival-safe boundary. Each hour has twelve
      * direct-addressed five-minute files; no object listing or directory traversal occurs, and a
      * missing hour consumes the same fixed twelve probes as a populated hour.
      */
@@ -510,33 +685,35 @@ public final class MediaSetStore {
 
     public synchronized void enqueueMaintenance(MediaMaintenanceJob job) throws IOException {
         validateMaintenanceJob(job);
-        atomicWriteJson(maintenanceKey(job.kind(), job.identity()), job,
-                MediaMaintenanceJob.class);
+        String key = existingMaintenanceKey(job.kind(), job.identity())
+                .orElseGet(() -> maintenanceKey(job.kind(), job.identity()));
+        atomicWriteJson(key, job, MediaMaintenanceJob.class);
     }
 
-    public List<MaintenanceEntry> listMaintenance(MediaMaintenanceJob.Kind kind, int shard,
-                                                   String afterKey, int limit) throws IOException {
+    public synchronized List<MaintenanceEntry> listMaintenance(
+            MediaMaintenanceJob.Kind kind, int shard, String afterKey, int limit)
+            throws IOException {
         if (shard < 0 || shard >= MediaMaintenanceCheckpoint.SHARD_COUNT)
             throw new IllegalArgumentException("maintenance shard must be from 0 through 255");
         if (limit < 1)
             throw new IllegalArgumentException("maintenance listing limit must be positive");
         String prefix = maintenanceShardPrefix(kind, shard);
-        String resumeAfter = afterKey == null ? "" : afterKey;
         List<MaintenanceEntry> entries = new ArrayList<>();
         try {
-            for (String key : bucketStore.listObjects(VIDEO_BUCKET, prefix).stream()
-                    .map(value -> value.replace('\\', '/'))
-                    .filter(value -> value.startsWith(prefix) && value.endsWith(".json"))
-                    .filter(value -> value.compareTo(resumeAfter) > 0)
-                    .sorted()
-                    .limit(limit)
-                    .toList()) {
+            // Selection itself must be bounded. Each selected item is atomically moved behind the
+            // shard cursor before it is returned, so an ineligible item cannot repeatedly occupy a
+            // bounded page and the old lexical after-key is no longer needed for progress.
+            for (String listedKey : bucketStore.listObjects(
+                    VIDEO_BUCKET, prefix, ".json", limit)) {
+                String key = listedKey.replace('\\', '/');
                 MediaMaintenanceJob job = readInternalJson(key, MediaMaintenanceJob.class)
                         .orElseThrow(() -> new IOException("Missing media maintenance job " + key));
                 validateMaintenanceJob(job);
-                if (job.kind() != kind || !key.equals(maintenanceKey(kind, job.identity())))
+                if (job.kind() != kind
+                        || !key.equals(maintenanceKey(kind, job.identity(), shard)))
                     throw new IOException("Media maintenance job identity does not match " + key);
-                entries.add(new MaintenanceEntry(key, job));
+                String rotatedKey = rotateMaintenanceBehindCursor(kind, job.identity(), key, shard);
+                entries.add(new MaintenanceEntry(rotatedKey, job));
             }
         } catch (DataStoreException e) {
             throw new IOException("Unable to list media maintenance index " + prefix, e);
@@ -546,11 +723,19 @@ public final class MediaSetStore {
 
     public synchronized void removeMaintenance(MediaMaintenanceJob.Kind kind, Identity identity)
             throws IOException {
-        deleteIfPresent(maintenanceKey(kind, identity));
+        for (String key : maintenanceKeys(kind, identity)) {
+            if (bucketStore.objectExists(VIDEO_BUCKET, key))
+                deleteIfPresent(key);
+        }
     }
 
-    public boolean maintenanceExists(MediaMaintenanceJob.Kind kind, Identity identity) {
-        return bucketStore.objectExists(VIDEO_BUCKET, maintenanceKey(kind, identity));
+    public synchronized boolean maintenanceExists(MediaMaintenanceJob.Kind kind,
+                                                   Identity identity) {
+        for (String key : maintenanceKeys(kind, identity)) {
+            if (bucketStore.objectExists(VIDEO_BUCKET, key))
+                return true;
+        }
+        return false;
     }
 
     public boolean isTerminallyDeleted(Identity identity) throws IOException {
@@ -873,8 +1058,13 @@ public final class MediaSetStore {
                 finishTerminalDeletionLocked(identity);
                 return null;
             }
-            ensureManifestMaintenance(identity, manifest);
-            MediaJobLedger.JobState desired = manifest.source().state()
+            // Catalog reconciliation can run before RETRY after restart. Finalize a provisional
+            // publication first so PUBLISHED cannot clear the only retry while leaving an
+            // infinite rollback deadline behind. The durable intent supplies the original grace.
+            MediaManifest reconciled = finalizeInitialPublication(identity, manifest,
+                    Duration.ZERO, Clock.fixed(at, java.time.ZoneOffset.UTC));
+            ensureManifestMaintenance(identity, reconciled);
+            MediaJobLedger.JobState desired = reconciled.source().state()
                     == MediaManifest.SourceState.DELETED
                     ? MediaJobLedger.JobState.SOURCE_DELETED
                     : MediaJobLedger.JobState.PUBLISHED;
@@ -882,7 +1072,7 @@ public final class MediaSetStore {
             if (current.isEmpty()) {
                 writeLedger(identity, new MediaJobLedger(MediaJobLedger.CURRENT_SCHEMA_VERSION,
                         identity.eventId(), identity.laneUid(), identity.cameraUid(),
-                        manifest.source().objectKey(), desired, 1, at, ""));
+                        reconciled.source().objectKey(), desired, 1, at, ""));
             } else if (current.get().state() != desired) {
                 writeLedger(identity, current.get().transition(desired, "", at));
             }
@@ -971,6 +1161,7 @@ public final class MediaSetStore {
             MediaManifest manifest = readManifest(key);
             return deleteMediaSetLocked(new ManifestEntry(key, manifest), identity);
         }
+        deleteIfPresent(publicationCommitKey(identity));
         clearMaintenance(identity);
         clearPressureCandidate(identity);
         clearCatalogCandidate(identity);
@@ -1018,6 +1209,7 @@ public final class MediaSetStore {
             // DELETED. This also removes a directory entry replayed after a pre-upgrade crash.
             deletedBytes += deleteIfPresent(stripVideoBucket(manifest.source().objectKey()));
             deletedBytes += deleteIfPresent(ledgerKey(identity));
+            deletedBytes += deleteIfPresent(publicationCommitKey(identity));
             deletedBytes += deleteIfPresent(entry.manifestKey());
             clearMaintenance(identity);
             clearPressureCandidate(identity);
@@ -1366,10 +1558,58 @@ public final class MediaSetStore {
         }
     }
 
+    private Optional<String> existingMaintenanceKey(MediaMaintenanceJob.Kind kind,
+                                                    Identity identity) throws IOException {
+        String found = null;
+        for (String key : maintenanceKeys(kind, identity)) {
+            if (!bucketStore.objectExists(VIDEO_BUCKET, key))
+                continue;
+            if (found != null)
+                throw new IOException("Duplicate retained-media maintenance identity at "
+                        + found + " and " + key);
+            found = key;
+        }
+        return Optional.ofNullable(found);
+    }
+
+    private String rotateMaintenanceBehindCursor(MediaMaintenanceJob.Kind kind,
+                                                  Identity identity, String sourceKey,
+                                                  int sourceShard) throws IOException {
+        int targetShard = (sourceShard + MediaMaintenanceCheckpoint.SHARD_COUNT - 1)
+                % MediaMaintenanceCheckpoint.SHARD_COUNT;
+        String targetKey = maintenanceKey(kind, identity, targetShard);
+        Path source = objectPathWithoutCreatingParents(sourceKey);
+        readRegularFileAttributes(source, sourceKey, "media maintenance job");
+        Path target = writablePath(targetKey);
+        if (Files.exists(target, LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("Duplicate retained-media maintenance identity at " + targetKey);
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            throw new IOException("Retained-media maintenance rotation requires atomic rename", e);
+        }
+        forceDirectory(source.getParent());
+        forceDirectory(target.getParent());
+        return targetKey;
+    }
+
     private static String maintenanceKey(MediaMaintenanceJob.Kind kind, Identity identity) {
         String mediaSetId = identity.mediaSetId();
         int shard = Integer.parseInt(mediaSetId.substring(0, 2), 16);
-        return maintenanceShardPrefix(kind, shard) + mediaSetId + ".json";
+        return maintenanceKey(kind, identity, shard);
+    }
+
+    private static String maintenanceKey(MediaMaintenanceJob.Kind kind, Identity identity,
+                                         int shard) {
+        return maintenanceShardPrefix(kind, shard) + identity.mediaSetId() + ".json";
+    }
+
+    private static List<String> maintenanceKeys(MediaMaintenanceJob.Kind kind,
+                                                Identity identity) {
+        List<String> keys = new ArrayList<>(MediaMaintenanceCheckpoint.SHARD_COUNT);
+        for (int shard = 0; shard < MediaMaintenanceCheckpoint.SHARD_COUNT; shard++)
+            keys.add(maintenanceKey(kind, identity, shard));
+        return keys;
     }
 
     private static String maintenanceShardPrefix(MediaMaintenanceJob.Kind kind, int shard) {
@@ -1489,6 +1729,35 @@ public final class MediaSetStore {
                 || checkpoint.processedThrough() == null || checkpoint.updatedAt() == null
                 || checkpoint.updatedAt().isBefore(checkpoint.processedThrough()))
             throw new IllegalArgumentException("Invalid retained-media scan checkpoint");
+    }
+
+    private static void validateLateArrivalCheckpoint(
+            RetentionLateArrivalCheckpoint checkpoint) {
+        Objects.requireNonNull(checkpoint, "checkpoint");
+        new RetentionLateArrivalCheckpoint(checkpoint.schemaVersion(), checkpoint.windowStart(),
+                checkpoint.processedThrough(), checkpoint.windowEnd(),
+                checkpoint.lastCompletedAt(), checkpoint.updatedAt());
+    }
+
+    private static void validateReconciliationCheckpoint(
+            RetentionReconciliationCheckpoint checkpoint) {
+        Objects.requireNonNull(checkpoint, "checkpoint");
+        new RetentionReconciliationCheckpoint(checkpoint.schemaVersion(),
+                checkpoint.windowStart(), checkpoint.processedThrough(), checkpoint.windowEnd(),
+                checkpoint.lastCompletedAt(), checkpoint.updatedAt());
+    }
+
+    private static void validateLegacyReconciliationCheckpoint(
+            LegacyReconciliationCheckpoint checkpoint) {
+        if (checkpoint == null || checkpoint.schemaVersion() != 1
+                || checkpoint.processedThrough() == null || checkpoint.updatedAt() == null
+                || checkpoint.updatedAt().isBefore(checkpoint.processedThrough()))
+            throw new IllegalArgumentException(
+                    "Invalid legacy retained-media reconciliation checkpoint");
+    }
+
+    private record LegacyReconciliationCheckpoint(
+            int schemaVersion, Instant processedThrough, Instant updatedAt) {
     }
 
     private static void validateMaintenanceCheckpoint(MediaMaintenanceCheckpoint checkpoint) {
