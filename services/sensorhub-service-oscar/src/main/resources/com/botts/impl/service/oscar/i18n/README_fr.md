@@ -726,10 +726,12 @@ La sauvegarde gérée par OSCAR est désactivée par défaut. Dans ce mode, `bac
 `backup-prune` et `restore` sont refusées avant toute mutation. PostgreSQL s'exécute avec
 `archive_mode=off`, sans commande d'archivage externe ni montage WAL de l'hôte. Un site qui a besoin
 d'un point de reprise géré peut utiliser la mise à niveau validée pour choisir le mode `single` sur
-un chemin absolu d'un disque secondaire. Chaque sauvegarde manuelle est un instantané autonome dont
-les WAL nécessaires sont transférés dans la sauvegarde de base ; le nouvel instantané doit être
-vérifié avant le changement de `CURRENT` et la suppression de l'ancien instantané géré. La commande
-historique `backup-prune` est retirée.
+un chemin de sauvegarde absolu sûr, choisi par l'opérateur et distinct des racines de la version et
+de l'archive. Un disque physique séparé est recommandé pour isoler les défaillances, mais
+n'est pas obligatoire. Chaque sauvegarde manuelle est un instantané autonome dont les WAL
+nécessaires sont transférés dans la sauvegarde de base ; le nouvel instantané doit être vérifié avant
+le changement de `CURRENT` et la suppression de l'ancien instantané géré. La commande historique
+`backup-prune` est retirée.
 
 Utilisez les commandes `archive status`, `archive verify`, de conservation, d'export portable et de
 suppression avec simulation/jeton du lanceur, ainsi que `backup` et `backup-verify` uniquement en mode

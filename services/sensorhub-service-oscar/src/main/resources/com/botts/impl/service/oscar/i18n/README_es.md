@@ -726,7 +726,9 @@ Las copias gestionadas por OSCAR están desactivadas de forma predeterminada. En
 `backup-verify`, `backup-prune` y `restore` se rechazan antes de cualquier cambio. PostgreSQL se
 ejecuta con `archive_mode=off`, sin orden de archivado externa ni montaje WAL del host. Un sitio que
 necesite un punto de recuperación gestionado puede usar la actualización validada para elegir el
-modo `single` en una ruta absoluta de una unidad secundaria. Cada copia manual es una instantánea
+modo `single` con una ruta de copia de seguridad absoluta y segura, elegida por el operador, que no
+se solape con las raíces de la versión ni del archivo. Se recomienda una unidad física
+separada para aislar fallos, pero no es obligatoria. Cada copia manual es una instantánea
 autocontenida con el WAL necesario transmitido dentro de la copia base; la nueva instantánea debe
 verificarse antes de cambiar `CURRENT` y eliminar la instantánea gestionada anterior. El comando
 heredado `backup-prune` está retirado.

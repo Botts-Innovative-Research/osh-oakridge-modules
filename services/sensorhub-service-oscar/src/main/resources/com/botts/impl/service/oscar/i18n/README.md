@@ -748,10 +748,12 @@ Parquet archive.
 OSCAR-managed backup is disabled by default. In that mode, `backup`, `backup-verify`,
 `backup-prune`, and `restore` refuse before mutation. PostgreSQL runs with `archive_mode=off`, no
 external archive command, and no host WAL bind. A site that needs an OSCAR-managed recovery point
-may use the validated upgrade workflow to opt into `single` mode on an absolute secondary-drive
-path. Each manual backup is one self-contained snapshot with required WAL streamed into its base
-backup; the new snapshot must verify before `CURRENT` changes and the superseded managed snapshot
-is removed. The legacy `backup-prune` command is retired.
+may use the validated upgrade workflow to opt into `single` mode on an operator-selected safe
+absolute backup path that does not overlap the release or archive roots. A separate physical
+drive is recommended for fault isolation but is not required. Each manual backup is one
+self-contained snapshot with required WAL streamed into its base backup; the new snapshot must
+verify before `CURRENT` changes and the superseded managed snapshot is removed. The legacy
+`backup-prune` command is retired.
 
 Use the release launcher's `archive status`, `archive verify`, hold, portable-export, and tokenized
 dry-run/purge workflows, plus `backup` and `backup-verify` only in `single` mode. Protect the backup
