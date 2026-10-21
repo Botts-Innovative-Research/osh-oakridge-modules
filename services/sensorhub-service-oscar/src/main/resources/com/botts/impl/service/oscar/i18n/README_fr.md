@@ -145,7 +145,7 @@ Il associe une image PNG/JPG/JPEG à ses limites inférieur gauche et supérieur
 
 | Champ | Défaut | Comportement |
 | --- | ---: | --- |
-| Âge avant conservation de cinq images (jours) | 1 | Âge à partir duquel la vidéo source d'une occupation peut être convertie en exactement cinq JPEG conservés. |
+| Âge avant conservation de cinq images (jours) | 0 | Âge minimal à partir duquel la vidéo source d'une occupation peut être convertie en exactement cinq JPEG conservés. Zéro rend les clips terminés immédiatement éligibles à la conversion asynchrone. |
 | Période de requête vidéo (minutes) | 5 | Intervalle de recherche des vidéos nouvellement éligibles ; c'est aussi la largeur maximale en temps d'événement de chaque requête à la base. |
 | Rattrapage maximal de conservation (heures) | 6 | Plage maximale de temps d'événement historique traitée par cycle. Le reliquat reprend depuis un curseur durable. |
 | Tolérance des arrivées tardives (heures) | 24 | Délai avant que le curseur contigu des arrivées tardives ne finalise un instant d'événement. Les validations dans cette tolérance ne peuvent pas être omises. |
@@ -171,15 +171,16 @@ l'horloge, les balayages figés actifs s'arrêtent à la limite d'éligibilité 
 fin durable. Un flux sans plage temporelle de résultats exploitable est sondé directement ; la
 découverte initiale revient prudemment au début de l'époque uniquement si ce flux contient une
 occupation éligible, au lieu de se fier à la plage plus récente d'un autre flux. Un flux vide sans
-plage ne force pas ce retour. Avec les valeurs par défaut, la conversion commence lorsque le clip a
-24 heures et le MP4 source est conservé 24 heures supplémentaires après une publication réussie ;
-la suppression normale de la source ne survient donc pas avant environ 48 heures après l'occupation.
-Les cinq JPEG restent la représentation probatoire conservée. Choisissez des valeurs conformes à la
-politique de conservation des preuves du site avant d'activer le nettoyage.
+plage ne force pas ce retour. Avec les valeurs par défaut, un clip terminé est immédiatement éligible
+et le traitement planifié de conservation le convertit de manière asynchrone. Le MP4 source est
+conservé pendant au moins 24 heures après une publication réussie ; la suppression normale de la
+source ne peut donc pas survenir avant cette échéance relative à la publication. Les cinq JPEG
+restent la représentation probatoire conservée. Choisissez des valeurs conformes à la politique de
+conservation des preuves du site avant d'activer le nettoyage.
 
-Les environnements de régression jetables peuvent volontairement fixer l'âge d'éligibilité à 0 jour
-et la période de requête à 1 minute afin d'accélérer les tests déterministes. Ces valeurs sont
-réservées aux tests ; ne les copiez pas dans une configuration de production.
+Les environnements de régression jetables peuvent volontairement réduire la période de requête à 1
+minute afin d'accélérer les tests déterministes. Cette valeur est réservée aux tests ; la période de
+requête de production reste de 5 minutes par défaut.
 
 ### 4.4 Onglet Conservation sous pression de stockage
 
@@ -711,11 +712,12 @@ ultérieur. Un chemin vide, dupliqué ou associé au mauvais événement ou à l
 nouveau fichier orphelin, est un défaut d'intégrité bloquant la version ; ne corrigez pas la base en
 devinant un nom de fichier.
 
-À partir d'un jour, chaque vidéo d'alarme éligible devient exactement cinq JPEG décodables
-séparément (première image, quart, milieu, trois quarts et dernière image). Après une publication
-réussie, la source est conservée pendant 24 heures supplémentaires de délai de retour arrière ; sa
-suppression normale ne survient donc pas avant environ 48 heures après l'occupation. Tout échec de
-conversion et toute conservation applicable préservent la source. Les événements anciens ou non
+Les vidéos d'alarme éligibles sont mises en file pour être converties de manière asynchrone en
+exactement cinq JPEG décodables séparément (première image, quart, milieu, trois quarts et dernière
+image) dès leur découverte. Après une publication réussie, la source est conservée pendant 24 heures
+supplémentaires de délai de retour arrière ; sa suppression normale ne peut donc pas survenir avant
+cette échéance relative à la publication. Tout échec de conversion et toute conservation applicable
+préservent la source. Les événements anciens ou non
 convertis gardent la lecture historique. Le nettoyage sous pression ne peut enlever que des
 ensembles de médias retenus complets et éligibles. Il ne supprime ni fichiers quotidiens, rapports,
 décisions, vidéos historiques non cataloguées, ni archives Parquet.

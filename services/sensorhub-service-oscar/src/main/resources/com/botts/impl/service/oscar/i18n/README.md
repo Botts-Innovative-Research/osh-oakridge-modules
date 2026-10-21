@@ -145,7 +145,7 @@ This tab selects a PNG/JPG/JPEG and assigns its lower-left and upper-right geogr
 
 | Field | Default | Behavior |
 | --- | ---: | --- |
-| Age Before Five-Frame Retention (days) | 1 | Age before an occupancy source video becomes eligible for conversion to exactly five retained JPEGs. |
+| Age Before Five-Frame Retention (days) | 0 | Minimum age before an occupancy source video becomes eligible for conversion to exactly five retained JPEGs. Zero makes completed clips immediately eligible for asynchronous conversion. |
 | Video Query Period (minutes) | 5 | Interval between searches for newly eligible occupancy videos; it is also the maximum event-time width of each database query. |
 | Maximum Retention Catch-up (hours) | 6 | Maximum historical event-time span processed in one cycle. Remaining backlog resumes from a durable cursor. |
 | Late-arrival Allowance (hours) | 24 | Delay before the contiguous late-arrival cursor finalizes an event timestamp. Commits inside this allowance cannot be skipped. |
@@ -170,15 +170,15 @@ After a backwards clock correction, active frozen sweeps pause at the current el
 without losing their durable end. A stream without a usable result-time range is probed directly;
 initial discovery falls back safely to the epoch only when that stream has an eligible occupancy,
 instead of trusting another stream's newer range. An empty range-less stream does not force fallback.
-With the defaults, conversion begins when the clip is 24 hours
-old and the source MP4 is retained for another 24 hours after successful publication, so normal
-source deletion is no earlier than roughly 48 hours after the occupancy. The five JPEGs remain as
-the retained evidence representation. Select values that satisfy site evidence-retention policy
-before enabling cleanup.
+With the defaults, a completed clip is immediately eligible and the scheduled retention worker
+converts it asynchronously. The source MP4 is retained for at least 24 hours after successful
+publication, so normal source deletion cannot occur before that publication-relative deadline. The
+five JPEGs remain as the retained evidence representation. Select values that satisfy site
+evidence-retention policy before enabling cleanup.
 
-Disposable regression fixtures may deliberately set the eligibility age to 0 days and the query
-period to 1 minute to accelerate deterministic tests. Those are test-only overrides; do not copy
-them into a production configuration.
+Disposable regression fixtures may deliberately reduce the query period to 1 minute to accelerate
+deterministic tests. That is a test-only override; the production query-period default remains 5
+minutes.
 
 ### 4.4 Storage Pressure Retention Config tab
 
@@ -736,10 +736,11 @@ or late unpublished recordings and hidden partial files are removed instead of b
 later event. Treat a clip attached to the wrong event/camera, a duplicate/blank path, or a new orphan
 as a release-blocking integrity fault rather than repairing the database by guessing a filename.
 
-At one day, eligible alarm clips become exactly five independently decodable JPEGs (first, quarter,
-middle, three-quarter, last). After successful publication, the source video remains for a further
-24-hour rollback grace, so normal source deletion is no earlier than roughly 48 hours after the
-occupancy; every conversion failure and applicable hold preserves it. Old or unconverted events
+Eligible alarm clips are queued for asynchronous conversion to exactly five independently decodable
+JPEGs (first, quarter, middle, three-quarter, last) as soon as they are discovered. After successful
+publication, the source video remains for a further 24-hour rollback grace, so normal source
+deletion cannot occur before that publication-relative deadline; every conversion failure and
+applicable hold preserves it. Old or unconverted events
 retain legacy playback. Storage-pressure cleanup can remove only complete, eligible retained-media
 sets. It does not remove daily files, reports, adjudications, legacy uncataloged video, or the
 Parquet archive.

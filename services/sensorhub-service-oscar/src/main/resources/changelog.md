@@ -4,12 +4,13 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 ### Changed
 - The English, Spanish, French, and Greek operator manuals now describe the exact 3.9.2 production
-  storage policy: two-day archive eligibility plus one-day verified hot-row grace, one-day
-  five-frame media eligibility plus 24-hour source grace, bounded 30-day sealed-journal cleanup
-  with an optional backup gate, managed backup disabled by default with opt-in single-snapshot
-  replacement, and PostgreSQL external WAL archiving disabled.
-- Video retention now defaults to producing five JPEGs after 24 hours, while preserving the source
-  MP4 for a further 24-hour rollback grace after successful publication. The forward scanner uses
+  storage policy: two-day archive eligibility plus one-day verified hot-row grace, immediate
+  asynchronous five-frame media eligibility plus 24-hour source grace, bounded 30-day
+  sealed-journal cleanup with an optional backup gate, managed backup disabled by default with
+  opt-in single-snapshot replacement, and PostgreSQL external WAL archiving disabled.
+- Video retention now defaults to producing five JPEGs asynchronously as soon as completed clips
+  are discovered, while preserving the source MP4 for a further 24-hour rollback grace after
+  successful publication. The forward scanner uses
   cached occupancy datastream IDs; a delayed contiguous cursor guarantees coverage inside the
   configured late-arrival allowance, while restart-safe frozen full-history sweeps recover later
   commits and lost catalog state. Both paths are durably bounded instead of replaying a full

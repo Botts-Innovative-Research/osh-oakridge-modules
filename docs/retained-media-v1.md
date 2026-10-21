@@ -267,7 +267,7 @@ bucket service.
 
 The existing video-retention configuration adds:
 
-- `timeToRetention` (default `1` day);
+- `timeToRetention` (default `0` days, for immediate asynchronous eligibility);
 - `videoQueryPeriod` (default `5` minutes);
 - `jpegQuality` (default `85`);
 - `sourceRollbackGraceHours` (default `24`);
@@ -281,10 +281,11 @@ The existing video-retention configuration adds:
 - `maintenanceWorkLimit` (default `200`); and
 - `metadataReclamationWorkLimit` (default `200`).
 
-With the defaults, frame conversion becomes eligible at 24 hours. The original MP4 then remains for
-at least the 24-hour rollback grace measured from successful manifest publication, so it is not
-normally removed before roughly 48 hours after the occupancy. The five JPEGs remain as the retained
-representation until a separate evidence or storage-pressure policy removes the media set.
+With the defaults, a completed clip is immediately eligible for asynchronous frame conversion by
+the scheduled retention worker. The original MP4 then remains for at least the 24-hour rollback
+grace measured from successful manifest publication, so normal source deletion cannot occur before
+that publication-relative deadline. The five JPEGs remain as the retained representation until a
+separate evidence or storage-pressure policy removes the media set.
 
 Increasing `maximumCatchUpHours` clears a forward backlog faster but permits more database and
 transcoding work in one cycle. Increasing either catch-up span discovers missing work faster at the

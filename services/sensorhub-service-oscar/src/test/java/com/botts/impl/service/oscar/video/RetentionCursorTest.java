@@ -122,9 +122,9 @@ public class RetentionCursorTest {
     }
 
     @Test
-    public void productionVideoRetentionDefaultsBeginFiveJpegReductionAfterOneDay() {
+    public void productionVideoRetentionDefaultsEnableImmediateAsyncFiveJpegReduction() {
         VideoRetentionConfig config = new VideoRetentionConfig();
-        assertEquals(1, config.timeToRetention);
+        assertEquals(0, config.timeToRetention);
         assertTrue(config.enableFrameRetention);
         assertEquals(5, config.frameRetentionCount);
         assertEquals(24, config.sourceRollbackGraceHours);

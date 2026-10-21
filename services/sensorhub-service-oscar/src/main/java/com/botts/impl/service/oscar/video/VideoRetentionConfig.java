@@ -20,7 +20,7 @@ import org.sensorhub.api.config.DisplayInfo;
 public class VideoRetentionConfig {
 
     @DisplayInfo(label = "Age Before Five-Frame Retention (days)", desc = "Age in days before an occupancy source video is converted to exactly five retained JPEG images; the source MP4 remains through the configured rollback grace period.")
-    public int timeToRetention = 1;
+    public int timeToRetention = 0;
 
     @DisplayInfo(label = "Video Query Period (minutes)", desc = "Number of minutes between queries for occupancy video clips. " +
             "Larger values will result in more occupancies/video paths being loaded at once.")

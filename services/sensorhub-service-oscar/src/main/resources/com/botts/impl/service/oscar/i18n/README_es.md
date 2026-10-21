@@ -145,7 +145,7 @@ Selecciona una imagen PNG/JPG/JPEG y asigna los límites inferior izquierdo y su
 
 | Campo | Predeterminado | Comportamiento |
 | --- | ---: | --- |
-| Antigüedad antes de conservar cinco fotogramas (días) | 1 | Edad a partir de la cual el vídeo fuente de una ocupación puede convertirse en exactamente cinco JPEG conservados. |
+| Antigüedad antes de conservar cinco fotogramas (días) | 0 | Edad mínima para que el vídeo fuente de una ocupación pueda convertirse en exactamente cinco JPEG conservados. Cero hace que los clips terminados sean elegibles inmediatamente para la conversión asíncrona. |
 | Periodo de consulta de vídeo (minutos) | 5 | Intervalo entre búsquedas de vídeos recién elegibles; también es la anchura máxima de tiempo de evento de cada consulta a la base de datos. |
 | Recuperación máxima de retención (horas) | 6 | Intervalo máximo de tiempo histórico de eventos procesado por ciclo. El trabajo restante continúa desde un cursor duradero. |
 | Tolerancia de llegadas tardías (horas) | 24 | Retraso antes de que el cursor contiguo de llegadas tardías dé por definitivo un instante del evento. Las confirmaciones dentro de esta tolerancia no pueden omitirse. |
@@ -171,15 +171,16 @@ congelados activos se detienen en el límite de elegibilidad actual sin perder s
 flujo sin un intervalo de tiempo de resultados utilizable se consulta directamente; el descubrimiento
 inicial vuelve de forma segura al inicio de época solo si ese flujo contiene una ocupación elegible,
 en vez de confiar en el intervalo más reciente de otro flujo. Un flujo vacío sin intervalo no fuerza
-esa vuelta. Con los valores predeterminados, la conversión comienza cuando el clip tiene 24 horas y
-el MP4 fuente se conserva otras 24 horas después de publicarse correctamente, por lo que la
-eliminación normal del origen no ocurre antes de unas 48 horas desde la ocupación. Los cinco JPEG
-siguen siendo la representación probatoria conservada. Defina valores compatibles con la política
-de conservación de evidencias del sitio antes de activar la limpieza.
+esa vuelta. Con los valores predeterminados, un clip terminado es elegible inmediatamente y el
+trabajador de retención programado lo convierte de forma asíncrona. El MP4 fuente se conserva al
+menos 24 horas después de publicarse correctamente, por lo que la eliminación normal del origen no
+puede ocurrir antes de ese plazo relativo a la publicación. Los cinco JPEG siguen siendo la
+representación probatoria conservada. Defina valores compatibles con la política de conservación de
+evidencias del sitio antes de activar la limpieza.
 
-Los entornos desechables de regresión pueden fijar deliberadamente la antigüedad de elegibilidad en
-0 días y el periodo de consulta en 1 minuto para acelerar pruebas deterministas. Son valores
-exclusivos de prueba; no los copie en una configuración de producción.
+Los entornos desechables de regresión pueden reducir deliberadamente el periodo de consulta a 1
+minuto para acelerar pruebas deterministas. Es un valor exclusivo de prueba; el periodo de consulta
+predeterminado en producción sigue siendo de 5 minutos.
 
 ### 4.4 Pestaña Retención por presión de almacenamiento
 
@@ -711,11 +712,12 @@ y los archivos parciales ocultos, se eliminan en vez de reutilizarse en un event
 ruta vacía, duplicada o asociada al evento o cámara equivocados, o un nuevo archivo huérfano, es un
 fallo de integridad que bloquea la versión; no repare la base adivinando un nombre de archivo.
 
-A partir de un día, cada vídeo de alarma elegible se convierte en exactamente cinco JPEG
-decodificables de forma independiente (primero, cuarto, centro, tres cuartos y último). Tras una
-publicación correcta, el vídeo fuente se conserva durante otras 24 horas de gracia de reversión, por
-lo que la eliminación normal no ocurre antes de unas 48 horas desde la ocupación; cualquier fallo de
-conversión y toda retención aplicable lo conservan. Los eventos antiguos o no convertidos mantienen
+Los vídeos de alarma elegibles se ponen en cola para su conversión asíncrona a exactamente cinco
+JPEG decodificables de forma independiente (primero, cuarto, centro, tres cuartos y último) en cuanto
+se descubren. Tras una publicación correcta, el vídeo fuente se conserva durante otras 24 horas de
+gracia de reversión, por lo que la eliminación normal no puede ocurrir antes de ese plazo relativo a
+la publicación; cualquier fallo de conversión y toda retención aplicable lo conservan. Los eventos
+antiguos o no convertidos mantienen
 la reproducción heredada. La limpieza por presión solo puede quitar conjuntos completos y aptos de
 medios retenidos. No elimina archivos diarios, informes, adjudicaciones, vídeo heredado sin catálogo
 ni el archivo Parquet.
