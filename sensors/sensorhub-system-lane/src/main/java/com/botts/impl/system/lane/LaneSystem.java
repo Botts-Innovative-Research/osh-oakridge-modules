@@ -71,7 +71,7 @@ import java.util.concurrent.*;
  * @author Kalyn Stricklin
  * @since March 2025
  */
-public class LaneSystem extends SensorSystem {
+public class LaneSystem extends SensorSystem implements IAutoStartDispatchStatus {
 
     private static final String URN_PREFIX = "urn:";
     private static final String LANE_SYSTEM_PREFIX = URN_PREFIX + "osh:system:lane:";
@@ -90,6 +90,7 @@ public class LaneSystem extends SensorSystem {
     private final Object subscriptionLock = new Object();
     private long subscriptionGeneration = 0;
     private ExecutorService threadPool = null;
+    private volatile boolean autoStartDispatchComplete;
     Map<String, FFMPEGConfig> ffmpegConfigs = null;
     OccupancyWrapper occupancyWrapper;
     OccupancyStatusOutput occupancyStatusOutput;
@@ -98,6 +99,28 @@ public class LaneSystem extends SensorSystem {
     AdjudicationControl adjudicationControl;
     WebIdOutput webIdOutput;
     N42Output<?> n42Output;
+
+    @Override
+    protected void setState(ModuleEvent.ModuleState newState) {
+        // SensorSystem publishes STARTED immediately before it synchronously
+        // dispatches start to each auto-start child. Keep the separate boundary
+        // false across that entire pass so application readiness cannot race it.
+        if (newState == ModuleEvent.ModuleState.STARTED) {
+            autoStartDispatchComplete = false;
+            try {
+                super.setState(newState);
+            } finally {
+                autoStartDispatchComplete = true;
+            }
+        } else {
+            super.setState(newState);
+        }
+    }
+
+    @Override
+    public boolean isAutoStartDispatchComplete() {
+        return autoStartDispatchComplete;
+    }
 
     @Override
     protected void doInit() throws SensorHubException {

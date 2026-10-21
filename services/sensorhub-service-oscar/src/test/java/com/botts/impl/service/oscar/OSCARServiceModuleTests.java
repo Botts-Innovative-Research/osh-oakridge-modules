@@ -13,6 +13,19 @@ import static org.junit.Assert.assertTrue;
 public class OSCARServiceModuleTests {
 
     @Test
+    public void readinessIsWithdrawnBeforeBaseShutdown() throws SensorHubException {
+        List<String> lifecycle = new ArrayList<>();
+        OSCARServiceModule module = new OSCARServiceModule() {
+            @Override void stopApplicationReadiness() { lifecycle.add("readiness"); }
+            @Override void stopBaseModule() { lifecycle.add("base"); }
+        };
+
+        module.doStop();
+
+        assertEquals(List.of("readiness", "base"), lifecycle);
+    }
+
+    @Test
     public void everyWorkerIsSignalledBeforeTheFirstAwait() throws SensorHubException {
         List<String> lifecycle = new ArrayList<>();
         OSCARServiceModule module = new OSCARServiceModule() {
