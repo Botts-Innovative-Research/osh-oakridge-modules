@@ -145,7 +145,7 @@ This tab selects a PNG/JPG/JPEG and assigns its lower-left and upper-right geogr
 
 | Field | Default | Behavior |
 | --- | ---: | --- |
-| Age Before Five-Frame Retention (days) | 7 | Age before an occupancy source video is converted to exactly five retained JPEGs. |
+| Age Before Five-Frame Retention (days) | 0 | Zero makes a completed eligible occupancy available for conversion to exactly five retained JPEGs on the next bounded retention cycle. |
 | Video Query Period (minutes) | 1 | Interval between searches for eligible occupancy videos. A larger interval processes more eligible records per query. |
 | Maximum Retention Catch-up (hours) | 6 | Maximum historical event-time span processed in one cycle. Remaining backlog resumes from a durable cursor. |
 | Late-arrival Overlap (hours) | 24 | Recent interval rescanned for occupancies committed after the forward cursor passed their event time. Durable IDs suppress duplicate work. |
@@ -696,11 +696,11 @@ Duplicate names and duplicate address/port pairs are rejected. **Edit** changes 
 ## 12. Data retention and storage behavior
 
 The standard 3.9.2 profile uses the tiered PostgreSQL database. Recent and operational records stay
-in PostgreSQL; configured high-volume detector observations older than 30 days are copied in
-bounded background jobs to cataloged, ZSTD-compressed Parquet. Hot-row deletion is disabled by
-default. Enable it only after archive verification, exact hot/cold parity, rollback grace, a
-verified backup, and an isolated restore drill. Active generation or observation holds block the
-corresponding deletion.
+in PostgreSQL. Configured high-volume detector observations become eligible for bounded background
+archival to cataloged, ZSTD-compressed Parquet after 48 hours. OSCAR deletes their hot PostgreSQL
+rows only after archive validation and exact hot/cold parity succeed and a further 24-hour rollback
+overlap expires—about 72 hours total, plus scheduler delay. Active generation or observation holds
+block the corresponding deletion.
 
 Each RPM driver requires the direct daily-file journal. It captures the source record before
 parsing where possible and publishes the completed day as an immutable legacy CSV plus SHA-256
@@ -714,16 +714,25 @@ or late unpublished recordings and hidden partial files are removed instead of b
 later event. Treat a clip attached to the wrong event/camera, a duplicate/blank path, or a new orphan
 as a release-blocking integrity fault rather than repairing the database by guessing a filename.
 
-Eligible aging alarm clips become exactly five independently decodable JPEGs (first, quarter,
-middle, three-quarter, last). The source video remains through the rollback grace and on every
+Completed eligible alarm clips become exactly five independently decodable JPEGs (first, quarter,
+middle, three-quarter, last) on the next bounded retention cycle. The source MP4 remains for at
+least 24 hours after the five JPEGs and their manifest are committed, and remains on every
 conversion failure; old or unconverted events retain legacy playback. Storage-pressure cleanup can
 remove only complete, eligible retained-media sets. It does not remove daily files, reports,
 adjudications, legacy uncataloged video, or the Parquet archive.
 
-Use the release launcher's `backup`, `backup-verify`, `archive status`, `archive verify`, hold,
-portable-export, and tokenized dry-run/purge workflows. A coordinated backup covers PostgreSQL,
-OSCAR state, the cold archive, and archived WAL; protect its separate encryption key and an
-off-host verified copy. Never delete cataloged archive/media files directly. A pre-3.9.2 `upgrade`
+Fresh installations default to `OSCAR_BACKUP_MODE=disabled`: no backup is scheduled and PostgreSQL
+does not continuously archive WAL externally. An operator may explicitly select the manual
+`single` mode and an absolute secondary-drive path during `init` or `upgrade`. In that mode,
+`backup` streams the required WAL into the PostgreSQL base backup and atomically publishes one
+authenticated `CURRENT` snapshot containing PostgreSQL, OSCAR state, and the cold archive;
+`backup-verify` validates it. The workflow keeps no cumulative backup history, performs no automatic
+backup pruning, and requires the separate authentication key for verification and restore. A legacy
+WAL path may be preserved inertly during upgrade to avoid destructive configuration changes, but
+current backup and restore do not mount, read, or write it.
+
+Use the release launcher's `archive status`, `archive verify`, hold, portable-export, and tokenized
+dry-run/purge workflows. Never delete cataloged archive/media files directly. A pre-3.9.2 `upgrade`
 preserves its old database and configuration and does not create the full storage profile or enable
 PostgreSQL checksums; initialize a fresh 3.9.2 deployment or use a separately validated production
 migration. The packaged `documentation/` storage guides are the authoritative runbooks.
@@ -733,7 +742,7 @@ then lets OSCAR drain and save while PostgreSQL remains available, and stops Pos
 not run an unscoped multi-service `docker compose stop` or `docker compose restart`: simultaneous
 signals can remove the database while OSCAR is still completing queued writes and module shutdown.
 
-Before changing retention, database selection, storage paths, automatic backup pruning, or
+Before changing retention, database selection, storage paths, backup mode or destination, or
 **Delete Data on Lane Removal**, confirm the site's evidence, privacy, legal-hold, recovery, and
 records-destruction requirements.
 
@@ -752,8 +761,9 @@ records-destruction requirements.
 - [ ] Database ID, Web ID root, statistics interval, and Auto Start match site policy.
 - [ ] Video and pressure-retention settings were reviewed before enabling cleanup.
 - [ ] A fresh 3.9.2 database/configuration or an approved migration was used; archive status and integrity verification pass.
-- [ ] A coordinated backup verifies, its external key is escrowed separately, an off-host copy exists, and an isolated restore drill has passed.
-- [ ] A sample lane publishes a journal-backed daily CSV/manifest; retained events show five JPEGs while legacy events still play.
+- [ ] `OSCAR_BACKUP_MODE` is intentionally `disabled`, or manual `single` mode uses an absolute secondary-drive path; if enabled, its one authenticated `CURRENT` snapshot verifies, its external key is escrowed separately, and an isolated restore drill has passed.
+- [ ] A sample lane publishes a journal-backed daily CSV/manifest; a completed event promptly produces five JPEGs, its source MP4 remains for 24 hours, and legacy events still play.
+- [ ] A controlled archive sample becomes eligible at 48 hours and its PostgreSQL rows remain until archive/parity verification and the additional 24-hour rollback overlap have passed.
 - [ ] Bucket Storage Service and OSCAR Service Module are started.
 
 ### Site diagram

@@ -145,7 +145,7 @@ Il associe une image PNG/JPG/JPEG à ses limites inférieur gauche et supérieur
 
 | Champ | Défaut | Comportement |
 | --- | ---: | --- |
-| Âge avant conservation de cinq images (jours) | 7 | Âge avant conversion de la vidéo source d'une occupation en exactement cinq JPEG conservés. |
+| Âge avant conservation de cinq images (jours) | 0 | Zéro rend une occupation terminée et éligible convertible en exactement cinq JPEG conservés au prochain cycle borné de conservation. |
 | Période de requête vidéo (minutes) | 1 | Intervalle de recherche des vidéos éligibles. Une valeur plus grande regroupe davantage d'enregistrements. |
 | Rattrapage maximal de conservation (heures) | 6 | Plage maximale de temps d'événement historique traitée par cycle. Le reliquat reprend depuis un curseur durable. |
 | Chevauchement des arrivées tardives (heures) | 24 | Intervalle récent réinterrogé pour les occupations validées après le passage du curseur ; les identifiants durables évitent les doublons. |
@@ -660,12 +660,13 @@ Vérifiez voies/événements distants, ligne Nationale, rapport et événement a
 ## 12. Conservation des données et stockage
 
 Le profil standard 3.9.2 utilise la base PostgreSQL à plusieurs niveaux. Les enregistrements récents
-et opérationnels restent dans PostgreSQL ; les observations configurées de détecteurs à fort volume
-de plus de 30 jours sont copiées par des tâches d'arrière-plan bornées vers des fichiers Parquet
-catalogués et compressés en ZSTD. La suppression des lignes chaudes est désactivée par défaut. Ne
-l'activez qu'après vérification de l'archive, parité exacte chaud/froid, délai de retour arrière,
-sauvegarde vérifiée et exercice de restauration isolé. Une conservation active sur une génération
-ou une observation bloque la suppression correspondante.
+et opérationnels restent dans PostgreSQL. Les observations configurées de détecteurs à fort volume
+deviennent éligibles après 48 heures à un archivage par tâches d'arrière-plan bornées vers des
+fichiers Parquet catalogués et compressés en ZSTD. OSCAR ne supprime leurs lignes chaudes de
+PostgreSQL qu'après validation de l'archive, parité exacte chaud/froid et expiration d'un
+chevauchement supplémentaire de retour arrière de 24 heures, soit environ 72 heures au total, plus
+le délai du planificateur. Une conservation active sur une génération ou une observation bloque la
+suppression correspondante.
 
 Chaque pilote RPM exige le journal direct des fichiers quotidiens. Il capture si possible
 l'enregistrement source avant analyse, puis publie la journée terminée sous forme de CSV historique
@@ -682,20 +683,30 @@ ultérieur. Un chemin vide, dupliqué ou associé au mauvais événement ou à l
 nouveau fichier orphelin, est un défaut d'intégrité bloquant la version ; ne corrigez pas la base en
 devinant un nom de fichier.
 
-Chaque vidéo d'alarme ancienne et éligible devient exactement cinq JPEG décodables séparément
-(première image, quart, milieu, trois quarts et dernière image). La source est conservée pendant le
-délai de retour arrière et après tout échec ; les événements anciens ou non convertis gardent la
-lecture historique. Le nettoyage sous pression ne peut enlever que des ensembles de médias retenus
-complets et éligibles. Il ne supprime ni fichiers quotidiens, rapports, décisions, vidéos historiques
-non cataloguées, ni archives Parquet.
+Chaque vidéo d'alarme terminée et éligible devient exactement cinq JPEG décodables séparément
+(première image, quart, milieu, trois quarts et dernière image) au prochain cycle borné de
+conservation. Le MP4 source reste disponible au moins 24 heures après la validation des cinq JPEG et
+de leur manifeste, ainsi qu'après tout échec de conversion ; les événements anciens ou non
+convertis gardent la lecture historique. Le nettoyage sous pression ne peut enlever que des
+ensembles de médias retenus complets et éligibles. Il ne supprime ni fichiers quotidiens, rapports,
+décisions, vidéos historiques non cataloguées, ni archives Parquet.
 
-Utilisez les commandes `backup`, `backup-verify`, `archive status`, `archive verify`, de
-conservation, d'export portable et de suppression avec simulation/jeton du lanceur de la version.
-La sauvegarde coordonnée couvre PostgreSQL, l'état OSCAR, l'archive froide et les WAL archivés ;
-protégez séparément sa clé de chiffrement et une copie hors hôte vérifiée. Ne supprimez jamais à la
-main les fichiers catalogués. Une mise à niveau antérieure à 3.9.2 conserve l'ancienne base et configuration : elle
-ne crée pas tout le profil et n'active pas les sommes de contrôle PostgreSQL. Initialisez un nouveau
-déploiement 3.9.2 ou appliquez une migration de production validée séparément. Les guides de
+Les nouvelles installations utilisent `OSCAR_BACKUP_MODE=disabled` par défaut : aucune sauvegarde
+n'est planifiée et PostgreSQL n'archive pas continuellement les WAL à l'extérieur. Pendant `init` ou
+`upgrade`, un opérateur peut choisir explicitement le mode manuel `single` et un chemin absolu sur
+un disque secondaire. Dans ce mode, `backup` intègre par flux les WAL requis dans la sauvegarde de
+base PostgreSQL et publie atomiquement un unique instantané authentifié `CURRENT` contenant
+PostgreSQL, l'état OSCAR et l'archive froide ; `backup-verify` le valide. Le flux ne conserve aucun
+historique cumulatif, n'effectue aucun élagage automatique et exige la clé d'authentification séparée
+pour la vérification et la restauration. Un ancien chemin WAL peut être conservé inerte lors d'une
+mise à niveau afin d'éviter une modification destructive, mais les sauvegarde et restauration
+actuelles ne le montent, ne le lisent et ne l'écrivent pas.
+
+Utilisez les commandes `archive status`, `archive verify`, de conservation, d'export portable et de
+suppression avec simulation/jeton du lanceur de la version. Ne supprimez jamais à la main les
+fichiers catalogués. Une mise à niveau antérieure à 3.9.2 conserve l'ancienne base et configuration :
+elle ne crée pas tout le profil et n'active pas les sommes de contrôle PostgreSQL. Initialisez un
+nouveau déploiement 3.9.2 ou appliquez une migration de production validée séparément. Les guides de
 stockage de `documentation/` sont les procédures de référence.
 
 Utilisez le lanceur de la version pour arrêter ou redémarrer tout le déploiement. Il arrête d'abord
@@ -705,7 +716,7 @@ disponible, puis arrête PostgreSQL en dernier. N'exécutez pas
 simultanés peuvent retirer la base de données alors qu'OSCAR termine encore les écritures en file
 et l'arrêt de ses modules.
 
-Avant de modifier conservation, base, chemins, élagage automatique des sauvegardes ou **Supprimer
+Avant de modifier conservation, base, chemins, mode ou destination de sauvegarde, ou **Supprimer
 les données avec la voie**, confirmez les exigences de preuve, confidentialité, gel juridique,
 reprise et destruction des documents.
 
@@ -722,8 +733,9 @@ reprise et destruction des documents.
 - [ ] ID de nœud unique ; base, Web ID, statistiques et démarrage automatique vérifiés.
 - [ ] Conservation vidéo et pression examinées avant toute purge.
 - [ ] Une base/configuration 3.9.2 neuve ou une migration approuvée est utilisée ; l'état et l'intégrité de l'archive sont valides.
-- [ ] Une sauvegarde coordonnée est vérifiée, sa clé externe est séquestrée séparément, une copie hors hôte existe et une restauration isolée a réussi.
-- [ ] Une voie témoin publie CSV/manifeste depuis le journal ; les événements retenus montrent cinq JPEG et les anciens restent lisibles.
+- [ ] `OSCAR_BACKUP_MODE` est volontairement réglé sur `disabled`, ou le mode manuel `single` utilise un chemin absolu sur un disque secondaire ; s'il est activé, son unique instantané authentifié `CURRENT` est vérifié, sa clé externe est séquestrée séparément et un exercice de restauration isolé a réussi.
+- [ ] Une voie témoin publie CSV/manifeste depuis le journal ; un événement terminé produit rapidement cinq JPEG, son MP4 source reste 24 heures et les anciens événements restent lisibles.
+- [ ] Un échantillon contrôlé devient archivable à 48 heures et ses lignes PostgreSQL restent présentes jusqu'à la vérification archive/parité et l'expiration des 24 heures supplémentaires de chevauchement de retour arrière.
 - [ ] Services de compartiments et OSCAR démarrés.
 
 ### Plan
