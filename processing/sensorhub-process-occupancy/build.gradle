@@ -8,8 +8,10 @@ dependencies {
     implementation project(':sensorhub-driver-videocam')
 }
 
-test {
-    exclude '**/TestProcessWriter.java'
+sourceSets {
+  test {
+    java.exclude '**/TestProcessWriter.java'
+  }
 }
 
 // add info to OSGi manifest
@@ -31,4 +33,3 @@ ext.pom >>= {
     }
   }
 }
-

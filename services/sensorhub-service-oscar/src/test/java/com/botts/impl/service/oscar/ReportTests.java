@@ -231,6 +231,32 @@ public class ReportTests {
     }
 
     @Test
+    public void scopedReportsUseDistinctCachePaths() throws Exception {
+        DataComponent commandDesc = reportControl.getCommandDescription().copy();
+
+        DataBlock firstCommand = commandDesc.createDataBlock();
+        firstCommand.setStringValue(0, ReportCmdType.RDS_SITE.name());
+        firstCommand.setTimeStamp(1, begin);
+        firstCommand.setTimeStamp(2, end);
+        firstCommand.setStringValue(3, "urn:osh:system:lane1");
+        firstCommand.setStringValue(4, EventReportType.NONE.name());
+
+        DataBlock secondCommand = commandDesc.createDataBlock();
+        secondCommand.setStringValue(0, ReportCmdType.RDS_SITE.name());
+        secondCommand.setTimeStamp(1, begin);
+        secondCommand.setTimeStamp(2, end);
+        secondCommand.setStringValue(3, "urn:osh:system:lane2");
+        secondCommand.setStringValue(4, EventReportType.NONE.name());
+
+        var first = reportControl.submitCommand(new CommandData(1, firstCommand)).get();
+        var second = reportControl.submitCommand(new CommandData(2, secondCommand)).get();
+        String firstPath = first.getResult().getInlineRecords().stream().findFirst().orElseThrow().getStringValue();
+        String secondPath = second.getResult().getInlineRecords().stream().findFirst().orElseThrow().getStringValue();
+
+        assertNotEquals(firstPath, secondPath);
+    }
+
+    @Test
     public void generateAdjudicationReport() throws Exception {
         DataComponent commandDesc =  reportControl.getCommandDescription().copy();
 

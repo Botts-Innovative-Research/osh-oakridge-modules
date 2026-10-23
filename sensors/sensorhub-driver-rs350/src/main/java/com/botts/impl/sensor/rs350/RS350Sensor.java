@@ -10,6 +10,7 @@ import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.comm.RobustIPConnection;
 import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileJournalConnection;
 import org.sensorhub.impl.utils.rad.interfaces.IWebIdProvider;
 import org.sensorhub.impl.utils.rad.webid.WebIdAnalyzer;
 import org.slf4j.Logger;
@@ -32,6 +33,7 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
 
     RobustConnection connection;
     MessageHandler messageHandler;
+    DailyFileJournalConnection dailyFileJournal;
     InputStream msgIn;
     private boolean isRunning;
     private Thread tcpConnectionThread;
@@ -107,20 +109,22 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
     protected void doStart() throws SensorHubException {
 
         connection.waitForConnection();
+        connectDailyFileJournal();
         try {
             msgIn = new BufferedInputStream(commProvider.getInputStream());
         } catch (IOException e) {
             throw new SensorException("Error while initializing communications ", e);
         }
 
+        WebIdAnalyzer webIdAnalyzer = null;
         try {
             var oscarServiceModule = getParentHub().getModuleRegistry().getModuleByType(IWebIdProvider.class);
-            var webIdAnalyzer = new WebIdAnalyzer(oscarServiceModule.getWebIdClient(), getParentHub());
-            messageHandler = new MessageHandler(webIdAnalyzer, msgIn, "</RadInstrumentData>", this);
+            webIdAnalyzer = new WebIdAnalyzer(oscarServiceModule.getWebIdClient(), getParentHub());
         } catch (Exception e) {
             logger.warn("Could not attach WebID Analysis to RS350", e);
-            messageHandler = new MessageHandler(null, msgIn, "</RadInstrumentData>", this);
         }
+        messageHandler = new MessageHandler(webIdAnalyzer, msgIn, "</RadInstrumentData>", this,
+                dailyFileJournal);
 
         if (config.outputs.enableStatusOutput) {
             messageHandler.addStatusListener(statusOutput);
@@ -150,6 +154,9 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
     @Override
     protected void doStop() throws SensorHubException {
         isRunning = false;
+        MessageHandler activeHandler = messageHandler;
+        if (activeHandler != null)
+            activeHandler.requestStop();
         if(tcpConnectionThread != null)
             tcpConnectionThread = null;
 
@@ -173,8 +180,51 @@ public class RS350Sensor extends AbstractSensorModule<RS350Config> {
             }
         }
 
-        if (messageHandler != null)
-            messageHandler.stopProcessing();
+        if (activeHandler != null) {
+            try {
+                activeHandler.awaitSourceStopped();
+            } catch (IOException e) {
+                throw new SensorHubException(
+                        "RS350 source reader did not stop before journal close", e);
+            }
+        }
+
+        SensorHubException stopFailure = null;
+        if (dailyFileJournal != null) {
+            try {
+                dailyFileJournal.close();
+                dailyFileJournal = null;
+            } catch (IOException e) {
+                stopFailure = new SensorHubException(
+                        "Unable to close the RS350 daily-file writer", e);
+            }
+        }
+
+        if (activeHandler != null) {
+            try {
+                activeHandler.awaitAncillaryStopped();
+                messageHandler = null;
+            } catch (IOException e) {
+                SensorHubException ancillaryFailure = new SensorHubException(
+                        "RS350 ancillary workers did not stop", e);
+                if (stopFailure == null)
+                    stopFailure = ancillaryFailure;
+                else
+                    stopFailure.addSuppressed(ancillaryFailure);
+            }
+        }
+        if (stopFailure != null)
+            throw stopFailure;
+    }
+
+    private void connectDailyFileJournal() throws SensorHubException {
+        if (dailyFileJournal != null)
+            return;
+        String laneId = getParentSystemUID();
+        if (laneId == null || laneId.isBlank())
+            laneId = getUniqueIdentifier();
+        dailyFileJournal = DailyFileJournalConnection.connect(getParentHub(), laneId,
+                config.dailyFileJournal, getLogger());
     }
 
     public ConnectionStatusOutput getConnectionStatusOutput() {

@@ -1,6 +1,7 @@
 package com.botts.impl.sensor.rapiscan.eml;
 
 import com.botts.impl.sensor.rapiscan.RapiscanSensor;
+import com.botts.impl.sensor.rapiscan.RepetitiveWarningFilter;
 import gov.llnl.ernie.analysis.AnalysisException;
 import gov.llnl.ernie.api.ERNIE_lane;
 import gov.llnl.ernie.api.Results;
@@ -13,10 +14,19 @@ import javax.xml.bind.JAXBException;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 
 public class EMLService implements IEventListener {
+
+    /**
+     * LLNL's legacy XML binding registry is process-global and is not safe to
+     * populate concurrently. A 50-lane restart otherwise lets multiple ERNIE
+     * constructors race while registering the VM250 schema, leaving some
+     * analyzers uninitialized even though their RPM modules report Started.
+     */
+    private static final Object ERNIE_INITIALIZATION_LOCK = new Object();
 
     private ERNIE_lane ernieLane;
     RapiscanSensor parentSensor;
@@ -26,26 +36,31 @@ public class EMLService implements IEventListener {
 
     public EMLService(RapiscanSensor parentSensor) {
         this.parentSensor = parentSensor;
-        this.ernieLane = new ERNIE_lane(
-                parentSensor.getConfiguration().name,
-                parentSensor.getConfiguration().laneID,
-                parentSensor.getConfiguration().emlConfig.isCollimated,
-                parentSensor.getConfiguration().emlConfig.laneWidth,
+        this.ernieLane = createErnieLane(
                 parentSensor.getConfiguration().setupGammaConfig.intervals,
-                parentSensor.getConfiguration().setupGammaConfig.occupancyHoldin
-        );
+                parentSensor.getConfiguration().setupGammaConfig.occupancyHoldin);
         this.scanDataList = new ArrayList<>();
     }
 
     private void updateErnieSetup(int intervals, int holdin) {
-        this.ernieLane = new ERNIE_lane(
+        this.ernieLane = createErnieLane(intervals, holdin);
+    }
+
+    private ERNIE_lane createErnieLane(int intervals, int holdin) {
+        return initializeErnie(() -> new ERNIE_lane(
                 parentSensor.getConfiguration().name,
                 parentSensor.getConfiguration().laneID,
                 parentSensor.getConfiguration().emlConfig.isCollimated,
                 parentSensor.getConfiguration().emlConfig.laneWidth,
                 intervals,
                 holdin
-        );
+        ));
+    }
+
+    static <T> T initializeErnie(Supplier<T> initializer) {
+        synchronized (ERNIE_INITIALIZATION_LOCK) {
+            return initializer.get();
+        }
     }
 
     public void setLatestGammaBackground(String [] scanData) {
@@ -80,6 +95,11 @@ public class EMLService implements IEventListener {
 
 
                 Stream<String> stream = Stream.of(streamArray);
+                // SensorHub may reload JUL configuration after module initialization,
+                // clearing programmatic filters. Reassert the lightweight filter at
+                // the call site so the per-occupancy EML fallback warning cannot flood
+                // production logs after a runtime logging reconfiguration.
+                RepetitiveWarningFilter.install();
                 results = ernieLane.process(stream);
             } catch (ReaderException | AnalysisException | IOException e) {
                 throw new RuntimeException(e);

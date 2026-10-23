@@ -10,6 +10,9 @@ import org.vast.swe.SWEHelper;
 import org.vast.util.TimeExtent;
 
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
 
 public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implements IStreamingControlInterfaceWithResult {
@@ -43,6 +46,11 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
                         .withIso8601Format()
                         .description("End datetime (ISO 8601)")
                         .optional(true))
+                .addField("laneUID", fac.createText()
+                        .label("Lane Unique Identifiers")
+                        .definition(SWEHelper.getPropertyUri("LaneUID"))
+                        .description("Semicolon-separated lane identifiers used to scope the statistics")
+                        .optional(true))
                 .build();
     }
 
@@ -52,6 +60,13 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
         return CompletableFuture.supplyAsync(() -> {
             var start = params.getTimeStamp(0);
             var end = params.getTimeStamp(1);
+            var laneUIDValue = params.getStringValue(2);
+            Set<String> laneUIDs = laneUIDValue == null || laneUIDValue.isBlank() || laneUIDValue.equals("NONE")
+                    ? Set.of()
+                    : Arrays.stream(laneUIDValue.split(";"))
+                            .map(String::trim)
+                            .filter(value -> !value.isBlank())
+                            .collect(Collectors.toSet());
             var execStartTime = System.currentTimeMillis();
 
             if ((start == null && end != null) || (start != null && end == null))
@@ -59,14 +74,14 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
 
             ICommandResult result;
             if (start != null) {
-                // TODO: Return result of createCountStatistics
                 DataBlock resultData = resultDescription.createDataBlock();
-                statsOutput.populateDataBlock(resultData, 0, start, end);
+                statsOutput.populateDataBlock(resultData, 0, start, end, laneUIDs);
                 result = CommandResult.withData(resultData);
             } else {
-                // TODO: Call update for latest site statistics output, and return output observation id
-                statsOutput.publishLatestStatistics();
-                var latestObsId = statsOutput.waitForLatestObservationId();
+                if (!laneUIDs.isEmpty())
+                    return CommandStatus.rejected(command.getID(), "Scoped statistics require both start and end");
+
+                var latestObsId = statsOutput.publishLatestStatisticsAndGetObservationId();
                 if (latestObsId == null)
                     return CommandStatus.failed(command.getID(), "Could not generate latest statistics observation.");
                 result = CommandResult.withObservation(latestObsId);
@@ -74,7 +89,7 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
             return new CommandStatus.Builder()
                     .withResult(result)
                     .withCommand(command.getID())
-                    .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
+                    .withStatusCode(ICommandStatus.CommandStatusCode.COMPLETED)
                     .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(execStartTime), Instant.now()))
                     .build();
         });

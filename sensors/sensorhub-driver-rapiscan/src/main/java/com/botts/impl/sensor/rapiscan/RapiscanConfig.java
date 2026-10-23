@@ -20,6 +20,7 @@ import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.api.sensor.SensorConfig;
 import org.sensorhub.impl.comm.TCPCommProviderConfig;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileJournalClientConfig;
 
 /**
  * Configuration settings for the [NAME] driver exposed via the OpenSensorHub Admin panel.
@@ -63,6 +64,9 @@ public class RapiscanConfig extends SensorConfig {
 
     @DisplayInfo(desc = "EML Lane Settings")
     public EMLConfig emlConfig = new EMLConfig();
+
+    @DisplayInfo(label = "Daily File Journal", desc = "Durable raw daily-file capture policy")
+    public DailyFileJournalClientConfig dailyFileJournal = new DailyFileJournalClientConfig();
 
     @Override
     public LLALocation getLocation(){return positionConfig.location;}

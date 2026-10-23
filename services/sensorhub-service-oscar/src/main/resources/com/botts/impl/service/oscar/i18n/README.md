@@ -1,4 +1,4 @@
-# OSCAR 3.8.3 administrator and operator manual
+# OSCAR 3.9.2 administrator and operator manual
 
 This manual covers the complete first-use and operations workflow including certificate trust, sign-in, site-diagram georeferencing, lane import/manual creation, alarm adjudication and evidence, event review, national statistics, reports, and node federation.
 
@@ -32,7 +32,7 @@ The screenshots show the English interface. OSCAR also supplies Spanish, French,
 
 You need:
 
-- an installed and running OSCAR 3.8.3 deployment;
+- an installed and running OSCAR 3.9.2 deployment;
 - the OSCAR URL, normally `https://oscar.local/` unless deployment selected another hostname;
 - an administrator account for `/sensorhub/admin`;
 - the approved site image and the latitude/longitude of its lower-left and upper-right corners;
@@ -106,9 +106,9 @@ Use the language selector at the top of the administration interface or OSCAR Vi
 
 ### 3.2 Three actions that are easy to confuse
 
-- **Upload** immediately sends the selected file to OSCAR and, for CSV, starts importing new lanes.
+- **Upload** immediately sends the selected file to OSCAR and, for CSV, creates new lanes in the active in-memory module registry. It does not write the persisted module configuration.
 - **Apply Changes** commits the currently displayed module form and updates that module's runtime configuration.
-- **Save** in the administration header writes the complete module configuration so it survives a restart.
+- **Save** in the administration header opens a confirmation dialog. Select **Yes** and wait for **SensorHub Configuration Saved**; only then has the complete module configuration been written so it survives a restart.
 
 After any successful setup, use **Apply Changes** where available and then **Save**. An upload-success message proves that the file was accepted; it does not by itself prove that every device can connect or that all changes have been persisted.
 
@@ -131,6 +131,8 @@ In the left navigation, open **Services > OSCAR Service Module**.
 | Database ID | Observation-system database used by OSCAR. If blank, statistics use the federated database, but database-specific purge/export jobs start only when a database is explicitly selected. |
 | WebID API Root | Base URL of the Sandia Full Spectrum Web ID API. The default is `https://full-spectrum.sandia.gov/api/v1`. Use an approved local endpoint for an isolated deployment, or leave it blank to disable creation of the Web ID client. |
 | Stats Frequency (min) | Interval, in minutes, at which statistics are published. The default is 60. |
+| Delegate Observation Lifecycle to Database | Enable when the configured tiered database owns hot/cold observation retention. OSCAR still performs connection-status and manifest-gated daily-file maintenance. |
+| Daily File Purge Work Limit | Maximum lane/day compatibility-observation windows processed in each scheduled catch-up invocation, including an hourly retry. Default: 50. |
 | Auto Start | Starts the OSCAR Service Module when the node loads. This should normally be enabled in an operational deployment. |
 
 The service requires a started Bucket Storage Service. If the module reports that it cannot find the bucket service, start and verify **Services > Bucket Storage Service**, then reinitialize or restart the OSCAR Service Module.
@@ -143,12 +145,40 @@ This tab selects a PNG/JPG/JPEG and assigns its lower-left and upper-right geogr
 
 | Field | Default | Behavior |
 | --- | ---: | --- |
-| Time to Keyframe Retention/Deletion (days) | 7 | Age after which an occupancy video is processed. |
-| Video Query Period (minutes) | 1 | Interval between searches for eligible occupancy videos. A larger interval processes more eligible records per query. |
-| Enable Frame Retention | enabled | When enabled, old clips are reduced to the configured number of retained frames. When disabled, eligible clips are deleted. |
-| Keyframe Retention Count | 5 | Number of frames kept when frame retention is enabled. It has no effect when retention is disabled. |
+| Age Before Five-Frame Retention (days) | 0 | Minimum age before an occupancy source video becomes eligible for conversion to exactly five retained JPEGs. Zero makes completed clips immediately eligible for asynchronous conversion. |
+| Video Query Period (minutes) | 5 | Interval between searches for newly eligible occupancy videos; it is also the maximum event-time width of each database query. |
+| Maximum Retention Catch-up (hours) | 6 | Maximum historical event-time span processed in one cycle. Remaining backlog resumes from a durable cursor. |
+| Late-arrival Allowance (hours) | 24 | Delay before the contiguous late-arrival cursor finalizes an event timestamp. Commits inside this allowance cannot be skipped. |
+| Late-arrival Sweep Period (minutes) | 360 | Minimum delay between checks for a newer delayed safe boundary. An interrupted frozen sweep resumes on the next five-minute cycle. |
+| Late-arrival Catch-up per Cycle (hours) | 2 | Maximum portion of an active delayed sweep processed in one cycle; work is divided into five-minute database windows. |
+| Historical Reconciliation per Cycle (hours) | 24 | Maximum portion of an active frozen full-history sweep processed in one cycle. Active progress and the frozen end survive restart. |
+| Historical Reconciliation Period (hours) | 24 | Delay after a complete full-history sweep before restarting at the earliest eligible occupancy. This recovers commits later than the allowance. |
+| Occupancy Stream Refresh Period (minutes) | 15 | Frequency for resolving occupancy output names to cached datastream IDs used directly by observation queries. |
+| Media Maintenance Work Limit | 200 | Maximum catalog-reconciliation, sharded retry, and source-lifecycle entries inspected in one cycle. |
+| Media Metadata Reclamation Work Limit | 200 | Maximum direct-addressed UTC processed-observation hour buckets reclaimed in one cycle, including missing hours. Reclamation never passes the durable delayed cursor or current cutoff. Each hour is twelve fixed five-minute probes; it is not an occupancy count. |
+| Enable Frame Retention | enabled | When enabled, old clips are converted to the exact-five retained JPEG set. When disabled, eligible clips use legacy deletion behavior. |
+| Retained Frame Count | 5 | Schema v1 requires exactly five when frame retention is enabled. |
+| Retained JPEG Quality | 85 | Baseline sRGB JPEG encoding quality from 1 through 100. |
+| Source Rollback Grace (hours) | 24 | Minimum time the original clip remains available after all five JPEGs and their manifest are committed. |
 
-These settings affect historical occupancy video, not the live stream configuration. Select values that satisfy site evidence-retention policy before enabling cleanup.
+These settings affect historical occupancy video, not the live stream configuration. The scanner
+uses a durable forward cursor and never rescans all history on every interval. Failed media jobs and
+source cleanup after rollback grace use separate bounded, durable indexes. The delayed cursor and
+repeating frozen full-history reconciliation make late or previously uncatalogued occupancies
+eventually visible without an unbounded restart scan or a moving boundary that can outrun repair.
+After a backwards clock correction, active frozen sweeps pause at the current eligibility cutoff
+without losing their durable end. A stream without a usable result-time range is probed directly;
+initial discovery falls back safely to the epoch only when that stream has an eligible occupancy,
+instead of trusting another stream's newer range. An empty range-less stream does not force fallback.
+With the defaults, a completed clip is immediately eligible and the scheduled retention worker
+converts it asynchronously. The source MP4 is retained for at least 24 hours after successful
+publication, so normal source deletion cannot occur before that publication-relative deadline. The
+five JPEGs remain as the retained evidence representation. Select values that satisfy site
+evidence-retention policy before enabling cleanup.
+
+Disposable regression fixtures may deliberately reduce the query period to 1 minute to accelerate
+deterministic tests. That is a test-only override; the production query-period default remains 5
+minutes.
 
 ### 4.4 Storage Pressure Retention Config tab
 
@@ -158,9 +188,26 @@ These settings affect historical occupancy video, not the live stream configurat
 | Target usage (%) | 80 | Cleanup continues until usage reaches this percentage, or no eligible files remain. |
 | Check period (minutes) | 1 | Frequency of filesystem checks; must be greater than zero. |
 | Minimum object age (minutes) | 10 | Files newer than this are protected from pressure cleanup; cannot be negative. |
+| Maximum media sets per cycle | 200 | Bounds direct-index entries inspected in one cycle. The durable queue resumes remaining work after restart or on the next cycle. |
 | Storage path | `files` | Filesystem path whose usage controls cleanup. It must be nonempty and should identify the actual OSCAR file volume. |
 
-Pressure cleanup removes eligible objects only from the `videos` bucket, oldest priority candidates first; daily CSV exports remain protected. Configure operating-system storage monitoring as well—this feature is an emergency pressure control, not a backup policy.
+Pressure cleanup removes eligible objects only from the `videos` bucket in durable publication order; it never enumerates or sorts the retained-media tree during a pressure cycle. Daily CSV exports remain protected. Configure operating-system storage monitoring as well—this feature is an emergency pressure control, not a backup policy.
+
+Processed-observation IDs share at most twelve exact, checksummed five-minute files per UTC event
+hour. A complete hour is reclaimed only when its end is strictly behind both the durable delayed
+cursor and the current clock-bounded cutoff, using twelve bounded direct probes rather than a tree
+scan. This keeps the heap bounded while moving the single-file threshold above 1.2 million evenly
+distributed occupancies/hour.
+Pressure deletion is remembered in an exact checksummed,
+file-locked compact index, replacing a permanent JSON tombstone per camera set without permitting
+historical reconciliation to recreate deleted media. Back up and restore the complete
+`videos/retained-media/v1` prefix as one unit; its indexes, checkpoints, queues, manifests, and
+ledgers are application state.
+
+The compact layout first ships in 3.9.2 and does not scan/migrate pre-release prototype
+`.deleted.json` or per-observation marker trees. Test/pre-release systems need a fresh 3.9.2 database
+and retained-media prefix. To downgrade, restore both from the same coordinated pre-3.9.2 backup;
+never run an older binary against 3.9.2 storage.
 
 ## 5. Create and upload a georeferenced site diagram
 
@@ -240,7 +287,8 @@ Bulk import is the preferred way to create many lanes. For an existing site, fir
 ![Successful CSV upload](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/16-csv-upload-success.png)
 
 4. Open **Sensors** and inspect every new lane and its generated RPM/camera submodules. Loading is asynchronous, so allow time for all rows to appear.
-5. Correct any per-lane values, use **Apply Changes**, and select global **Save** after validation.
+5. Correct any per-lane values, use **Apply Changes**, select the global **Save**, confirm **Yes**, and wait for **SensorHub Configuration Saved**. Opening the confirmation dialog without selecting **Yes** does not save. Until global Save succeeds, imported lanes exist only in memory and can disappear on restart.
+6. During the planned verification window, restart OSCAR with the supported deployment command, sign in again, and confirm that every expected lane and its RPM/camera children reappear under **Sensors**. Do not accept the import as complete until it passes this restart check.
 
 ![Imported lanes in Sensors](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/17-sensors-overview.png)
 
@@ -248,13 +296,15 @@ An uploaded row is skipped when its `UniqueID` already belongs to a loaded Lane 
 
 ### 6.2 Exact schema
 
-The first 13 headers are required, case-sensitive, and must occur in this exact order:
+The current schema has 14 required, case-sensitive main headers in this exact order. `OperationalViews` is the sixth column:
 
 ```csv
-Name,UniqueID,AutoStart,Latitude,Longitude,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth
+Name,UniqueID,AutoStart,Latitude,Longitude,OperationalViews,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth
 ```
 
-Then add one six-column group per camera. Camera numbers must start at 0 and remain sequential:
+Imports remain backward-compatible with the legacy 13-header schema that omits `OperationalViews`; those lanes receive no operational-view assignments. New exports always use the 14-header schema. With the current header, every row must include the `OperationalViews` cell, although its value may be empty.
+
+Then include at least one six-column camera group. Use an empty `CameraType0` group when the lane has no camera; additional camera numbers must remain sequential:
 
 ```csv
 CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0
@@ -271,6 +321,7 @@ There is no fixed code limit on the number of sequential camera groups, although
 | `UniqueID` | yes | Stable lane identifier. Do not reuse it. A plain suffix becomes an OSCAR lane URN. |
 | `AutoStart` | yes | `true` or `false`. Java boolean parsing treats only case-insensitive `true` as true. |
 | `Latitude` / `Longitude` | together | Decimal WGS 84 degrees. Leave both empty to omit fixed location. |
+| `OperationalViews` | no | Semicolon-separated workstation view keys, for example `north-gate;secondary`. Each key must be 1–63 lowercase ASCII letters (`a`–`z`), numbers, or hyphens and cannot begin or end with a hyphen. Leave empty for no scoped-view assignment. |
 | `RPMConfigType` | no | Empty for no initial RPM, or `Aspect`, `Rapiscan`, or `RS350` (case-insensitive). |
 | `RPMHost` | with RPM | RPM IP address or DNS name. |
 | `RPMPort` | with RPM | Integer TCP port. |
@@ -296,15 +347,15 @@ The CSV schema does not expose **Camera Video Buffer Length**; cameras imported 
 One Rapiscan lane with one Axis camera:
 
 ```csv
-Name,UniqueID,AutoStart,Latitude,Longitude,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0
-Lane01,lane01,true,35.8858,-84.2121,Rapiscan,192.0.2.10,1601,,,false,false,4.82,Axis,192.0.2.20,,H264,operator,replace-me
+Name,UniqueID,AutoStart,Latitude,Longitude,OperationalViews,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0
+Lane01,lane01,true,35.8858,-84.2121,north-gate,Rapiscan,192.0.2.10,1601,,,false,false,4.82,Axis,192.0.2.20,,H264,operator,replace-me
 ```
 
 One Aspect lane with two cameras:
 
 ```csv
-Name,UniqueID,AutoStart,Latitude,Longitude,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0,CameraType1,CameraHost1,CameraPath1,Codec1,Username1,Password1
-Lane02,lane02,true,35.8859,-84.2119,Aspect,192.0.2.11,502,1,32,,,,Sony,192.0.2.21,,,operator,replace-me,Custom,192.0.2.22:8554,/stream1,,operator,replace-me
+Name,UniqueID,AutoStart,Latitude,Longitude,OperationalViews,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0,CameraType1,CameraHost1,CameraPath1,Codec1,Username1,Password1
+Lane02,lane02,true,35.8859,-84.2119,north-gate;secondary,Aspect,192.0.2.11,502,1,32,,,,Sony,192.0.2.21,,,operator,replace-me,Custom,192.0.2.22:8554,/stream1,,operator,replace-me
 ```
 
 Replace all example addresses and credentials. Avoid spreadsheet software features that silently reformat identifiers, booleans, or decimal coordinates.
@@ -359,6 +410,7 @@ The available list can change with installed bundles. For ordinary lane setup, s
 | Unique ID | Required stable ID. A suffix such as `lane01` becomes `urn:osh:system:lane:lane01`; a full URN is accepted. Avoid spaces and never reuse a retired lane's ID without a migration plan. |
 | Last Updated | Timestamp of the last SensorML-description update; normally left system-managed/empty unless external SensorML is used. |
 | Auto Start | Starts the lane automatically when configuration loads. Enable for operational lanes after configuration is verified. |
+| Operational View Keys | Optional list of workstation view keys allowed to display this lane. Add each key separately; use 1–63 lowercase ASCII letters (`a`–`z`), numbers, or hyphens, with no leading or trailing hyphen. Leave empty when the lane should have no scoped-view assignment. |
 | Delete Data on Lane Removal | Defaults enabled. If selected, removing the lane deletes its database records. Clear it when decommissioning must preserve historical data. |
 | Data Source Info | Optional inherited metadata shown by some builds; use only when the site's SensorML/data-source model requires it. |
 
@@ -472,8 +524,12 @@ Submitting creates an adjudication record; it does not alter the original detect
 
 The **Events** page is the historical list across configured local and federated nodes. It includes all occupancies, not only active unadjudicated alarms. Each row shows the lane and parent node, occupancy ID, start/end time, maximum gamma and neutron count rates, alarm status, and whether an adjudication exists.
 
-- **Columns** shows/hides optional columns; **Filters** opens server-side filters; **Density** changes row spacing.
-- Start/end-time filters support **after** and **before**. Status supports exact **None**, **Gamma**, **Neutron**, or **Gamma & Neutron**. Adjudicated supports **Yes** or **No**. Applying a filter returns to page 1.
+- Use **Find event by UUID** to paste the durable event identifier from Event Details, a PDF, or an alarm transfer. OSCAR performs an exact observation lookup rather than requiring a filter chain, then opens that event directly. The identifier is OSCAR's public encoded observation ID; it is labeled Event UUID for operators but is not required to have RFC-4122 UUID punctuation.
+- **Columns** shows/hides optional columns; **Filters** opens server-side filters; **Density** changes row spacing. Filters, counts, pages, and bulk selection apply to the complete matching server-side result set, not only the currently visible page.
+- Build filter groups with **All conditions (AND)** or **Any condition (OR)**, and nest groups when a workflow needs both. Up to 20 rules and three group levels are supported. Node and lane conditions choose the streams to query; occupancy ID, time, gamma/neutron maxima, alarm status, and adjudication conditions are sent to the server for each applicable lane. Applying a filter returns to page 1.
+- Use the operators offered for each field. Times support before, after, and between; numeric values support inclusive limits, between, and exact match; status supports None, Gamma, Neutron, or Gamma & Neutron; adjudication supports Yes/No and empty/not empty.
+- Check individual unadjudicated alarms, or select **Select all filtered alarms** to freeze the complete eligible result set at the current load time, including other pages. You may then clear individual rows. Bulk adjudication applies one code, secondary-inspection state, optional vehicle ID, and notes to the selection; it processes at most six events concurrently. It does not attach evidence or isotope selections; use Event Details when those are required.
+- Review the count and warning before submitting. Successful events leave the alarm queue or show as adjudicated. Failed events remain visible and selected, and **Retry failed** retries only those failures. If OSCAR cannot enumerate the full filtered result, it selects nothing rather than silently adjudicating a partial set.
 - Results are newest first and paged 15 at a time. The footer advances between pages. Counts cover the occupancy streams currently reachable from every configured node.
 - Select a row for the preview. Double-click it, or choose the row's **Details** action, to open Event Details.
 - If a federated node or lane is unavailable, its rows/count may be incomplete; correct node connectivity and refresh rather than assuming that zero means no events.
@@ -484,7 +540,7 @@ The **Events** page is the historical list across configured local and federated
 
 The page can include:
 
-- lane, occupancy, time, alarm status, speed, and other captured fields;
+- Event UUID plus lane, occupancy, time, alarm status, speed, and other captured fields;
 - gamma, threshold, neutron, and supported RS-350 charts;
 - recorded video for the event window;
 - WebID analysis results and the complete logged-adjudication history;
@@ -493,7 +549,9 @@ The page can include:
 - vehicle ID, notes, secondary-inspection status, and adjudication code; and
 - **Export as PDF** for the rendered event report.
 
-Use **Back** to return to the originating list. **CPS** and **NSIGMA** select the gamma chart presentation when both are supported. The video arrows move through camera recordings. **Export as PDF** invokes the browser print dialog for the currently rendered Event Details page; choose the browser's PDF destination to save it. This is separate from the server-generated reports in section 10.
+Use **Copy UUID** when another operator needs to search for the same event. **Copy direct link** creates a node-qualified URL that opens the event without replaying the Events filters; the active operational-view key is retained. A direct link succeeds only while the source observation is retained, the configured node remains reachable, and the current operational view authorizes that lane. OSCAR fails closed when the identifier belongs to a non-occupancy stream or a lane outside the active view.
+
+Use **Back** to return to the originating list. **CPS** and **NSIGMA** select the gamma chart presentation when both are supported. The video arrows move through camera recordings. **Export as PDF** invokes the browser print dialog for the currently rendered Event Details page; choose the browser's PDF destination to save it. The visible Event UUID is included in that PDF. For a just-arrived live event, PDF and QR export remain unavailable while OSCAR resolves the stored Event UUID; if automatic resolution fails, select **Retry** or reopen the event from **Events**. This is separate from the server-generated reports in section 10.
 
 Available data depends on detector type, camera health, retention, event age, user permissions, and WebID connectivity. A missing panel is not proof that the event had no data; verify the lane, stream, camera, and retention status.
 
@@ -537,6 +595,58 @@ Deleting an item before submission removes it only from the pending form. After 
 | Other | 11 Other |
 
 Use site procedure—not convenience—to choose a code.
+
+### 8.6 Transfer an alarm by QR code in an air-gapped environment
+
+OSCAR can package a compact alarm summary in one QR code without contacting an Internet service. The export includes source node and lane, the Event UUID and human-readable occupancy ID, event times, status and maxima, compact adjudication metadata when present, and downsampled gamma, neutron, and threshold chart data. It does **not** include video, evidence files, spectra, or every original chart sample. New exports require a resolved Event UUID; imported legacy version-1 packages without one remain readable and are labeled accordingly.
+
+To export:
+
+1. Open an alarm preview on the dashboard or open **Event Details** and select **Export alarm QR**.
+2. Wait while OSCAR reads the event-window observations. The dialog reports exported/original gamma and neutron point counts.
+3. Let the receiving device scan the displayed code, select **Download QR image** to move a printable PNG, select **Download alarm file** to save the same package as `.oscar-alarm.json`, or select **Share alarm**. If the browser cannot share files, OSCAR downloads the file instead.
+
+The sampler keeps both endpoints, global minima/maxima, gamma points on both sides of threshold crossings, and local bucket minima/maxima before reducing the remaining points. Values are rounded to three decimal places. The package records a SHA-256 digest of the complete source series so a later system with those full data can compare them, but the omitted samples cannot be reconstructed from the QR code.
+
+To receive:
+
+1. Open **Alarm Transfer** from the Viewer navigation.
+2. Use **Start camera scan**, **Scan QR image**, **Import alarm file**, or paste the `OSCAR-ALARM:1:` transport text. Camera scanning requires browser permission and a secure HTTPS context; image/file import remains available when camera access is prohibited.
+3. OSCAR decompresses the package, enforces size and chart-data limits, verifies its SHA-256 transfer digest, and redraws the downsampled charts.
+4. Confirm the node, lane, Event UUID, occupancy, times, status, and charts, then download or share the received alarm file if authorized. The UUID can locate the original only on an OSCAR system that still retains and authorizes that source observation; importing the package does not create a new server event.
+
+> **Security boundary.** The package is compressed and integrity-checked, but it is neither encrypted nor digitally signed. The digest detects corruption; it does not identify the sender because a person who changes the content can compute a new digest. Treat imported data as a portable preview, independently confirm its source before operational use, and transfer it only through media and devices approved by site policy.
+
+### 8.7 Monitor Status of Health
+
+Open **Status of Health** with the heart-monitor icon in the Viewer navigation or go directly to `/health`. The page displays one row for every lane visible in the current scope; `/health?view=<key>` limits it to the assigned operational view.
+
+- **Connections** reports the RPM and each configured camera as **Online**, **Offline**, or **Waiting**. Waiting means no usable current connection value has arrived and is not counted as healthy.
+- **Fault status** reports gamma high, gamma low, neutron high, tamper, and extended occupancy as **Fault**, **Clear**, or **Unknown**. Missing or failed telemetry stays Unknown and is never counted as healthy or shown as clear.
+- **Current occupancy** uses the Lane System's canonical `occupancyStatus` stream to show a stable elapsed time across Rapiscan, Aspect, and RS350 RPMs.
+- **Last update** is the browser-local time of the latest connection or fault update for that row.
+
+Extended occupancy defaults to one minute. Enter a value from 1 through 1440 minutes in **Extended occupancy threshold**. The setting is saved in that browser and immediately re-evaluates an occupancy already in progress; it does not alter server observations or reports.
+
+Rapiscan tamper messages report transitions rather than a periodically repeated snapshot. The [DOE/PNNL Rapiscan maintenance guide](https://d5.pnnl.gov/sites/default/files/2023-02/RPM_Maint_Guide_Drawings.pdf) specifies that the RPM sends `TT` once when a monitored door or power condition enters tamper and `TC` once when the condition clears. By OSCAR policy, every newly established Rapiscan connection publishes a **Clear** tamper baseline before processing device messages. A later `TT` immediately changes it to **Fault**, and a later `TC` restores **Clear**. A missing or unreadable tamper datastream remains **Unknown**.
+
+After upgrading, confirm that each Lane System publishes `occupancyStatus` and each RPM and FFmpeg camera publishes connection status. Stop and restart an approved test camera and verify Offline then Online. Confirm unavailable fault telemetry remains Unknown, then exercise gamma, neutron, tamper, and long-occupancy tests only under the site's approved hardware procedures.
+
+### 8.8 Use an operational-view workstation
+
+Open `https://<oscar-host>/?view=<key>` or `https://<oscar-host>/view/<key>`. OSCAR preserves the key while navigating and limits lane discovery, events, maps, notifications, reports, alarm transfer, and Status of Health to assigned lanes. The unscoped root URL loads all lanes. Invalid keys and valid keys with no assigned lanes fail closed and load no lane data.
+
+Operational views separate workstation presentation; they are not an authorization boundary. Use OSCAR authentication and network controls when access itself must be restricted.
+
+### 8.9 View live lane video
+
+Open **Lane Details** for a lane with a configured camera. The panel initially shows **Preparing live video… waiting for a keyframe.** while OSCAR creates a decodable HLS playlist. With a compliant camera, playback normally begins within the camera's keyframe interval—one to two seconds—plus ordinary network and browser latency.
+
+The camera must provide H.264 with a closed GOP and an IDR/keyframe every one to two seconds. A longer or open GOP can delay startup or prevent the first segment from decoding independently.
+
+Alarm recording uses the same keyframe requirement. An `OPEN` command remains pending for no more than five seconds, until the current recording generation has successfully muxed its first keyframe; packets from the middle of a GOP are discarded. A `CLOSE` for a very short occupancy waits behind that `OPEN` and, when needed, for OSCAR's bounded alarm/save decision. The per-camera command watchdog starts only after both waits finish and the camera operation is actually submitted; neither waiting period is treated as a camera failure. If the keyframe does not arrive, or the recorder stops or fails, OSCAR cancels that generation and removes its hidden partial file instead of attaching an empty or undecodable MP4 to the event. Check for an H.264 keyframe interval of five seconds or less when an alarm has no video.
+
+If bounded automatic recovery is exhausted, the panel shows **Live video could not be played.** Check that the camera and network are reachable, then select **Retry**. Retry stops the previous stream attempt and starts a fresh one; it does not require resetting or restarting OSCAR, re-importing lanes, or deleting application state or Docker volumes.
 
 ## 9. National statistics
 
@@ -602,16 +712,65 @@ Duplicate names and duplicate address/port pairs are rejected. **Edit** changes 
 
 ## 12. Data retention and storage behavior
 
-When the OSCAR Service Module has an explicit **Database ID**, it starts two database-maintenance schedules:
+The standard 3.9.2 profile uses the tiered PostgreSQL database. Recent and operational records stay
+in PostgreSQL; configured high-volume detector observations older than two days are copied in
+bounded background jobs to cataloged, ZSTD-compressed Parquet. Verified hot-row deletion is enabled
+by default after exact hot/cold parity and a one-day rollback grace, so Parquet normally becomes the
+only base-row copy after about 72 hours. Archive ownership, object integrity, parity, and active
+generation or observation holds are rechecked before deletion and fail closed.
 
-- every hour, it removes connection-status observations older than one hour and high-volume measurements outside buffered occupancy windows; and
-- at midnight UTC, it exports the previous day's `dailyFile` output for each lane to the `dailyfiles` bucket and removes the exported database observations.
+Each RPM driver requires the direct daily-file journal. It captures the source record before
+parsing where possible and publishes the completed day as an immutable legacy CSV plus SHA-256
+manifest. Database retention must never be used as a substitute for this journal. Connection-state
+maintenance and manifest-gated cleanup of legacy `dailyFile` observations continue independently.
+Private sealed journal segments are retained for 30 days after the later of day close or actual
+publication. With the default `requireBackupBeforeSealedJournalDeletion=false`, deletion also
+requires immutable CSV/manifest/ledger validation and an exact replay match from the current sealed
+segments to the published CSV. A site may enable the setting to require a matching verified-backup
+confirmation as an additional gate.
 
-If no occupancy windows exist, non-occupancy cleanup is skipped to avoid unintended data loss. The hourly purge retains recent data with a safety margin and uses a five-second buffer around occupancy windows.
+Each new occupancy recording is bound to its exact lane, camera, occupancy timestamp, and immutable
+recording generation. Camera commands run in order, source names include a generation suffix, and
+only a validated successful close path is attached to the alarm. Non-alarm, stale, failed, timed-out,
+or late unpublished recordings and hidden partial files are removed instead of being reused by a
+later event. Treat a clip attached to the wrong event/camera, a duplicate/blank path, or a new orphan
+as a release-blocking integrity fault rather than repairing the database by guessing a filename.
 
-Files such as site diagrams, spreadsheets, video, reports, and daily exports are handled by the Bucket Storage Service. Database records and bucket files require separate backup planning. Video age retention and storage-pressure retention are independent: age retention decimates/deletes eligible occupancy video, while pressure retention reacts to filesystem use and currently deletes eligible video-bucket objects only.
+Eligible alarm clips are queued for asynchronous conversion to exactly five independently decodable
+JPEGs (first, quarter, middle, three-quarter, last) as soon as they are discovered. After successful
+publication, the source video remains for a further 24-hour rollback grace, so normal source
+deletion cannot occur before that publication-relative deadline; every conversion failure and
+applicable hold preserves it. Old or unconverted events
+retain legacy playback. Storage-pressure cleanup can remove only complete, eligible retained-media
+sets. It does not remove daily files, reports, adjudications, legacy uncataloged video, or the
+Parquet archive.
 
-Before changing retention, database selection, storage path, or **Delete Data on Lane Removal**, confirm the site's evidence, records, and backup requirements.
+OSCAR-managed backup is disabled by default. In that mode, `backup`, `backup-verify`,
+`backup-prune`, and `restore` refuse before mutation. PostgreSQL runs with `archive_mode=off`, no
+external archive command, and no host WAL bind. A site that needs an OSCAR-managed recovery point
+may use the validated upgrade workflow to opt into `single` mode on an operator-selected safe
+absolute backup path that does not overlap the release or archive roots. A separate physical
+drive is recommended for fault isolation but is not required. Each manual backup is one
+self-contained snapshot with required WAL streamed into its base backup; the new snapshot must
+verify before `CURRENT` changes and the superseded managed snapshot is removed. The legacy
+`backup-prune` command is retired.
+
+Use the release launcher's `archive status`, `archive verify`, hold, portable-export, and tokenized
+dry-run/purge workflows, plus `backup` and `backup-verify` only in `single` mode. Protect the backup
+encryption key separately and retain an off-host copy if site policy requires another failure
+domain. Never delete cataloged archive/media files directly. A pre-3.9.2 `upgrade` preserves its old
+database and configuration and does not create the full storage profile or enable PostgreSQL
+checksums; initialize a fresh 3.9.2 deployment or use a separately validated production migration.
+The packaged `documentation/` storage guides are the authoritative runbooks.
+
+Use the release launcher for deployment-wide `stop` and `restart`. It stops the gateway first,
+then lets OSCAR drain and save while PostgreSQL remains available, and stops PostgreSQL last. Do
+not run an unscoped multi-service `docker compose stop` or `docker compose restart`: simultaneous
+signals can remove the database while OSCAR is still completing queued writes and module shutdown.
+
+Before changing retention, database selection, storage paths, backup mode, or
+**Delete Data on Lane Removal**, confirm the site's evidence, privacy, legal-hold, recovery, and
+records-destruction requirements.
 
 ## 13. Validation checklist
 
@@ -627,13 +786,16 @@ Before changing retention, database selection, storage path, or **Delete Data on
 - [ ] Node ID is unique and stable.
 - [ ] Database ID, Web ID root, statistics interval, and Auto Start match site policy.
 - [ ] Video and pressure-retention settings were reviewed before enabling cleanup.
+- [ ] A fresh 3.9.2 database/configuration or an approved migration was used; archive status and integrity verification pass.
+- [ ] Backup mode is recorded. Disabled mode creates no OSCAR-managed backup; if `single` is enabled, its current snapshot verifies, its external key is escrowed separately, and an isolated restore drill has passed.
+- [ ] A sample lane publishes a journal-backed daily CSV/manifest; retained events show five JPEGs while legacy events still play.
 - [ ] Bucket Storage Service and OSCAR Service Module are started.
 
 ### Site diagram
 
 - [ ] Image is north-up, tightly cropped, and uses PNG/JPG/JPEG.
 - [ ] Lower-left and upper-right values are valid, correctly ordered, and not zero.
-- [ ] Upload reports success; Apply Changes and global Save were used.
+- [ ] Upload reports success; Apply Changes was used; global Save was confirmed with Yes; the saved notification appeared.
 - [ ] Viewer starts at the diagram extent; image alignment and lane-marker positions are correct.
 
 ### Lanes and devices
@@ -642,7 +804,7 @@ Before changing retention, database selection, storage path, or **Delete Data on
 - [ ] RPM type, host, port, and type-specific options match the device.
 - [ ] Every camera type, host/port, credentials, path/codec, and buffer value is correct.
 - [ ] Expected child modules exist and reach Started; failed hardware in one lane does not block validation of other lanes.
-- [ ] Global Save was selected after import/manual setup.
+- [ ] Global Save was selected and confirmed with Yes after import/manual setup; the saved notification appeared.
 
 ### Viewer
 
@@ -651,7 +813,10 @@ Before changing retention, database selection, storage path, or **Delete Data on
 - [ ] Live and recorded camera video load, including after a browser refresh.
 - [ ] Event Details opens without a client-side exception.
 - [ ] A controlled test adjudication can be reviewed and submitted under site procedure.
-- [ ] Events filters, National refresh, and each required report type were tested.
+- [ ] Nested AND/OR Events filters, all-filtered-result selection, a controlled bulk adjudication, National refresh, and each required report type were tested.
+- [ ] A controlled alarm QR exports, scans/imports on the receiving device, passes integrity verification, and redraws plausible gamma/neutron curves.
+- [ ] **Status of Health** lists every expected lane; RPM and cameras show Online/Offline/Waiting correctly, faults show Fault/Clear/Unknown correctly, and approved gamma, neutron, tamper, and one-minute extended-occupancy tests produce the expected state.
+- [ ] The unscoped URL shows all lanes, and each approved `?view=<key>` or `/view/<key>` URL shows only its assigned lanes across Dashboard, Events, reports, alarm transfer, and Status of Health.
 - [ ] Every federated node was rechecked after a browser reload; no credential was found in browser storage.
 
 ## 14. Troubleshooting
@@ -666,16 +831,24 @@ Before changing retention, database selection, storage path, or **Delete Data on
 | OSM tiles show 403/blocked | Do not point production traffic directly at volunteer OSM tiles in violation of tile policy. Use the deployment's approved OSM provider/proxy or select Esri while the tile-service configuration is corrected. |
 | CSV rejected | Compare the exact header/order, camera groups of six with sequential indexes, cell count on every row, numeric fields, and plain unquoted empty cells. Remove commas from values. |
 | CSV says success but a lane is missing | Check for an existing loaded lane with the same UniqueID, a name longer than 12 characters, device-child initialization errors, and whether asynchronous loading has finished. |
+| **Sensors** is empty after restart following CSV upload | The upload created in-memory modules, but the complete configuration was not persisted. Upload again if necessary, wait for every lane and child to appear, select the global **Save**, restart OSCAR, and verify **Sensors** again. If a 3.9.2 node still loses the lanes, check OSCAR logs and verify that `/var/lib/oscar/config.json` is owner-writable. |
+| Scoped operational view is empty or rejects its key | Confirm the lane's **Operational View Keys** contains the exact lowercase key, apply and globally save the configuration, restart the lane if required, and use `?view=<key>` or `/view/<key>`. A blank assignment never matches a scoped view. |
 | RPM does not start | Verify host reachability, exact TCP port, firewall, Aspect range, and device availability. Review the child driver status/error, not only the parent lane. |
 | Camera does not start | Verify RTSP reachability and credentials, omit `rtsp://` from host, include a needed port once, confirm Axis codec or Custom path, and test the generated endpoint from the OSCAR host. |
 | Video appears initially but not after refresh | Verify the camera child and HLS output remain Started and inspect server/browser logs. Refresh should not require re-creating the lane. |
 | Event Details has no media | Confirm the event belongs to an available lane, required datastreams exist for its time range, retained video has not been deleted/decimated beyond need, and the user has permission. |
+| Status of Health lane/device is missing, or its connection is Waiting or Offline | Confirm the lane is in the current view, the lane and device child are running, and the RPM or FFmpeg camera publishes connection status. Waiting applies to connection telemetry and means no usable connection value has arrived; test reachability and inspect child logs before treating it as healthy. |
+| A fault or tamper status is Unknown | Confirm its datastream exists and has a readable latest observation. A current Rapiscan driver publishes a Clear tamper baseline whenever it establishes the RPM connection; confirm the child driver reconnected and that the baseline observation is readable. A later hardware `TT` must still change the state to Fault. |
+| Extended occupancy does not appear | Confirm the Lane System publishes `occupancyStatus`, verify the RPM's daily-file/status input reports entry and exit, set a 1–1440 minute threshold in this browser, and wait until the stable elapsed time exceeds it. |
+| Bulk adjudication partly fails | Keep the failed rows selected, review lane/node connectivity and the adjudication control stream, then use **Retry failed**. Successful rows are not resubmitted. |
 | Adjudication fails | Confirm a code was selected, the lane/node is reachable, the adjudication control stream exists, and any evidence upload completed. Do not repeatedly submit until the original result is known. |
 | WebID controls have no DRF/results | Verify internet access to the configured Sandia Full Spectrum service, select a DRF and foreground/background type, and inspect the returned warning/error columns. Manual adjudication remains the operator's responsibility. |
 | National row is zero/missing | Refresh the intended range, verify that node's OSCAR statistics control stream and retained data, and correct node authentication/connectivity. |
 | Report does not generate | Select node/type/range and required lane/event type, verify start precedes end, then check the node report control stream and `reports` bucket. An identical request may reuse an existing file. |
 | Federated node disappears or rejects requests after reload | Session nodes need a valid remote cookie; Basic-only secrets are intentionally memory-only and must be re-entered. Verify TLS, CORS, paths, port, and remote authorization. |
-| Changes disappear after restart | Apply the module form, then use the administration header's global Save. |
+| Alarm QR cannot be generated | Confirm the event's lane is available and its gamma or neutron datastream has retained observations for the event interval. Very large optional metadata may exceed one-code capacity; use the downloadable alarm file when QR transfer is not possible. |
+| Alarm QR will not scan/import | Increase display brightness or use the downloaded PNG at original size. Otherwise import the `.oscar-alarm.json` file. An integrity failure means the package is incomplete or changed; obtain a new export rather than bypassing validation. |
+| Changes disappear after restart | Apply the module form, use the administration header's global Save, confirm Yes, and wait for the saved notification before restarting. |
 
 When collecting support data, record the OSCAR version, browser, affected lane/occupancy ID, timestamp and timezone, module status/errors, and sanitized browser/server logs. Remove passwords, tokens, private keys, and sensitive evidence before sharing.
 
@@ -689,4 +862,4 @@ When collecting support data, record the OSCAR version, browser, affected lane/o
 
 ---
 
-Document baseline: OSCAR 3.8.3 source behavior, reviewed 2026-09-21. If a later release changes fields or workflows, update the English canonical manual and all three translations together.
+Document baseline: OSCAR 3.9.2 source behavior, reviewed 2026-10-18. If a later release changes fields or workflows, update the English canonical manual and all three translations together.

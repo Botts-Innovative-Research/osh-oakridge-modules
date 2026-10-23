@@ -21,6 +21,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class OccupancyOutput<SensorType extends IDataProducer> extends AbstractDataInterface<SensorType> {
 
@@ -33,7 +34,7 @@ public class OccupancyOutput<SensorType extends IDataProducer> extends AbstractD
     protected DataEncoding dataEncoding;
     protected DataBlock dataBlock;
 
-    protected final List<OccupancyCallback> occupancyCallbacks = new ArrayList<>();
+    protected final List<OccupancyCallback> occupancyCallbacks = new CopyOnWriteArrayList<>();
     ExecutorService executor = Executors.newCachedThreadPool();
     ScheduledExecutorService scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
     private static final int TIMEOUT = 10;

@@ -134,8 +134,6 @@ public class OSCARServiceForm extends GenericConfigForm {
                             SiteDiagramConfig siteDiagramConfig = getEditedSiteDiagramConfig();
                             fileLoaded = oscarService.getSitemapDiagramHandler()
                                     .handleFile(objectKey, siteDiagramConfig);
-                            if (fileLoaded)
-                                ((Field<String>) field).setValue(objectKey);
                         } else {
                             fileLoaded = fileHandler.handleFile(objectKey);
                         }
@@ -151,6 +149,7 @@ public class OSCARServiceForm extends GenericConfigForm {
                                 "Unable to load file from {0}").replace("{0}", objectKey),
                                 new IllegalStateException(message));
                         } else {
+                            recordUploadedObjectKey(textField, objectKey);
                             DisplayUtils.showOperationSuccessful(trConfig(
                                 OSCARServiceForm.class,
                                 "ui.loadSucceeded",
@@ -200,5 +199,12 @@ public class OSCARServiceForm extends GenericConfigForm {
             
         }
         return field;
+    }
+
+    static void recordUploadedObjectKey(TextField persistentPathField, String objectKey) {
+        Property<String> configuredPath = persistentPathField.getPropertyDataSource();
+        if (configuredPath == null)
+            throw new IllegalStateException("Uploaded object path field is not bound");
+        configuredPath.setValue(objectKey);
     }
 }

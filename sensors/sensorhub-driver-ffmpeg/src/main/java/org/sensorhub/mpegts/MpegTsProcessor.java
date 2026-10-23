@@ -26,7 +26,7 @@ import org.bytedeco.ffmpeg.global.avcodec;
 import org.bytedeco.ffmpeg.global.avformat;
 import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacpp.PointerPointer;
-import org.eclipse.jetty.util.BlockingArrayQueue;
+import org.sensorhub.impl.process.video.transcoder.coders.Coder;
 import org.sensorhub.impl.process.video.transcoder.coders.Decoder;
 import org.sensorhub.impl.process.video.transcoder.coders.Encoder;
 import org.slf4j.Logger;
@@ -34,7 +34,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.LockSupport;
 
 import static org.bytedeco.ffmpeg.global.avcodec.av_packet_free;
 import static org.bytedeco.ffmpeg.global.avcodec.av_packet_unref;
@@ -134,19 +134,90 @@ public class MpegTsProcessor extends Thread {
      * Keeping the executor here rather than in a side map means it can never go missing while a
      * packet is being dispatched to the listener it belongs to.
      */
-    private record Subscription(DataBufferListener listener, DeliveryMode mode, ExecutorService executor) {
+    private static final class Subscription {
+        private final DataBufferListener listener;
+        private final DeliveryMode mode;
+        private final ExecutorService executor;
+        private final Object submissionLock = new Object();
+        private volatile long generation;
+
+        Subscription(DataBufferListener listener, DeliveryMode mode, ExecutorService executor) {
+            this.listener = listener;
+            this.mode = mode;
+            this.executor = executor;
+        }
+
+        DataBufferListener listener() {
+            return listener;
+        }
+
+        DeliveryMode mode() {
+            return mode;
+        }
 
         void deliver(DataBufferRecord record) {
-            if (executor == null) {
-                listener.onDataBuffer(record);
-            } else {
-                executor.submit(() -> listener.onDataBuffer(record));
+            long attemptedGeneration = generation;
+            synchronized (submissionLock) {
+                if (generation != attemptedGeneration || !listener.isWriting()) {
+                    return;
+                }
+                if (executor == null) {
+                    listener.onDataBuffer(record);
+                    return;
+                }
+
+                long acceptedGeneration = generation;
+                executor.submit(() -> {
+                    // A callback accepted after a close boundary must not leak into a recording
+                    // opened later on the same output.
+                    if (generation == acceptedGeneration) {
+                        listener.onDataBuffer(record);
+                    }
+                });
             }
         }
 
+        <T> T executeAfterPending(Callable<T> action) throws Exception {
+            if (executor == null) {
+                synchronized (submissionLock) {
+                    try {
+                        return action.call();
+                    } finally {
+                        generation++;
+                    }
+                }
+            }
+
+            Future<T> result;
+            synchronized (submissionLock) {
+                result = executor.submit(() -> {
+                    try {
+                        return action.call();
+                    } finally {
+                        // Work submitted after this boundary captured the previous generation and
+                        // is discarded instead of being written to a subsequent recording.
+                        generation++;
+                    }
+                });
+            }
+
+            return MpegTsProcessor.awaitFuture(result);
+        }
+
         void shutdown() {
-            if (executor != null) {
-                executor.shutdownNow();
+            synchronized (submissionLock) {
+                generation++;
+                if (executor != null) {
+                    cancelQueuedTasks(executor.shutdownNow());
+                }
+            }
+        }
+
+        private static void cancelQueuedTasks(List<Runnable> queuedTasks) {
+            for (Runnable task : queuedTasks) {
+                if (task instanceof Future<?> future) {
+                    future.cancel(false);
+                }
             }
         }
     }
@@ -165,11 +236,21 @@ public class MpegTsProcessor extends Thread {
 
     protected final Object contextLock = new Object();
 
-    private Queue<AVPacket> fileFrameQueue = null;
+    /** Guards every transition of the buffered-packet queue and replay state. */
+    private final Object frameQueueLock = new Object();
+
+    /** Each packet in this queue has exactly one native owner: the queue. */
+    private Queue<AVPacket> fileFrameQueue;
 
     private int fileFrameQueueMax;
 
-    private final AtomicBoolean isSubmittingFrameQueue = new AtomicBoolean(false);
+    private boolean isSubmittingFrameQueue;
+
+    /** Routes packets arriving after a recording cutoff into the next pre-roll queue. */
+    private boolean bufferedCloseInProgress;
+
+    /** Terminal guard preventing a concurrent close from recreating executors during teardown. */
+    private boolean executorsShuttingDown;
 
     private ExecutorService frameQueueSubmitter;
 
@@ -177,6 +258,16 @@ public class MpegTsProcessor extends Thread {
      * Name of thread
      */
     private static final String WORKER_THREAD_NAME = "STREAM-PROCESSOR";
+
+    /** Upper bounds for probing. The actual duration is capped by the configured connect timeout. */
+    private static final long MAX_ANALYZE_DURATION_MICROS = 15_000_000L;
+    private static final long MAX_PROBE_SIZE_BYTES = 10_000_000L;
+    private static final long PROBE_BYTES_PER_SECOND = 1_000_000L;
+    private static final long MIN_PROBE_SIZE_BYTES = 32_768L;
+
+    /** Upper bound for one asynchronous decoder/encoder handoff on an unpaced file source. */
+    private static final long TRANSCODE_OUTPUT_WAIT_NANOS = TimeUnit.MILLISECONDS.toNanos(500L);
+    private static final long TRANSCODER_FLUSH_TIMEOUT_MILLIS = 5_000L;
 
     /**
      * Id of invalid sub streams within actual stream
@@ -221,7 +312,9 @@ public class MpegTsProcessor extends Thread {
     /**
      * Time base units for video stream timing used to compute a timestamp for each packet extracted
      */
-    private double videoStreamTimeBase;
+    private int videoStreamTimeBaseNumerator;
+
+    private int videoStreamTimeBaseDenominator;
 
     /**
      * Time base units for data stream timing used to compute a timestamp for each packet extracted
@@ -251,7 +344,102 @@ public class MpegTsProcessor extends Thread {
 
     private boolean doTranscode = false;
 
-    private final Queue<AVPacket> decodeQueue = new ArrayDeque<>();
+    /** Decoder input crosses the demux and decoder threads; poll is an ownership transfer. */
+    private final BlockingQueue<AVPacket> decodeQueue = new LinkedBlockingQueue<>();
+
+    /** A native codec-parameter copy plus an immutable snapshot of the selected stream time base. */
+    public record VideoStreamSnapshot(AVCodecParameters codecParameters,
+                                      int timeBaseNumerator,
+                                      int timeBaseDenominator,
+                                      long duration,
+                                      int averageFrameRateNumerator,
+                                      int averageFrameRateDenominator) {}
+
+    /**
+     * Owns the stream metadata needed by outputs independently of the blocking input context.
+     * The master codec-parameter copy is never returned directly; each caller receives another
+     * native copy that it owns and must free.
+     */
+    private static final class VideoStreamMetadataCache {
+        private AVCodecParameters codecParameters;
+        private int timeBaseNumerator;
+        private int timeBaseDenominator;
+        private long duration;
+        private int averageFrameRateNumerator;
+        private int averageFrameRateDenominator;
+
+        synchronized boolean replace(AVCodecParameters source,
+                                     int newTimeBaseNumerator,
+                                     int newTimeBaseDenominator,
+                                     long newDuration,
+                                     int newAverageFrameRateNumerator,
+                                     int newAverageFrameRateDenominator) {
+            if (source == null || source.isNull()
+                    || newTimeBaseNumerator <= 0 || newTimeBaseDenominator <= 0) {
+                return false;
+            }
+
+            AVCodecParameters replacement = avcodec.avcodec_parameters_alloc();
+            if (replacement == null || replacement.isNull()) {
+                return false;
+            }
+            int ret = avcodec.avcodec_parameters_copy(replacement, source);
+            if (ret < 0) {
+                avcodec.avcodec_parameters_free(replacement);
+                return false;
+            }
+
+            clearLocked();
+            codecParameters = replacement;
+            timeBaseNumerator = newTimeBaseNumerator;
+            timeBaseDenominator = newTimeBaseDenominator;
+            duration = newDuration;
+            averageFrameRateNumerator = newAverageFrameRateNumerator;
+            averageFrameRateDenominator = newAverageFrameRateDenominator;
+            return true;
+        }
+
+        synchronized VideoStreamSnapshot copy() {
+            if (codecParameters == null || codecParameters.isNull()) {
+                return null;
+            }
+
+            AVCodecParameters copy = avcodec.avcodec_parameters_alloc();
+            if (copy == null || copy.isNull()) {
+                return null;
+            }
+            int ret = avcodec.avcodec_parameters_copy(copy, codecParameters);
+            if (ret < 0) {
+                avcodec.avcodec_parameters_free(copy);
+                return null;
+            }
+            return new VideoStreamSnapshot(
+                    copy,
+                    timeBaseNumerator,
+                    timeBaseDenominator,
+                    duration,
+                    averageFrameRateNumerator,
+                    averageFrameRateDenominator);
+        }
+
+        synchronized void clear() {
+            clearLocked();
+        }
+
+        private void clearLocked() {
+            if (codecParameters != null && !codecParameters.isNull()) {
+                avcodec.avcodec_parameters_free(codecParameters);
+            }
+            codecParameters = null;
+            timeBaseNumerator = 0;
+            timeBaseDenominator = 0;
+            duration = 0;
+            averageFrameRateNumerator = 0;
+            averageFrameRateDenominator = 0;
+        }
+    }
+
+    private final VideoStreamMetadataCache videoStreamMetadata = new VideoStreamMetadataCache();
 
 
     /**
@@ -304,16 +492,11 @@ public class MpegTsProcessor extends Thread {
             frameCount = 0;
         }
 
-        fileFrameQueueMax = frameCount;
-        if (fileFrameQueue != null) {
-            fileFrameQueue.clear();
-        }
-
-        if (frameCount > 0) {
-            //fileFrameQueue = new ArrayBlockingQueue<>(frameCount);
-            fileFrameQueue = new ArrayBlockingQueue<>(frameCount);
-        } else {
-            fileFrameQueue = null;
+        synchronized (frameQueueLock) {
+            isSubmittingFrameQueue = false;
+            drainAndFreeFrameQueueLocked();
+            fileFrameQueueMax = frameCount;
+            fileFrameQueue = frameCount > 0 ? new ArrayDeque<>(frameCount) : null;
         }
     }
 
@@ -329,6 +512,9 @@ public class MpegTsProcessor extends Thread {
         synchronized (contextLock) {
             try {
                 logger.debug("openStream");
+                streamOpened = false;
+                videoStreamId = INVALID_STREAM_ID;
+                videoStreamMetadata.clear();
 
                 avformat.avformat_network_init();
 
@@ -336,7 +522,11 @@ public class MpegTsProcessor extends Thread {
                     avutil.av_dict_set(options, "rtsp_transport", "tcp", 0);
                 }
 
+                long analyzeDuration = getAnalyzeDurationMicros();
                 avutil.av_dict_set(options, "timeout", Long.toString(timeout), 0);
+                avutil.av_dict_set(options, "rw_timeout", Long.toString(timeout), 0);
+                avutil.av_dict_set(options, "analyzeduration", Long.toString(analyzeDuration), 0);
+                avutil.av_dict_set(options, "probesize", Long.toString(getProbeSizeBytes(analyzeDuration)), 0);
 
                 // Create a new AV Format Context for I/O
                 avFormatContext = new AVFormatContext(null);
@@ -352,24 +542,79 @@ public class MpegTsProcessor extends Thread {
 
                         logger.error("Failed to find stream info");
 
+                    } else if ((videoStreamId = findUsableVideoStreamId()) != INVALID_STREAM_ID) {
+
+                        if (cacheVideoStreamSnapshotFromInput()) {
+                            streamOpened = true;
+                            logger.debug("Configured video stream opened");
+                        } else {
+                            videoStreamId = INVALID_STREAM_ID;
+                            logger.error("Could not retain video stream metadata for output files");
+                        }
+
                     } else {
-
-                        streamOpened = true;
-                        logger.debug("Stream opened {}", streamSource);
-
+                        logger.warn("Video stream metadata is incomplete; waiting for a reconnect instead of "
+                                + "starting with invalid codec parameters");
                     }
                 } else {
 
-                    logger.error("Failed to open stream: {}", streamSource);
+                    logger.error("Failed to open configured video stream");
                 }
             } catch (Exception e) {
                 logger.error("Exception when opening stream", e);
             } finally {
+                if (!streamOpened) {
+                    closeInputContext();
+                }
                 av_dict_free(options);
             }
         }
 
         return streamOpened;
+    }
+
+    private int findUsableVideoStreamId() {
+        for (int streamId = 0; streamId < avFormatContext.nb_streams(); ++streamId) {
+            AVStream stream = avFormatContext.streams(streamId);
+            AVCodecParameters codecParameters = stream.codecpar();
+            if (codecParameters.codec_type() != AVMEDIA_TYPE_VIDEO)
+                continue;
+
+            AVRational streamTimeBase = stream.time_base();
+            if (codecParameters.codec_id() != avcodec.AV_CODEC_ID_NONE
+                    && codecParameters.width() > 0
+                    && codecParameters.height() > 0
+                    && streamTimeBase != null
+                    && streamTimeBase.num() > 0
+                    && streamTimeBase.den() > 0) {
+                return streamId;
+            }
+        }
+        return INVALID_STREAM_ID;
+    }
+
+    long getAnalyzeDurationMicros() {
+        if (timeout <= 0) {
+            return MAX_ANALYZE_DURATION_MICROS;
+        }
+        return Math.min(timeout, MAX_ANALYZE_DURATION_MICROS);
+    }
+
+    long getProbeSizeBytes(long analyzeDurationMicros) {
+        long durationSecondsRoundedUp = Math.max(1L, (analyzeDurationMicros + 999_999L) / 1_000_000L);
+        long timeoutBoundedProbeSize = durationSecondsRoundedUp * PROBE_BYTES_PER_SECOND;
+        return Math.max(MIN_PROBE_SIZE_BYTES, Math.min(MAX_PROBE_SIZE_BYTES, timeoutBoundedProbeSize));
+    }
+
+    private void closeInputContext() {
+        try {
+            if (avFormatContext != null && !avFormatContext.isNull()) {
+                avformat.avformat_close_input(avFormatContext);
+            }
+        } finally {
+            avFormatContext = null;
+            videoStreamMetadata.clear();
+        }
     }
 
     /**
@@ -382,35 +627,90 @@ public class MpegTsProcessor extends Thread {
     public void setInjectExtradata(boolean injectExtradata) { this.injectExtradata = injectExtradata; }
 
     public AVCodecParameters getCodecParams() {
-        synchronized (contextLock) {
-            try {
-                AVCodecParameters src = avFormatContext.streams(videoStreamId).codecpar();
-                AVCodecParameters dst = avcodec.avcodec_parameters_alloc();
-                if (src == null) {
-                    logger.error("Could not allocate AVCodecParameters");
-                    return null;
-                }
-                if (dst == null) {
-                    logger.error("Could not allocate AVCodecParameters");
-                    return null;
-                }
-                int ret = avcodec.avcodec_parameters_copy(dst, src);
-                if (ret < 0) {
-                    avcodec.avcodec_parameters_free(dst);
-                    logger.error("AVCodecParameters failed: {}", ret);
-                }
-                return dst;
-            } catch (Exception e) {
-                logger.error("Exception when copying codec parameters", e);
-                return null;
-            }
-        }
+        VideoStreamSnapshot snapshot = getVideoStreamSnapshot();
+        return snapshot == null ? null : snapshot.codecParameters();
     }
 
-    public AVStream getAvStream() {
-        synchronized (contextLock) {
-            return avFormatContext.streams(videoStreamId);
+    /**
+     * Copies metadata from an independently owned cache populated before packet processing starts.
+     * This deliberately does not acquire {@link #contextLock}: {@code av_read_frame()} can block
+     * while holding that lock, and making a record command wait behind it can consume the entire
+     * occupancy before the output becomes writable. The caller owns and must free codecParameters.
+     */
+    public VideoStreamSnapshot getVideoStreamSnapshot() {
+        if (!streamOpened) {
+            return null;
         }
+
+        VideoStreamSnapshot snapshot = videoStreamMetadata.copy();
+        // Preserve the input-context lifetime contract without taking its blocking lock. If close
+        // began while the cache was being copied, discard this owned copy instead of letting a new
+        // output start against a stream that is no longer open.
+        if (!streamOpened) {
+            if (snapshot != null && snapshot.codecParameters() != null
+                    && !snapshot.codecParameters().isNull()) {
+                avcodec.avcodec_parameters_free(snapshot.codecParameters());
+            }
+            return null;
+        }
+        if (snapshot == null && streamOpened) {
+            logger.error("Cached video stream metadata is not available");
+        }
+        return snapshot;
+    }
+
+    /** Called while the input context is stable, before the demux thread starts. */
+    private boolean cacheVideoStreamSnapshotFromInput() {
+        if (avFormatContext == null || avFormatContext.isNull()
+                || videoStreamId < 0 || videoStreamId >= avFormatContext.nb_streams()) {
+            return false;
+        }
+
+        AVStream stream = avFormatContext.streams(videoStreamId);
+        AVCodecParameters codecParameters = stream.codecpar();
+        AVRational timeBase = stream.time_base();
+        if (codecParameters == null || codecParameters.isNull()
+                || timeBase == null || timeBase.isNull()
+                || timeBase.num() <= 0 || timeBase.den() <= 0) {
+            return false;
+        }
+
+        AVRational averageFrameRate = stream.avg_frame_rate();
+        int frameRateNumerator = averageFrameRate == null || averageFrameRate.isNull()
+                ? 0 : averageFrameRate.num();
+        int frameRateDenominator = averageFrameRate == null || averageFrameRate.isNull()
+                ? 0 : averageFrameRate.den();
+        long duration = resolveVideoDuration(
+                stream.duration(),
+                avFormatContext.duration(),
+                timeBase.num(),
+                timeBase.den());
+        return videoStreamMetadata.replace(
+                codecParameters,
+                timeBase.num(),
+                timeBase.den(),
+                duration,
+                frameRateNumerator,
+                frameRateDenominator);
+    }
+
+    /**
+     * Uses the stream duration when available, otherwise converts FFmpeg's container duration from
+     * microseconds into the selected stream's time base. Returning a non-positive value tells
+     * callers that duration-dependent processing must preserve the source rather than guess.
+     */
+    static long resolveVideoDuration(long streamDuration, long containerDuration,
+                                     int timeBaseNumerator, int timeBaseDenominator) {
+        if (streamDuration > 0) {
+            return streamDuration;
+        }
+        if (containerDuration <= 0 || timeBaseNumerator <= 0 || timeBaseDenominator <= 0) {
+            return streamDuration;
+        }
+        long resolved = av_rescale_q(containerDuration,
+                av_make_q(1, AV_TIME_BASE),
+                av_make_q(timeBaseNumerator, timeBaseDenominator));
+        return resolved > 0 ? resolved : streamDuration;
     }
 
     /**
@@ -432,50 +732,30 @@ public class MpegTsProcessor extends Thread {
             throw new IllegalStateException(message);
         }
 
-        for (int streamId = 0; streamId < avFormatContext.nb_streams(); ++streamId) {
-
-            int codecType = avFormatContext.streams(streamId).codecpar().codec_type();
-
-            AVRational timeBase = avFormatContext.streams(streamId).time_base();
-
-            double num = timeBase.num();
-            double den = timeBase.den();
-
-            double timeBaseUnits = num / den;
-
-            if (INVALID_STREAM_ID == videoStreamId && avutil.AVMEDIA_TYPE_VIDEO == codecType) {
-
-                logger.debug("Video stream present with id: {}", streamId);
-
-                videoStreamId = streamId;
-
-                // Transcode if not h264
-                doTranscode = avFormatContext.streams(streamId).codecpar().codec_id() != avcodec.AV_CODEC_ID_H264;
-
-                videoStreamTimeBase = timeBaseUnits;
+        synchronized (contextLock) {
+            if (avFormatContext == null || videoStreamId < 0
+                    || videoStreamId >= avFormatContext.nb_streams()) {
+                throw new IllegalStateException("Stream does not contain usable video metadata");
             }
 
-            // Injecting extradata as-is only works for receiving video streams
-            // For file h264 containers (like mp4) we will want to convert the
-            // PPS/SPS extradata from AVCC to Annex B.
-            // TODO: Detect AVCC, convert to Annex B
-            int extraSize = avFormatContext.streams(streamId).codecpar().extradata_size();
-            if (injectExtradata && extraSize > 0 && avFormatContext.streams(streamId).codecpar().codec_id() == avcodec.AV_CODEC_ID_H264) {
+            AVStream videoStream = avFormatContext.streams(videoStreamId);
+            AVCodecParameters codecParameters = videoStream.codecpar();
+            AVRational timeBase = videoStream.time_base();
+            logger.debug("Video stream present with id: {}", videoStreamId);
+
+            doTranscode = codecParameters.codec_id() != avcodec.AV_CODEC_ID_H264;
+            videoStreamTimeBaseNumerator = timeBase.num();
+            videoStreamTimeBaseDenominator = timeBase.den();
+
+            // Injecting extradata as-is only works for the exact selected H264 video stream.
+            int extraSize = codecParameters.extradata_size();
+            if (injectExtradata && extraSize > 0
+                    && codecParameters.codec_id() == avcodec.AV_CODEC_ID_H264) {
                 spsPpsHeader = new byte[extraSize];
-                avFormatContext.streams(streamId).codecpar().extradata().get(spsPpsHeader);
+                codecParameters.extradata().get(spsPpsHeader);
             } else {
                 spsPpsHeader = null;
             }
-
-
-//            if (INVALID_STREAM_ID == dataStreamId && avutil.AVMEDIA_TYPE_DATA == codecType) {
-//
-//                logger.debug("Data stream present with id: {}", streamId);
-//
-//                dataStreamId = streamId;
-//
-//                dataStreamTimeBase = timeBaseUnits;
-//            }
         }
     }
 
@@ -696,6 +976,114 @@ public class MpegTsProcessor extends Thread {
     }
 
     /**
+     * Executes an action after every packet already accepted for the requested listener. Buffered
+     * replay is drained first, then the action is placed on the listener's own executor. This
+     * provides a close boundary without moving file I/O onto the demux thread.
+     *
+     * <p>Packets accepted after the boundary are tagged with the prior listener generation and
+     * discarded. They therefore cannot leak into a later recording if it opens before all stale
+     * callbacks have left the executor queue.</p>
+     */
+    public <T> T executeAfterPendingVideoData(
+            DataBufferListener videoDataBufferListener, Callable<T> action) throws Exception {
+        Objects.requireNonNull(videoDataBufferListener, "videoDataBufferListener");
+        Objects.requireNonNull(action, "action");
+
+        Subscription target = null;
+        for (var subscription : videoSubscriptions) {
+            if (subscription.listener() == videoDataBufferListener) {
+                target = subscription;
+                break;
+            }
+        }
+
+        // A stopped processor has already removed and shut down its subscriptions. There can be
+        // no pending callbacks to order in that state, but the caller still needs to close its
+        // output resources.
+        if (target == null) {
+            return action.call();
+        }
+
+        if (target.mode() != DeliveryMode.BUFFERED) {
+            return target.executeAfterPending(action);
+        }
+
+        Future<T> bufferedBoundary = null;
+        Queue<AVPacket> closingQueue;
+        synchronized (frameQueueLock) {
+            // This is the recording cutoff. The finite old queue belongs to the recording being
+            // closed; packets arriving from now on are retained in a fresh pre-roll queue.
+            bufferedCloseInProgress = true;
+            closingQueue = fileFrameQueue;
+            if (fileFrameQueue != null) {
+                fileFrameQueue = new ArrayDeque<>(fileFrameQueueMax);
+            }
+
+            boolean replayPending = isSubmittingFrameQueue
+                    || (closingQueue != null && !closingQueue.isEmpty());
+            if (replayPending) {
+                Subscription orderedTarget = target;
+                Queue<AVPacket> finiteQueue = closingQueue;
+                try {
+                    ensureFrameQueueSubmitterLocked();
+                    bufferedBoundary = frameQueueSubmitter.submit(() -> {
+                        try {
+                            drainDetachedFrameQueue(finiteQueue);
+                            return orderedTarget.executeAfterPending(action);
+                        } finally {
+                            drainAndFreeFrameQueue(finiteQueue);
+                        }
+                    });
+                } catch (RejectedExecutionException e) {
+                    bufferedCloseInProgress = false;
+                    drainAndFreeFrameQueue(closingQueue);
+                    throw e;
+                }
+            }
+        }
+
+        try {
+            if (bufferedBoundary != null) {
+                return awaitFuture(bufferedBoundary);
+            }
+            return target.executeAfterPending(action);
+        } finally {
+            drainAndFreeFrameQueue(closingQueue);
+            synchronized (frameQueueLock) {
+                bufferedCloseInProgress = false;
+            }
+        }
+    }
+
+    private static <T> T awaitFuture(Future<T> future) throws Exception {
+        boolean interrupted = false;
+        try {
+            while (true) {
+                try {
+                    return future.get();
+                } catch (InterruptedException e) {
+                    // Leaving while the boundary is still live would let fallback cleanup race
+                    // the queued close action. Finish the boundary, then restore interruption.
+                    interrupted = true;
+                } catch (ExecutionException e) {
+                    Throwable cause = e.getCause();
+                    if (cause instanceof Exception exception) {
+                        throw exception;
+                    }
+                    if (cause instanceof Error error) {
+                        throw error;
+                    }
+                    throw new IllegalStateException("Video delivery boundary failed", cause);
+                }
+            }
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    /**
      * Hands a record to every registered listener that asked for one of the given delivery modes
      * and is currently writing.
      * <p>
@@ -707,6 +1095,8 @@ public class MpegTsProcessor extends Thread {
     protected void notifyVideoDataBufferListeners(DataBufferRecord dataRecord, Set<DeliveryMode> targetModes) {
         DataBufferRecord dataClone = null;
         for (var subscription : videoSubscriptions) {
+            // This unlocked check avoids cloning every packet while outputs are idle. Admission is
+            // checked again atomically inside Subscription.deliver(); this is only a fast path.
             if (!targetModes.contains(subscription.mode()) || !subscription.listener().isWriting()) {
                 continue;
             }
@@ -738,6 +1128,9 @@ public class MpegTsProcessor extends Thread {
                 settings.put("width", dims[0]);
                 settings.put("height", dims[1]);
                 settings.put("pix_fmt", avutil.AV_PIX_FMT_YUV420P);
+                int[] frameRate = getTranscoderFrameRate();
+                settings.put("fps_num", frameRate[0]);
+                settings.put("fps_den", frameRate[1]);
                 decoder = new Decoder(getCodecId(), settings);
                 encoder = new Encoder(avcodec.AV_CODEC_ID_H264, settings);
                 decoder.setInQueue(decodeQueue);
@@ -756,6 +1149,26 @@ public class MpegTsProcessor extends Thread {
 
             throw new IllegalStateException(message);
         }
+    }
+
+    private int[] getTranscoderFrameRate() {
+        synchronized (contextLock) {
+            AVRational averageFrameRate = avFormatContext.streams(videoStreamId).avg_frame_rate();
+            int numerator = averageFrameRate == null || averageFrameRate.isNull()
+                    ? 0 : averageFrameRate.num();
+            int denominator = averageFrameRate == null || averageFrameRate.isNull()
+                    ? 0 : averageFrameRate.den();
+            return selectTranscoderFrameRate(numerator, denominator, fps);
+        }
+    }
+
+    static int[] selectTranscoderFrameRate(int numerator, int denominator, int configuredFps) {
+        double rate = denominator == 0 ? Double.NaN : (double) numerator / denominator;
+        if (numerator > 0 && denominator > 0 && Double.isFinite(rate)
+                && rate >= 1.0 && rate <= 240.0) {
+            return new int[] {numerator, denominator};
+        }
+        return new int[] {configuredFps > 0 ? Math.min(configuredFps, 240) : 30, 1};
     }
 
     /**
@@ -784,17 +1197,19 @@ public class MpegTsProcessor extends Thread {
 
     @Override
     public void run() {
-
-        do {
-            processStreamPackets();
-            logger.info("End of MISB TS stream");
-            if (loop) {
-                avformat.av_seek_frame(avFormatContext, 0, 0, avformat.AVSEEK_FLAG_ANY);
+        try {
+            do {
+                processStreamPackets();
+                throwIfTranscoderFailed();
+                logger.info("End of MISB TS stream");
+                if (loop) {
+                    avformat.av_seek_frame(avFormatContext, 0, 0, avformat.AVSEEK_FLAG_ANY);
+                }
             }
+            while (loop);
+        } finally {
+            shutdownExecutors();
         }
-        while (loop);
-
-        shutdownExecutors();
     }
 
     private void submitPacketToListeners(AVPacket avPacket, Set<DeliveryMode> targetModes) {
@@ -814,92 +1229,361 @@ public class MpegTsProcessor extends Thread {
         }
 
         // Pass data buffer to interested listeners
-        notifyVideoDataBufferListeners(
-                new DataBufferRecord(avPacket.pts() * videoStreamTimeBase, dataBuffer, isKeyFrame), targetModes);
-    }
-
-    private synchronized void submitFrameQueueToListenersAsync() {
-        if (isSubmittingFrameQueue.get()) {
-            //logger.warn("Already submitting frame queue to listeners");
-            return;
-        } else if (fileFrameQueue == null || fileFrameQueue.isEmpty()) {
-            logger.debug("No frame queue to submit to listeners");
-            return;
-        } else if (!(this.hasWritingListener(DeliveryMode.BUFFERED))) {
-            logger.debug("No listeners waiting on the frame buffer");
-            isSubmittingFrameQueue.set(false);
-            return;
+        AVRational packetTimeBase = avPacket.time_base();
+        int packetTimeBaseNumerator = videoStreamTimeBaseNumerator;
+        int packetTimeBaseDenominator = videoStreamTimeBaseDenominator;
+        if (packetTimeBase != null && packetTimeBase.num() > 0 && packetTimeBase.den() > 0) {
+            packetTimeBaseNumerator = packetTimeBase.num();
+            packetTimeBaseDenominator = packetTimeBase.den();
         }
-
-        isSubmittingFrameQueue.set(true);
-        frameQueueSubmitter = Executors.newSingleThreadExecutor(new ListenerThreadFactory(WORKER_THREAD_NAME, "FrameQueueSubmit"));
-
-        frameQueueSubmitter.submit(() -> {
-            for (AVPacket avPacket : fileFrameQueue) {
-                if (!isSubmittingFrameQueue.get())
-                    break;
-                submitPacketToListeners(avPacket, BUFFERED_MODES);
-                av_packet_free(avPacket);
-            }
-            isSubmittingFrameQueue.set(false);
-        });
+        double packetTimeBaseUnits = (double) packetTimeBaseNumerator / packetTimeBaseDenominator;
+        double presentationTimestamp = presentationTimestamp(
+                avPacket.pts(), avPacket.dts(), packetTimeBaseUnits);
+        notifyVideoDataBufferListeners(new DataBufferRecord(
+                presentationTimestamp,
+                dataBuffer,
+                isKeyFrame,
+                avPacket.pts(),
+                avPacket.dts(),
+                avPacket.duration(),
+                packetTimeBaseNumerator,
+                packetTimeBaseDenominator), targetModes);
     }
 
-    private void shutdownExecutors() {
-        if (encoder != null) {
-            encoder.doRun.set(false);
-            try {
-                encoder.join();
-                for (AVPacket avPacket : encoder.getOutQueue()) {
-                    av_packet_free(avPacket);
+    private void deliverVideoPacket(AVPacket packet) {
+        boolean liveListenersDelivered = false;
+        synchronized (frameQueueLock) {
+            boolean bufferedListenerIsWriting = hasWritingListener(DeliveryMode.BUFFERED);
+            if (bufferedListenerIsWriting && !bufferedCloseInProgress) {
+                boolean replayPending = isSubmittingFrameQueue
+                        || (fileFrameQueue != null && !fileFrameQueue.isEmpty());
+                if (!replayPending) {
+                    // Holding frameQueueLock through listener enqueue makes this packet either
+                    // wholly before or wholly after the close cutoff.
+                    submitPacketToListeners(packet, ALL_MODES);
+                    liveListenersDelivered = true;
+                } else {
+                    // BUFFERED listeners receive both pre-roll and subsequent packets in order
+                    // from this explicit queue. LIVE listeners remain current.
+                    submitPacketToFrameQueueLocked(packet);
+                    if (!isSubmittingFrameQueue) {
+                        startFrameQueueSubmissionLocked(fileFrameQueue);
+                    }
                 }
-            } catch (Exception ignored) {}
+            } else {
+                // No recording is active, or a close cutoff has already rotated the queue. Retain
+                // this packet only as pre-roll for the next recording.
+                submitPacketToFrameQueueLocked(packet);
+            }
         }
+
+        if (!liveListenersDelivered && hasWritingListener(DeliveryMode.LIVE_ONLY)) {
+            submitPacketToListeners(packet, LIVE_MODES);
+        }
+    }
+
+    static double presentationTimestamp(long pts, long dts, double timeBaseUnits) {
+        long presentationTime = pts != AV_NOPTS_VALUE ? pts : dts;
+        return presentationTime == AV_NOPTS_VALUE
+                ? Double.NaN
+                : presentationTime * timeBaseUnits;
+    }
+
+    /** Starts replay while {@link #frameQueueLock} is held. */
+    private void startFrameQueueSubmissionLocked(Queue<AVPacket> replayQueue) {
+        ensureFrameQueueSubmitterLocked();
+        isSubmittingFrameQueue = true;
+        try {
+            frameQueueSubmitter.submit(() -> drainFrameQueueToListeners(replayQueue));
+        } catch (RejectedExecutionException e) {
+            isSubmittingFrameQueue = false;
+            logger.debug("Frame buffer replay executor is shutting down", e);
+        }
+    }
+
+    /** Creates the replay executor while {@link #frameQueueLock} is held. */
+    private void ensureFrameQueueSubmitterLocked() {
+        if (executorsShuttingDown) {
+            throw new RejectedExecutionException("Video processor executors are shutting down");
+        }
+        if (frameQueueSubmitter == null || frameQueueSubmitter.isShutdown()) {
+            frameQueueSubmitter = Executors.newSingleThreadExecutor(
+                    new ListenerThreadFactory(WORKER_THREAD_NAME, "FrameQueueSubmit"));
+        }
+    }
+
+    /**
+     * Polling transfers native ownership from the queue to this worker. The packet is removed while
+     * holding frameQueueLock and is always freed exactly once by this method.
+     */
+    private void drainFrameQueueToListeners(Queue<AVPacket> replayQueue) {
+        try {
+            while (true) {
+                AVPacket packet;
+                synchronized (frameQueueLock) {
+                    if (!isSubmittingFrameQueue
+                            || !hasWritingListener(DeliveryMode.BUFFERED)) {
+                        isSubmittingFrameQueue = false;
+                        return;
+                    }
+                    packet = replayQueue.poll();
+                    if (packet == null) {
+                        isSubmittingFrameQueue = false;
+                        return;
+                    }
+                }
+
+                try {
+                    submitPacketToListeners(packet, BUFFERED_MODES);
+                } finally {
+                    av_packet_free(packet);
+                }
+            }
+        } catch (RuntimeException e) {
+            logger.warn("Frame buffer replay stopped after a listener rejected a packet", e);
+            synchronized (frameQueueLock) {
+                isSubmittingFrameQueue = false;
+            }
+        }
+    }
+
+    /** Drains the finite queue detached at a close cutoff. */
+    private void drainDetachedFrameQueue(Queue<AVPacket> queue) {
+        if (queue == null) {
+            return;
+        }
+        AVPacket packet;
+        while (true) {
+            synchronized (frameQueueLock) {
+                packet = queue.poll();
+            }
+            if (packet == null) {
+                return;
+            }
+            try {
+                submitPacketToListeners(packet, BUFFERED_MODES);
+            } finally {
+                av_packet_free(packet);
+            }
+        }
+    }
+
+    void shutdownExecutors() {
+        synchronized (frameQueueLock) {
+            executorsShuttingDown = true;
+        }
+
+        // Stop the producer and consumer before joining either one. Stopping the encoder first
+        // while the decoder is still producing leaves orphaned native frames in their shared
+        // queue. Interrupt also releases an idle worker immediately.
         if (decoder != null) {
             decoder.doRun.set(false);
+            decoder.interrupt();
+        }
+        if (encoder != null) {
+            encoder.doRun.set(false);
+            encoder.interrupt();
+        }
+
+        if (decoder != null) {
             try {
-                decoder.join();
-                for (AVFrame avFrame : decoder.getOutQueue()) {
-                    av_frame_free(avFrame);
+                decoder.join(5_000L);
+                if (decoder.isAlive()) {
+                    logger.error("Timed out waiting for decoder worker to stop");
                 }
-            } catch (Exception ignored) {}
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (encoder != null) {
+            try {
+                encoder.join(5_000L);
+                if (encoder.isAlive()) {
+                    logger.error("Timed out waiting for encoder worker to stop");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
 
-        isSubmittingFrameQueue.set(false);
-        if (frameQueueSubmitter != null) {
-            frameQueueSubmitter.shutdownNow();
-            frameQueueSubmitter = null;
+        // Coder cleanup normally drains these queues. Polling again is safe and covers a worker
+        // that failed before its packet allocation phase.
+        drainPacketQueue(decodeQueue);
+        if (decoder != null && !decoder.isAlive()) {
+            drainFrameQueue(decoder.getOutQueue());
+        }
+        if (encoder != null && !encoder.isAlive()) {
+            drainPacketQueue(encoder.getOutQueue());
         }
 
+        ExecutorService submitter;
+        synchronized (frameQueueLock) {
+            isSubmittingFrameQueue = false;
+            submitter = frameQueueSubmitter;
+        }
+        if (submitter != null) {
+            Subscription.cancelQueuedTasks(submitter.shutdownNow());
+        }
+
+        // Cancel listener work before waiting for a frame-boundary worker that may itself be
+        // waiting for a listener action. Canceled FutureTasks wake every boundary waiter.
         clearVideoDataBufferListeners();
 
-        if (fileFrameQueue != null) {
-            for (AVPacket avPacket : fileFrameQueue) {
-                av_packet_free(avPacket);
+        if (submitter != null) {
+            try {
+                if (!submitter.awaitTermination(5, TimeUnit.SECONDS)) {
+                    logger.warn("Timed out waiting for frame buffer replay to stop");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
-            fileFrameQueue.clear();
+        }
+
+        synchronized (frameQueueLock) {
+            frameQueueSubmitter = null;
+            drainAndFreeFrameQueueLocked();
             fileFrameQueue = null;
         }
     }
 
-    private void submitPacketToFrameQueue(AVPacket avPacket) {
-        if (fileFrameQueue == null) {
-            logger.error("No frame queue to submit packet to");
+    void submitPacketToFrameQueue(AVPacket avPacket) {
+        synchronized (frameQueueLock) {
+            submitPacketToFrameQueueLocked(avPacket);
+        }
+    }
+
+    private void submitPacketToFrameQueueLocked(AVPacket avPacket) {
+        if (fileFrameQueue == null || fileFrameQueueMax <= 0) {
             return;
         }
 
         AVPacket newPacket = avcodec.av_packet_clone(avPacket);
+        if (newPacket == null || newPacket.isNull()) {
+            logger.error("Could not clone a packet for the frame buffer");
+            return;
+        }
 
         while (fileFrameQueue.size() >= fileFrameQueueMax) {
-            AVPacket p = fileFrameQueue.poll();
-            av_packet_free(p);
+            AVPacket evictedPacket = fileFrameQueue.poll();
+            if (evictedPacket != null) {
+                av_packet_free(evictedPacket);
+            }
         }
         fileFrameQueue.add(newPacket);
     }
 
-    private boolean readPacket(AVPacket avPacket) {
+    private boolean isFrameBufferEnabled() {
+        synchronized (frameQueueLock) {
+            return fileFrameQueue != null;
+        }
+    }
+
+    private void drainAndFreeFrameQueueLocked() {
+        drainAndFreeFrameQueue(fileFrameQueue);
+    }
+
+    private void drainAndFreeFrameQueue(Queue<AVPacket> queue) {
+        if (queue == null) {
+            return;
+        }
+        while (true) {
+            AVPacket packet;
+            synchronized (frameQueueLock) {
+                packet = queue.poll();
+            }
+            if (packet == null) {
+                return;
+            }
+            av_packet_free(packet);
+        }
+    }
+
+    private static void drainPacketQueue(Queue<AVPacket> queue) {
+        AVPacket packet;
+        while ((packet = queue.poll()) != null) {
+            av_packet_free(packet);
+        }
+    }
+
+    private static void drainFrameQueue(Queue<AVFrame> queue) {
+        AVFrame frame;
+        while ((frame = queue.poll()) != null) {
+            av_frame_free(frame);
+        }
+    }
+
+    private void throwIfTranscoderFailed() {
+        Throwable failure = decoder == null ? null : decoder.getFailure();
+        if (failure == null && encoder != null) {
+            failure = encoder.getFailure();
+        }
+        if (failure != null) {
+            throw new IllegalStateException("Video transcoder failed", failure);
+        }
+    }
+
+    private AVPacket awaitTranscodedPacket() {
+        long deadline = System.nanoTime() + TRANSCODE_OUTPUT_WAIT_NANOS;
+        Queue<AVPacket> outQueue = encoder.getOutQueue();
+        do {
+            AVPacket packet = outQueue.poll();
+            if (packet != null) {
+                return packet;
+            }
+            throwIfTranscoderFailed();
+            if (!decoder.isAlive() || !encoder.isAlive() || Thread.currentThread().isInterrupted()) {
+                return null;
+            }
+            LockSupport.parkNanos(500_000L);
+        } while (System.nanoTime() < deadline);
+        return null;
+    }
+
+    private void flushTranscoderAtEndOfStream() {
+        decoder.finishInput();
+        awaitCoderFlush(decoder, "decoder");
+
+        // The decoder can emit delayed frames while flushing. Do not finish the encoder until the
+        // decoder has stopped producing and the encoder has consumed everything in their shared
+        // queue.
+        encoder.finishInput();
+        awaitCoderFlush(encoder, "encoder");
+        throwIfTranscoderFailed();
+
+        AVPacket packet;
+        while ((packet = encoder.getOutQueue().poll()) != null) {
+            try {
+                deliverVideoPacket(packet);
+            } finally {
+                av_packet_free(packet);
+            }
+        }
+    }
+
+    private void awaitCoderFlush(Coder<?, ?> coder, String name) {
+        try {
+            coder.join(TRANSCODER_FLUSH_TIMEOUT_MILLIS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while flushing video " + name, e);
+        }
+        if (coder.isAlive()) {
+            throw new IllegalStateException("Timed out flushing video " + name);
+        }
+        if (coder.getFailure() != null) {
+            throw new IllegalStateException("Video " + name + " failed while flushing", coder.getFailure());
+        }
+        if (!coder.isOutputComplete()) {
+            throw new IllegalStateException("Video " + name + " stopped before end-of-input was flushed");
+        }
+    }
+
+    private int readPacket(AVPacket avPacket) {
         synchronized (contextLock) {
-            return !terminateProcessing && streamOpened && (av_read_frame(avFormatContext, avPacket)) >= 0;
+            if (terminateProcessing || !streamOpened) {
+                return AVERROR_EOF;
+            }
+            return av_read_frame(avFormatContext, avPacket);
         }
     }
 
@@ -908,99 +1592,115 @@ public class MpegTsProcessor extends Thread {
      * and callbacks, if registered, are invoked for appropriate buffers.
      */
     private void processStreamPackets() {
-
-        AVPacket avPacket;
-
-        // Create an AV packet container to pass data to demuxer
-        avPacket = avcodec.av_packet_alloc();
+        // This container remains owned by the demux loop. Transcoded output is held separately.
+        AVPacket demuxPacket = avcodec.av_packet_alloc();
+        if (demuxPacket == null || demuxPacket.isNull()) {
+            logger.error("Could not allocate a packet for the video demuxer");
+            return;
+        }
 
         // Read frames
         long startTime = System.currentTimeMillis();
         long frameCount = 0;
 
-        while (readPacket(avPacket)) {
-            // Discard the frame if no listeners are writing and we're not writing to a frame buffer
-            boolean isWriting = hasWritingListener();
-            boolean skipProcessing = !isWriting && fileFrameQueue == null;
-
-            if (skipProcessing) {
-                av_packet_unref(avPacket);
-                if (decodeQueue != null) {
-                    AVPacket p;
-                    while ((p = decodeQueue.poll()) != null) {
-                        av_packet_unref(p);
-                        av_packet_free(p);
-                    }
-                    decodeQueue.clear();
+        try {
+            while (!terminateProcessing) {
+                int readResult = readPacket(demuxPacket);
+                if (readResult == AVERROR_EAGAIN()) {
+                    LockSupport.parkNanos(500_000L);
+                    continue;
                 }
-                if (decoder != null) {
-                    AVFrame f;
-                    while ((f = decoder.getOutQueue().poll()) != null) {
-                        av_frame_unref(f);
-                        av_frame_free(f);
+                if (readResult == AVERROR_EOF) {
+                    if (doTranscode && !loop) {
+                        flushTranscoderAtEndOfStream();
                     }
-                    decoder.getOutQueue().clear();
+                    break;
                 }
-                if (encoder != null) {
-                    AVPacket p;
-                    while ((p = encoder.getOutQueue().poll()) != null) {
-                        av_packet_unref(p);
-                        av_packet_free(p);
+                if (readResult < 0) {
+                    throw new IllegalStateException(
+                            "Could not read video input (FFmpeg error " + readResult + ")");
+                }
+
+                AVPacket deliveryPacket = demuxPacket;
+                try {
+                    // Discard the frame if no listeners are writing and no pre-roll is configured.
+                    boolean isWriting = hasWritingListener();
+                    boolean frameBufferEnabled = isFrameBufferEnabled();
+                    boolean skipProcessing = !isWriting && !frameBufferEnabled;
+
+                    if (skipProcessing) {
+                        drainPacketQueue(decodeQueue);
+                        if (decoder != null) {
+                            drainFrameQueue(decoder.getOutQueue());
+                        }
+                        if (encoder != null) {
+                            drainPacketQueue(encoder.getOutQueue());
+                        }
+                        continue;
                     }
-                    encoder.getOutQueue().clear();
-                }
-                continue;
-            }
 
-            // If it is a video or data frame
-            if ((avPacket.stream_index() == videoStreamId)) {
+                    // Only the selected, metadata-validated video stream is delivered.
+                    if (demuxPacket.stream_index() != videoStreamId) {
+                        continue;
+                    }
 
-                // if FPS is set, we may have to wait a little
-                if (fps > 0) {
-                    var now = System.currentTimeMillis();
-                    var sleepDuration = frameCount * 1000 / fps - (now - startTime);
-                    if (sleepDuration > 0) {
-                        try {
-                            Thread.sleep(sleepDuration);
-                        } catch (InterruptedException e) {
-                            logger.error("Interrupted waiting for stream processor to stop", e);
-                            Thread.currentThread().interrupt();
+                    // if FPS is set, we may have to wait a little
+                    if (fps > 0) {
+                        var now = System.currentTimeMillis();
+                        var sleepDuration = frameCount * 1000 / fps - (now - startTime);
+                        if (sleepDuration > 0) {
+                            try {
+                                Thread.sleep(sleepDuration);
+                            } catch (InterruptedException e) {
+                                logger.error("Interrupted waiting for stream processor to stop", e);
+                                Thread.currentThread().interrupt();
+                            }
                         }
                     }
-                }
+                    // Pacing follows selected input packets, not encoder output. The asynchronous
+                    // encoder often has no packet ready for the first few inputs; incrementing only
+                    // after output made file inputs race to EOF and shut the coders down untouched.
+                    frameCount++;
 
-                if (doTranscode) {
-                    decodeQueue.add(avcodec.av_packet_clone(avPacket));
-                    var outQueue = encoder.getOutQueue();
-
-                    if (outQueue.isEmpty())
-                        continue;
-                    else
-                        avPacket = outQueue.poll();
-                }
-
-                frameCount++;
-
-                if (isWriting) {
-                    if (fileFrameQueue == null || fileFrameQueue.isEmpty()) {
-                        submitPacketToListeners(avPacket, ALL_MODES);
-                    } else {
-                        // A frame buffer replay is pending, so BUFFERED listeners get this packet
-                        // through the replay rather than directly.
-                        submitPacketToListeners(avPacket, LIVE_MODES);
-                        submitPacketToFrameQueue(avPacket);
-                        // Only needs to be called once, but won't hurt to call on every iteration.
-                        submitFrameQueueToListenersAsync();
+                    if (doTranscode) {
+                        throwIfTranscoderFailed();
+                        AVPacket decoderInput = avcodec.av_packet_clone(demuxPacket);
+                        if (decoderInput == null || decoderInput.isNull()) {
+                            logger.error("Could not clone a packet for video transcoding");
+                            continue;
+                        }
+                        decodeQueue.add(decoderInput);
+                        // Wait for the asynchronous pipeline instead of racing a zero-FPS file to
+                        // EOF before either worker can produce output. The wait is bounded and both
+                        // worker failures and shutdown interrupt it promptly.
+                        deliveryPacket = awaitTranscodedPacket();
+                        if (deliveryPacket == null) {
+                            throwIfTranscoderFailed();
+                            continue;
+                        }
                     }
-                } else {
-                    isSubmittingFrameQueue.set(false);
-                    submitPacketToFrameQueue(avPacket);
+
+                    deliverVideoPacket(deliveryPacket);
+                } finally {
+                    releaseIterationPackets(demuxPacket, deliveryPacket);
                 }
             }
-            // clear packet
-            av_packet_unref(avPacket);
+        } finally {
+            av_packet_free(demuxPacket);
         }
-        av_packet_free(avPacket);
+    }
+
+    /**
+     * Releases ownership acquired during one demux-loop iteration. The demux container is reused;
+     * a distinct encoder-output packet is a one-shot native allocation and is freed here.
+     */
+    static void releaseIterationPackets(AVPacket demuxPacket, AVPacket deliveryPacket) {
+        if (deliveryPacket != null && deliveryPacket != demuxPacket) {
+            av_packet_free(deliveryPacket);
+        }
+        if (demuxPacket != null && !demuxPacket.isNull()) {
+            av_packet_unref(demuxPacket);
+        }
     }
 
     /**
@@ -1010,13 +1710,9 @@ public class MpegTsProcessor extends Thread {
 
         logger.debug("closeStream");
 
-        if (streamOpened) {
-            synchronized (contextLock) {
-                if (null != avFormatContext) {
-                    avformat.avformat_close_input(avFormatContext);
-                }
-                streamOpened = false;
-            }
+        synchronized (contextLock) {
+            streamOpened = false;
+            closeInputContext();
         }
     }
 

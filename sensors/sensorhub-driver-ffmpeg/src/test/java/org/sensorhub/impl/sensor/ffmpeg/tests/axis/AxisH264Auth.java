@@ -1,11 +1,11 @@
 package org.sensorhub.impl.sensor.ffmpeg.tests.axis;
 
-import org.sensorhub.impl.sensor.ffmpeg.ConnectionTest;
+import org.sensorhub.impl.sensor.ffmpeg.ExternalCameraConnectionTest;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensor;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 
 
-public class AxisH264Auth extends ConnectionTest {
+public class AxisH264Auth extends ExternalCameraConnectionTest {
 
     private final static String AXIS_H264_AUTH_IP = "AXIS_H264_AUTH_IP";
 

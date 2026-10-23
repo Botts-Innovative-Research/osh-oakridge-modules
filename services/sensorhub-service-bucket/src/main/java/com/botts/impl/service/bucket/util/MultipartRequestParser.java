@@ -9,6 +9,8 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -18,6 +20,7 @@ public class MultipartRequestParser {
 
     private static final int FILE_SIZE_THRESHOLD = 1024 * 1024; // 1MB
     private static final String MULTIPART = "multipart/";
+    private static final String DATA_TEMP_DIR_PROPERTY = "oscar.data.tmpdir";
 
     /**
      * Check if request has multipart content type.
@@ -60,7 +63,11 @@ public class MultipartRequestParser {
 
         DiskFileItemFactory factory = new DiskFileItemFactory();
         factory.setSizeThreshold(FILE_SIZE_THRESHOLD);
-        factory.setRepository(new File(System.getProperty("java.io.tmpdir")));
+        try {
+            factory.setRepository(dataTempDirectory());
+        } catch (IOException e) {
+            throw ServiceErrors.internalError("Invalid upload temporary directory: " + e.getMessage());
+        }
 
         ServletFileUpload upload = new ServletFileUpload(factory);
         upload.setFileSizeMax(maxFileSizeBytes);
@@ -110,5 +117,33 @@ public class MultipartRequestParser {
             throw ServiceErrors.badRequest("No files found in multipart request");
 
         return new MultipartParseResult(files, formFields, items);
+    }
+
+    static File dataTempDirectory() throws IOException {
+        String configured = System.getProperty(DATA_TEMP_DIR_PROPERTY);
+        boolean managed = configured != null;
+        if (managed && configured.isBlank())
+            throw new IOException(DATA_TEMP_DIR_PROPERTY + " must not be blank");
+        String selected = managed ? configured : System.getProperty("java.io.tmpdir");
+        if (selected == null || selected.isBlank())
+            throw new IOException("temporary directory is not configured");
+
+        Path requested = Path.of(selected);
+        if (managed && !requested.isAbsolute())
+            throw new IOException(DATA_TEMP_DIR_PROPERTY + " must be absolute");
+
+        Path normalized = requested.toAbsolutePath().normalize();
+        Path real = normalized.toRealPath();
+        if (managed && !normalized.equals(real))
+            throw new IOException(DATA_TEMP_DIR_PROPERTY + " must not contain symbolic links or aliases");
+        if (!Files.isDirectory(real) || !Files.isWritable(real))
+            throw new IOException("temporary directory must be an existing writable directory");
+        if (managed) {
+            String nativeTemp = System.getProperty("java.io.tmpdir");
+            if (nativeTemp != null && !nativeTemp.isBlank()
+                && real.equals(Path.of(nativeTemp).toAbsolutePath().normalize().toRealPath()))
+                throw new IOException(DATA_TEMP_DIR_PROPERTY + " must differ from java.io.tmpdir");
+        }
+        return real.toFile();
     }
 }

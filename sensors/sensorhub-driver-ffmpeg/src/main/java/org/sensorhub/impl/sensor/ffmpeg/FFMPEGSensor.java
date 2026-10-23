@@ -40,6 +40,7 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
     private Thread streamMonitorThread;
     private ScheduledExecutorService reconnectExecutor;
     private ScheduledFuture<?> reconnectTask;
+    private ScheduledFuture<?> connectionStatusHeartbeatTask;
     private boolean reconnectEnabled;
     private int currentReconnect;
 
@@ -67,16 +68,28 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
         // Make sure the stream is already open. (If the sensor has been previously started, then stopped, then the
         // stream won't be open.)
 
+        // Clear any status left by a previous run before attempting to open the
+        // source. Online is published only after both openStream() and startStream()
+        // complete successfully.
+        publishConnectionStatus(false);
         try {
             openStream();
+            configureVideoOutputAfterOpen();
+            configureStreamControlsAfterOpen();
+            if (streamInterfacesDeferred) {
+                registerRecoveredInterfaces();
+                streamInterfacesDeferred = false;
+            }
+
+            // Some preliminary data was read from the stream in doInit(), but this call makes it start processing all
+            // the frames.
+            startStream();
         } catch (SensorHubException e) {
+            discardFailedStream();
             scheduleReconnect(e);
             return;
         }
-
-        // Some preliminary data was read from the stream in doInit(), but this call makes it start processing all the
-        // frames.
-        startStream();
+        publishConnectionStatus(true);
 
         currentReconnect = 0;
         startStreamMonitor(mpegTsProcessor);
@@ -92,10 +105,32 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
                     return thread;
                 });
             }
+            if (connectionStatusHeartbeatTask == null || connectionStatusHeartbeatTask.isDone()) {
+                connectionStatusHeartbeatTask = reconnectExecutor.scheduleAtFixedRate(
+                        this::runConnectionStatusHeartbeat,
+                        CONNECTION_STATUS_HEARTBEAT_PERIOD_SECONDS,
+                        CONNECTION_STATUS_HEARTBEAT_PERIOD_SECONDS,
+                        TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    private void runConnectionStatusHeartbeat() {
+        synchronized (reconnectLock) {
+            if (!reconnectEnabled)
+                return;
+
+            try {
+                publishConnectionStatusHeartbeat();
+            } catch (Exception e) {
+                // Scheduled executors suppress future invocations when a task throws.
+                logger.warn("Unable to publish FFmpeg connection-status heartbeat", e);
+            }
         }
     }
 
     void scheduleReconnect(Exception cause) {
+        publishConnectionStatus(false);
         final int attempt;
         final int maxAttempts;
         final long delayMillis;
@@ -180,18 +215,23 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
     void disableReconnect() {
         Thread monitor;
         ScheduledExecutorService executor;
+        ScheduledFuture<?> heartbeatTask;
         synchronized (reconnectLock) {
             reconnectEnabled = false;
             if (reconnectTask != null) {
                 reconnectTask.cancel(true);
                 reconnectTask = null;
             }
+            heartbeatTask = connectionStatusHeartbeatTask;
+            connectionStatusHeartbeatTask = null;
             monitor = streamMonitorThread;
             streamMonitorThread = null;
             executor = reconnectExecutor;
             reconnectExecutor = null;
         }
 
+        if (heartbeatTask != null)
+            heartbeatTask.cancel(true);
         if (monitor != null)
             monitor.interrupt();
         if (executor != null)
@@ -213,6 +253,18 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
     boolean isReconnectPending() {
         synchronized (reconnectLock) {
             return reconnectTask != null && !reconnectTask.isDone();
+        }
+    }
+
+    boolean isConnectionStatusHeartbeatPending() {
+        synchronized (reconnectLock) {
+            return connectionStatusHeartbeatTask != null && !connectionStatusHeartbeatTask.isDone();
+        }
+    }
+
+    ScheduledFuture<?> getConnectionStatusHeartbeatTask() {
+        synchronized (reconnectLock) {
+            return connectionStatusHeartbeatTask;
         }
     }
 }

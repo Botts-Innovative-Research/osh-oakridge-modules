@@ -26,7 +26,10 @@ import com.botts.impl.service.oscar.spreadsheet.SpreadsheetHandler;
 import com.botts.impl.service.oscar.stats.StatisticsControl;
 import com.botts.impl.service.oscar.stats.StatisticsOutput;
 import com.botts.impl.service.oscar.video.VideoRetention;
+import com.botts.impl.service.oscar.media.MediaResourceHandler;
+import com.botts.impl.service.oscar.media.MediaSetStore;
 import org.sensorhub.impl.utils.rad.interfaces.IWebIdProvider;
+import org.sensorhub.impl.utils.rad.dailyfile.IDailyFileJournalService;
 import org.sensorhub.impl.utils.rad.webid.WebIdClient;
 import com.botts.impl.service.oscar.webid.WebIdResourceHandler;
 import org.sensorhub.api.common.SensorHubException;
@@ -42,6 +45,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> implements IWebIdProvider {
+    static final long STOP_BUDGET_NANOS = TimeUnit.SECONDS.toNanos(8);
 
     SiteInfoOutput siteInfoOutput;
     RequestReportControl reportControl;
@@ -58,6 +62,9 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
     DatabasePurger databasePurger;
     StoragePressureRetention storagePressureRetention;
     WebIdResourceHandler webIdResourceHandler;
+    MediaResourceHandler mediaResourceHandler;
+    MediaSetStore retainedMediaStore;
+    ApplicationReadiness applicationReadiness;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -91,15 +98,33 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
                     bucketStore,
                     Duration.ofMinutes(getConfiguration().videoRetentionConfig.videoQueryPeriod),
                     Duration.ofDays(getConfiguration().videoRetentionConfig.timeToRetention),
-                    frameCount);
+                    frameCount,
+                    getConfiguration().videoRetentionConfig.jpegQuality,
+                    Duration.ofHours(getConfiguration().videoRetentionConfig.sourceRollbackGraceHours),
+                    Duration.ofHours(getConfiguration().videoRetentionConfig.maximumCatchUpHours),
+                    getConfiguration().videoRetentionConfig.maintenanceWorkLimit,
+                    Duration.ofHours(getConfiguration().videoRetentionConfig.lateArrivalOverlapHours),
+                    Duration.ofMinutes(
+                            getConfiguration().videoRetentionConfig.lateArrivalScanPeriodMinutes),
+                    Duration.ofHours(
+                            getConfiguration().videoRetentionConfig.lateArrivalCatchUpHours),
+                    Duration.ofHours(
+                            getConfiguration().videoRetentionConfig.reconciliationCatchUpHours),
+                    Duration.ofHours(
+                            getConfiguration().videoRetentionConfig.reconciliationPeriodHours),
+                    Duration.ofMinutes(
+                            getConfiguration().videoRetentionConfig.occupancyStreamRefreshMinutes),
+                    getConfiguration().videoRetentionConfig.metadataReclamationWorkLimit);
         } else {
             videoRetention = null;
             logger.info("No video retention config set.");
         }
+        retainedMediaStore = videoRetention != null
+                ? videoRetention.getMediaStore() : createMediaStore();
 
         if (getConfiguration().storagePressureRetentionConfig != null) {
             storagePressureRetention = new StoragePressureRetention(bucketStore,
-                    getConfiguration().storagePressureRetentionConfig, getLogger());
+                    retainedMediaStore, getConfiguration().storagePressureRetentionConfig, getLogger());
         } else {
             storagePressureRetention = null;
             logger.info("No storage pressure retention config set.");
@@ -149,9 +174,14 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
                 getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
 
 
+            if (config.delegateObservationLifecycleToDatabase)
+                getLogger().info("High-volume observation lifecycle is delegated to the configured database; "
+                        + "OSCAR will retain manifest-gated daily-file and connection-status maintenance");
             if (databasePurger == null)
-                databasePurger = new DatabasePurger((IObsSystemDatabase) module, bucketStore, 5);
-
+                databasePurger = new DatabasePurger((IObsSystemDatabase) module, bucketStore, 5,
+                        getParentHub().getModuleRegistry().getModuleByType(IDailyFileJournalService.class),
+                        config.delegateObservationLifecycleToDatabase,
+                        config.dailyFilePurgeWorkLimit);
             databasePurger.start();
         }
 
@@ -159,6 +189,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
                 ? new WebIdClient(config.webIdApiRoot) : null;
         webIdResourceHandler = new WebIdResourceHandler(bucketStore, getParentHub(), webIdClient);
         bucketService.registerObjectHandler(webIdResourceHandler);
+        mediaResourceHandler = new MediaResourceHandler(retainedMediaStore);
+        bucketService.registerObjectHandler(mediaResourceHandler);
 
         statsOutput.start();
 
@@ -177,29 +209,163 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
 
         if (storagePressureRetention != null)
             storagePressureRetention.start();
+
+        startApplicationReadiness();
     }
 
     @Override
     protected void doStop() throws SensorHubException {
-        super.doStop();
+        long deadline = System.nanoTime() + STOP_BUDGET_NANOS;
+        SensorHubException failure = null;
+        // Withdraw readiness before stopping any service. This prevents a second
+        // administrative lifecycle operation from observing a partially stopping
+        // application as ready.
+        failure = runStopStep(failure, "application readiness", this::stopApplicationReadiness);
+        failure = runStopStep(failure, "base OSCAR module", this::stopBaseModule);
+
+        // Cancellation must be broadcast before waiting for any one worker. A JDBC call can
+        // legitimately take the whole bounded stop interval to acknowledge cancellation. If the
+        // workers were stopped serially, that first wait would leave every later service running
+        // and give it an already-expired deadline. The request phase is deliberately non-blocking;
+        // the await phase below remains truthful and shares this one module-registry-safe deadline.
+        failure = runStopStep(failure, "statistics output stop request",
+                this::requestStatisticsOutputStop);
+        failure = runStopStep(failure, "database purger stop request",
+                this::requestDatabasePurgerStop);
+        failure = runStopStep(failure, "video retention stop request",
+                this::requestVideoRetentionStop);
+        failure = runStopStep(failure, "storage-pressure retention stop request",
+                this::requestStoragePressureRetentionStop);
+
+        failure = runStopStep(failure, "statistics output",
+                () -> awaitStatisticsOutputStop(deadline));
+        failure = runStopStep(failure, "database purger",
+                () -> awaitDatabasePurgerStop(deadline));
+        failure = runStopStep(failure, "video retention",
+                () -> awaitVideoRetentionStop(deadline));
+        failure = runStopStep(failure, "storage-pressure retention",
+                () -> awaitStoragePressureRetentionStop(deadline));
+        failure = runStopStep(failure, "Web ID object handler", this::unregisterWebIdHandler);
+        failure = runStopStep(failure, "retained-media object handler", this::unregisterMediaHandler);
+        if (failure != null)
+            throw failure;
+    }
+
+    private SensorHubException runStopStep(SensorHubException aggregate,
+                                           String description,
+                                           StopAction action) {
         try {
-            statsOutput.stop();
-        } catch (Exception ex) {
-            getLogger().error("Could not stop stats output", ex);
+            action.run();
+            return aggregate;
+        } catch (Throwable error) {
+            getLogger().error("Could not stop {}", description, error);
+            SensorHubException stepFailure = new SensorHubException(
+                    "Could not stop " + description, error);
+            if (aggregate == null)
+                return stepFailure;
+            aggregate.addSuppressed(stepFailure);
+            return aggregate;
         }
+    }
 
+    void stopBaseModule() throws SensorHubException {
+        super.doStop();
+    }
+
+    void startApplicationReadiness() throws SensorHubException {
+        applicationReadiness = new ApplicationReadiness(
+                () -> getParentHub().getModuleRegistry().getLoadedModules(),
+                ApplicationReadiness.DEFAULT_MARKER,
+                ApplicationReadiness.DEFAULT_POLL_MILLIS,
+                getLogger());
+        try {
+            applicationReadiness.start();
+        } catch (java.io.IOException error) {
+            applicationReadiness = null;
+            throw new SensorHubException("Could not start OSCAR application readiness", error);
+        }
+    }
+
+    void stopApplicationReadiness() throws java.io.IOException {
+        if (applicationReadiness == null)
+            return;
+        try {
+            applicationReadiness.close();
+        } finally {
+            applicationReadiness = null;
+        }
+    }
+
+    void requestStatisticsOutputStop() {
+        if (statsOutput != null)
+            statsOutput.requestStop();
+    }
+
+    void requestDatabasePurgerStop() {
         if (databasePurger != null)
-            databasePurger.stop();
+            databasePurger.requestStop();
+    }
 
+    void requestVideoRetentionStop() {
         if (videoRetention != null)
-            videoRetention.stop();
+            videoRetention.requestStop();
+    }
 
+    void requestStoragePressureRetentionStop() {
         if (storagePressureRetention != null)
-            storagePressureRetention.stop();
+            storagePressureRetention.requestStop();
+    }
 
-        if (webIdResourceHandler != null) {
-            bucketService.unregisterObjectHandler(webIdResourceHandler);
-            webIdResourceHandler = null;
+    void awaitStatisticsOutputStop(long deadline) {
+        if (statsOutput != null)
+            statsOutput.awaitStop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
+    }
+
+    void awaitDatabasePurgerStop(long deadline) throws SensorHubException {
+        if (databasePurger == null)
+            return;
+        databasePurger.awaitStop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
+        databasePurger = null;
+    }
+
+    void awaitVideoRetentionStop(long deadline) {
+        if (videoRetention != null)
+            videoRetention.awaitStop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
+    }
+
+    void awaitStoragePressureRetentionStop(long deadline) {
+        if (storagePressureRetention != null)
+            storagePressureRetention.awaitStop(remainingStopNanos(deadline), TimeUnit.NANOSECONDS);
+    }
+
+    private static long remainingStopNanos(long deadline) {
+        return Math.max(1L, deadline - System.nanoTime());
+    }
+
+    void unregisterWebIdHandler() {
+        if (webIdResourceHandler == null)
+            return;
+        bucketService.unregisterObjectHandler(webIdResourceHandler);
+        webIdResourceHandler = null;
+    }
+
+    void unregisterMediaHandler() {
+        if (mediaResourceHandler == null)
+            return;
+        bucketService.unregisterObjectHandler(mediaResourceHandler);
+        mediaResourceHandler = null;
+    }
+
+    @FunctionalInterface
+    private interface StopAction {
+        void run() throws Exception;
+    }
+
+    private MediaSetStore createMediaStore() throws SensorHubException {
+        try {
+            return new MediaSetStore(bucketStore);
+        } catch (org.sensorhub.api.datastore.DataStoreException e) {
+            throw new SensorHubException("Unable to initialize retained-media storage", e);
         }
     }
 

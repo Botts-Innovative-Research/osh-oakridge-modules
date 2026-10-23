@@ -24,6 +24,7 @@ import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.comm.RobustIPConnection;
 import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileJournalConnection;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +34,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Sensor driver for the ... providing sensor description, output registration,
@@ -44,10 +46,13 @@ import java.util.concurrent.TimeUnit;
 public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
 
     private static final Logger logger = LoggerFactory.getLogger(RapiscanSensor.class);
+    private static final long RECONNECT_CONFIRMATION_NANOS = TimeUnit.SECONDS.toNanos(1);
+    private static final long NO_RECONNECT_TIMEOUT = Long.MIN_VALUE;
 
     // Utilities
     private MessageHandler messageHandler;
     private EMLService emlService;
+    private DailyFileJournalConnection dailyFileJournal;
 
     // Connection
     private ICommProvider<?> commProviderModule;
@@ -75,12 +80,16 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     private ScheduledFuture<?> heartbeatFuture;
     RobustConnection connection;
     private boolean isRunning;
+    private final AtomicBoolean reconnectPending = new AtomicBoolean();
+    private long reconnectTimeoutObservedAtNanos = NO_RECONNECT_TIMEOUT;
 //    private Thread tcpConnectionThread;
     //private static final Object heartbeatLock = new Object();
 
     @Override
     public void doInit() throws SensorHubException {
         super.doInit();
+
+        RepetitiveWarningFilter.install();
 
         RapiscanThreadPoolManager.getInstance().registerSensor();
 
@@ -152,6 +161,23 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         messageHandler = new MessageHandler(msgIn, this);
     }
 
+    private void connectDailyFileJournal() throws SensorHubException {
+        if (dailyFileJournal != null)
+            return;
+        // Lightweight lifecycle tests and specialized embedders may start a sensor before a
+        // persisted module configuration is attached. Preserve that established start contract;
+        // normal configured modules still use the fail-closed journal policy below.
+        if (config == null) {
+            getLogger().debug("Skipping daily-file journal binding because no sensor configuration is attached");
+            return;
+        }
+        String laneId = getParentSystemUID();
+        if (laneId == null || laneId.isBlank())
+            laneId = "urn:oscar:lane:" + config.laneID;
+        dailyFileJournal = DailyFileJournalConnection.connect(getParentHub(), laneId,
+                config.dailyFileJournal, getLogger());
+    }
+
     public void createEMLOutputs(){
         emlContextualOutput = new EMLContextualOutput(this);
         addOutput(emlContextualOutput, false);
@@ -220,6 +246,13 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     protected void doStart() throws SensorHubException {
 
         connection.waitForConnection();
+        connectDailyFileJournal();
+
+        // A newly established RPM connection starts from a known, non-tamper
+        // baseline. Publish it before the reader starts so a TT received from
+        // the RPM immediately afterwards always wins. doStart() also runs
+        // after RobustConnection reconnects the module.
+        getTamperOutput().onConnected();
 
         try{
             initMsgHandler();
@@ -232,6 +265,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     @Override
     protected void afterStart() {
         // Begin heartbeat check
+        reconnectPending.set(false);
+        resetReconnectTimeoutConfirmation();
         isRunning = true;
         heartbeatFuture = RapiscanThreadPoolManager.getInstance().scheduleHeartbeat(
                 this::heartbeatCheck,
@@ -251,30 +286,28 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     }
 
     @Override
-    public void doStop() {
+    public void doStop() throws SensorHubException {
         logger.info("Stopping RapiscanSensor {}...", getUniqueIdentifier());
 
         isRunning = false;
+        resetReconnectTimeoutConfirmation();
 
         if (heartbeatFuture != null) {
             heartbeatFuture.cancel(true);
             heartbeatFuture = null;
         }
 
-        if (messageHandler != null) {
-            try {
-                messageHandler.stop();
-            } catch (Exception e) {
-                logger.error("Error stopping message handler", e);
-            }
-            messageHandler = null;
-        }
+        MessageHandler activeHandler = messageHandler;
+        if (activeHandler != null)
+            activeHandler.requestStop();
 
+        SensorHubException stopFailure = null;
         if (connection != null) {
             try {
                 connection.cancel();
             } catch (Exception e) {
-                logger.error("Error canceling connection", e);
+                stopFailure = new SensorHubException(
+                        "Unable to cancel the Rapiscan connection", e);
             }
         }
 
@@ -284,13 +317,60 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                     commProviderModule.stop();
                 }
             } catch (Exception e) {
-                logger.error("Error stopping comm module", e);
+                SensorHubException providerFailure = new SensorHubException(
+                        "Unable to stop the Rapiscan communication provider", e);
+                if (stopFailure == null)
+                    stopFailure = providerFailure;
+                else
+                    stopFailure.addSuppressed(providerFailure);
             } finally {
                 commProviderModule = null;
             }
         }
 
-        RapiscanThreadPoolManager.getInstance().unregisterSensor();
+        boolean sourceStopped = true;
+        if (activeHandler != null) {
+            try {
+                activeHandler.awaitStop();
+                messageHandler = null;
+            } catch (IOException e) {
+                sourceStopped = false;
+                SensorHubException readerFailure = new SensorHubException(
+                        "Rapiscan reader did not stop before journal close", e);
+                if (stopFailure == null)
+                    stopFailure = readerFailure;
+                else
+                    stopFailure.addSuppressed(readerFailure);
+            }
+        }
+
+        if (sourceStopped && dailyFileJournal != null) {
+            try {
+                dailyFileJournal.close();
+                dailyFileJournal = null;
+            } catch (IOException e) {
+                SensorHubException writerFailure = new SensorHubException(
+                        "Unable to close the Rapiscan daily-file writer", e);
+                if (stopFailure == null)
+                    stopFailure = writerFailure;
+                else
+                    stopFailure.addSuppressed(writerFailure);
+            }
+        }
+
+        try {
+            RapiscanThreadPoolManager.getInstance().unregisterSensor();
+        } catch (RuntimeException e) {
+            SensorHubException unregisterFailure = new SensorHubException(
+                    "Unable to unregister the Rapiscan sensor", e);
+            if (stopFailure == null)
+                stopFailure = unregisterFailure;
+            else
+                stopFailure.addSuppressed(unregisterFailure);
+        }
+
+        if (stopFailure != null)
+            throw stopFailure;
 
         logger.info("RapiscanSensor {} stopped successfully", getUniqueIdentifier());
     }
@@ -355,6 +435,10 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         return dailyFileOutput;
     }
 
+    DailyFileJournalConnection getDailyFileJournal() {
+        return dailyFileJournal;
+    }
+
     public ConnectionStatusOutput getConnectionStatusOutput() {return connectionStatusOutput;}
 
     public ManualTamperControl getManualTamperControl() {
@@ -376,18 +460,27 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                 connectionStatusOutput.onNewMessage(isReceivingMsg);
             }
 
-            if (!isReceivingMsg) {
-                long reconnectTimeout = config.commSettings.connection.connectTimeout;
-                if (timeSinceMsg > reconnectTimeout) {
-                    logger.warn("Connection timeout after {}ms, attempting reconnect", timeSinceMsg);
+            long reconnectTimeout = config.commSettings.connection.connectTimeout;
+            if (isReceivingMsg || timeSinceMsg <= reconnectTimeout) {
+                resetReconnectTimeoutConfirmation();
+                return;
+            }
 
-                    if (isRunning && connection != null) {
-                        try {
-                            connection.reconnect();
-                        } catch (Exception e) {
-                            logger.error("Reconnect failed", e);
-                        }
-                    }
+            // Scheduled fixed-rate heartbeats can run late during JVM or host startup stalls and
+            // then execute their missed ticks back-to-back. Require the timeout to remain true for
+            // one real second before restarting this module, so one delayed tick cannot trigger a
+            // synchronized reconnect storm across every lane.
+            if (!reconnectTimeoutConfirmed(System.nanoTime()))
+                return;
+
+            if (isRunning && connection != null && reconnectPending.compareAndSet(false, true)) {
+                logger.warn("Connection timeout persisted after {}ms; attempting reconnect", timeSinceMsg);
+                try {
+                    connection.reconnect();
+                } catch (Exception e) {
+                    reconnectPending.set(false);
+                    resetReconnectTimeoutConfirmation();
+                    logger.error("Reconnect failed", e);
                 }
             }
 
@@ -396,5 +489,17 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
                 logger.error("Error during heartbeat check", e);
             }
         }
+    }
+
+    synchronized boolean reconnectTimeoutConfirmed(long nowNanos) {
+        if (reconnectTimeoutObservedAtNanos == NO_RECONNECT_TIMEOUT) {
+            reconnectTimeoutObservedAtNanos = nowNanos;
+            return false;
+        }
+        return nowNanos - reconnectTimeoutObservedAtNanos >= RECONNECT_CONFIRMATION_NANOS;
+    }
+
+    synchronized void resetReconnectTimeoutConfirmation() {
+        reconnectTimeoutObservedAtNanos = NO_RECONNECT_TIMEOUT;
     }
 }
