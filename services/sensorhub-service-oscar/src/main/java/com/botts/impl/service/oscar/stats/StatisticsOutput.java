@@ -1,6 +1,7 @@
 package com.botts.impl.service.oscar.stats;
 
 import com.botts.impl.service.oscar.OSCARSystem;
+import com.google.common.collect.Range;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
@@ -28,6 +29,7 @@ import java.util.Set;
 import java.util.Collection;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -35,6 +37,10 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
     public static final String NAME = "siteStatistics";
     private static final long DEFAULT_STOP_TIMEOUT_MILLIS = 5_000L;
+    private static final Instant LEGACY_STATS_EPOCH_SECONDS_MIN =
+            Instant.parse("2020-01-01T00:00:00Z");
+    private static final Instant LEGACY_STATS_EPOCH_SECONDS_MAX =
+            Instant.parse("2100-01-01T00:00:00Z");
 
     public static String gammaNeutronAlarmCQL = "gammaAlarm = true AND neutronAlarm = true";
     public static String gammaAlarmCQL = "gammaAlarm = true AND neutronAlarm = false";
@@ -58,11 +64,13 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
     private final Object lifecycleMonitor = new Object();
     private final Object workMonitor = new Object();
+    private final ReentrantLock publicationLock = new ReentrantLock(true);
     private final Set<StatisticsWork> activeWork = new java.util.HashSet<>();
     private final ThreadLocal<Boolean> operationScope =
             ThreadLocal.withInitial(() -> Boolean.FALSE);
     private final AtomicReference<RuntimeException> unsafeStopFailure = new AtomicReference<>();
     private volatile boolean stopRequested;
+    private long lifecycleGeneration;
     private ScheduledExecutorService service;
     private final IObsSystemDatabase database;
     private Map<String, Set<BigId>> observedPropertyToDataStreamIds;
@@ -128,7 +136,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
                 thread.setDaemon(true);
                 return thread;
             });
-            service.scheduleAtFixedRate(this::publishLatestStatistics, 0L,
+            service.scheduleWithFixedDelay(this::publishLatestStatistics, 0L,
                     samplingPeriod, TimeUnit.MINUTES);
         }
     }
@@ -156,6 +164,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         synchronized (lifecycleMonitor) {
             synchronized (workMonitor) {
                 stopRequested = true;
+                lifecycleGeneration++;
                 requestActiveWorkCancellationLocked();
             }
             if (service != null)
@@ -233,31 +242,85 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     }
 
     public final void publishLatestStatistics() {
-        runCancellableStatistics(() -> {
+        runSerializedPublication(() -> runCancellableStatistics(() -> {
             publishLatestStatisticsWithinScope();
             return null;
-        });
+        }));
+    }
+
+    /**
+     * Publishes a complete site-statistics record and returns the ID assigned to that
+     * exact publication.  The baseline lookup, publication, and fresh-ID check are
+     * serialized with scheduled publications so a caller can never be handed an older
+     * observation merely because one already exists in the datastore.
+     */
+    public final BigId publishLatestStatisticsAndGetObservationId() {
+        return runSerializedPublication(() -> runCancellableStatistics(() -> {
+            BigId previousObservationId = getLatestObservationIdWithinScope();
+            publishLatestStatisticsWithinScope();
+            return waitForLatestObservationIdWithinScope(previousObservationId);
+        }));
+    }
+
+    /**
+     * Full publications are intentionally single-filed.  Scoped/custom counts do not
+     * use this lock and remain independently cancellable.  Acquiring the lock before
+     * opening the datastore operation prevents a queued publication from advertising
+     * database work that has not started and preserves truthful shutdown accounting.
+     */
+    private <T> T runSerializedPublication(Supplier<T> publication) {
+        long requestedGeneration;
+        synchronized (workMonitor) {
+            if (stopRequested)
+                throw new CancellationException("Statistics output is stopping");
+            requestedGeneration = lifecycleGeneration;
+        }
+
+        boolean locked = false;
+        try {
+            publicationLock.lockInterruptibly();
+            locked = true;
+            synchronized (workMonitor) {
+                if (stopRequested || lifecycleGeneration != requestedGeneration)
+                    throw new CancellationException(
+                            "Statistics publication belongs to a stopped lifecycle");
+            }
+            return publication.get();
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            CancellationException cancelled =
+                    new CancellationException("Interrupted while waiting to publish statistics");
+            cancelled.initCause(error);
+            throw cancelled;
+        } finally {
+            if (locked)
+                publicationLock.unlock();
+        }
     }
 
     protected void publishLatestStatisticsWithinScope() {
         initializeDataStreamMapping();
         getLogger().info("Starting stats counting...");
-        long currentTime = System.currentTimeMillis();
+        long calculationStarted = System.currentTimeMillis();
 
         DataBlock dataBlock = latestRecord == null ? recordDescription.createDataBlock() : latestRecord.renew();
-        Instant now = Instant.now();
-
-        int i = 0;
-        dataBlock.setLongValue(i++, currentTime/1000);
+        Instant now = normalizePublicationTime(Instant.now());
 
         // Get total counts from all observations
         LastStatisticObservationData lastStatisticObservationData = getLastObservation();
+        if (lastStatisticObservationData != null) {
+            // A statistics observation is keyed by its sampling time. Preserve ordering even
+            // when two empty/fast publications occur within the SWE field's millisecond resolution.
+            now = publicationTimeAfter(now, lastStatisticObservationData.timestamp());
+        }
+
+        int i = 0;
+        dataBlock.setTimeStamp(i++, now);
 
         if (lastStatisticObservationData != null) {
             Instant lastTimestamp = lastStatisticObservationData.timestamp();
             Statistics previousTotal = lastStatisticObservationData.total();
-            Instant exclusiveStart = lastTimestamp.plusNanos(1);
-            Statistics incrementalStats = getStats(exclusiveStart, now);
+            Statistics incrementalStats = getStatsAfter(lastTimestamp, now, Set.of());
 
             Statistics newTotal = previousTotal.add(incrementalStats);
 
@@ -280,32 +343,35 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
         populateDataBlock(dataBlock, i, dayStart, now);
 
         latestRecord = dataBlock;
-        latestRecordTime = currentTime;
+        latestRecordTime = now.toEpochMilli();
         eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));
-        getLogger().info("Finished stats counting in {}s", (System.currentTimeMillis() - currentTime) / 1000);
+        getLogger().info("Finished stats counting in {}s",
+                (System.currentTimeMillis() - calculationStarted) / 1000);
     }
 
-    protected BigId waitForLatestObservationId() {
-        return runCancellableStatistics(this::waitForLatestObservationIdWithinScope);
+    private BigId getLatestObservationIdWithinScope() {
+        var keys = database.getObservationStore().selectKeys(new ObsFilter.Builder()
+                .withLatestResult()
+                .withSystems().withUniqueIDs(parentSensor.getUniqueIdentifier())
+                .done()
+                .withDataStreams().withOutputNames(NAME)
+                .done()
+                .withLimit(1)
+                .build()).toList();
+        return keys.size() == 1 ? keys.get(0) : null;
     }
 
-    private BigId waitForLatestObservationIdWithinScope() {
+    private BigId waitForLatestObservationIdWithinScope(BigId previousObservationId) {
         try {
             final List<BigId> result = new ArrayList<>();
 
             Async.waitForCondition(() -> {
-                var keysQuery = database.getObservationStore().selectKeys(new ObsFilter.Builder()
-                        .withLatestResult()
-                        .withSystems().withUniqueIDs(parentSensor.getUniqueIdentifier())
-                        .done()
-                        .withDataStreams().withOutputNames(NAME)
-                        .done()
-                        .withLimit(1)
-                        .build());
-                var keys = keysQuery.toList();
-                if (keys.size() == 1) {
+                BigId latestObservationId = getLatestObservationIdWithinScope();
+                if (latestObservationId != null
+                        && (previousObservationId == null
+                        || !previousObservationId.equals(latestObservationId))) {
                     result.clear();
-                    result.add(keys.get(0));
+                    result.add(latestObservationId);
                     return true;
                 }
                 return false;
@@ -351,18 +417,28 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     }
 
     protected Statistics getStats(Instant start, Instant end, Collection<String> laneUIDs) {
-        long numOccupancies = countObservations(database, null, start, end, laneUIDs, RADHelper.DEF_OCCUPANCY);
-        long numGammaAlarms = countObservations(database, gammaAlarmCQL, start, end, laneUIDs, RADHelper.DEF_OCCUPANCY);
-        long numNeutronAlarms = countObservations(database, neutronAlarmCQL, start, end, laneUIDs, RADHelper.DEF_OCCUPANCY);
-        long numGammaNeutronAlarms = countObservations(database, gammaNeutronAlarmCQL, start, end, laneUIDs, RADHelper.DEF_OCCUPANCY);
-        long numGammaFaults = countObservations(database, gammaFaultCQL, start, end, laneUIDs, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
-        long numNeutronFaults = countObservations(database, neutronFaultCQL, start, end, laneUIDs, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
-        long numTampers = countObservations(database, tamperCQL, start, end, laneUIDs, RADHelper.DEF_TAMPER);
-        long numFaults = countObservations(database, faultCQL, start, end, laneUIDs, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
+        return getStats(timeRange(start, end, false), laneUIDs);
+    }
+
+    /** Counts only observations strictly newer than the previous publication cutoff. */
+    protected Statistics getStatsAfter(Instant exclusiveStart, Instant inclusiveEnd,
+                                       Collection<String> laneUIDs) {
+        return getStats(timeRange(exclusiveStart, inclusiveEnd, true), laneUIDs);
+    }
+
+    private Statistics getStats(Range<Instant> timeRange, Collection<String> laneUIDs) {
+        long numOccupancies = countObservations(database, null, timeRange, laneUIDs, RADHelper.DEF_OCCUPANCY);
+        long numGammaAlarms = countObservations(database, gammaAlarmCQL, timeRange, laneUIDs, RADHelper.DEF_OCCUPANCY);
+        long numNeutronAlarms = countObservations(database, neutronAlarmCQL, timeRange, laneUIDs, RADHelper.DEF_OCCUPANCY);
+        long numGammaNeutronAlarms = countObservations(database, gammaNeutronAlarmCQL, timeRange, laneUIDs, RADHelper.DEF_OCCUPANCY);
+        long numGammaFaults = countObservations(database, gammaFaultCQL, timeRange, laneUIDs, RADHelper.DEF_GAMMA, RADHelper.DEF_ALARM);
+        long numNeutronFaults = countObservations(database, neutronFaultCQL, timeRange, laneUIDs, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM);
+        long numTampers = countObservations(database, tamperCQL, timeRange, laneUIDs, RADHelper.DEF_TAMPER);
+        long numFaults = countObservations(database, faultCQL, timeRange, laneUIDs, RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON, RADHelper.DEF_ALARM) + numTampers;
 
         // RS350 alarm counts from raw AlarmOutput (uses alarmCategoryCode observed property)
-        long numRS350GammaAlarms = countObservations(database, rs350GammaAlarmCQL, start, end, laneUIDs, DEF_ALARM_CATEGORY);
-        long numRS350NeutronAlarms = countObservations(database, rs350NeutronAlarmCQL, start, end, laneUIDs, DEF_ALARM_CATEGORY);
+        long numRS350GammaAlarms = countObservations(database, rs350GammaAlarmCQL, timeRange, laneUIDs, DEF_ALARM_CATEGORY);
+        long numRS350NeutronAlarms = countObservations(database, rs350NeutronAlarmCQL, timeRange, laneUIDs, DEF_ALARM_CATEGORY);
         numGammaAlarms += numRS350GammaAlarms;
         numNeutronAlarms += numRS350NeutronAlarms;
         numOccupancies += numRS350GammaAlarms + numRS350NeutronAlarms;
@@ -382,7 +458,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     /**
      * Counts observations from database (used by external callers like submitCommand).
      */
-    private long countObservations(IObsSystemDatabase database, String cqlValue, Instant begin, Instant end,
+    private long countObservations(IObsSystemDatabase database, String cqlValue, Range<Instant> timeRange,
                                    Collection<String> laneUIDs, String... observedProperty) {
         var dsFilterBuilder = new DataStreamFilter.Builder()
                 .withObservedProperties(observedProperty);
@@ -398,9 +474,8 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
         var obsBuilder = new ObsFilter.Builder().withDataStreams(dsFilter);
 
-        if (begin != null && end != null) {
-            obsBuilder.withPhenomenonTime().withRange(begin, end).done();
-        }
+        if (timeRange != null)
+            obsBuilder.withPhenomenonTime().withRange(timeRange).done();
 
         if (cqlValue != null &&  !cqlValue.isBlank()) {
             obsBuilder.withCQLFilter(cqlValue);
@@ -428,12 +503,55 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
 
         var result = observations.get(0).getResult();
 
-        long storedTimestampSeconds = result.getLongValue(0);
-        Instant timestamp = Instant.ofEpochSecond(storedTimestampSeconds);
+        Instant timestamp = decodeStoredStatisticsTimestamp(result);
 
         Statistics allTime = getLastObservationCount(result, 0);
 
         return new LastStatisticObservationData(timestamp, allTime);
+    }
+
+    static Range<Instant> timeRange(Instant begin, Instant end, boolean beginExclusive) {
+        if (begin == null || end == null)
+            return null;
+        return beginExclusive ? Range.openClosed(begin, end) : Range.closed(begin, end);
+    }
+
+    /**
+     * Before OSCAR 3.9.2, statistics wrote epoch seconds with {@code setLongValue}
+     * into an INSTANT field. That produced an apparent January 1970 timestamp, while
+     * {@code getLongValue} still exposed the intended epoch-second number. Restrict
+     * compatibility decoding to the bounded lifetime of plausible OSCAR records so a
+     * genuinely modern INSTANT is never reinterpreted by magnitude alone.
+     */
+    static Instant decodeStoredStatisticsTimestamp(DataBlock result) {
+        Instant directTimestamp = result.getTimeStamp(0);
+        if (directTimestamp == null)
+            return null;
+
+        long legacyEpochSeconds = result.getLongValue(0);
+        if (directTimestamp.isBefore(LEGACY_STATS_EPOCH_SECONDS_MIN)
+                && legacyEpochSeconds >= LEGACY_STATS_EPOCH_SECONDS_MIN.getEpochSecond()
+                && legacyEpochSeconds < LEGACY_STATS_EPOCH_SECONDS_MAX.getEpochSecond()) {
+            return Instant.ofEpochSecond(legacyEpochSeconds);
+        }
+        return directTimestamp;
+    }
+
+    /**
+     * The persisted SWE Time field is backed by epoch milliseconds. PostgreSQL and
+     * the cold archive can retain finer precision, but using an exact millisecond
+     * here keeps the result value and observation key identical across every tier.
+     */
+    static Instant normalizePublicationTime(Instant timestamp) {
+        return timestamp.truncatedTo(ChronoUnit.MILLIS);
+    }
+
+    /** Returns an exact-millisecond timestamp strictly newer than the prior publication. */
+    static Instant publicationTimeAfter(Instant candidate, Instant priorPublication) {
+        Instant normalizedCandidate = normalizePublicationTime(candidate);
+        if (priorPublication == null || normalizedCandidate.isAfter(priorPublication))
+            return normalizedCandidate;
+        return normalizePublicationTime(priorPublication).plus(1, ChronoUnit.MILLIS);
     }
 
     private <T> T runCancellableStatistics(Supplier<T> operation) {

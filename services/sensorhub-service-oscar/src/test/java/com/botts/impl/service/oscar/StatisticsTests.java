@@ -6,6 +6,7 @@ import com.botts.impl.service.bucket.BucketServiceConfig;
 import com.botts.impl.service.oscar.siteinfo.SiteDiagramConfig;
 import com.botts.impl.service.oscar.stats.StatisticsControl;
 import com.botts.impl.service.oscar.stats.StatisticsOutput;
+import com.botts.impl.service.oscar.stats.Statistics;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -17,7 +18,9 @@ import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.ICancellableDataStore;
 import org.sensorhub.api.datastore.TemporalFilter;
+import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
+import org.sensorhub.api.data.ObsData;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.api.service.IHttpServer;
 import org.sensorhub.impl.SensorHub;
@@ -35,6 +38,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.*;
 
@@ -83,6 +87,72 @@ public class StatisticsTests {
         statsOutput.publishLatestStatistics();
         var latestRecord = statsOutput.getLatestRecord();
         assertNotNull(latestRecord);
+    }
+
+    @Test
+    public void legacyStatisticsCutoffDoesNotDoubleCountExistingTotals() {
+        statsOutput.stop();
+        var federatedDatabase = hub.getDatabaseRegistry().getFederatedDatabase();
+        var dataStreamIds = federatedDatabase.getDataStreamStore().selectKeys(
+                new DataStreamFilter.Builder()
+                        .withSystems().withUniqueIDs(system.getUniqueIdentifier()).done()
+                        .withOutputNames(StatisticsOutput.NAME)
+                        .build()
+        ).map(key -> key.getInternalID()).toList();
+        assertEquals(1, dataStreamIds.size());
+
+        BigId statisticsDataStream = dataStreamIds.get(0);
+        var writableDatabase = hub.getDatabaseRegistry()
+                .getObsDatabaseByNum(statisticsDataStream.getScope());
+        assertNotNull(writableDatabase);
+        writableDatabase.getObservationStore().removeEntries(new ObsFilter.Builder()
+                .withDataStreams(statisticsDataStream)
+                .build());
+
+        Instant intendedCutoff = Instant.parse("2026-10-22T12:34:56Z");
+        var legacyRecord = statsOutput.getRecordDescription().createDataBlock();
+        legacyRecord.setLongValue(0, intendedCutoff.getEpochSecond());
+        legacyRecord.setLongValue(1, 7L);
+        writableDatabase.getObservationStore().add(new ObsData.Builder()
+                .withDataStream(statisticsDataStream)
+                .withPhenomenonTime(legacyRecord.getTimeStamp(0))
+                .withResult(legacyRecord)
+                .build());
+
+        AtomicReference<Instant> incrementalStart = new AtomicReference<>();
+        StatisticsOutput compatibilityOutput = new LegacyCompatibilityStatisticsOutput(
+                system, federatedDatabase, incrementalStart);
+
+        compatibilityOutput.publishLatestStatistics();
+
+        assertEquals("The incremental query must begin at the intended legacy cutoff",
+                intendedCutoff, incrementalStart.get());
+        assertEquals("No new source observations means the prior all-time total is unchanged",
+                7L, compatibilityOutput.getLatestRecord().getLongValue(1));
+    }
+
+    private static final class LegacyCompatibilityStatisticsOutput extends StatisticsOutput {
+        private final AtomicReference<Instant> incrementalStart;
+
+        private LegacyCompatibilityStatisticsOutput(OSCARSystem parent,
+                                                    IObsSystemDatabase database,
+                                                    AtomicReference<Instant> incrementalStart) {
+            super(parent, database, 60);
+            this.incrementalStart = incrementalStart;
+        }
+
+        @Override
+        protected Statistics getStatsAfter(Instant exclusiveStart, Instant inclusiveEnd,
+                                           Collection<String> laneUIDs) {
+            incrementalStart.set(exclusiveStart);
+            return Statistics.zero();
+        }
+
+        @Override
+        protected Statistics getStats(Instant start, Instant end,
+                                      Collection<String> laneUIDs) {
+            return Statistics.zero();
+        }
     }
 
     @Test
@@ -267,7 +337,7 @@ public class StatisticsTests {
         int id = 1;
         var res = statsControl.submitCommand(new CommandData(id++, cmdData)).get();
         assertNull(res.getMessage());
-        assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
+        assertEquals(ICommandStatus.CommandStatusCode.COMPLETED, res.getStatusCode());
         var resDataBlocks = res.getResult().getInlineRecords().stream().toList();
         assertFalse(resDataBlocks.isEmpty());
         var resData = resDataBlocks.get(0);
@@ -293,7 +363,7 @@ public class StatisticsTests {
         cmdData.setStringValue(2, "urn:osh:system:lane:not-present");
 
         var status = statsControl.submitCommand(new CommandData(1, cmdData)).get();
-        assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, status.getStatusCode());
+        assertEquals(ICommandStatus.CommandStatusCode.COMPLETED, status.getStatusCode());
 
         var result = status.getResult().getInlineRecords().stream().findFirst().orElseThrow();
         for (int i = 0; i < result.getAtomCount(); i++)
@@ -302,6 +372,19 @@ public class StatisticsTests {
 
     @Test
     public void testControlWithNoTimes() throws ExecutionException, InterruptedException {
+        var db = hub.getDatabaseRegistry().getFederatedDatabase().getObservationStore();
+        var latestBefore = db.selectKeys(
+                new ObsFilter.Builder()
+                        .withLatestResult()
+                        .withSystems().withUniqueIDs(statsOutput.getParentProducer().getUniqueIdentifier())
+                        .done()
+                        .withDataStreams().withOutputNames(statsOutput.getName())
+                        .done()
+                        .withLimit(1)
+                        .build()
+        ).toList();
+        BigId beforeId = latestBefore.isEmpty() ? null : latestBefore.get(0);
+
         var cmdDesc = statsControl.getCommandDescription().copy();
         var cmdData = cmdDesc.createDataBlock();
         cmdData.setTimeStamp(0, null);
@@ -309,24 +392,23 @@ public class StatisticsTests {
         int id = 1;
         var res = statsControl.submitCommand(new CommandData(id++, cmdData)).get();
         assertNull(res.getMessage());
-        assertEquals(ICommandStatus.CommandStatusCode.ACCEPTED, res.getStatusCode());
+        assertEquals(ICommandStatus.CommandStatusCode.COMPLETED, res.getStatusCode());
         var resObsIds = res.getResult().getObservationIDs().stream().toList();
         assertFalse(resObsIds.isEmpty());
         var resObsId = resObsIds.get(0);
         System.out.println(hub.getIdEncoders().getObsIdEncoder().encodeID(resObsId));
         assertNotNull(resObsId);
-        var obs = hub.getDatabaseRegistry().getFederatedDatabase().getObservationStore().get(resObsId);
+        if (beforeId != null)
+            assertNotEquals("Command must return a newly persisted observation", beforeId, resObsId);
+        var obs = db.get(resObsId);
         assertNotNull(obs);
         System.out.println(obs);
     }
 
     @Test
     public void testVerifyOutputLatestObsFromCommand() throws ExecutionException, InterruptedException {
-        // Step 1: Publish 100 stats records
-        Random random = new Random();
-        var max = random.nextInt(500);
-        for (int i = 0; i < max; i++)
-            statsOutput.publishLatestStatistics();
+        // Seed a deterministic baseline record which the command must not reuse.
+        statsOutput.publishLatestStatistics();
 
         var db = hub.getDatabaseRegistry().getFederatedDatabase().getObservationStore();
         var latestBefore = db.selectKeys(
@@ -348,6 +430,7 @@ public class StatisticsTests {
         cmdData.setTimeStamp(1, null);
 
         var res = statsControl.submitCommand(new CommandData(1, cmdData)).get();
+        assertEquals(ICommandStatus.CommandStatusCode.COMPLETED, res.getStatusCode());
         var resObsIds = res.getResult().getObservationIDs().stream().toList();
         assertFalse("Command should return at least one observation ID", resObsIds.isEmpty());
         var resObsId = resObsIds.get(0);
@@ -370,7 +453,7 @@ public class StatisticsTests {
         assertEquals(afterId, resObsId);
 
         if (beforeId != null)
-            assertNotEquals(beforeId.toString(), afterId, "Command should create a new observation, not reuse previous one");
+            assertNotEquals("Command should create a new observation, not reuse previous one", beforeId, afterId);
     }
 
     @Test

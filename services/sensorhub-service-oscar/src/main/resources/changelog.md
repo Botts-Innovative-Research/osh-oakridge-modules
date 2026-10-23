@@ -3,6 +3,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 ### Changed
+- National Statistics full publications are now serialized and scheduled with fixed delay so an
+  operator refresh cannot overlap the periodic archive-backed scan. Refresh commands finish with
+  terminal `COMPLETED` status only after their newly persisted observation ID is available.
+  Statistics timestamps remain backward compatible with legacy epoch-second records, are emitted
+  at the SWE field's exact millisecond precision, and use an open-lower incremental window so an
+  upgrade neither double-counts history nor loses boundary observations.
 - The English, Spanish, French, and Greek operator manuals now describe the exact 3.9.2 production
   storage policy: two-day archive eligibility plus one-day verified hot-row grace, immediate
   asynchronous five-frame media eligibility plus 24-hour source grace, bounded 30-day
