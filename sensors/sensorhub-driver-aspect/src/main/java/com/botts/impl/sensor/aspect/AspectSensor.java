@@ -22,6 +22,7 @@ import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.utils.rad.dailyfile.DailyFileAppender;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
+import org.sensorhub.impl.utils.rad.output.DailyFileOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,7 +49,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     OccupancyOutput<AspectSensor> occupancyOutput;
     SpeedOutput speedOutput;
     SensorLocationOutput sensorLocationOutput;
-    DailyFileOutput dailyFileOutput;
+    DailyFileOutput<AspectSensor> dailyFileOutput;
     ConnectionStatusOutput connectionStatusOutput;
 
     public int laneID;
@@ -96,9 +97,8 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         sensorLocationOutput = new SensorLocationOutput(this);
         sensorLocationOutput.init();
 
-        dailyFileOutput = new DailyFileOutput(this);
+        dailyFileOutput = new DailyFileOutput<>(this);
         addOutput(dailyFileOutput, false);
-        dailyFileOutput.init();
 
         connectionStatusOutput = new ConnectionStatusOutput(this);
         addOutput(connectionStatusOutput, false);
@@ -247,7 +247,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         return uid != null && uid.contains(":") ? uid.substring(uid.lastIndexOf(':') + 1) : uid;
     }
 
-    public DailyFileOutput getDailyFileOutput() {
+    public DailyFileOutput<AspectSensor> getDailyFileOutput() {
         return dailyFileOutput;
     }
     public GammaOutput getGammaOutput() {

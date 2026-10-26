@@ -142,7 +142,7 @@ public class DatabasePurgerTests {
     private DataComponent createMessageStruct(String outputName) {
         RADHelper radHelper = new RADHelper();
         var samplingTime = radHelper.createPrecisionTimeStamp();
-        var message = radHelper.createAspectMessageFile();
+        var message = radHelper.createRpmMessage();
         return radHelper.createRecord()
                 .name(outputName)
                 .label(outputName)

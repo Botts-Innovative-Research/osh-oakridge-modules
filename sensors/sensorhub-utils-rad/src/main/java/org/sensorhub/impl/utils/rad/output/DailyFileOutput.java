@@ -1,42 +1,39 @@
-package com.botts.impl.sensor.rapiscan.output;
+package org.sensorhub.impl.utils.rad.output;
 
-import com.botts.impl.sensor.rapiscan.RapiscanSensor;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
-import org.sensorhub.impl.sensor.AbstractSensorOutput;
+import org.sensorhub.api.data.IDataProducer;
+import org.sensorhub.impl.data.AbstractDataInterface;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.vast.data.TextEncodingImpl;
 
 import java.time.Instant;
 
-public class DailyFileOutput extends AbstractSensorOutput<RapiscanSensor> {
+public class DailyFileOutput<SensorType extends IDataProducer> extends AbstractDataInterface<SensorType> {
 
-    private static final String SENSOR_OUTPUT_NAME = "dailyFile";
-    private static final String SENSOR_OUTPUT_LABEL = "Daily File";
+    public static final String NAME = "dailyFile";
+    private static final String LABEL = "Daily File";
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
 
-    public DailyFileOutput(RapiscanSensor parentSensor){
-        super(SENSOR_OUTPUT_NAME, parentSensor);
-    }
-
-    public void init() {
+    public DailyFileOutput(SensorType parentSensor) {
+        super(NAME, parentSensor);
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
-        var rpmMsg = radHelper.createRapiscanMessage();
+        var rpmMessage = radHelper.createRpmMessage();
 
         dataStruct = radHelper.createRecord()
                 .name(getName())
-                .label(SENSOR_OUTPUT_LABEL)
+                .label(LABEL)
                 .updatable(true)
                 .definition(RADHelper.getRadUri("DailyFile"))
                 .addField(samplingTime.getName(), samplingTime)
-                .addField(rpmMsg.getName(), rpmMsg)
+                .addField(rpmMessage.getName(), rpmMessage)
                 .build();
 
         dataEncoding = new TextEncodingImpl(",", "\n");

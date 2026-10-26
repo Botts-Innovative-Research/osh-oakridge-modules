@@ -1,7 +1,7 @@
 package com.botts.impl.sensor.rapiscan;
 
 import com.botts.api.service.bucket.IBucketStore;
-import com.botts.impl.sensor.rapiscan.output.DailyFileOutput;
+import org.sensorhub.impl.utils.rad.output.DailyFileOutput;
 import com.botts.impl.sensor.rapiscan.output.TamperOutput;
 import com.botts.impl.service.bucket.filesystem.FileSystemBucketStore;
 import org.junit.After;
@@ -35,7 +35,7 @@ public class MessageHandlerTest {
     private IBucketStore store;
     private RapiscanSensor sensor;
     private TamperOutput tamperOutput;
-    private DailyFileOutput dailyFileOutput;
+    private DailyFileOutput<RapiscanSensor> dailyFileOutput;
 
     @Before
     public void setUp() throws Exception {

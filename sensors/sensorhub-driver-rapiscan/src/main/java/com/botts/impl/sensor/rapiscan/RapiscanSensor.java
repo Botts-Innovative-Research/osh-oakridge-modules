@@ -26,6 +26,7 @@ import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.utils.rad.dailyfile.DailyFileAppender;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
+import org.sensorhub.impl.utils.rad.output.DailyFileOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,7 +65,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
     private SetupGammaOutput setupGammaOutput;
     private SetupNeutronOutput setupNeutronOutput;
     private GammaThresholdOutput gammaThresholdOutput;
-    private DailyFileOutput dailyFileOutput;
+    private DailyFileOutput<RapiscanSensor> dailyFileOutput;
     private ConnectionStatusOutput connectionStatusOutput;
 
     // Controls
@@ -195,9 +196,8 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         addOutput(gammaThresholdOutput, false);
         gammaThresholdOutput.init();
 
-        dailyFileOutput = new DailyFileOutput(this);
+        dailyFileOutput = new DailyFileOutput<>(this);
         addOutput(dailyFileOutput, false);
-        dailyFileOutput.init();
 
         setupGammaOutput = new SetupGammaOutput(this);
         addOutput(setupGammaOutput, false);
@@ -370,7 +370,7 @@ public class RapiscanSensor extends AbstractSensorModule<RapiscanConfig> {
         return uid != null && uid.contains(":") ? uid.substring(uid.lastIndexOf(':') + 1) : uid;
     }
 
-    public DailyFileOutput getDailyFileOutput() {
+    public DailyFileOutput<RapiscanSensor> getDailyFileOutput() {
         return dailyFileOutput;
     }
 

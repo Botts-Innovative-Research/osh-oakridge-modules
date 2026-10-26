@@ -1,6 +1,5 @@
 package com.botts.impl.sensor.aspect;
 
-import com.botts.impl.sensor.aspect.output.DailyFileOutput;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
 import org.sensorhub.impl.utils.rad.dailyfile.DailyFileAppender;
@@ -141,10 +140,33 @@ public class MessageHandler {
      * Builds the daily file line once, appends it to the daily file first, then publishes it.
      */
     private void publishDailyFile(MonitorRegisters monitorRegisters) {
-        String line = DailyFileOutput.buildDailyFileLine(monitorRegisters);
+        String line = buildDailyFileLine(monitorRegisters);
         if (dailyFile != null)
             dailyFile.append(line);
         parentSensor.dailyFileOutput.onNewMessage(line);
+    }
+
+    /**
+     * Builds the daily file line for the current monitor registers: 14 comma separated register values,
+     * unquoted, no timestamp. This exact text is written to the daily file and published on this output.
+     */
+    static String buildDailyFileLine(MonitorRegisters monitorRegisters){
+        return String.join(",",
+                String.valueOf(monitorRegisters.getTimeElapsed()),
+                String.valueOf(monitorRegisters.getInputSignals()),
+                String.valueOf(monitorRegisters.getGammaChannelStatus()),
+                String.valueOf(monitorRegisters.getGammaChannelCount()),
+                String.valueOf(monitorRegisters.getGammaChannelBackground()),
+                String.valueOf(monitorRegisters.getGammaChannelVariance()),
+                String.valueOf(monitorRegisters.getNeutronChannelStatus()),
+                String.valueOf(monitorRegisters.getNeutronChannelCount()),
+                String.valueOf(monitorRegisters.getNeutronChannelBackground()),
+                String.valueOf(monitorRegisters.getNeutronChannelVariance()),
+                String.valueOf(monitorRegisters.getObjectCounter()),
+                String.valueOf(monitorRegisters.getObjectMark()),
+                String.valueOf(monitorRegisters.getObjectSpeed()),
+                String.valueOf(monitorRegisters.getOutputSignals())
+        );
     }
 
     public void stop() {
