@@ -1133,7 +1133,7 @@ public class RADHelper extends GeoPosHelper {
                 .addField("adjudicationCode", createCount()
                         .label("Adjudication Code")
                         .definition(getRadUri("AdjudicationCode"))
-                        .addAllowedInterval(0,11)
+                        .addAllowedInterval(0, Integer.MAX_VALUE)
                         .optional(false)
                         .build())
                 .addField("isotopesCount", createCount()
