@@ -22,7 +22,32 @@ import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.database.IObsSystemDatabaseModule;
 import org.sensorhub.api.service.ServiceConfig;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 public class OSCARServiceConfig extends ServiceConfig {
+
+    @DisplayInfo(label = "Custom Disposition Codes", desc = "Additional adjudication codes. Values must be unique integers greater than 11; codes 0-11 are built in.")
+    public List<AdjudicationCodeConfig> customAdjudicationCodes = new ArrayList<>();
+
+    /** Validates the configured codes and returns their numeric values. */
+    public Set<Integer> getCustomAdjudicationCodeValues() {
+        Set<Integer> values = new HashSet<>();
+        if (customAdjudicationCodes == null)
+            return values;
+
+        for (var entry : customAdjudicationCodes) {
+            if (entry == null || entry.code <= 11)
+                throw new IllegalArgumentException("Custom disposition codes must be greater than 11; codes 0-11 are reserved.");
+            if (entry.label == null || entry.label.isBlank())
+                throw new IllegalArgumentException("Custom disposition code " + entry.code + " must have a label.");
+            if (!values.add(entry.code))
+                throw new IllegalArgumentException("Duplicate custom disposition code: " + entry.code);
+        }
+        return values;
+    }
 
     public String spreadsheetConfigPath;
 

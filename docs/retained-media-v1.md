@@ -304,13 +304,13 @@ checkpoints, manifests, ledgers, and queue state jointly prevent replay or resur
 coordination artifacts and carry no logical state. Restoring only media assets while omitting
 internal metadata is unsupported.
 
-This compact metadata layout first ships with the new OSCAR 3.9.2 retained-media design. It does
+This compact metadata layout first ships with the new OSCAR 3.11.0 retained-media design. It does
 not walk the complete event tree to migrate pre-release prototype `retention-processed/*.json` or
 `.deleted.json` files because that would reintroduce unbounded startup and maintenance I/O.
-Test/pre-release installations must start 3.9.2 with a fresh database and retained-media prefix, or
-restore both from a coordinated 3.9.2 backup. Older OSCAR binaries do not understand these indexes;
+Test/pre-release installations must start 3.11.0 with a fresh database and retained-media prefix, or
+restore both from a coordinated 3.11.0 backup. Older OSCAR binaries do not understand these indexes;
 a downgrade requires restoring the database and complete retained-media prefix from the same
-coordinated pre-3.9.2 backup. Never run an older binary directly against 3.9.2 storage.
+coordinated pre-3.11.0 backup. Never run an older binary directly against 3.11.0 storage.
 
 When frame retention is enabled, `frameRetentionCount` must be exactly `5`. Disabling frame
 retention preserves the legacy whole-video deletion mode.

@@ -386,7 +386,7 @@ public class LaneSystem extends SensorSystem implements IAutoStartDispatchStatus
         if (webIdHelper != null) {
             webIdHelper.stop();
         }
-        if (occupancyProducer != existingRPMModule) {
+        if (occupancyProducer != null && occupancyProducer != existingRPMModule) {
             removeSubSystem(occupancyProducer.getConfiguration().id);
         }
         if (occupancyWrapper != null) {
@@ -757,8 +757,8 @@ public class LaneSystem extends SensorSystem implements IAutoStartDispatchStatus
         config.autoStart = true;
         config.connection.connectionString = endpoint.toString();
         config.moduleClass = FFMPEGSensor.class.getCanonicalName();
-        config.connectionConfig.connectTimeout = 5000;
-        config.connectionConfig.reconnectAttempts = 10;
+        config.connectionConfig.connectTimeout = 4500;
+        config.connectionConfig.reconnectAttempts = -1;
         config.output.useHLS = true;
         config.output.useVideoFrames = false;
         config.connection.bufferSize = ffmpegConfig.bufferSize;

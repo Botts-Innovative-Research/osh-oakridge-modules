@@ -163,7 +163,7 @@ and ledger. It rejects linked, open, missing, extra, or changed entries. All lan
 validated before any receipt is written. The CLI then writes the exact immutable segment inventories
 with the authenticated backup ID and state-archive hash, flushes them, and atomically publishes one
 confirmation-set marker last. That immutable marker enumerates the exact relative path and SHA-256
-of every member; receipts created without this 3.9.2 set protocol, absent from the index, or changed
+of every member; receipts created without this 3.11.0 set protocol, absent from the index, or changed
 afterward cannot authorize pruning. A late validation error, write failure, or interruption therefore
 cannot expose a partially confirmed set. The marker index is parsed and bounded once per running
 store, while each retention check revalidates the marker's no-follow file identity and hashes only
@@ -240,7 +240,7 @@ not change journal capture or CSV publication:
   current unsealed day merely to retain one row.
 - `NONE` does not publish the compatibility observation. Raw journal capture still occurs.
 
-The 3.9.2 standard production profile selects `LATEST`: the lane system subscribes to each live
+The 3.11.0 standard production profile selects `LATEST`: the lane system subscribes to each live
 `dailyFile` event to derive occupancy transitions, so `NONE` is not operationally equivalent. The
 direct journal and immutable daily CSV remain the historical record. `LATEST` still incurs the
 initial database/WAL write because OSH currently couples live observation delivery with storage.
@@ -282,7 +282,7 @@ rename, or delete `.open`, `.seg`, ledger, CSV, or manifest files while the serv
 
 ### One-time lifecycle-index migration
 
-A journal created by the earlier 3.9.2 preview has metadata/segments but no durable lifecycle work
+A journal created by the earlier 3.11.0 preview has metadata/segments but no durable lifecycle work
 index. Startup deliberately refuses that journal instead of doing an unbounded historical tree walk
 on the module thread. The packaged Windows and Linux `oscar upgrade` commands stop the application
 tier and run this migration automatically before startup. The following direct command is for

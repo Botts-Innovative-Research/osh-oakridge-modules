@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
   Statistics timestamps remain backward compatible with legacy epoch-second records, are emitted
   at the SWE field's exact millisecond precision, and use an open-lower incremental window so an
   upgrade neither double-counts history nor loses boundary observations.
-- The English, Spanish, French, and Greek operator manuals now describe the exact 3.9.2 production
+- The English, Spanish, French, and Greek operator manuals now describe the exact 3.11.0 production
   storage policy: two-day archive eligibility plus one-day verified hot-row grace, immediate
   asynchronous five-frame media eligibility plus 24-hour source grace, bounded 30-day
   sealed-journal cleanup with an optional backup gate, managed backup disabled by default with
@@ -35,7 +35,7 @@ All notable changes to this project will be documented in this file.
   while complete-record corruption and irregular index objects fail closed.
 - Added the `metadataReclamationWorkLimit` operator control (default `200`) and documented that the
   count is UTC-hour buckets per cycle. The complete retained-media internal prefix is one
-  backup/restore consistency unit, and pre-release prototype state requires a fresh 3.9.2 start.
+  backup/restore consistency unit, and pre-release prototype state requires a fresh 3.11.0 start.
 
 ## [1.1.0] - 2025-10-29
 ### Removed

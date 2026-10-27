@@ -1,4 +1,4 @@
-# Manual de administración y operación de OSCAR 3.9.2
+# Manual de administración y operación de OSCAR 3.11.0
 
 Este manual cubre el primer uso y la operación completa: certificado, acceso, plano georreferenciado, importación/creación de carriles, adjudicación y evidencias, eventos, estadísticas nacionales, informes y federación de nodos.
 
@@ -32,7 +32,7 @@ La interfaz de administración selecciona automáticamente la versión del manua
 
 Necesita:
 
-- un despliegue OSCAR 3.9.2 instalado y en ejecución;
+- un despliegue OSCAR 3.11.0 instalado y en ejecución;
 - la URL de OSCAR, normalmente `https://oscar.local/` salvo que se haya elegido otro host;
 - una cuenta administradora para `/sensorhub/admin`;
 - la imagen aprobada del sitio y la latitud/longitud de sus esquinas inferior izquierda y superior derecha;
@@ -204,10 +204,20 @@ más de 1,2 millones de ocupaciones distribuidas uniformemente por hora. Un
 JSON permanente por cámara. Copie y restaure como una unidad todo `videos/retained-media/v1`,
 incluidos índices, puntos de control, colas, manifiestos y libros de trabajo.
 
-Este formato compacto aparece por primera vez en 3.9.2 y no migra los prototipos previos
+Este formato compacto aparece por primera vez en 3.11.0 y no migra los prototipos previos
 `.deleted.json` ni árboles de marcadores por observación. Los sistemas de prueba deben comenzar con
-una base de datos y un prefijo de medios nuevos de 3.9.2. Para volver atrás, restaure ambos desde la
-misma copia coordinada anterior a 3.9.2; no ejecute un binario antiguo sobre este almacenamiento.
+una base de datos y un prefijo de medios nuevos de 3.11.0. Para volver atrás, restaure ambos desde la
+misma copia coordinada anterior a 3.11.0; no ejecute un binario antiguo sobre este almacenamiento.
+
+### Códigos de disposición personalizados
+
+En la configuración del módulo de servicio OSCAR, añada entradas a **Custom Disposition Codes** (`customAdjudicationCodes`). Cada entrada requiere un entero `code` único mayor que 11 y una descripción `label` no vacía. Los códigos 0–11 están integrados y no se pueden reemplazar. Ejemplo:
+
+```json
+"customAdjudicationCodes": [{"code": 12, "label": "Revisión local completada"}]
+```
+
+Aplique la configuración del servicio antes de enviar `adjudicationCode: 12`. Los carriles consultan la configuración actual en cada envío y rechazan códigos no configurados. Eliminar un código impide nuevos envíos con ese código y conserva las adjudicaciones existentes. El servicio publica estas opciones después de completar el registro del sistema y de la base de datos, también tras cambios de configuración. El Viewer lee el flujo `adjudicationCodes` y ofrece las opciones junto a los códigos integrados en detalle, vista previa del panel y adjudicación masiva. El Viewer se suscribe a la salida de disposición mediante el cliente MQTT compartido y lee la última observación una vez para el estado inicial. Las adiciones, ediciones y eliminaciones publicadas actualizan las listas abiertas inmediatamente, sin consultas periódicas ni recargar la página. Las suscripciones se desconectan al retirar el componente o cambiar los nodos de destino. Al abrir la lista se reintentan las suscripciones fallidas o los flujos ausentes. Las selecciones masivas entre nodos solo ofrecen códigos personalizados cuyo número y descripción coinciden en todos los nodos de destino.
 
 ## 5. Crear y cargar un plano georreferenciado
 
@@ -683,7 +693,7 @@ Verifique carriles/eventos del remoto, su fila Nacional, un informe y un evento 
 
 ## 12. Retención de datos y almacenamiento
 
-El perfil estándar 3.9.2 utiliza la base de datos PostgreSQL por niveles. Los registros recientes y
+El perfil estándar 3.11.0 utiliza la base de datos PostgreSQL por niveles. Los registros recientes y
 operativos permanecen en PostgreSQL; las observaciones configuradas de detectores de gran volumen
 con más de dos días se copian mediante trabajos de fondo limitados a Parquet catalogado y comprimido
 con ZSTD. La eliminación verificada de filas calientes está activada de forma predeterminada tras la
@@ -736,9 +746,9 @@ heredado `backup-prune` está retirado.
 Use los comandos `archive status`, `archive verify`, retenciones, exportación portátil y eliminación
 con vista previa y token del lanzador, y `backup` y `backup-verify` solo en modo `single`. Proteja por
 separado la clave de cifrado y conserve una copia externa si la política del sitio exige otro dominio
-de fallo. Nunca borre directamente archivos catalogados. Una actualización anterior a 3.9.2 conserva
+de fallo. Nunca borre directamente archivos catalogados. Una actualización anterior a 3.11.0 conserva
 la base y configuración anteriores: no crea todo el perfil ni activa las sumas de comprobación de
-PostgreSQL. Inicialice un despliegue 3.9.2 nuevo o aplique una migración de producción validada aparte.
+PostgreSQL. Inicialice un despliegue 3.11.0 nuevo o aplique una migración de producción validada aparte.
 Las guías de almacenamiento de `documentation/` son los procedimientos autorizados.
 
 Use el lanzador de la versión para `stop` y `restart` de todo el despliegue. Primero detiene la
@@ -764,7 +774,7 @@ destrucción de registros.
 
 - [ ] ID de nodo único; base de datos, Web ID, estadísticas y Auto Start revisados.
 - [ ] Retención de vídeo y presión revisadas antes de activar limpieza.
-- [ ] Se usó una base/configuración 3.9.2 nueva o una migración aprobada; el estado y la integridad del archivo son correctos.
+- [ ] Se usó una base/configuración 3.11.0 nueva o una migración aprobada; el estado y la integridad del archivo son correctos.
 - [ ] Se ha registrado el modo de copia. El modo desactivado no crea copias gestionadas por OSCAR; si se activa `single`, su instantánea actual se verifica, la clave externa se custodia aparte y se ha superado una restauración aislada.
 - [ ] Un carril de muestra publica CSV/manifiesto desde el diario; eventos retenidos muestran cinco JPEG y los heredados siguen reproduciéndose.
 - [ ] Servicios de buckets y OSCAR están iniciados.
@@ -809,7 +819,7 @@ destrucción de registros.
 | OSM 403/bloqueado | No use directamente servidores voluntarios incumpliendo su política. Configure proveedor/proxy OSM aprobado o use Esri mientras se corrige. |
 | CSV rechazado | Revise encabezado/orden, grupos de seis, índices secuenciales, número de celdas, numéricos, vacíos sin comillas y ausencia de comas internas. |
 | Falta un carril tras CSV | Busque UniqueID ya cargado, nombre mayor de 12, errores de hijos y espere la carga asíncrona. |
-| **Sensores** está vacío tras reiniciar después de cargar el CSV | La carga creó módulos en memoria, pero no se conservó la configuración completa. Vuelva a cargar si hace falta, espere a que aparezcan todos los carriles e hijos, pulse **Guardar** globalmente, reinicie OSCAR y compruebe otra vez **Sensores**. Si un nodo 3.9.2 sigue perdiendo los carriles, revise los logs de OSCAR y verifique que el propietario pueda escribir en `/var/lib/oscar/config.json`. |
+| **Sensores** está vacío tras reiniciar después de cargar el CSV | La carga creó módulos en memoria, pero no se conservó la configuración completa. Vuelva a cargar si hace falta, espere a que aparezcan todos los carriles e hijos, pulse **Guardar** globalmente, reinicie OSCAR y compruebe otra vez **Sensores**. Si un nodo 3.11.0 sigue perdiendo los carriles, revise los logs de OSCAR y verifique que el propietario pueda escribir en `/var/lib/oscar/config.json`. |
 | Una vista operativa está vacía o rechaza su clave | Confirme que **Claves de vista operativa** del carril contiene exactamente la clave en minúsculas, aplique y guarde globalmente, reinicie el carril si procede y use `?view=<clave>` o `/view/<clave>`. Una asignación vacía nunca coincide con una vista delimitada. |
 | RPM no inicia | Pruebe alcance del host, puerto, cortafuegos, rango Aspect y disponibilidad; revise el error del hijo. |
 | Cámara no inicia | Pruebe RTSP/credenciales, quite `rtsp://` del host, no duplique puerto, confirme códec Axis o ruta Custom y pruebe desde el host OSCAR. |
@@ -840,4 +850,4 @@ Para soporte, registre versión OSCAR, navegador, carril/ocupación, hora y zona
 
 ---
 
-Base del documento: comportamiento del código OSCAR 3.9.2, revisado el 2026-10-18. Si una versión posterior cambia campos o flujos, actualice conjuntamente el manual canónico en inglés y las tres traducciones.
+Base del documento: comportamiento del código OSCAR 3.11.0, revisado el 2026-10-18. Si una versión posterior cambia campos o flujos, actualice conjuntamente el manual canónico en inglés y las tres traducciones.

@@ -98,6 +98,14 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public Text createRpmMessage() {
+        return createText()
+                .name("rpmMessage")
+                .label("RPM Message")
+                .definition(getRadUri("RPMMessage"))
+                .build();
+    }
+
     public Text createAspectMessageFile(){
         return createText()
                 .name("aspectMessage")
@@ -1133,7 +1141,7 @@ public class RADHelper extends GeoPosHelper {
                 .addField("adjudicationCode", createCount()
                         .label("Adjudication Code")
                         .definition(getRadUri("AdjudicationCode"))
-                        .addAllowedInterval(0,11)
+                        .addAllowedInterval(0, Integer.MAX_VALUE)
                         .optional(false)
                         .build())
                 .addField("isotopesCount", createCount()

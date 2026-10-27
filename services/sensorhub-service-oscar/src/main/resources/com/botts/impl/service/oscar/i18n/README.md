@@ -1,4 +1,4 @@
-# OSCAR 3.9.2 administrator and operator manual
+# OSCAR 3.11.0 administrator and operator manual
 
 This manual covers the complete first-use and operations workflow including certificate trust, sign-in, site-diagram georeferencing, lane import/manual creation, alarm adjudication and evidence, event review, national statistics, reports, and node federation.
 
@@ -32,7 +32,7 @@ The screenshots show the English interface. OSCAR also supplies Spanish, French,
 
 You need:
 
-- an installed and running OSCAR 3.9.2 deployment;
+- an installed and running OSCAR 3.11.0 deployment;
 - the OSCAR URL, normally `https://oscar.local/` unless deployment selected another hostname;
 - an administrator account for `/sensorhub/admin`;
 - the approved site image and the latitude/longitude of its lower-left and upper-right corners;
@@ -204,10 +204,20 @@ historical reconciliation to recreate deleted media. Back up and restore the com
 `videos/retained-media/v1` prefix as one unit; its indexes, checkpoints, queues, manifests, and
 ledgers are application state.
 
-The compact layout first ships in 3.9.2 and does not scan/migrate pre-release prototype
-`.deleted.json` or per-observation marker trees. Test/pre-release systems need a fresh 3.9.2 database
-and retained-media prefix. To downgrade, restore both from the same coordinated pre-3.9.2 backup;
-never run an older binary against 3.9.2 storage.
+The compact layout first ships in 3.11.0 and does not scan/migrate pre-release prototype
+`.deleted.json` or per-observation marker trees. Test/pre-release systems need a fresh 3.11.0 database
+and retained-media prefix. To downgrade, restore both from the same coordinated pre-3.11.0 backup;
+never run an older binary against 3.11.0 storage.
+
+### Custom disposition codes
+
+In the OSCAR Service Module configuration, add entries to **Custom Disposition Codes** (`customAdjudicationCodes`). Each entry needs a unique integer `code` greater than 11 and a nonblank `label`. Codes 0–11 remain built in and cannot be replaced. For example:
+
+```json
+"customAdjudicationCodes": [{"code": 12, "label": "Local review completed"}]
+```
+
+Apply the service configuration before submitting `adjudicationCode: 12`. Lanes use the current service configuration when verifying each submission; unconfigured codes are rejected. Removing a custom code prevents new submissions with that code and leaves existing adjudications unchanged. The service publishes these choices only after system and database registration completes, including after configuration changes. The Viewer reads the `adjudicationCodes` datastream and offers the choices alongside built-in codes in detail, dashboard preview, and bulk adjudication forms. The Viewer subscribes to the disposition output through the shared MQTT client and reads the latest observation once for initial state. Published additions, edits, and removals update open selectors immediately, without polling or a page reload. Subscriptions are disconnected when the component is removed or its target nodes change. Reopening the list retries failed subscriptions or missing streams. Bulk selections spanning multiple nodes offer only custom codes whose numbers and labels agree on every target node.
 
 ## 5. Create and upload a georeferenced site diagram
 
@@ -712,7 +722,7 @@ Duplicate names and duplicate address/port pairs are rejected. **Edit** changes 
 
 ## 12. Data retention and storage behavior
 
-The standard 3.9.2 profile uses the tiered PostgreSQL database. Recent and operational records stay
+The standard 3.11.0 profile uses the tiered PostgreSQL database. Recent and operational records stay
 in PostgreSQL; configured high-volume detector observations older than two days are copied in
 bounded background jobs to cataloged, ZSTD-compressed Parquet. Verified hot-row deletion is enabled
 by default after exact hot/cold parity and a one-day rollback grace, so Parquet normally becomes the
@@ -758,9 +768,9 @@ verify before `CURRENT` changes and the superseded managed snapshot is removed. 
 Use the release launcher's `archive status`, `archive verify`, hold, portable-export, and tokenized
 dry-run/purge workflows, plus `backup` and `backup-verify` only in `single` mode. Protect the backup
 encryption key separately and retain an off-host copy if site policy requires another failure
-domain. Never delete cataloged archive/media files directly. A pre-3.9.2 `upgrade` preserves its old
+domain. Never delete cataloged archive/media files directly. A pre-3.11.0 `upgrade` preserves its old
 database and configuration and does not create the full storage profile or enable PostgreSQL
-checksums; initialize a fresh 3.9.2 deployment or use a separately validated production migration.
+checksums; initialize a fresh 3.11.0 deployment or use a separately validated production migration.
 The packaged `documentation/` storage guides are the authoritative runbooks.
 
 Use the release launcher for deployment-wide `stop` and `restart`. It stops the gateway first,
@@ -786,7 +796,7 @@ records-destruction requirements.
 - [ ] Node ID is unique and stable.
 - [ ] Database ID, Web ID root, statistics interval, and Auto Start match site policy.
 - [ ] Video and pressure-retention settings were reviewed before enabling cleanup.
-- [ ] A fresh 3.9.2 database/configuration or an approved migration was used; archive status and integrity verification pass.
+- [ ] A fresh 3.11.0 database/configuration or an approved migration was used; archive status and integrity verification pass.
 - [ ] Backup mode is recorded. Disabled mode creates no OSCAR-managed backup; if `single` is enabled, its current snapshot verifies, its external key is escrowed separately, and an isolated restore drill has passed.
 - [ ] A sample lane publishes a journal-backed daily CSV/manifest; retained events show five JPEGs while legacy events still play.
 - [ ] Bucket Storage Service and OSCAR Service Module are started.
@@ -831,7 +841,7 @@ records-destruction requirements.
 | OSM tiles show 403/blocked | Do not point production traffic directly at volunteer OSM tiles in violation of tile policy. Use the deployment's approved OSM provider/proxy or select Esri while the tile-service configuration is corrected. |
 | CSV rejected | Compare the exact header/order, camera groups of six with sequential indexes, cell count on every row, numeric fields, and plain unquoted empty cells. Remove commas from values. |
 | CSV says success but a lane is missing | Check for an existing loaded lane with the same UniqueID, a name longer than 12 characters, device-child initialization errors, and whether asynchronous loading has finished. |
-| **Sensors** is empty after restart following CSV upload | The upload created in-memory modules, but the complete configuration was not persisted. Upload again if necessary, wait for every lane and child to appear, select the global **Save**, restart OSCAR, and verify **Sensors** again. If a 3.9.2 node still loses the lanes, check OSCAR logs and verify that `/var/lib/oscar/config.json` is owner-writable. |
+| **Sensors** is empty after restart following CSV upload | The upload created in-memory modules, but the complete configuration was not persisted. Upload again if necessary, wait for every lane and child to appear, select the global **Save**, restart OSCAR, and verify **Sensors** again. If a 3.11.0 node still loses the lanes, check OSCAR logs and verify that `/var/lib/oscar/config.json` is owner-writable. |
 | Scoped operational view is empty or rejects its key | Confirm the lane's **Operational View Keys** contains the exact lowercase key, apply and globally save the configuration, restart the lane if required, and use `?view=<key>` or `/view/<key>`. A blank assignment never matches a scoped view. |
 | RPM does not start | Verify host reachability, exact TCP port, firewall, Aspect range, and device availability. Review the child driver status/error, not only the parent lane. |
 | Camera does not start | Verify RTSP reachability and credentials, omit `rtsp://` from host, include a needed port once, confirm Axis codec or Custom path, and test the generated endpoint from the OSCAR host. |
@@ -862,4 +872,4 @@ When collecting support data, record the OSCAR version, browser, affected lane/o
 
 ---
 
-Document baseline: OSCAR 3.9.2 source behavior, reviewed 2026-10-18. If a later release changes fields or workflows, update the English canonical manual and all three translations together.
+Document baseline: OSCAR 3.11.0 source behavior, reviewed 2026-10-18. If a later release changes fields or workflows, update the English canonical manual and all three translations together.

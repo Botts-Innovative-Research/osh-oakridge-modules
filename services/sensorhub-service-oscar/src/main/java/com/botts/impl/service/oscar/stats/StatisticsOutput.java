@@ -517,7 +517,7 @@ public class StatisticsOutput extends AbstractSensorOutput<OSCARSystem> {
     }
 
     /**
-     * Before OSCAR 3.9.2, statistics wrote epoch seconds with {@code setLongValue}
+     * Before OSCAR 3.11.0, statistics wrote epoch seconds with {@code setLongValue}
      * into an INSTANT field. That produced an apparent January 1970 timestamp, while
      * {@code getLongValue} still exposed the intended epoch-second number. Restrict
      * compatibility decoding to the bounded lifetime of plausible OSCAR records so a

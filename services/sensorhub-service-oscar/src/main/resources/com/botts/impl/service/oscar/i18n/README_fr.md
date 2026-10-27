@@ -1,4 +1,4 @@
-# Manuel d'administration et d'exploitation d'OSCAR 3.9.2
+# Manuel d'administration et d'exploitation d'OSCAR 3.11.0
 
 Ce manuel couvre la première utilisation et l'exploitation complète : certificat, connexion, plan géoréférencé, import/création des voies, adjudication et preuves, événements, statistiques nationales, rapports et fédération de nœuds.
 
@@ -32,7 +32,7 @@ L'interface d'administration sélectionne automatiquement le manuel correspondan
 
 Vous avez besoin :
 
-- d'un déploiement OSCAR 3.9.2 installé et démarré ;
+- d'un déploiement OSCAR 3.11.0 installé et démarré ;
 - de l'URL OSCAR, généralement `https://oscar.local/` sauf si un autre hôte a été choisi ;
 - d'un compte administrateur pour `/sensorhub/admin` ;
 - de l'image de site approuvée et des coordonnées des coins inférieur gauche et supérieur droit ;
@@ -204,10 +204,20 @@ mémorise les suppressions sous pression sans un
 tombstone JSON permanent par caméra. Sauvegardez et restaurez comme une unité tout
 `videos/retained-media/v1`, notamment index, points de contrôle, files, manifestes et journaux.
 
-Ce format compact apparaît pour la première fois dans 3.9.2 et ne migre pas les prototypes
+Ce format compact apparaît pour la première fois dans 3.11.0 et ne migre pas les prototypes
 `.deleted.json` ni les arbres de marqueurs par observation. Les systèmes de test doivent démarrer
-avec une base et un préfixe de médias 3.9.2 neufs. Pour revenir en arrière, restaurez les deux depuis
-la même sauvegarde coordonnée antérieure à 3.9.2 ; n'exécutez jamais un ancien binaire sur ce stockage.
+avec une base et un préfixe de médias 3.11.0 neufs. Pour revenir en arrière, restaurez les deux depuis
+la même sauvegarde coordonnée antérieure à 3.11.0 ; n'exécutez jamais un ancien binaire sur ce stockage.
+
+### Codes de disposition personnalisés
+
+Dans la configuration du module de service OSCAR, ajoutez des entrées à **Custom Disposition Codes** (`customAdjudicationCodes`). Chaque entrée nécessite un entier `code` unique supérieur à 11 et un libellé `label` non vide. Les codes 0–11 sont intégrés et ne peuvent pas être remplacés. Exemple :
+
+```json
+"customAdjudicationCodes": [{"code": 12, "label": "Examen local terminé"}]
+```
+
+Appliquez la configuration du service avant d'envoyer `adjudicationCode: 12`. Les voies consultent la configuration actuelle à chaque soumission et rejettent les codes non configurés. Supprimer un code empêche les nouvelles soumissions avec ce code et conserve les adjudications existantes. Le service publie ces choix après l'enregistrement du système et de la base de données, y compris après modification de la configuration. Le Viewer lit le flux `adjudicationCodes` et propose les choix avec les codes intégrés dans les détails, l'aperçu du tableau de bord et l'adjudication en masse. Le Viewer s'abonne à la sortie de disposition via le client MQTT partagé et lit une seule fois la dernière observation pour l'état initial. Les ajouts, modifications et suppressions publiés actualisent immédiatement les listes ouvertes, sans interrogation périodique ni rechargement. Les abonnements sont déconnectés au retrait du composant ou au changement des nœuds cibles. La réouverture de la liste retente les abonnements échoués ou les flux absents. Les sélections sur plusieurs nœuds proposent uniquement les codes personnalisés dont le numéro et le libellé correspondent sur tous les nœuds cibles.
 
 ## 5. Créer et téléverser un plan géoréférencé
 
@@ -682,7 +692,7 @@ Vérifiez voies/événements distants, ligne Nationale, rapport et événement a
 
 ## 12. Conservation des données et stockage
 
-Le profil standard 3.9.2 utilise la base PostgreSQL à plusieurs niveaux. Les enregistrements récents
+Le profil standard 3.11.0 utilise la base PostgreSQL à plusieurs niveaux. Les enregistrements récents
 et opérationnels restent dans PostgreSQL ; les observations configurées de détecteurs à fort volume
 de plus de deux jours sont copiées par des tâches d'arrière-plan bornées vers des fichiers Parquet
 catalogués et compressés en ZSTD. La suppression vérifiée des lignes chaudes est activée par défaut
@@ -737,8 +747,8 @@ Utilisez les commandes `archive status`, `archive verify`, de conservation, d'ex
 suppression avec simulation/jeton du lanceur, ainsi que `backup` et `backup-verify` uniquement en mode
 `single`. Protégez séparément la clé de chiffrement et conservez une copie hors hôte si la politique
 du site exige un autre domaine de défaillance. Ne supprimez jamais à la main les fichiers catalogués.
-Une mise à niveau antérieure à 3.9.2 conserve l'ancienne base et configuration : elle ne crée pas tout
-le profil et n'active pas les sommes de contrôle PostgreSQL. Initialisez un nouveau déploiement 3.9.2
+Une mise à niveau antérieure à 3.11.0 conserve l'ancienne base et configuration : elle ne crée pas tout
+le profil et n'active pas les sommes de contrôle PostgreSQL. Initialisez un nouveau déploiement 3.11.0
 ou appliquez une migration de production validée séparément. Les guides de stockage de
 `documentation/` sont les procédures de référence.
 
@@ -765,7 +775,7 @@ reprise et destruction des documents.
 
 - [ ] ID de nœud unique ; base, Web ID, statistiques et démarrage automatique vérifiés.
 - [ ] Conservation vidéo et pression examinées avant toute purge.
-- [ ] Une base/configuration 3.9.2 neuve ou une migration approuvée est utilisée ; l'état et l'intégrité de l'archive sont valides.
+- [ ] Une base/configuration 3.11.0 neuve ou une migration approuvée est utilisée ; l'état et l'intégrité de l'archive sont valides.
 - [ ] Le mode de sauvegarde est consigné. Le mode désactivé ne crée aucune sauvegarde gérée par OSCAR ; si `single` est activé, son instantané courant est vérifié, sa clé externe est séquestrée séparément et un exercice de restauration isolé a réussi.
 - [ ] Une voie témoin publie CSV/manifeste depuis le journal ; les événements retenus montrent cinq JPEG et les anciens restent lisibles.
 - [ ] Services de compartiments et OSCAR démarrés.
@@ -810,7 +820,7 @@ reprise et destruction des documents.
 | Tuiles OSM 403/bloquées | N'utilisez pas directement des serveurs bénévoles contrairement à leur politique. Configurez un fournisseur/proxy OSM approuvé ou utilisez Esri pendant la correction. |
 | CSV refusé | Vérifiez en-tête/ordre, groupes de six, index continus, nombre de cellules, nombres, cellules vides non citées et absence de virgules internes. |
 | Voie manquante après CSV | Cherchez un UniqueID déjà chargé, un nom trop long, des erreurs d'enfants et attendez le chargement asynchrone. |
-| **Capteurs** est vide après un redémarrage suivant le téléversement du CSV | Le téléversement a créé des modules en mémoire, mais la configuration complète n'a pas été persistée. Téléversez de nouveau si nécessaire, attendez toutes les voies et tous les enfants, utilisez l'action globale **Enregistrer**, redémarrez OSCAR et vérifiez encore **Capteurs**. Si un nœud 3.9.2 perd toujours les voies, consultez les journaux OSCAR et vérifiez que le propriétaire peut écrire dans `/var/lib/oscar/config.json`. |
+| **Capteurs** est vide après un redémarrage suivant le téléversement du CSV | Le téléversement a créé des modules en mémoire, mais la configuration complète n'a pas été persistée. Téléversez de nouveau si nécessaire, attendez toutes les voies et tous les enfants, utilisez l'action globale **Enregistrer**, redémarrez OSCAR et vérifiez encore **Capteurs**. Si un nœud 3.11.0 perd toujours les voies, consultez les journaux OSCAR et vérifiez que le propriétaire peut écrire dans `/var/lib/oscar/config.json`. |
 | Vue opérationnelle vide ou clé rejetée | Vérifiez que les **Clés de vue opérationnelle** de la voie contiennent exactement la clé en minuscules, appliquez et enregistrez globalement, redémarrez la voie si nécessaire, puis utilisez `?view=<clé>` ou `/view/<clé>`. Une affectation vide ne correspond jamais à une vue limitée. |
 | RPM ne démarre pas | Testez hôte, port, pare-feu, plage Aspect et disponibilité ; consultez l'erreur du pilote enfant. |
 | Caméra ne démarre pas | Testez RTSP/identifiants, retirez `rtsp://` de l'hôte, évitez un port en double, vérifiez codec Axis ou chemin Custom depuis l'hôte OSCAR. |
@@ -841,4 +851,4 @@ Pour l'assistance, relevez version OSCAR, navigateur, voie/occupation, heure et 
 
 ---
 
-Référence du document : comportement du code OSCAR 3.9.2, revu le 2026-10-18. Si une version ultérieure change les champs ou procédures, mettez à jour ensemble le manuel canonique anglais et les trois traductions.
+Référence du document : comportement du code OSCAR 3.11.0, revu le 2026-10-18. Si une version ultérieure change les champs ou procédures, mettez à jour ensemble le manuel canonique anglais et les trois traductions.
