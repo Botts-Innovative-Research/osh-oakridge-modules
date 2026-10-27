@@ -162,6 +162,16 @@ Ces paramètres concernent la vidéo historique d'occupation, pas le direct. Cho
 
 La purge sous pression ne supprime que les objets éligibles du compartiment `videos`, en privilégiant les plus anciens ; les CSV quotidiens restent protégés. Surveillez aussi le stockage au niveau du système d'exploitation : ce mécanisme d'urgence ne remplace pas les sauvegardes.
 
+### Codes de disposition personnalisés
+
+Dans la configuration du module de service OSCAR, ajoutez des entrées à **Custom Disposition Codes** (`customAdjudicationCodes`). Chaque entrée nécessite un entier `code` unique supérieur à 11 et un libellé `label` non vide. Les codes 0–11 sont intégrés et ne peuvent pas être remplacés. Exemple :
+
+```json
+"customAdjudicationCodes": [{"code": 12, "label": "Examen local terminé"}]
+```
+
+Appliquez la configuration du service avant d'envoyer `adjudicationCode: 12`. Les voies consultent la configuration actuelle à chaque soumission et rejettent les codes non configurés. Supprimer un code empêche les nouvelles soumissions avec ce code et conserve les adjudications existantes. Le service publie ces choix après l'enregistrement du système et de la base de données, y compris après modification de la configuration. Le Viewer lit le flux `adjudicationCodes` et propose les choix avec les codes intégrés dans les détails, l'aperçu du tableau de bord et l'adjudication en masse. Le Viewer s'abonne à la sortie de disposition via le client MQTT partagé et lit une seule fois la dernière observation pour l'état initial. Les ajouts, modifications et suppressions publiés actualisent immédiatement les listes ouvertes, sans interrogation périodique ni rechargement. Les abonnements sont déconnectés au retrait du composant ou au changement des nœuds cibles. La réouverture de la liste retente les abonnements échoués ou les flux absents. Les sélections sur plusieurs nœuds proposent uniquement les codes personnalisés dont le numéro et le libellé correspondent sur tous les nœuds cibles.
+
 ## 5. Créer et téléverser un plan géoréférencé
 
 Le plan est une image rectangulaire orientée au nord, interpolée linéairement entre deux coins géographiques. OSCAR affiche OSM par défaut lorsqu'il est joignable et qu'aucun plan n'est configuré. Avec un plan valide, Viewer ajuste l'étendue à ses limites, place le plan comme couche raster supérieure et conserve les marqueurs de voie au-dessus.
