@@ -14,9 +14,12 @@ public class ConnectionStatusOutput extends AbstractSensorOutput<RapiscanSensor>
 
     private static final String SENSOR_OUTPUT_NAME = "connectionStatus";
     private static final String SENSOR_OUTPUT_LABEL = "Connection Status";
+    public static final long HEARTBEAT_INTERVAL_MILLIS = 30_000L;
 
     protected DataRecord dataStruct;
     protected DataEncoding dataEncoding;
+    private Boolean lastPublishedStatus;
+    private long lastPublishedTimeMillis = Long.MIN_VALUE;
 
     public ConnectionStatusOutput(RapiscanSensor parentSensor){
         super(SENSOR_OUTPUT_NAME, parentSensor);
@@ -44,7 +47,17 @@ public class ConnectionStatusOutput extends AbstractSensorOutput<RapiscanSensor>
         dataEncoding = new TextEncodingImpl(",", "\n");
     }
 
-    public void onNewMessage(boolean hasReceivedMessage) {
+    public synchronized void onNewMessage(boolean hasReceivedMessage) {
+        onNewMessage(hasReceivedMessage, System.currentTimeMillis());
+    }
+
+    public synchronized void onNewMessage(boolean hasReceivedMessage, long nowMillis) {
+        if (lastPublishedStatus != null
+                && lastPublishedStatus == hasReceivedMessage
+                && nowMillis - lastPublishedTimeMillis < HEARTBEAT_INTERVAL_MILLIS) {
+            return;
+        }
+
         DataBlock dataBlock;
 
         if (latestRecord == null) {
@@ -52,10 +65,14 @@ public class ConnectionStatusOutput extends AbstractSensorOutput<RapiscanSensor>
         } else {
             dataBlock = latestRecord.renew();
         }
-        long timeStamp = System.currentTimeMillis()/1000;
+        long timeStamp = nowMillis / 1000;
 
         dataBlock.setLongValue(0, timeStamp);
         dataBlock.setBooleanValue(1, hasReceivedMessage);
+        latestRecord = dataBlock;
+        latestRecordTime = timeStamp;
+        lastPublishedStatus = hasReceivedMessage;
+        lastPublishedTimeMillis = nowMillis;
 
         eventHandler.publish(new DataEvent(timeStamp, ConnectionStatusOutput.this, dataBlock));
     }
