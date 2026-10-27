@@ -48,6 +48,7 @@ public class DatabasePurger {
     private final Clock clock;
     private final boolean observationLifecycleDelegated;
     private final int dailyFilePurgeWorkLimit;
+    private final int connectionStatusRetentionHours;
     private volatile ScheduledExecutorService scheduler;
     private volatile ScheduledFuture<?> hourlyPurgeTask;
     private volatile ScheduledFuture<?> dailyExportTask;
@@ -83,46 +84,62 @@ public class DatabasePurger {
 
     public DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds) {
         this(database, bucketStore, occupancyBufferSeconds, null, ZoneId.of("UTC"), Clock.systemUTC(),
-                false, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT);
+                false, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT, CONNECTION_STATUS_RETENTION_HOURS);
     }
 
     public DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds,
                           IDailyFileJournalService journalService) {
         this(database, bucketStore, occupancyBufferSeconds, journalService,
                 journalService != null ? journalService.getJournalZoneId() : ZoneId.of("UTC"),
-                Clock.systemUTC(), false, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT);
+                Clock.systemUTC(), false, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT, CONNECTION_STATUS_RETENTION_HOURS);
     }
 
     public DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds,
                           IDailyFileJournalService journalService, boolean observationLifecycleDelegated) {
         this(database, bucketStore, occupancyBufferSeconds, journalService,
-                observationLifecycleDelegated, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT);
+                observationLifecycleDelegated, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT, CONNECTION_STATUS_RETENTION_HOURS);
     }
 
     public DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds,
                           IDailyFileJournalService journalService, boolean observationLifecycleDelegated,
                           int dailyFilePurgeWorkLimit) {
         this(database, bucketStore, occupancyBufferSeconds, journalService,
+                observationLifecycleDelegated, dailyFilePurgeWorkLimit, CONNECTION_STATUS_RETENTION_HOURS);
+    }
+
+    public DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds,
+                          IDailyFileJournalService journalService, boolean observationLifecycleDelegated,
+                          int dailyFilePurgeWorkLimit, int connectionStatusRetentionHours) {
+        this(database, bucketStore, occupancyBufferSeconds, journalService,
                 journalService != null ? journalService.getJournalZoneId() : ZoneId.of("UTC"),
-                Clock.systemUTC(), observationLifecycleDelegated, dailyFilePurgeWorkLimit);
+                Clock.systemUTC(), observationLifecycleDelegated, dailyFilePurgeWorkLimit,
+                connectionStatusRetentionHours);
     }
 
     DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds,
                    IDailyFileJournalService journalService, ZoneId dailyFileZone, Clock clock) {
         this(database, bucketStore, occupancyBufferSeconds, journalService, dailyFileZone, clock,
-                false, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT);
+                false, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT, CONNECTION_STATUS_RETENTION_HOURS);
     }
 
     DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds,
                    IDailyFileJournalService journalService, ZoneId dailyFileZone, Clock clock,
                    boolean observationLifecycleDelegated) {
         this(database, bucketStore, occupancyBufferSeconds, journalService, dailyFileZone, clock,
-                observationLifecycleDelegated, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT);
+                observationLifecycleDelegated, DEFAULT_DAILY_FILE_PURGE_WORK_LIMIT, CONNECTION_STATUS_RETENTION_HOURS);
     }
 
     DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds,
                    IDailyFileJournalService journalService, ZoneId dailyFileZone, Clock clock,
                    boolean observationLifecycleDelegated, int dailyFilePurgeWorkLimit) {
+        this(database, bucketStore, occupancyBufferSeconds, journalService, dailyFileZone, clock,
+                observationLifecycleDelegated, dailyFilePurgeWorkLimit, CONNECTION_STATUS_RETENTION_HOURS);
+    }
+
+    DatabasePurger(IObsSystemDatabase database, IBucketStore bucketStore, int occupancyBufferSeconds,
+                   IDailyFileJournalService journalService, ZoneId dailyFileZone, Clock clock,
+                   boolean observationLifecycleDelegated, int dailyFilePurgeWorkLimit,
+                   int connectionStatusRetentionHours) {
         this.database = database;
         this.bucketStore = bucketStore;
         this.occupancyBufferSeconds = occupancyBufferSeconds;
@@ -133,6 +150,9 @@ public class DatabasePurger {
         if (dailyFilePurgeWorkLimit <= 0)
             throw new IllegalArgumentException("dailyFilePurgeWorkLimit must be positive");
         this.dailyFilePurgeWorkLimit = dailyFilePurgeWorkLimit;
+        if (connectionStatusRetentionHours <= 0)
+            throw new IllegalArgumentException("connectionStatusRetentionHours must be positive");
+        this.connectionStatusRetentionHours = connectionStatusRetentionHours;
     }
 
     public void start() throws SensorHubException {
@@ -711,7 +731,7 @@ public class DatabasePurger {
             return;
         }
 
-        Instant cutoff = clock.instant().minus(Duration.ofHours(CONNECTION_STATUS_RETENTION_HOURS));
+        Instant cutoff = clock.instant().minus(Duration.ofHours(connectionStatusRetentionHours));
         long deleted = deleteObservationsBeforeTime(ids, cutoff);
         if (shouldStopPurge())
             log.debug("Connection Status purge cancelled after deleting {} observations", deleted);

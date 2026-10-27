@@ -1,5 +1,6 @@
 package com.botts.impl.service.oscar.media;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.HashSet;
@@ -73,6 +74,35 @@ public record MediaManifest(
                 lifecycleState, hold, replacement, assets);
     }
 
+    public MediaManifest withAssets(List<Asset> replacement) {
+        return new MediaManifest(schemaVersion, mediaSetId, eventId, laneUid, cameraUid, createdAt, jpegQuality,
+                lifecycleState, hold, source, replacement);
+    }
+
+    public boolean hasSecondaryFramesRemaining() {
+        for (Asset asset : assets) {
+            if (!asset.isPrimaryFrame() && asset.state() != AssetState.DELETED)
+                return true;
+        }
+        return false;
+    }
+
+    public boolean hasSecondaryFramesEligibleForDeletion() {
+        for (Asset asset : assets) {
+            if (!asset.isPrimaryFrame() && asset.state() == AssetState.ELIGIBLE_FOR_DELETION)
+                return true;
+        }
+        return false;
+    }
+
+    public Instant secondaryFramesDeleteAfter(Duration secondaryFrameRetention) {
+        Objects.requireNonNull(secondaryFrameRetention, "secondaryFrameRetention");
+        Instant retentionDeadline = createdAt.plus(secondaryFrameRetention);
+        Instant sourceDeadline = source.rollbackDeleteAfter();
+        return sourceDeadline != null && sourceDeadline.isAfter(retentionDeadline)
+                ? sourceDeadline : retentionDeadline;
+    }
+
     public enum LifecycleState {
         AVAILABLE,
         HELD,
@@ -87,7 +117,9 @@ public record MediaManifest(
     }
 
     public enum AssetState {
-        PUBLISHED
+        PUBLISHED,
+        ELIGIBLE_FOR_DELETION,
+        DELETED
     }
 
     public enum FramePosition {
@@ -176,6 +208,17 @@ public record MediaManifest(
             if (!Double.isFinite(sourcePtsSeconds))
                 throw new IllegalArgumentException("asset.sourcePtsSeconds must be finite");
             Objects.requireNonNull(state, "asset.state");
+            if (position == FramePosition.MIDDLE && state != AssetState.PUBLISHED)
+                throw new IllegalArgumentException("Primary MIDDLE retained frame must remain PUBLISHED");
+        }
+
+        public boolean isPrimaryFrame() {
+            return position == FramePosition.MIDDLE;
+        }
+
+        public Asset withState(AssetState replacement) {
+            return new Asset(position, objectKey, contentType, sha256, bytes, width, height,
+                    sourceFrameOrdinal, sourcePts, sourcePtsSeconds, replacement);
         }
     }
 

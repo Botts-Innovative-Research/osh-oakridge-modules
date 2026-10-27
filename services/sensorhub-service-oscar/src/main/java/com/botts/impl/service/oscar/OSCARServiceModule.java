@@ -90,7 +90,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
             reportError("Could not find this OSH node's Bucket Service", new IllegalStateException(e));
         }
 
-        spreadsheetHandler = new SpreadsheetHandler(getParentHub().getModuleRegistry(), bucketStore, getLogger());
+        spreadsheetHandler = new SpreadsheetHandler(getParentHub().getModuleRegistry(), bucketStore, getLogger(), config);
         if (config.spreadsheetConfigPath != null && !config.spreadsheetConfigPath.isEmpty())
             spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
 
@@ -103,6 +103,9 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
 
         if (getConfiguration().videoRetentionConfig != null) {
             int frameCount = getConfiguration().videoRetentionConfig.enableFrameRetention ? getConfiguration().videoRetentionConfig.frameRetentionCount : 0;
+            Duration secondaryFrameRetention = getConfiguration().videoRetentionConfig.enableSecondaryFramePruning
+                    ? Duration.ofDays(getConfiguration().videoRetentionConfig.secondaryFrameRetentionDays)
+                    : null;
             videoRetention = new VideoRetention(getParentHub(),
                     bucketStore,
                     Duration.ofMinutes(getConfiguration().videoRetentionConfig.videoQueryPeriod),
@@ -110,6 +113,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
                     frameCount,
                     getConfiguration().videoRetentionConfig.jpegQuality,
                     Duration.ofHours(getConfiguration().videoRetentionConfig.sourceRollbackGraceHours),
+                    secondaryFrameRetention,
                     Duration.ofHours(getConfiguration().videoRetentionConfig.maximumCatchUpHours),
                     getConfiguration().videoRetentionConfig.maintenanceWorkLimit,
                     Duration.ofHours(getConfiguration().videoRetentionConfig.lateArrivalOverlapHours),
@@ -190,7 +194,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
                 databasePurger = new DatabasePurger((IObsSystemDatabase) module, bucketStore, 5,
                         getParentHub().getModuleRegistry().getModuleByType(IDailyFileJournalService.class),
                         config.delegateObservationLifecycleToDatabase,
-                        config.dailyFilePurgeWorkLimit);
+                        config.dailyFilePurgeWorkLimit,
+                        config.connectionStatusRetentionHours);
             databasePurger.start();
         }
 
@@ -405,7 +410,11 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
 
     private MediaSetStore createMediaStore() throws SensorHubException {
         try {
-            return new MediaSetStore(bucketStore);
+            Duration secondaryFrameRetention = config != null && config.videoRetentionConfig != null
+                    && config.videoRetentionConfig.enableSecondaryFramePruning
+                    ? Duration.ofDays(config.videoRetentionConfig.secondaryFrameRetentionDays)
+                    : null;
+            return new MediaSetStore(bucketStore, secondaryFrameRetention);
         } catch (org.sensorhub.api.datastore.DataStoreException e) {
             throw new SensorHubException("Unable to initialize retained-media storage", e);
         }

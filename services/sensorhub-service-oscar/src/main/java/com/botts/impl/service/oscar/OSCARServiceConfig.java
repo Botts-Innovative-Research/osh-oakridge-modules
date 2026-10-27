@@ -49,12 +49,16 @@ public class OSCARServiceConfig extends ServiceConfig {
         return values;
     }
 
+    @DisplayInfo(label = "Spreadsheet Config Path", desc = "CSV configuration used to import or export OSCAR lanes and retention policies")
     public String spreadsheetConfigPath;
 
+    @DisplayInfo(label = "Site Diagram Config", desc = "Site diagram image and geographic bounds used by this OSCAR node")
     public SiteDiagramConfig siteDiagramConfig;
 
+    @DisplayInfo(label = "Video Retention Config", desc = "Age-based retention settings for occupancy video and retained JPEG frames")
     public VideoRetentionConfig videoRetentionConfig;
 
+    @DisplayInfo(label = "Storage Pressure Retention Config", desc = "Filesystem-usage settings for emergency video cleanup")
     public StoragePressureRetentionConfig storagePressureRetentionConfig;
 
     @DisplayInfo.Required
@@ -71,11 +75,15 @@ public class OSCARServiceConfig extends ServiceConfig {
 
     @DisplayInfo(label = "Delegate Observation Lifecycle to Database",
             desc = "Skip OSCAR's occupancy-gated high-volume purge when the datastore owns hot/cold lifecycle; daily-file and connection-status maintenance still run")
-    public boolean delegateObservationLifecycleToDatabase = false;
+    public boolean delegateObservationLifecycleToDatabase = true;
 
     @DisplayInfo(label = "Daily File Purge Work Limit",
             desc = "Maximum number of lane/day compatibility-observation windows processed during one scheduled catch-up invocation")
     public int dailyFilePurgeWorkLimit = 50;
+
+    @DisplayInfo(label = "Connection Status Retention (hours)",
+            desc = "Hours to retain connectionStatus observations in the database before hourly cleanup")
+    public int connectionStatusRetentionHours = 1;
 
     @DisplayInfo(label = "WebID API Root", desc = "Base URL of the Sandia Full Spectrum Web ID API")
     public String webIdApiRoot;

@@ -26,7 +26,7 @@ public class DailyFileJournalServiceConfig extends ModuleConfig {
 
     @DisplayInfo(label = "Daily File Observation Mode",
             desc = "FULL and LATEST publish live compatibility observations and clean only completed manifest-validated days; NONE disables them")
-    public DailyFileObservationMode dailyFileObservationMode = DailyFileObservationMode.FULL;
+    public DailyFileObservationMode dailyFileObservationMode = DailyFileObservationMode.LATEST;
 
     @DisplayInfo(label = "Fsync Interval (milliseconds)",
             desc = "Maximum wall-clock interval between periodic journal forces")

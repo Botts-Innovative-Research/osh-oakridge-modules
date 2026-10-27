@@ -128,12 +128,14 @@ public class RetentionCursorTest {
         assertTrue(config.enableFrameRetention);
         assertEquals(5, config.frameRetentionCount);
         assertEquals(24, config.sourceRollbackGraceHours);
-        assertEquals(5, config.videoQueryPeriod);
+        assertEquals(1, config.videoQueryPeriod);
         assertEquals(24, config.lateArrivalOverlapHours);
         assertEquals(360, config.lateArrivalScanPeriodMinutes);
         assertEquals(2, config.lateArrivalCatchUpHours);
         assertEquals(24, config.reconciliationPeriodHours);
         assertEquals(15, config.occupancyStreamRefreshMinutes);
+        assertTrue(config.enableSecondaryFramePruning);
+        assertEquals(30, config.secondaryFrameRetentionDays);
     }
 
     @Test

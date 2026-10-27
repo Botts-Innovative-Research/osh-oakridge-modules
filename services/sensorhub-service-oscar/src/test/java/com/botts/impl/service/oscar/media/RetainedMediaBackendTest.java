@@ -1154,6 +1154,57 @@ public class RetainedMediaBackendTest {
                 JpegFrameExtractor.selectDistinctOrdinals(timeline));
     }
 
+    @Test
+    public void secondaryFramePruningDeletesFrames1245AndPreservesFrame3AfterRetentionPeriod()
+            throws Exception {
+        Path root = temporaryFolder.newFolder("secondary-frame-pruning-store").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        bucketStore.createBucket(MediaSetStore.VIDEO_BUCKET);
+        String sourceKey = "clips/camera/secondary-prune.mp4";
+        Files.copy(bundledH264Fixture(),
+                Path.of(bucketStore.getWritableResourceURI(MediaSetStore.VIDEO_BUCKET, sourceKey)));
+
+        MutableClock clock = new MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+        Duration secondaryRetention = Duration.ofDays(30);
+        MediaSetStore store = new MediaSetStore(bucketStore, secondaryRetention);
+        RetainedMediaBackend backend = new RetainedMediaBackend(bucketStore, store,
+                new JpegFrameExtractor(85), Duration.ofHours(24), secondaryRetention, clock,
+                LoggerFactory.getLogger(getClass()));
+        MediaSetStore.Identity identity = new MediaSetStore.Identity(
+                "secondary-prune-event", "lane-01", "camera-01");
+
+        assertTrue(backend.process(identity, "videos/" + sourceKey));
+        assertTrue(store.maintenanceExists(MediaMaintenanceJob.Kind.SOURCE_LIFECYCLE, identity));
+
+        // After 25 hours, source MP4 is deleted, but all 5 JPEGs remain PUBLISHED and
+        // SOURCE_LIFECYCLE remains scheduled for secondary frame pruning at day 30.
+        clock.set(Instant.parse("2026-01-02T01:00:00Z"));
+        assertTrue(backend.process(identity, "videos/" + sourceKey));
+        assertFalse(bucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, sourceKey));
+        MediaManifest afterSourceDelete = store.findManifest(identity).orElseThrow();
+        assertEquals(MediaManifest.SourceState.DELETED, afterSourceDelete.source().state());
+        assertTrue(afterSourceDelete.hasSecondaryFramesRemaining());
+        assertTrue(store.requiresSourceLifecycleMaintenance(afterSourceDelete));
+
+        // After 30 days, frames 1, 2, 4, and 5 are pruned and frame 3 (MIDDLE) remains PUBLISHED.
+        clock.set(Instant.parse("2026-01-31T00:00:01Z"));
+        assertTrue(backend.process(identity, "videos/" + sourceKey));
+        MediaManifest afterSecondaryPrune = store.findManifest(identity).orElseThrow();
+        assertFalse(afterSecondaryPrune.hasSecondaryFramesRemaining());
+        assertFalse(store.requiresSourceLifecycleMaintenance(afterSecondaryPrune));
+        for (MediaManifest.Asset asset : afterSecondaryPrune.assets()) {
+            if (asset.position() == MediaManifest.FramePosition.MIDDLE) {
+                assertEquals(MediaManifest.AssetState.PUBLISHED, asset.state());
+                assertTrue(bucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, asset.objectKey()));
+                assertTrue(store.readVerifiedAsset(asset).length > 0);
+            } else {
+                assertEquals(MediaManifest.AssetState.DELETED, asset.state());
+                assertFalse(bucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, asset.objectKey()));
+                assertThrows(IOException.class, () -> store.readVerifiedAsset(asset));
+            }
+        }
+    }
+
     private static List<MediaSetStore.Identity> identitiesInOneDeletionIndex(int count) {
         Map<String, List<MediaSetStore.Identity>> byIndex = new HashMap<>();
         for (int candidate = 0; candidate < 100_000; candidate++) {

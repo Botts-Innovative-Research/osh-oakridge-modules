@@ -24,7 +24,7 @@ public class VideoRetentionConfig {
 
     @DisplayInfo(label = "Video Query Period (minutes)", desc = "Number of minutes between queries for occupancy video clips. " +
             "Larger values will result in more occupancies/video paths being loaded at once.")
-    public int videoQueryPeriod = 5;
+    public int videoQueryPeriod = 1;
 
     @DisplayInfo(label = "Maximum Retention Catch-up (hours)", desc = "Maximum event-time span processed by one scheduled retention cycle. The durable cursor resumes remaining history in later cycles.")
     public int maximumCatchUpHours = 6;
@@ -64,5 +64,11 @@ public class VideoRetentionConfig {
 
     @DisplayInfo(label = "Source Rollback Grace (hours)", desc = "Hours to preserve the source MP4 after all five JPEGs and their manifest are durably published.")
     public int sourceRollbackGraceHours = 24;
+
+    @DisplayInfo(label = "Enable Secondary Frame Pruning", desc = "Drop retained frames 1, 2, 4, and 5 after the configured secondary frame retention period while preserving frame 3 (middle).")
+    public boolean enableSecondaryFramePruning = true;
+
+    @DisplayInfo(label = "Secondary Frame Retention (days)", desc = "Days to retain frames 1, 2, 4, and 5 before pruning them and preserving only frame 3 (middle). The default is 30 days.")
+    public int secondaryFrameRetentionDays = 30;
 
 }

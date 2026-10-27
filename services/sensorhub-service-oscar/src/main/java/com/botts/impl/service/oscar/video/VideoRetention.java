@@ -118,10 +118,28 @@ public class VideoRetention {
                           Duration reconciliationCatchUp, Duration reconciliationPeriod,
                           Duration occupancyStreamRefreshPeriod,
                           int metadataReclamationWorkLimit) {
+        this(hub, bucketStore, queryPeriod, retentionTimeOffset, frameCount, jpegQuality,
+                rollbackGrace, Duration.ofDays(30), maximumCatchUp, maintenanceWorkLimit,
+                lateArrivalOverlap, lateArrivalScanPeriod, lateArrivalCatchUp,
+                reconciliationCatchUp, reconciliationPeriod, occupancyStreamRefreshPeriod,
+                metadataReclamationWorkLimit);
+    }
+
+    public VideoRetention(ISensorHub hub, IBucketStore bucketStore, TemporalAmount queryPeriod,
+                          TemporalAmount retentionTimeOffset, int frameCount, int jpegQuality,
+                          Duration rollbackGrace, Duration secondaryFrameRetention,
+                          Duration maximumCatchUp, int maintenanceWorkLimit,
+                          Duration lateArrivalOverlap, Duration lateArrivalScanPeriod,
+                          Duration lateArrivalCatchUp, Duration reconciliationCatchUp,
+                          Duration reconciliationPeriod,
+                          Duration occupancyStreamRefreshPeriod,
+                          int metadataReclamationWorkLimit) {
         this.bucketStore = bucketStore;
         this.frameCount = frameCount;
         if (maximumCatchUp == null || maximumCatchUp.isZero() || maximumCatchUp.isNegative())
             throw new IllegalArgumentException("Maximum retention catch-up must be positive");
+        if (secondaryFrameRetention != null && secondaryFrameRetention.isNegative())
+            throw new IllegalArgumentException("Secondary frame retention must not be negative");
         if (maintenanceWorkLimit < 3)
             throw new IllegalArgumentException("Media maintenance work limit must be at least three");
         if (metadataReclamationWorkLimit < 1)
@@ -145,12 +163,12 @@ public class VideoRetention {
             throw new IllegalArgumentException(
                     "Retained media requires exactly five frames; zero selects legacy deletion");
         try {
-            this.mediaStore = new MediaSetStore(bucketStore);
+            this.mediaStore = new MediaSetStore(bucketStore, secondaryFrameRetention);
         } catch (DataStoreException e) {
             throw new IllegalStateException("Unable to initialize the retained-media catalog", e);
         }
         this.retainedMediaBackend = new RetainedMediaBackend(bucketStore, mediaStore, jpegQuality,
-                rollbackGrace, logger);
+                rollbackGrace, secondaryFrameRetention, logger);
         this.identityResolver = new MediaIdentityResolver(hub);
 
         SlidingOccupancyQuery.QueryAction queryAction = frameCount > 0
@@ -411,7 +429,7 @@ public class VideoRetention {
 
         var manifest = mediaStore.findManifest(identity);
         if (manifest.isEmpty()
-                || manifest.get().source().state() == MediaManifest.SourceState.DELETED
+                || !mediaStore.requiresSourceLifecycleMaintenance(manifest.get())
                 || manifest.get().lifecycleState() == MediaManifest.LifecycleState.DELETING
                 || manifest.get().lifecycleState() == MediaManifest.LifecycleState.DELETED) {
             mediaStore.removeMaintenance(job.kind(), identity);

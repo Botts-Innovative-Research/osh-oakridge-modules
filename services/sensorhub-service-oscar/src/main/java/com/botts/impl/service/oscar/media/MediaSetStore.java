@@ -137,8 +137,17 @@ public final class MediaSetStore {
             new LinkedHashMap<>(EXACT_INDEX_CACHE_MAX_ENTRIES + 1, 0.75f, true);
     private int exactIndexCacheRecordCount;
     private volatile Runnable initialPublicationCommitHook = () -> { };
+    private volatile Duration secondaryFrameRetention;
 
     public MediaSetStore(IBucketStore bucketStore) throws DataStoreException {
+        this(bucketStore, null);
+    }
+
+    public MediaSetStore(IBucketStore bucketStore, Duration secondaryFrameRetention)
+            throws DataStoreException {
+        if (secondaryFrameRetention != null && secondaryFrameRetention.isNegative())
+            throw new IllegalArgumentException("Secondary frame retention must not be negative");
+        this.secondaryFrameRetention = secondaryFrameRetention;
         this.bucketStore = Objects.requireNonNull(bucketStore, "bucketStore");
         for (int index = 0; index < identityLocks.length; index++)
             identityLocks[index] = new Object();
@@ -491,6 +500,28 @@ public final class MediaSetStore {
         initialPublicationCommitHook = Objects.requireNonNull(hook, "hook");
     }
 
+    public void setSecondaryFrameRetention(Duration secondaryFrameRetention) {
+        if (secondaryFrameRetention != null && secondaryFrameRetention.isNegative())
+            throw new IllegalArgumentException("Secondary frame retention must not be negative");
+        this.secondaryFrameRetention = secondaryFrameRetention;
+    }
+
+    public Optional<Duration> secondaryFrameRetention() {
+        return Optional.ofNullable(secondaryFrameRetention);
+    }
+
+    public boolean requiresSourceLifecycleMaintenance(MediaManifest manifest) {
+        Objects.requireNonNull(manifest, "manifest");
+        if (manifest.lifecycleState() != MediaManifest.LifecycleState.AVAILABLE
+                && manifest.lifecycleState() != MediaManifest.LifecycleState.HELD)
+            return false;
+        if (manifest.source().state() != MediaManifest.SourceState.DELETED)
+            return true;
+        return manifest.hasSecondaryFramesRemaining()
+                && (secondaryFrameRetention != null
+                || manifest.hasSecondaryFramesEligibleForDeletion());
+    }
+
     /** Ensures a committed manifest has the matching durable source-lifecycle index state. */
     public synchronized void ensureManifestMaintenance(Identity identity, MediaManifest manifest)
             throws IOException {
@@ -498,14 +529,20 @@ public final class MediaSetStore {
             throw new IOException("Manifest identity does not match its maintenance key");
         ensureCatalogCandidate(identity, manifest);
         ensurePressureCandidate(identity, manifest);
-        if ((manifest.lifecycleState() == MediaManifest.LifecycleState.AVAILABLE
-                || manifest.lifecycleState() == MediaManifest.LifecycleState.HELD)
-                && manifest.source().state() != MediaManifest.SourceState.DELETED) {
+        if (requiresSourceLifecycleMaintenance(manifest)) {
+            Instant dueAt;
+            if (manifest.source().state() != MediaManifest.SourceState.DELETED) {
+                dueAt = manifest.source().rollbackDeleteAfter();
+            } else if (secondaryFrameRetention != null) {
+                dueAt = manifest.secondaryFramesDeleteAfter(secondaryFrameRetention);
+            } else {
+                dueAt = manifest.createdAt();
+            }
             enqueueMaintenance(new MediaMaintenanceJob(
                     MediaMaintenanceJob.CURRENT_SCHEMA_VERSION,
                     MediaMaintenanceJob.Kind.SOURCE_LIFECYCLE,
                     manifest.eventId(), manifest.laneUid(), manifest.cameraUid(),
-                    manifest.source().objectKey(), manifest.source().rollbackDeleteAfter(), 0));
+                    manifest.source().objectKey(), dueAt, 0));
         } else {
             removeMaintenance(MediaMaintenanceJob.Kind.SOURCE_LIFECYCLE, identity);
         }
@@ -1095,6 +1132,8 @@ public final class MediaSetStore {
      */
     public byte[] readVerifiedAsset(MediaManifest.Asset asset) throws IOException {
         Objects.requireNonNull(asset, "asset");
+        if (asset.state() != MediaManifest.AssetState.PUBLISHED)
+            throw new IOException("Retained frame has been pruned: " + asset.objectKey());
         if (asset.bytes() <= 0 || asset.bytes() > MediaManifest.MAX_JPEG_BYTES)
             throw new IOException("Retained frame byte count exceeds the safety limit");
         int readLimit = Math.toIntExact(asset.bytes() + 1);
@@ -1230,8 +1269,10 @@ public final class MediaSetStore {
     public long mediaSetBytes(MediaManifest manifest) {
         long bytes = manifest.source().state() == MediaManifest.SourceState.DELETED
                 ? 0 : manifest.source().bytes();
-        for (MediaManifest.Asset asset : manifest.assets())
-            bytes += asset.bytes();
+        for (MediaManifest.Asset asset : manifest.assets()) {
+            if (asset.state() != MediaManifest.AssetState.DELETED)
+                bytes += asset.bytes();
+        }
         return bytes;
     }
 
@@ -1868,9 +1909,16 @@ public final class MediaSetStore {
     }
 
     private void verifyAsset(MediaManifest.Asset asset) throws IOException {
-        if (asset.objectKey().contains(PARTIAL_MARKER)
-                || !bucketStore.objectExists(VIDEO_BUCKET, asset.objectKey()))
+        if (!asset.isPrimaryFrame() && asset.state() == MediaManifest.AssetState.DELETED)
+            return;
+        if (asset.objectKey().contains(PARTIAL_MARKER))
             throw new IOException("Manifest references an unpublished asset: " + asset.objectKey());
+        if (!bucketStore.objectExists(VIDEO_BUCKET, asset.objectKey())) {
+            if (!asset.isPrimaryFrame()
+                    && asset.state() == MediaManifest.AssetState.ELIGIBLE_FOR_DELETION)
+                return; // Recover a crash after secondary frame deletion before DELETED commit.
+            throw new IOException("Manifest references an unpublished asset: " + asset.objectKey());
+        }
         try {
             if (bucketStore.getObjectSize(VIDEO_BUCKET, asset.objectKey()) != asset.bytes())
                 throw new IOException("Manifest asset byte count does not match " + asset.objectKey());

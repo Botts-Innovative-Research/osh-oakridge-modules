@@ -19,24 +19,43 @@ public final class RetainedMediaBackend {
     private final MediaSetStore mediaStore;
     private final JpegFrameExtractor extractor;
     private final Duration rollbackGrace;
+    private final Duration secondaryFrameRetention;
     private final Clock clock;
     private final Logger log;
 
     public RetainedMediaBackend(IBucketStore bucketStore, MediaSetStore mediaStore, int jpegQuality,
                                 Duration rollbackGrace, Logger log) {
         this(bucketStore, mediaStore, new JpegFrameExtractor(jpegQuality), rollbackGrace,
-                Clock.systemUTC(), log);
+                mediaStore.secondaryFrameRetention().orElse(null), Clock.systemUTC(), log);
+    }
+
+    public RetainedMediaBackend(IBucketStore bucketStore, MediaSetStore mediaStore, int jpegQuality,
+                                Duration rollbackGrace, Duration secondaryFrameRetention,
+                                Logger log) {
+        this(bucketStore, mediaStore, new JpegFrameExtractor(jpegQuality), rollbackGrace,
+                secondaryFrameRetention, Clock.systemUTC(), log);
     }
 
     RetainedMediaBackend(IBucketStore bucketStore, MediaSetStore mediaStore,
                          JpegFrameExtractor extractor, Duration rollbackGrace,
                          Clock clock, Logger log) {
+        this(bucketStore, mediaStore, extractor, rollbackGrace,
+                mediaStore.secondaryFrameRetention().orElse(null), clock, log);
+    }
+
+    RetainedMediaBackend(IBucketStore bucketStore, MediaSetStore mediaStore,
+                         JpegFrameExtractor extractor, Duration rollbackGrace,
+                         Duration secondaryFrameRetention, Clock clock, Logger log) {
         if (rollbackGrace == null || rollbackGrace.isNegative())
             throw new IllegalArgumentException("Rollback grace must not be negative");
+        if (secondaryFrameRetention != null && secondaryFrameRetention.isNegative())
+            throw new IllegalArgumentException("Secondary frame retention must not be negative");
         this.bucketStore = bucketStore;
         this.mediaStore = mediaStore;
         this.extractor = extractor;
         this.rollbackGrace = rollbackGrace;
+        this.secondaryFrameRetention = secondaryFrameRetention;
+        this.mediaStore.setSecondaryFrameRetention(secondaryFrameRetention);
         this.clock = clock;
         this.log = log;
     }
@@ -167,27 +186,29 @@ public final class RetainedMediaBackend {
                                         String normalizedSourceKey) throws IOException {
         if (manifest.isHeld() || manifest.lifecycleState() == MediaManifest.LifecycleState.HELD)
             return;
-        if (manifest.source().state() == MediaManifest.SourceState.DELETED)
-            return;
-        if (Instant.now(clock).isBefore(manifest.source().rollbackDeleteAfter()))
-            return;
+        MediaManifest current = manifest;
+        if (current.source().state() != MediaManifest.SourceState.DELETED) {
+            if (Instant.now(clock).isBefore(current.source().rollbackDeleteAfter()))
+                return;
 
-        if (!bucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, normalizedSourceKey)) {
-            // Visible absence is not sufficient after a failed unlink barrier. Force the nearest
-            // existing parent before committing DELETED and clearing retryable lifecycle state.
-            mediaStore.deleteVideoObjectDurably(normalizedSourceKey);
-            markSourceDeleted(identity, manifest);
-            return;
+            if (!bucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, normalizedSourceKey)) {
+                // Visible absence is not sufficient after a failed unlink barrier. Force the nearest
+                // existing parent before committing DELETED and clearing retryable lifecycle state.
+                mediaStore.deleteVideoObjectDurably(normalizedSourceKey);
+                current = markSourceDeleted(identity, current);
+            } else {
+                MediaManifest eligible = current.withSource(
+                        current.source().withState(MediaManifest.SourceState.ELIGIBLE_FOR_DELETION));
+                mediaStore.publishManifest(identity, eligible);
+                mediaStore.deleteVideoObjectDurably(normalizedSourceKey);
+                current = markSourceDeleted(identity, eligible);
+            }
         }
-
-        MediaManifest eligible = manifest.withSource(
-                manifest.source().withState(MediaManifest.SourceState.ELIGIBLE_FOR_DELETION));
-        mediaStore.publishManifest(identity, eligible);
-        mediaStore.deleteVideoObjectDurably(normalizedSourceKey);
-        markSourceDeleted(identity, eligible);
+        advanceSecondaryFrameLifecycle(identity, current);
     }
 
-    private void markSourceDeleted(MediaSetStore.Identity identity, MediaManifest manifest) throws IOException {
+    private MediaManifest markSourceDeleted(MediaSetStore.Identity identity, MediaManifest manifest)
+            throws IOException {
         MediaManifest updated = manifest.withSource(
                 manifest.source().withState(MediaManifest.SourceState.DELETED));
         mediaStore.publishManifest(identity, updated);
@@ -197,6 +218,64 @@ public final class RetainedMediaBackend {
                 1, Instant.now(clock), ""));
         mediaStore.writeLedger(identity,
                 ledger.transition(MediaJobLedger.JobState.SOURCE_DELETED, "", Instant.now(clock)));
+        return updated;
+    }
+
+    private void advanceSecondaryFrameLifecycle(MediaSetStore.Identity identity,
+                                                MediaManifest manifest) throws IOException {
+        if (manifest.isHeld() || manifest.lifecycleState() == MediaManifest.LifecycleState.HELD)
+            return;
+        if (manifest.source().state() != MediaManifest.SourceState.DELETED)
+            return;
+        if (!manifest.hasSecondaryFramesRemaining())
+            return;
+        boolean resumingEligibleFrames = manifest.hasSecondaryFramesEligibleForDeletion();
+        if (secondaryFrameRetention == null && !resumingEligibleFrames)
+            return;
+        Instant deleteAfter = secondaryFrameRetention != null
+                ? manifest.secondaryFramesDeleteAfter(secondaryFrameRetention)
+                : manifest.createdAt();
+        if (!resumingEligibleFrames && Instant.now(clock).isBefore(deleteAfter))
+            return;
+
+        MediaManifest.Asset primaryFrame = manifest.assets().stream()
+                .filter(MediaManifest.Asset::isPrimaryFrame)
+                .findFirst()
+                .orElseThrow(() -> new IOException("Manifest is missing primary MIDDLE frame"));
+        mediaStore.verifyPublishedAsset(primaryFrame);
+
+        MediaManifest current = manifest;
+        boolean anySecondaryPublished = current.assets().stream()
+                .anyMatch(asset -> !asset.isPrimaryFrame()
+                        && asset.state() == MediaManifest.AssetState.PUBLISHED);
+        if (anySecondaryPublished) {
+            List<MediaManifest.Asset> eligibleAssets = new ArrayList<>(current.assets().size());
+            for (MediaManifest.Asset asset : current.assets()) {
+                if (asset.isPrimaryFrame()
+                        || asset.state() == MediaManifest.AssetState.DELETED) {
+                    eligibleAssets.add(asset);
+                } else {
+                    eligibleAssets.add(asset.withState(
+                            MediaManifest.AssetState.ELIGIBLE_FOR_DELETION));
+                }
+            }
+            current = current.withAssets(eligibleAssets);
+            mediaStore.publishManifest(identity, current);
+        }
+
+        for (MediaManifest.Asset asset : current.assets()) {
+            if (!asset.isPrimaryFrame())
+                mediaStore.deleteVideoObjectDurably(asset.objectKey());
+        }
+
+        List<MediaManifest.Asset> prunedAssets = new ArrayList<>(current.assets().size());
+        for (MediaManifest.Asset asset : current.assets()) {
+            prunedAssets.add(asset.isPrimaryFrame()
+                    ? asset
+                    : asset.withState(MediaManifest.AssetState.DELETED));
+        }
+        MediaManifest pruned = current.withAssets(prunedAssets);
+        mediaStore.publishManifest(identity, pruned);
     }
 
     private void repairLedger(MediaSetStore.Identity identity, MediaManifest manifest) throws IOException {
