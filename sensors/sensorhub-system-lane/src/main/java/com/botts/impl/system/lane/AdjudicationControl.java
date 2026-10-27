@@ -12,6 +12,7 @@ import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.sensorhub.impl.utils.rad.RADHelper;
+import org.sensorhub.impl.utils.rad.interfaces.IAdjudicationCodeProvider;
 import org.sensorhub.impl.utils.rad.model.Adjudication;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.impl.utils.rad.model.OccupancyExtended;
@@ -73,6 +74,10 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
         return CompletableFuture.supplyAsync(() -> {
            try {
                var adj = Adjudication.toAdjudication(cmdData);
+
+               if (!isAdjudicationCodeSupported(adj.getAdjudicationCode()))
+                   return CommandStatus.failed(command.getID(), "Unknown adjudication code: " + adj.getAdjudicationCode()
+                           + ". Use a built-in code (0-11) or a configured custom disposition code.");
 
                // Validate obs ID is present
                String occupancyObsId = adj.getOccupancyObsId();
@@ -150,6 +155,20 @@ public class AdjudicationControl extends AbstractSensorControl<LaneSystem> imple
     @Override
     public DataComponent getCommandDescription() {
         return commandStructure;
+    }
+
+    protected boolean isAdjudicationCodeSupported(int code) {
+        if (code < 0)
+            return false;
+        if (code <= 11)
+            return true;
+
+        // Resolve on each submission so service configuration updates and module
+        // loading order do not require reinitializing every lane.
+        return getParentProducer().getParentHub().getModuleRegistry().getLoadedModules().stream()
+                .filter(IAdjudicationCodeProvider.class::isInstance)
+                .map(IAdjudicationCodeProvider.class::cast)
+                .anyMatch(provider -> provider.isCustomAdjudicationCode(code));
     }
 
     @Override

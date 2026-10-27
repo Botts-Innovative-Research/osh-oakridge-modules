@@ -162,6 +162,16 @@ These settings affect historical occupancy video, not the live stream configurat
 
 Pressure cleanup removes eligible objects only from the `videos` bucket, oldest priority candidates first; daily CSV exports remain protected. Configure operating-system storage monitoring as well—this feature is an emergency pressure control, not a backup policy.
 
+### Custom disposition codes
+
+In the OSCAR Service Module configuration, add entries to **Custom Disposition Codes** (`customAdjudicationCodes`). Each entry needs a unique integer `code` greater than 11 and a nonblank `label`. Codes 0–11 remain built in and cannot be replaced. For example:
+
+```json
+"customAdjudicationCodes": [{"code": 12, "label": "Local review completed"}]
+```
+
+Apply the service configuration before submitting `adjudicationCode: 12`. Lanes use the current service configuration when verifying each submission; unconfigured codes are rejected. Removing a custom code prevents new submissions with that code and leaves existing adjudications unchanged. The service publishes these choices only after system and database registration completes, including after configuration changes. The Viewer reads the `adjudicationCodes` datastream and offers the choices alongside built-in codes in detail, dashboard preview, and bulk adjudication forms. The Viewer subscribes to the disposition output through the shared MQTT client and reads the latest observation once for initial state. Published additions, edits, and removals update open selectors immediately, without polling or a page reload. Subscriptions are disconnected when the component is removed or its target nodes change. Reopening the list retries failed subscriptions or missing streams. Bulk selections spanning multiple nodes offer only custom codes whose numbers and labels agree on every target node.
+
 ## 5. Create and upload a georeferenced site diagram
 
 The site diagram is a north-up rectangular image mapped linearly between two geographic corners. OSCAR displays OSM by default when it is reachable and no diagram is configured. When a valid diagram is configured, the Viewer fits the map to its bounds and renders the diagram as the top raster layer; lane markers render above it.
