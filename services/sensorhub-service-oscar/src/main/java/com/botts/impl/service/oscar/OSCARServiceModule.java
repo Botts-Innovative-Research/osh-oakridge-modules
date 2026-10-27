@@ -27,6 +27,7 @@ import com.botts.impl.service.oscar.stats.StatisticsControl;
 import com.botts.impl.service.oscar.stats.StatisticsOutput;
 import com.botts.impl.service.oscar.video.VideoRetention;
 import org.sensorhub.impl.utils.rad.interfaces.IWebIdProvider;
+import org.sensorhub.impl.utils.rad.interfaces.IAdjudicationCodeProvider;
 import org.sensorhub.impl.utils.rad.webid.WebIdClient;
 import com.botts.impl.service.oscar.webid.WebIdResourceHandler;
 import org.sensorhub.api.common.SensorHubException;
@@ -37,13 +38,15 @@ import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.module.AbstractModule;
 
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> implements IWebIdProvider {
+public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> implements IWebIdProvider, IAdjudicationCodeProvider {
 
     SiteInfoOutput siteInfoOutput;
+    AdjudicationCodesOutput adjudicationCodesOutput;
     RequestReportControl reportControl;
     StatisticsOutput statsOutput;
     StatisticsControl statsControl;
@@ -62,6 +65,12 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
     @Override
     protected void doInit() throws SensorHubException {
         super.doInit();
+
+        try {
+            config.getCustomAdjudicationCodeValues();
+        } catch (IllegalArgumentException e) {
+            throw new SensorHubException("Invalid custom disposition code configuration", e);
+        }
 
         // Block here for bucket service
         try {
@@ -109,6 +118,9 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
     }
 
     public void createOutputs(){
+        adjudicationCodesOutput = new AdjudicationCodesOutput(system);
+        system.addOutput(adjudicationCodesOutput, false);
+
         siteInfoOutput = new SiteInfoOutput(system);
         system.addOutput(siteInfoOutput, false);
 
@@ -141,16 +153,12 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
     protected void doStart() throws SensorHubException {
         super.doStart();
 
-        getParentHub().getSystemDriverRegistry().register(system);
+        registerSystemAndPublishCodes();
 
         if (config.databaseID != null && !config.databaseID.isBlank()) {
             var module = getParentHub().getModuleRegistry().getModuleById(config.databaseID);
-            if (getParentHub().getSystemDriverRegistry().getDatabase(system.getUniqueIdentifier()) == null)
-                getParentHub().getSystemDriverRegistry().registerDatabase(system.getUniqueIdentifier(), (IObsSystemDatabase) module);
-
-
             if (databasePurger == null)
-                databasePurger = new DatabasePurger((IObsSystemDatabase) module, bucketStore, 5);
+                databasePurger = new DatabasePurger((IObsSystemDatabase) module, 5);
 
             databasePurger.start();
         }
@@ -201,6 +209,40 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
             bucketService.unregisterObjectHandler(webIdResourceHandler);
             webIdResourceHandler = null;
         }
+
+        unregisterSystem();
+    }
+
+    protected void registerSystemAndPublishCodes() throws SensorHubException {
+        var registry = getParentHub().getSystemDriverRegistry();
+        // Select the target database before registering any output listeners.
+        if (config.databaseID != null && !config.databaseID.isBlank()) {
+            var database = (IObsSystemDatabase) getParentHub().getModuleRegistry().getModuleById(config.databaseID);
+            var current = registry.getDatabase(system.getUniqueIdentifier());
+            if (current == null)
+                registry.registerDatabase(system.getUniqueIdentifier(), database);
+            else if (current != database)
+                throw new SensorHubException("OSCAR system is already mapped to a different database");
+        }
+
+        awaitSystemRegistration(registry.register(system));
+        adjudicationCodesOutput.publish(config.customAdjudicationCodes);
+    }
+
+    protected void unregisterSystem() throws SensorHubException {
+        if (system != null)
+            awaitSystemRegistration(getParentHub().getSystemDriverRegistry().unregister(system));
+    }
+
+    private void awaitSystemRegistration(CompletableFuture<?> operation) throws SensorHubException {
+        try {
+            operation.get(30, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new SensorHubException("Interrupted while registering OSCAR system", e);
+        } catch (ExecutionException | TimeoutException e) {
+            throw new SensorHubException("Could not complete OSCAR system registration", e);
+        }
     }
 
     private void refreshSiteDiagram() {
@@ -242,4 +284,9 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
 
     @Override
     public WebIdClient getWebIdClient() { return webIdResourceHandler.getWebIdClient(); }
+
+    @Override
+    public boolean isCustomAdjudicationCode(int code) {
+        return config != null && config.getCustomAdjudicationCodeValues().contains(code);
+    }
 }

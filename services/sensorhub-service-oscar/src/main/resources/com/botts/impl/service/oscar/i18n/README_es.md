@@ -162,6 +162,16 @@ Estas opciones afectan al vídeo histórico de ocupación, no al flujo en direct
 
 La limpieza por presión solo elimina objetos elegibles del bucket `videos`, priorizando los candidatos antiguos; los CSV diarios están protegidos. Mantenga además supervisión del sistema operativo: este control de emergencia no sustituye las copias de seguridad.
 
+### Códigos de disposición personalizados
+
+En la configuración del módulo de servicio OSCAR, añada entradas a **Custom Disposition Codes** (`customAdjudicationCodes`). Cada entrada requiere un entero `code` único mayor que 11 y una descripción `label` no vacía. Los códigos 0–11 están integrados y no se pueden reemplazar. Ejemplo:
+
+```json
+"customAdjudicationCodes": [{"code": 12, "label": "Revisión local completada"}]
+```
+
+Aplique la configuración del servicio antes de enviar `adjudicationCode: 12`. Los carriles consultan la configuración actual en cada envío y rechazan códigos no configurados. Eliminar un código impide nuevos envíos con ese código y conserva las adjudicaciones existentes. El servicio publica estas opciones después de completar el registro del sistema y de la base de datos, también tras cambios de configuración. El Viewer lee el flujo `adjudicationCodes` y ofrece las opciones junto a los códigos integrados en detalle, vista previa del panel y adjudicación masiva. El Viewer se suscribe a la salida de disposición mediante el cliente MQTT compartido y lee la última observación una vez para el estado inicial. Las adiciones, ediciones y eliminaciones publicadas actualizan las listas abiertas inmediatamente, sin consultas periódicas ni recargar la página. Las suscripciones se desconectan al retirar el componente o cambiar los nodos de destino. Al abrir la lista se reintentan las suscripciones fallidas o los flujos ausentes. Las selecciones masivas entre nodos solo ofrecen códigos personalizados cuyo número y descripción coinciden en todos los nodos de destino.
+
 ## 5. Crear y cargar un plano georreferenciado
 
 El plano es una imagen rectangular orientada al norte que se interpola linealmente entre dos esquinas geográficas. OSCAR muestra OSM de forma predeterminada cuando está disponible y no hay plano. Con un plano válido, Viewer ajusta la extensión a sus límites, lo dibuja como capa ráster superior y conserva los marcadores de carril por encima.

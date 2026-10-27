@@ -7,6 +7,8 @@ dependencies {
     implementation project(':sensorhub-utils-rad')
 
     testImplementation('junit:junit:4.13')
+    testImplementation('org.mockito:mockito-core:3.12.4')
+    testImplementation project(':sensorhub-service-bucket') // in-memory bucket store for daily file tests
     implementation group: 'com.opencsv', name: 'opencsv', version: '4.1'
     implementation fileTree(dir: 'lib', include: ['*.jar'])
 }
