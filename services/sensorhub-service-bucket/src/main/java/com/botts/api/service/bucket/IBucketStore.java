@@ -48,6 +48,12 @@ public interface IBucketStore {
 
     OutputStream putObject(String bucketName, String key, Map<String, String> metadata) throws DataStoreException;
 
+    /**
+     * Opens an object for appending. The object is created if it does not exist and is never truncated.
+     * Each write is checked against the store's maximum object size (seeded with the current object size).
+     */
+    OutputStream appendObject(String bucketName, String key, Map<String, String> metadata) throws DataStoreException;
+
     InputStream getObject(String bucketName, String key) throws DataStoreException;
 
     long getObjectSize(String bucketName, String key) throws DataStoreException;
