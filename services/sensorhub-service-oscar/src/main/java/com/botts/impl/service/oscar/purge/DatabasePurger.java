@@ -1043,9 +1043,9 @@ public class DatabasePurger {
             return 0;
         }
 
-        // Use a reasonable earliest time to avoid querying from epoch
-        Instant earliestTime = clock.instant().minus(Duration.ofDays(365));
-        return deleteObservationsInTimeRange(dataStreamIds, earliestTime, cutoff);
+        // Start from Instant.EPOCH so multi-year deployments or systems recovering
+        // from extended downtime/clock jumps never strand rows older than 365 days.
+        return deleteObservationsInTimeRange(dataStreamIds, Instant.EPOCH, cutoff);
     }
 
     private long deleteObservationsInTimeRange(Set<BigId> dataStreamIds, Instant start, Instant end) {

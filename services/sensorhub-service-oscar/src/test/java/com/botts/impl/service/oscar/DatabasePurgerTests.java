@@ -188,6 +188,7 @@ public class DatabasePurgerTests {
         BigId sysId = addSystem();
         BigId dsId = addConnectionStatusDataStream(sysId);
         Instant now = Instant.now();
+        addConnectionStatusObservation(dsId, now.minusSeconds(400L * 24 * 60 * 60), false);
         addConnectionStatusObservation(dsId, now.minusSeconds(2 * 60 * 60), false);
         addConnectionStatusObservation(dsId, now.minusSeconds(30), true);
 
@@ -199,7 +200,7 @@ public class DatabasePurgerTests {
                         .withDataStreams(dsId)
                         .build())
                 .toList();
-        assertEquals("Expired connection history should be removed", 1, remaining.size());
+        assertEquals("Expired connection history (including rows >365 days old) should be removed", 1, remaining.size());
         assertTrue("The recent Online heartbeat must remain queryable",
                 remaining.get(0).getResult().getBooleanValue(1));
     }
