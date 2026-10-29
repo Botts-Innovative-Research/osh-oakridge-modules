@@ -19,6 +19,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Predicate;
+import java.util.Arrays;
 
 
 public class Utils {
@@ -48,13 +49,26 @@ public class Utils {
     }
 
     public static long countObservations(OSCARServiceModule module, String cqlValue, Instant begin, Instant end, String... observedProperties){
+        return countObservationsForLanes(module, null, cqlValue, begin, end, observedProperties);
+    }
+
+    public static long countObservationsForLanes(OSCARServiceModule module, String laneUIDs, String cqlValue,
+                                                 Instant begin, Instant end, String... observedProperties){
+
+        DataStreamFilter.Builder dataStreamFilter = new DataStreamFilter.Builder()
+                .withObservedProperties(observedProperties);
+
+        String[] scopedLaneUIDs = parseLaneUIDs(laneUIDs);
+        if (scopedLaneUIDs.length > 0) {
+            dataStreamFilter.withSystems()
+                    .withUniqueIDs(scopedLaneUIDs)
+                    .includeMembers(true)
+                    .done();
+        }
 
         ObsFilter.Builder builder = new ObsFilter.Builder()
                 .withResultTimeDuring(begin, end)
-                .withDataStreams(new DataStreamFilter.Builder()
-                        .withObservedProperties(observedProperties)
-                        .build()
-                );
+                .withDataStreams(dataStreamFilter.build());
 
         if (cqlValue != null && !cqlValue.isBlank()) {
             builder.withCQLFilter(cqlValue);
@@ -111,6 +125,12 @@ public class Utils {
     }
 
     public static Map<Instant, Long> countObservationsByDay(OSCARServiceModule module,String cqlValue, Instant startDate, Instant endDate, String... observedProperties){
+        return countObservationsByDayForLanes(module, null, cqlValue, startDate, endDate, observedProperties);
+    }
+
+    public static Map<Instant, Long> countObservationsByDayForLanes(OSCARServiceModule module, String laneUIDs,
+                                                                    String cqlValue, Instant startDate,
+                                                                    Instant endDate, String... observedProperties){
         Map<Instant, Long> result = new LinkedHashMap<>();
 
         var start = startDate;
@@ -124,7 +144,8 @@ public class Utils {
                 endOfCurrentDay = end;
             }
 
-            long count = countObservations(module, cqlValue, currentDay, endOfCurrentDay, observedProperties);
+            long count = countObservationsForLanes(
+                    module, laneUIDs, cqlValue, currentDay, endOfCurrentDay, observedProperties);
 
             result.put(currentDay, count);
 
@@ -132,6 +153,17 @@ public class Utils {
         }
 
         return result;
+    }
+
+    private static String[] parseLaneUIDs(String laneUIDs) {
+        if (laneUIDs == null || laneUIDs.isBlank() || laneUIDs.equals("NONE"))
+            return new String[0];
+
+        return Arrays.stream(laneUIDs.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .toArray(String[]::new);
     }
     
     public static Iterator<ICommandStatus> queryCommandStatus(OSCARServiceModule module, String laneUID, Instant begin, Instant end){

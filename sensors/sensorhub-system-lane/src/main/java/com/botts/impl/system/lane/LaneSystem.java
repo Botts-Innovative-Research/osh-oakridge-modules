@@ -57,6 +57,7 @@ import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensor;
 import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
 import org.sensorhub.utils.MsgUtils;
 import org.vast.util.Asserts;
+import org.vast.sensorML.SMLFactory;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -79,6 +80,8 @@ public class LaneSystem extends SensorSystem {
     private static final String PROCESS_URI = URN_PREFIX + "osh:process:occupancy";
     private static final Set<Class<?>> WEBID_SENSORS = Set.of(RS350Sensor.class);
     private static final String DEFAULT_XMLID_PREFIX = "lane";
+    public static final String OPERATIONAL_VIEW_KEYWORD_PREFIX = "oscar:view:";
+    private static final String OPERATIONAL_VIEW_KEY_PATTERN = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
 
     AbstractSensorModule<?> existingRPMModule = null;
     IDataProducerModule<?> occupancyProducer = null;
@@ -96,6 +99,7 @@ public class LaneSystem extends SensorSystem {
 
     @Override
     protected void doInit() throws SensorHubException {
+        validateOperationalViewKeys();
         cancelLaneEventSubscription();
         shutdownThreadPool();
         threadPool = Executors.newSingleThreadExecutor();
@@ -219,6 +223,46 @@ public class LaneSystem extends SensorSystem {
                     getLogger().info("Started module subscription to {}", getLocalID());
                 }
             });
+    }
+
+    @Override
+    protected void updateSensorDescription() {
+        synchronized (sensorDescLock) {
+            super.updateSensorDescription();
+
+            if (config == null || getConfiguration().operationalViewKeys == null)
+                return;
+
+            var keywords = new SMLFactory().newKeywordList();
+            getConfiguration().operationalViewKeys.stream()
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(key -> key.matches(OPERATIONAL_VIEW_KEY_PATTERN))
+                    .distinct()
+                    .sorted()
+                    .map(key -> OPERATIONAL_VIEW_KEYWORD_PREFIX + key)
+                    .forEach(keywords::addKeyword);
+
+            if (keywords.getNumKeywords() > 0)
+                sensorDescription.addKeywords(keywords);
+        }
+    }
+
+    private void validateOperationalViewKeys() throws SensorHubException {
+        if (getConfiguration().operationalViewKeys == null) {
+            getConfiguration().operationalViewKeys = new ArrayList<>();
+            return;
+        }
+
+        var normalizedKeys = new TreeSet<String>();
+        for (var configuredKey : getConfiguration().operationalViewKeys) {
+            var key = configuredKey == null ? "" : configuredKey.trim();
+            if (!key.matches(OPERATIONAL_VIEW_KEY_PATTERN)) {
+                throw new SensorHubException("Operational view keys must be 1-63 lowercase letters, numbers, or hyphens and cannot begin or end with a hyphen: " + configuredKey);
+            }
+            normalizedKeys.add(key);
+        }
+        getConfiguration().operationalViewKeys = new ArrayList<>(normalizedKeys);
     }
 
     public N42Output<?> getN42Output() {
