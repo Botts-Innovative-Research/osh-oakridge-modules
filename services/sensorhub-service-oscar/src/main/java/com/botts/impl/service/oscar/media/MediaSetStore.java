@@ -211,6 +211,22 @@ public final class MediaSetStore {
                 ? Optional.of(readManifest(key)) : Optional.empty();
     }
 
+    public Optional<MediaManifest> findSiblingManifestForSource(Identity identity,
+                                                                String normalizedSourceKey)
+            throws IOException {
+        Objects.requireNonNull(identity, "identity");
+        String targetSourceKey = normalizedSourceKey(normalizedSourceKey);
+        for (ManifestEntry entry : findEvent(identity.eventId())) {
+            MediaManifest manifest = entry.manifest();
+            if (identity.laneUid().equals(manifest.laneUid())
+                    && !identity.cameraUid().equals(manifest.cameraUid())
+                    && targetSourceKey.equals(stripVideoBucket(manifest.source().objectKey()))) {
+                return Optional.of(manifest);
+            }
+        }
+        return Optional.empty();
+    }
+
     public List<ManifestEntry> findEvent(String eventId) throws IOException {
         return findEvent(eventId, Integer.MAX_VALUE);
     }
@@ -1169,6 +1185,29 @@ public final class MediaSetStore {
             String name = file.getFileName().toString();
             if (name.endsWith(".jpg") || name.contains(PARTIAL_MARKER))
                 deleteIfPresent(setKey + "/" + name);
+        }
+    }
+
+    /**
+     * Removes uncommitted state and retry entries for an identity whose source clip was already
+     * published under a sibling camera identity (for example, when a startup path-token fallback
+     * camera UID was later resolved to a canonical system URN).
+     */
+    public synchronized void clearUncommittedIdentity(Identity identity) throws IOException {
+        String committedKey = manifestKey(identity);
+        Path committedPath = objectPathWithoutCreatingParents(committedKey);
+        if (requireRegularObjectOrDurableAbsence(committedPath, committedKey))
+            return;
+        cleanupUncommittedFrames(identity);
+        removeMaintenance(MediaMaintenanceJob.Kind.RETRY, identity);
+        deleteIfPresent(publicationCommitKey(identity));
+        deleteIfPresent(ledgerKey(identity));
+        Path setDirectory = committedPath.getParent();
+        if (setDirectory != null && Files.exists(setDirectory, LinkOption.NOFOLLOW_LINKS)) {
+            try (var remaining = Files.list(setDirectory)) {
+                if (remaining.findAny().isEmpty())
+                    Files.deleteIfExists(setDirectory);
+            }
         }
     }
 

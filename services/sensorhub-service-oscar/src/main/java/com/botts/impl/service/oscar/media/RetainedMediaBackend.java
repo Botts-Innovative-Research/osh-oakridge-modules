@@ -60,14 +60,23 @@ public final class RetainedMediaBackend {
         this.log = log;
     }
 
+    private record AttemptOutcome(boolean succeeded, Optional<MediaSetStore.Identity> delegateToSibling) {
+    }
+
     /**
      * Materializes a five-JPEG set or advances an existing set's source lifecycle.
      * The source is never removed on the creation attempt, regardless of success or failure.
      */
     public boolean process(MediaSetStore.Identity identity, String sourceObjectKey) {
         try {
-            return mediaStore.withIdentityLock(identity,
-                    () -> processLocked(identity, sourceObjectKey));
+            AttemptOutcome outcome = mediaStore.withIdentityLock(identity,
+                    () -> processAttemptLocked(identity, sourceObjectKey));
+            if (outcome.delegateToSibling().isPresent()) {
+                MediaSetStore.Identity sibling = outcome.delegateToSibling().get();
+                return mediaStore.withIdentityLock(sibling,
+                        () -> processAttemptLocked(sibling, sourceObjectKey).succeeded());
+            }
+            return outcome.succeeded();
         } catch (IOException e) {
             log.error("Unable to acquire retained-media identity transaction for {}",
                     identity.mediaSetId(), e);
@@ -75,11 +84,11 @@ public final class RetainedMediaBackend {
         }
     }
 
-    private boolean processLocked(MediaSetStore.Identity identity, String sourceObjectKey) {
+    private AttemptOutcome processAttemptLocked(MediaSetStore.Identity identity, String sourceObjectKey) {
         try {
             if (mediaStore.isTerminallyDeleted(identity)) {
                 mediaStore.finishTerminalDeletion(identity);
-                return true;
+                return new AttemptOutcome(true, Optional.empty());
             }
             String normalizedSourceKey = MediaSetStore.normalizedSourceKey(sourceObjectKey);
             Optional<MediaManifest> existing = mediaStore.findManifest(identity);
@@ -88,7 +97,7 @@ public final class RetainedMediaBackend {
                         identity, existing.get(), rollbackGrace, clock);
                 if (manifest.lifecycleState() == MediaManifest.LifecycleState.DELETING
                         || manifest.lifecycleState() == MediaManifest.LifecycleState.DELETED)
-                    return true;
+                    return new AttemptOutcome(true, Optional.empty());
                 mediaStore.verifyPublishedMedia(manifest);
                 // Repair the narrow crash window after manifest commit but before its lifecycle
                 // index entry was durably published.
@@ -98,7 +107,16 @@ public final class RetainedMediaBackend {
                     throw new IOException("Retained-media identity was reused for a different source object");
                 repairLedger(identity, manifest);
                 advanceSourceLifecycle(identity, manifest, catalogSourceKey);
-                return true;
+                return new AttemptOutcome(true, Optional.empty());
+            }
+
+            Optional<MediaManifest> sibling = mediaStore.findSiblingManifestForSource(
+                    identity, normalizedSourceKey);
+            if (sibling.isPresent()) {
+                mediaStore.clearUncommittedIdentity(identity);
+                MediaManifest siblingManifest = sibling.get();
+                return new AttemptOutcome(true, Optional.of(new MediaSetStore.Identity(
+                        siblingManifest.eventId(), siblingManifest.laneUid(), siblingManifest.cameraUid())));
             }
 
             Optional<MediaJobLedger> previousLedger = mediaStore.readLedger(identity);
@@ -157,7 +175,7 @@ public final class RetainedMediaBackend {
                     ledger.transition(MediaJobLedger.JobState.PUBLISHED, "", Instant.now(clock)));
             log.info("Published retained media set {} for event {}, lane {}, camera {}",
                     identity.mediaSetId(), identity.eventId(), identity.laneUid(), identity.cameraUid());
-            return true;
+            return new AttemptOutcome(true, Optional.empty());
         } catch (Exception failure) {
             // Frames without a final manifest are invisible to the API and are cleaned before the
             // next idempotent attempt. A failed lifecycle unlink remains recoverable from its
@@ -178,7 +196,7 @@ public final class RetainedMediaBackend {
             log.error("Retained-media job failed for event {}, lane {}, camera {}; source reference retained for recovery: {}",
                     identity.eventId(), identity.laneUid(), identity.cameraUid(),
                     durableSourceKey(sourceObjectKey), failure);
-            return false;
+            return new AttemptOutcome(false, Optional.empty());
         }
     }
 

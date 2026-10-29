@@ -1112,6 +1112,53 @@ public class RetainedMediaBackendTest {
     }
 
     @Test
+    public void siblingCameraIdentityForSameSourceReusesPublishedManifestAndClearsStaleRetry() throws Exception {
+        Path root = temporaryFolder.newFolder("sibling-camera-store").toPath();
+        FileSystemBucketStore bucketStore = new FileSystemBucketStore(root);
+        bucketStore.createBucket(MediaSetStore.VIDEO_BUCKET);
+        String sourceKey = "clips/urn-osh-sensor-ffmpeg-lane-lane-37-0/2026-10-27_02-36-08.mp4";
+        Path source = Path.of(bucketStore.getWritableResourceURI(MediaSetStore.VIDEO_BUCKET, sourceKey));
+        Files.copy(bundledH264Fixture(), source);
+
+        MediaSetStore store = new MediaSetStore(bucketStore);
+        RetainedMediaBackend backend = new RetainedMediaBackend(bucketStore, store, 85,
+                Duration.ofHours(24), LoggerFactory.getLogger(getClass()));
+        MediaSetStore.Identity fallbackIdentity = new MediaSetStore.Identity(
+                "0imq5kg8", "urn:osh:system:lane:lane-37",
+                "urn-osh-sensor-ffmpeg-lane-lane-37-0");
+        MediaSetStore.Identity canonicalIdentity = new MediaSetStore.Identity(
+                "0imq5kg8", "urn:osh:system:lane:lane-37",
+                "urn:osh:sensor:ffmpeg:lane:lane-37:0");
+
+        assertTrue(backend.process(fallbackIdentity, "videos/" + sourceKey));
+        MediaManifest published = store.findManifest(fallbackIdentity).orElseThrow();
+        Clock afterGrace = Clock.fixed(published.source().rollbackDeleteAfter().plusSeconds(1),
+                ZoneOffset.UTC);
+        RetainedMediaBackend lifecycleBackend = new RetainedMediaBackend(bucketStore, store,
+                new JpegFrameExtractor(85), Duration.ofHours(24), afterGrace,
+                LoggerFactory.getLogger(getClass()));
+        assertTrue(lifecycleBackend.process(fallbackIdentity, "videos/" + sourceKey));
+        assertFalse(bucketStore.objectExists(MediaSetStore.VIDEO_BUCKET, sourceKey));
+
+        // Simulate a stale failed retry queued under the canonical camera UID after source deletion.
+        store.writeLedger(canonicalIdentity, new MediaJobLedger(
+                MediaJobLedger.CURRENT_SCHEMA_VERSION,
+                canonicalIdentity.eventId(), canonicalIdentity.laneUid(), canonicalIdentity.cameraUid(),
+                "videos/" + sourceKey, MediaJobLedger.JobState.FAILED, 1, afterGrace.instant(),
+                "IOException: Retained-media source is missing"));
+        assertTrue(store.maintenanceExists(MediaMaintenanceJob.Kind.RETRY, canonicalIdentity));
+
+        assertTrue(lifecycleBackend.process(canonicalIdentity, "videos/" + sourceKey));
+        assertFalse("Sibling resolution must clear any stale retry on the secondary camera identity",
+                store.maintenanceExists(MediaMaintenanceJob.Kind.RETRY, canonicalIdentity));
+        assertTrue("Secondary camera identity must not keep a duplicate failed ledger",
+                store.readLedger(canonicalIdentity).isEmpty());
+        assertEquals(1, store.findEvent("0imq5kg8").size());
+        assertEquals(MediaManifest.SourceState.DELETED,
+                store.findManifest(fallbackIdentity).orElseThrow().source().state());
+    }
+
+    @Test
     public void maintenancePagingUsesBoundedListingAndRotatesOfferedWork() throws Exception {
         Path root = temporaryFolder.newFolder("bounded-maintenance-listing").toPath();
         BoundedMaintenanceBucketStore bucketStore = new BoundedMaintenanceBucketStore(root);
