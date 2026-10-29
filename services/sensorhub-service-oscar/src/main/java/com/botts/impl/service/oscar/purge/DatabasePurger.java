@@ -860,16 +860,23 @@ public class DatabasePurger {
         String feedId = info.getFullName();
         String laneId = laneKeyForSystem(info);
         Optional<LocalDate> checkpoint = journalService.readObservationPurgeCheckpoint(feedId);
-        Optional<LocalDate> databaseFirst = firstObservationDay(info);
+        Instant latestEligibleEnd = dayWindow(latestEligibleDay, dailyFileZone).endExclusive;
 
         LocalDate nextDay;
         if (checkpoint.isPresent()) {
             LocalDate afterCheckpoint = checkpoint.get().plusDays(1);
-            // Revisit a late committed record behind the high-water mark.  The half-open deletion
-            // and immutable publication gate make this replay idempotent.
-            nextDay = databaseFirst.filter(day -> day.isBefore(afterCheckpoint))
+            Instant afterCheckpointStart = dayWindow(afterCheckpoint, dailyFileZone).startInclusive;
+            Instant replayUpperBound = afterCheckpointStart.isBefore(latestEligibleEnd)
+                    ? afterCheckpointStart : latestEligibleEnd;
+            // Revisit a late committed record behind the high-water mark using actual remaining
+            // observations rather than IDataStreamInfo#getPhenomenonTimeRange(), whose begin()
+            // stays pinned to the first historical insert in PostGIS after rows are deleted.
+            nextDay = firstObservationDayBefore(dataStreamId, info, replayUpperBound)
+                    .filter(day -> day.isBefore(afterCheckpoint))
                     .orElse(afterCheckpoint);
         } else {
+            Optional<LocalDate> databaseFirst = firstObservationDayBefore(
+                    dataStreamId, info, latestEligibleEnd);
             Optional<LocalDate> journalFirst = journalService.findEarliestJournalDay(laneId);
             nextDay = earlier(databaseFirst, journalFirst).orElse(null);
         }
@@ -880,11 +887,27 @@ public class DatabasePurger {
                 checkpoint.orElse(null), nextDay));
     }
 
-    private Optional<LocalDate> firstObservationDay(IDataStreamInfo info) {
+    private Optional<LocalDate> firstObservationDayBefore(BigId dataStreamId,
+                                                          IDataStreamInfo info,
+                                                          Instant endExclusive) {
         TimeExtent range = info.getPhenomenonTimeRange();
-        if (range == null || range.begin() == null)
+        Instant startInclusive = range != null && range.begin() != null
+                && range.begin().isBefore(Instant.EPOCH)
+                ? range.begin() : Instant.EPOCH;
+        if (!startInclusive.isBefore(endExclusive))
             return Optional.empty();
-        return Optional.of(LocalDate.ofInstant(range.begin(), dailyFileZone));
+        ObsFilter filter = new ObsFilter.Builder()
+                .withDataStreams(dataStreamId)
+                .withPhenomenonTime(halfOpenTimeRange(startInclusive, endExclusive))
+                .withLimit(1)
+                .build();
+        try (var observations = database.getObservationStore().select(filter)) {
+            return observations
+                    .map(obs -> obs.getPhenomenonTime())
+                    .filter(time -> isInsideHalfOpenWindow(time, startInclusive, endExclusive))
+                    .findFirst()
+                    .map(time -> LocalDate.ofInstant(time, dailyFileZone));
+        }
     }
 
     private static Optional<LocalDate> earlier(Optional<LocalDate> first,

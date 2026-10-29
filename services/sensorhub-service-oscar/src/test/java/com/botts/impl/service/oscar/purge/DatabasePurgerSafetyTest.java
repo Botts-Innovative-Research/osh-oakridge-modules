@@ -9,14 +9,18 @@ import org.junit.Before;
 import org.junit.Test;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.data.DataStreamInfo;
+import org.sensorhub.api.data.IDataStreamInfo;
 import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.data.ObsData;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.ICancellableDataStore;
+import org.sensorhub.api.datastore.obs.DataStreamKey;
+import org.sensorhub.api.datastore.obs.IDataStreamStore;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.api.feature.FeatureId;
+import org.vast.util.TimeExtent;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabase;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
 import org.sensorhub.impl.sensor.SensorSystem;
@@ -270,6 +274,75 @@ public class DatabasePurgerSafetyTest {
         assertEquals(List.of(first.plusDays(2)), journal.requestedDays);
         assertEquals(Optional.of(LocalDate.of(2026, 10, 16)), journal.checkpoint(feedId));
         assertTrue(observations(daily).isEmpty());
+    }
+
+    @Test
+    public void fiftyLaneCatchUpDoesNotStarveWhenPostgisPinsFirstPhenomenonTime() throws Exception {
+        LocalDate day1 = LocalDate.of(2026, 10, 14);
+        LocalDate day2 = LocalDate.of(2026, 10, 15);
+        LocalDate day3 = LocalDate.of(2026, 10, 16);
+        int laneCount = 50;
+        List<BigId> streams = new ArrayList<>(laneCount);
+        List<String> feedIds = new ArrayList<>(laneCount);
+        for (int i = 0; i < laneCount; i++) {
+            String uid = String.format("urn:test:lane:pinned-%02d", i);
+            BigId system = addSystem(null, uid);
+            BigId daily = addDataStream(system, uid, "dailyFile", dailyFileStructure());
+            streams.add(daily);
+            feedIds.add(uid + "#dailyFile");
+            addStringObservation(daily, DatabasePurger.dayWindow(day1, ZoneOffset.UTC)
+                    .startInclusive().plusSeconds(1), "day-1");
+            addStringObservation(daily, DatabasePurger.dayWindow(day2, ZoneOffset.UTC)
+                    .startInclusive().plusSeconds(1), "day-2");
+            addStringObservation(daily, DatabasePurger.dayWindow(day3, ZoneOffset.UTC)
+                    .startInclusive().plusSeconds(1), "day-3");
+        }
+
+        // Simulate PostGIS obs_update_datastream_ranges AFTER INSERT trigger:
+        // min_phenomenon_time stays pinned to day1 even after day1/day2 rows are deleted.
+        Instant pinnedBegin = DatabasePurger.dayWindow(day1, ZoneOffset.UTC)
+                .startInclusive().plusSeconds(1);
+        IObsSystemDatabase pinnedDatabase = databaseWithPinnedFirstObservationTime(pinnedBegin);
+
+        ToggleJournal journal = new ToggleJournal(ZoneOffset.UTC, DailyFileObservationMode.LATEST);
+        journal.published.set(true);
+        journal.earliestJournalDay = day1;
+        DatabasePurger purger = new DatabasePurger(pinnedDatabase, bucketStore, 0, journal,
+                ZoneOffset.UTC, Clock.fixed(NOW, ZoneOffset.UTC), true, laneCount);
+
+        purger.executeHourlyPurge();
+        for (String feedId : feedIds)
+            assertEquals(Optional.of(day1), journal.checkpoint(feedId));
+        for (BigId stream : streams)
+            assertEquals(2, observations(stream).size());
+
+        journal.requestedDays.clear();
+        purger.executeHourlyPurge();
+        for (String feedId : feedIds)
+            assertEquals("Pinned phenomenonTimeRange.begin() must not starve day2 behind day1",
+                    Optional.of(day2), journal.checkpoint(feedId));
+        for (BigId stream : streams)
+            assertEquals(1, observations(stream).size());
+
+        journal.requestedDays.clear();
+        purger.executeHourlyPurge();
+        for (String feedId : feedIds)
+            assertEquals(Optional.of(day3), journal.checkpoint(feedId));
+        for (BigId stream : streams)
+            assertTrue(observations(stream).isEmpty());
+
+        // Steady-state cycle with all 50 lanes caught up must do zero journal publication checks,
+        // while still replaying if a late observation arrives behind the durable checkpoint.
+        journal.requestedDays.clear();
+        purger.executeHourlyPurge();
+        assertTrue(journal.requestedDays.isEmpty());
+
+        addStringObservation(streams.get(0), DatabasePurger.dayWindow(day1, ZoneOffset.UTC)
+                .startInclusive().plusSeconds(30), "late-day-1");
+        purger.executeHourlyPurge();
+        assertEquals(List.of(day1), journal.requestedDays);
+        assertTrue("Late observation behind checkpoint must still be purged",
+                observations(streams.get(0)).isEmpty());
     }
 
     @Test
@@ -789,6 +862,42 @@ public class DatabasePurgerSafetyTest {
 
     private DatabasePurger purger(IDailyFileJournalService journal, ZoneId zone) {
         return new DatabasePurger(database, bucketStore, 0, journal, zone, Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    private IObsSystemDatabase databaseWithPinnedFirstObservationTime(Instant pinnedBegin) {
+        IDataStreamStore delegateDataStreamStore = database.getDataStreamStore();
+        IDataStreamStore dataStreamStore = (IDataStreamStore) Proxy.newProxyInstance(
+                IDataStreamStore.class.getClassLoader(), new Class<?>[]{IDataStreamStore.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("selectEntries")) {
+                        @SuppressWarnings("unchecked")
+                        var entries = (java.util.stream.Stream<Map.Entry<DataStreamKey, IDataStreamInfo>>)
+                                invokeDelegate(method, delegateDataStreamStore, args);
+                        return entries.map(entry -> Map.entry(
+                                entry.getKey(),
+                                dataStreamInfoWithPinnedBegin(entry.getValue(), pinnedBegin)));
+                    }
+                    return invokeDelegate(method, delegateDataStreamStore, args);
+                });
+        return (IObsSystemDatabase) Proxy.newProxyInstance(
+                IObsSystemDatabase.class.getClassLoader(),
+                new Class<?>[]{IObsSystemDatabase.class},
+                (proxy, method, args) -> method.getName().equals("getDataStreamStore")
+                        && method.getParameterCount() == 0
+                        ? dataStreamStore : invokeDelegate(method, database, args));
+    }
+
+    private static IDataStreamInfo dataStreamInfoWithPinnedBegin(
+            IDataStreamInfo delegate, Instant pinnedBegin) {
+        return (IDataStreamInfo) Proxy.newProxyInstance(
+                IDataStreamInfo.class.getClassLoader(), new Class<?>[]{IDataStreamInfo.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("getPhenomenonTimeRange")
+                            && method.getParameterCount() == 0) {
+                        return TimeExtent.period(pinnedBegin, NOW);
+                    }
+                    return invokeDelegate(method, delegate, args);
+                });
     }
 
     private IObsSystemDatabase databaseThatMutatesBeforeFirstDelete(
