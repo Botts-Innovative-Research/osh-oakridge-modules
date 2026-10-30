@@ -1,11 +1,11 @@
 package org.sensorhub.impl.sensor.ffmpeg.tests.sony;
 
-import org.sensorhub.impl.sensor.ffmpeg.ConnectionTest;
+import org.sensorhub.impl.sensor.ffmpeg.ExternalCameraConnectionTest;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensor;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 
 
-public class SonyH264Auth extends ConnectionTest {
+public class SonyH264Auth extends ExternalCameraConnectionTest {
 
     private final static String SONY_H264_AUTH_IP = "SONY_H264_AUTH_IP";
 

@@ -1,4 +1,4 @@
-# Manual de administración y operación de OSCAR 3.8.3
+# Manual de administración y operación de OSCAR 3.11.0
 
 Este manual cubre el primer uso y la operación completa: certificado, acceso, plano georreferenciado, importación/creación de carriles, adjudicación y evidencias, eventos, estadísticas nacionales, informes y federación de nodos.
 
@@ -32,7 +32,7 @@ La interfaz de administración selecciona automáticamente la versión del manua
 
 Necesita:
 
-- un despliegue OSCAR 3.8.3 instalado y en ejecución;
+- un despliegue OSCAR 3.11.0 instalado y en ejecución;
 - la URL de OSCAR, normalmente `https://oscar.local/` salvo que se haya elegido otro host;
 - una cuenta administradora para `/sensorhub/admin`;
 - la imagen aprobada del sitio y la latitud/longitud de sus esquinas inferior izquierda y superior derecha;
@@ -106,9 +106,9 @@ Use el selector de idioma de la parte superior de la administración o de OSCAR 
 
 ### 3.2 Tres acciones distintas
 
-- **Cargar** envía inmediatamente el archivo; en el caso del CSV, inicia la importación de carriles.
+- **Cargar** envía inmediatamente el archivo; en el caso del CSV, crea los carriles en el registro activo de módulos en memoria. No escribe la configuración persistente de los módulos.
 - **Aplicar cambios** confirma el formulario del módulo mostrado y actualiza su configuración en ejecución.
-- **Guardar** en el encabezado escribe la configuración completa para conservarla después de reiniciar.
+- **Guardar** en el encabezado abre un diálogo de confirmación. Seleccione **Sí** y espere **Configuración de SensorHub guardada**; solo entonces se escribe la configuración completa para conservarla después de reiniciar.
 
 Después de configurar, use **Aplicar cambios** cuando esté disponible y luego **Guardar**. El mensaje de carga correcta demuestra que el archivo fue aceptado, no que todos los dispositivos se conectaron ni que todo quedó persistido.
 
@@ -131,6 +131,8 @@ En la navegación izquierda, abra **Servicios > Módulo de servicio OSCAR**.
 | ID de base de datos | Base de observaciones usada por OSCAR. En blanco, las estadísticas usan la base federada; los trabajos de purga/exportación específicos solo arrancan con una base elegida explícitamente. |
 | Raíz de API WebID | URL base de Sandia Full Spectrum Web ID. Predeterminado: `https://full-spectrum.sandia.gov/api/v1`. Use un servicio local aprobado para despliegues aislados o déjelo vacío para no crear el cliente Web ID. |
 | Frecuencia de estadísticas (min) | Intervalo de publicación; predeterminado 60 minutos. |
+| Delegar el ciclo de vida de las observaciones a la base de datos | Active esta opción cuando la base de datos por niveles gestione la retención activa y archivada. OSCAR mantiene el estado de conexión y la limpieza de archivos diarios validada por manifiesto. |
+| Límite de trabajo de purga de archivos diarios | Máximo de ventanas de compatibilidad de carril/día por ejecución programada de recuperación, incluida la repetición horaria. Predeterminado: 50. |
 | Inicio automático | Inicia el servicio cuando se carga el nodo. Normalmente debe estar activo en producción. |
 
 El servicio necesita un Servicio de almacenamiento en buckets iniciado. Si no lo encuentra, inicie y verifique **Servicios > Servicio de almacenamiento en buckets**, y reinicialice o reinicie el servicio OSCAR.
@@ -143,12 +145,42 @@ Selecciona una imagen PNG/JPG/JPEG y asigna los límites inferior izquierdo y su
 
 | Campo | Predeterminado | Comportamiento |
 | --- | ---: | --- |
-| Tiempo hasta retención/eliminación de fotogramas clave (días) | 7 | Edad a la que se procesa un vídeo de ocupación. |
-| Periodo de consulta de vídeo (minutos) | 1 | Intervalo entre búsquedas de vídeos elegibles. Un periodo mayor agrupa más registros por consulta. |
-| Activar retención de fotogramas | activado | Activado: reduce clips antiguos al número indicado. Desactivado: elimina los clips elegibles. |
-| Número de fotogramas clave retenidos | 5 | Fotogramas que se conservan; no tiene efecto si la retención está desactivada. |
+| Antigüedad antes de conservar cinco fotogramas (días) | 0 | Edad mínima para que el vídeo fuente de una ocupación pueda convertirse en exactamente cinco JPEG conservados. Cero hace que los clips terminados sean elegibles inmediatamente para la conversión asíncrona. |
+| Periodo de consulta de vídeo (minutos) | 5 | Intervalo entre búsquedas de vídeos recién elegibles; también es la anchura máxima de tiempo de evento de cada consulta a la base de datos. |
+| Recuperación máxima de retención (horas) | 6 | Intervalo máximo de tiempo histórico de eventos procesado por ciclo. El trabajo restante continúa desde un cursor duradero. |
+| Tolerancia de llegadas tardías (horas) | 24 | Retraso antes de que el cursor contiguo de llegadas tardías dé por definitivo un instante del evento. Las confirmaciones dentro de esta tolerancia no pueden omitirse. |
+| Periodo de barrido de llegadas tardías (minutos) | 360 | Demora mínima entre comprobaciones de un nuevo límite seguro retrasado. Un barrido congelado interrumpido continúa en el siguiente ciclo de cinco minutos. |
+| Recuperación de llegadas tardías por ciclo (horas) | 2 | Porción máxima de un barrido retrasado activo que se procesa en un ciclo; el trabajo se divide en ventanas de base de datos de cinco minutos. |
+| Reconciliación histórica por ciclo (horas) | 24 | Porción máxima de un barrido histórico completo y congelado que se procesa en un ciclo. El progreso activo y el límite final congelado sobreviven al reinicio. |
+| Periodo de reconciliación histórica (horas) | 24 | Demora tras completar un barrido histórico antes de reiniciarlo desde la ocupación elegible más antigua. Recupera confirmaciones posteriores a la tolerancia. |
+| Periodo de actualización de flujos de ocupación (minutos) | 15 | Frecuencia con la que los nombres de salida de ocupación se resuelven a ID de flujos de datos almacenados en caché y usados directamente por las consultas. |
+| Límite de trabajo de mantenimiento multimedia | 200 | Máximo de entradas de reconciliación del catálogo, reintento y ciclo de vida del origen inspeccionadas por ciclo. |
+| Límite de reclamación de metadatos multimedia | 200 | Máximo de intervalos horarios UTC de observaciones procesadas que se reclaman por ciclo, incluidas horas ausentes. La reclamación nunca rebasa el cursor retrasado duradero ni el límite horario actual. Cada hora usa doce accesos fijos de cinco minutos; no es un recuento de ocupaciones. |
+| Activar retención de fotogramas | activado | Activado: convierte clips antiguos en el conjunto exacto de cinco JPEG. Desactivado: usa el comportamiento de eliminación heredado. |
+| Número de fotogramas retenidos | 5 | El esquema v1 exige exactamente cinco cuando la retención está activada. |
+| Calidad JPEG retenida | 85 | Calidad de codificación JPEG sRGB de línea base de 1 a 100. |
+| Gracia de reversión del origen (horas) | 24 | Tiempo mínimo que se conserva el clip original después de confirmar los cinco JPEG y su manifiesto. |
 
-Estas opciones afectan al vídeo histórico de ocupación, no al flujo en directo. Defina valores compatibles con la política de evidencias del sitio.
+Estas opciones afectan al vídeo histórico de ocupación, no al flujo en directo. El escáner usa un
+cursor de avance duradero y no vuelve a recorrer todo el historial en cada intervalo. Los trabajos
+fallidos y la limpieza del origen tras la gracia usan índices duraderos y acotados independientes.
+El cursor retrasado y la reconciliación histórica completa, congelada y repetida hacen visibles las
+ocupaciones tardías o que habían quedado sin catálogo, sin un recorrido ilimitado al reiniciar ni un
+límite móvil que pueda adelantarse a la reparación. Tras corregir el reloj hacia atrás, los barridos
+congelados activos se detienen en el límite de elegibilidad actual sin perder su final duradero. Un
+flujo sin un intervalo de tiempo de resultados utilizable se consulta directamente; el descubrimiento
+inicial vuelve de forma segura al inicio de época solo si ese flujo contiene una ocupación elegible,
+en vez de confiar en el intervalo más reciente de otro flujo. Un flujo vacío sin intervalo no fuerza
+esa vuelta. Con los valores predeterminados, un clip terminado es elegible inmediatamente y el
+trabajador de retención programado lo convierte de forma asíncrona. El MP4 fuente se conserva al
+menos 24 horas después de publicarse correctamente, por lo que la eliminación normal del origen no
+puede ocurrir antes de ese plazo relativo a la publicación. Los cinco JPEG siguen siendo la
+representación probatoria conservada. Defina valores compatibles con la política de conservación de
+evidencias del sitio antes de activar la limpieza.
+
+Los entornos desechables de regresión pueden reducir deliberadamente el periodo de consulta a 1
+minuto para acelerar pruebas deterministas. Es un valor exclusivo de prueba; el periodo de consulta
+predeterminado en producción sigue siendo de 5 minutos.
 
 ### 4.4 Pestaña Retención por presión de almacenamiento
 
@@ -158,9 +190,24 @@ Estas opciones afectan al vídeo histórico de ocupación, no al flujo en direct
 | Uso objetivo (%) | 80 | La limpieza continúa hasta alcanzarlo o agotar archivos elegibles. |
 | Periodo de comprobación (minutos) | 1 | Frecuencia de comprobación; debe ser mayor que cero. |
 | Edad mínima del objeto (minutos) | 10 | Protege archivos más nuevos; no puede ser negativa. |
+| Máximo de conjuntos multimedia por ciclo | 200 | Limita las entradas del índice directo inspeccionadas en un ciclo. La cola duradera reanuda el trabajo restante tras un reinicio o en el ciclo siguiente. |
 | Ruta de almacenamiento | `files` | Sistema de archivos cuyo uso controla la limpieza. Debe apuntar al volumen real de archivos OSCAR. |
 
-La limpieza por presión solo elimina objetos elegibles del bucket `videos`, priorizando los candidatos antiguos; los CSV diarios están protegidos. Mantenga además supervisión del sistema operativo: este control de emergencia no sustituye las copias de seguridad.
+La limpieza por presión solo elimina objetos elegibles del bucket `videos` en orden de publicación duradero; durante un ciclo no enumera ni ordena todo el árbol de medios retenidos. Los CSV diarios están protegidos. Mantenga además supervisión del sistema operativo: este control de emergencia no sustituye las copias de seguridad.
+
+Los ID de observaciones procesadas comparten como máximo doce archivos exactos de cinco minutos con
+suma de comprobación por hora UTC del evento. Una hora completa se elimina solo cuando termina
+estrictamente antes tanto del cursor retrasado duradero como del límite actual acotado por el reloj,
+mediante doce accesos directos limitados y sin recorrer el árbol. Esto mantiene la memoria acotada y eleva el umbral por archivo a
+más de 1,2 millones de ocupaciones distribuidas uniformemente por hora. Un
+índice compacto exacto, bloqueado por archivo, conserva las eliminaciones por presión sin una lápida
+JSON permanente por cámara. Copie y restaure como una unidad todo `videos/retained-media/v1`,
+incluidos índices, puntos de control, colas, manifiestos y libros de trabajo.
+
+Este formato compacto aparece por primera vez en 3.11.0 y no migra los prototipos previos
+`.deleted.json` ni árboles de marcadores por observación. Los sistemas de prueba deben comenzar con
+una base de datos y un prefijo de medios nuevos de 3.11.0. Para volver atrás, restaure ambos desde la
+misma copia coordinada anterior a 3.11.0; no ejecute un binario antiguo sobre este almacenamiento.
 
 ### Códigos de disposición personalizados
 
@@ -250,7 +297,8 @@ La importación masiva es preferible para muchos carriles. En un sitio existente
 ![CSV cargado](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/16-csv-upload-success.png)
 
 4. Abra **Sensores** e inspeccione cada carril y sus submódulos RPM/cámara. La carga es asíncrona; espere a que aparezcan todas las filas.
-5. Corrija valores por carril, aplique cambios y use **Guardar** tras validar.
+5. Corrija valores por carril, aplique cambios, use **Guardar** globalmente, confirme **Sí** y espere **Configuración de SensorHub guardada**. Abrir el diálogo sin seleccionar **Sí** no guarda. Hasta que el guardado global termine correctamente, los carriles importados existen solo en memoria y pueden desaparecer al reiniciar.
+6. Durante la ventana de verificación planificada, reinicie OSCAR con el comando admitido de despliegue, inicie sesión de nuevo y confirme que todos los carriles previstos y sus hijos RPM/cámara reaparecen en **Sensores**. No dé por terminada la importación hasta superar esta comprobación tras el reinicio.
 
 ![Carriles importados](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/17-sensors-overview.png)
 
@@ -258,13 +306,15 @@ Se omite una fila cuyo `UniqueID` ya pertenezca a un Sistema de carril cargado; 
 
 ### 6.2 Esquema exacto
 
-Los primeros 13 encabezados son obligatorios, sensibles a mayúsculas y deben estar exactamente en este orden:
+El esquema actual tiene 14 encabezados principales obligatorios, sensibles a mayúsculas y en este orden exacto. `OperationalViews` es la sexta columna:
 
 ```csv
-Name,UniqueID,AutoStart,Latitude,Longitude,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth
+Name,UniqueID,AutoStart,Latitude,Longitude,OperationalViews,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth
 ```
 
-Después, añada un grupo de seis columnas por cámara, comenzando en 0 y sin saltos:
+La importación sigue aceptando el esquema heredado de 13 encabezados sin `OperationalViews`; esos carriles no se asignan a ninguna vista operativa. Las exportaciones nuevas siempre usan 14 encabezados. Con el encabezado actual, cada fila debe incluir la celda `OperationalViews`, aunque puede estar vacía.
+
+Después, incluya al menos un grupo de seis columnas de cámara. Use un grupo `CameraType0` vacío cuando el carril no tenga cámara; los índices adicionales deben ser consecutivos:
 
 ```csv
 CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0
@@ -281,6 +331,7 @@ El código no fija un máximo de grupos secuenciales, pero el despliegue debe so
 | `UniqueID` | sí | Identificador estable y no reutilizable. Un sufijo simple se convierte en URN de carril. |
 | `AutoStart` | sí | `true` o `false`; solo `true` sin distinguir mayúsculas se interpreta como verdadero. |
 | `Latitude` / `Longitude` | juntas | Grados WGS 84. Deje ambas vacías para omitir ubicación fija. |
+| `OperationalViews` | no | Claves de vistas de estación separadas por punto y coma, por ejemplo `north-gate;secondary`. Cada clave debe tener entre 1 y 63 letras ASCII minúsculas (`a`–`z`), números o guiones, sin guion inicial ni final. Déjela vacía para no asignar el carril a vistas delimitadas. |
 | `RPMConfigType` | no | Vacío, `Aspect`, `Rapiscan` o `RS350` (sin distinguir mayúsculas). |
 | `RPMHost` | con RPM | IP o DNS del RPM. |
 | `RPMPort` | con RPM | Puerto TCP entero. |
@@ -306,15 +357,15 @@ El esquema no incluye **Longitud del búfer de vídeo**; la importación usa `0`
 Un carril Rapiscan con una cámara Axis:
 
 ```csv
-Name,UniqueID,AutoStart,Latitude,Longitude,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0
-Lane01,lane01,true,35.8858,-84.2121,Rapiscan,192.0.2.10,1601,,,false,false,4.82,Axis,192.0.2.20,,H264,operator,replace-me
+Name,UniqueID,AutoStart,Latitude,Longitude,OperationalViews,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0
+Lane01,lane01,true,35.8858,-84.2121,north-gate,Rapiscan,192.0.2.10,1601,,,false,false,4.82,Axis,192.0.2.20,,H264,operator,replace-me
 ```
 
 Un carril Aspect con dos cámaras:
 
 ```csv
-Name,UniqueID,AutoStart,Latitude,Longitude,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0,CameraType1,CameraHost1,CameraPath1,Codec1,Username1,Password1
-Lane02,lane02,true,35.8859,-84.2119,Aspect,192.0.2.11,502,1,32,,,,Sony,192.0.2.21,,,operator,replace-me,Custom,192.0.2.22:8554,/stream1,,operator,replace-me
+Name,UniqueID,AutoStart,Latitude,Longitude,OperationalViews,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0,CameraType1,CameraHost1,CameraPath1,Codec1,Username1,Password1
+Lane02,lane02,true,35.8859,-84.2119,north-gate;secondary,Aspect,192.0.2.11,502,1,32,,,,Sony,192.0.2.21,,,operator,replace-me,Custom,192.0.2.22:8554,/stream1,,operator,replace-me
 ```
 
 Sustituya todas las direcciones y credenciales. Evite que la hoja de cálculo reformatee IDs, booleanos o coordenadas.
@@ -369,6 +420,7 @@ La lista varía con los paquetes instalados. Para un carril normal, seleccione *
 | ID único | ID estable obligatorio. `lane01` se convierte en `urn:osh:system:lane:lane01`; también se admite una URN completa. Evite espacios y reutilización. |
 | Última actualización | Hora de actualización de SensorML; normalmente vacía/gestionada por el sistema. |
 | Inicio automático | Inicia el carril al cargar la configuración. Actívelo tras verificar. |
+| Claves de vista operativa | Lista opcional de claves de estación autorizadas para mostrar este carril. Añada cada clave por separado; use entre 1 y 63 letras ASCII minúsculas (`a`–`z`), números o guiones, sin guion inicial ni final. Déjela vacía si el carril no debe pertenecer a una vista delimitada. |
 | Eliminar datos al eliminar el carril | Activo de forma predeterminada. Al eliminar el carril borra sus registros de base de datos. Desactívelo si debe conservar el historial. |
 | Información de fuente de datos | Metadatos heredados opcionales; úselos solo si el modelo SensorML del sitio los exige. |
 
@@ -469,10 +521,14 @@ El envío añade un registro de adjudicación; no modifica la observación del d
 
 ![Lista de eventos](https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/27-event-list.png)
 
-**Eventos** es el historial de todos los nodos locales y federados configurados, no solo alarmas pendientes. Muestra carril/nodo, ID de ocupación, inicio/fin, máximos gamma/neutrón, estado y si existe adjudicación.
+**Eventos** es el historial de todos los nodos locales y federados configurados, no solo alarmas pendientes. Muestra carril/nodo, ID de ocupación, inicio/fin, máximos gamma/neutrón, estado y si existe adjudicación. Los filtros, recuentos, páginas y la selección masiva se aplican al conjunto completo de resultados coincidentes en el servidor, no solo a la página visible.
 
+- Use **Buscar evento por UUID** para pegar el identificador permanente mostrado en Detalles del evento, un PDF o una transferencia de alarma. OSCAR consulta exactamente esa observación y abre el evento sin reconstruir una cadena de filtros. Es el ID público codificado de la observación OSCAR; se presenta como UUID del evento para los operadores, pero no tiene que usar la puntuación RFC-4122.
 - **Columnas** muestra u oculta campos; **Filtros** abre filtros del servidor; **Densidad** cambia el espaciado.
-- Inicio/fin admiten **después de** y **antes de**. Estado admite **Ninguno**, **Gamma**, **Neutrón** o **Gamma y Neutrón**. Adjudicado admite **Sí/No**. Un filtro vuelve a la primera página.
+- Cree grupos con **Todas las condiciones (Y)** o **Cualquier condición (O)** y anide grupos cuando necesite ambas lógicas. Se admiten hasta 20 reglas y tres niveles de grupos. Las condiciones de nodo y carril eligen los flujos; las de ID de ocupación, tiempo, máximos gamma/neutrón, estado y adjudicación se envían al servidor para cada carril aplicable. Al aplicar, se vuelve a la primera página.
+- Use los operadores ofrecidos para cada campo. Las horas admiten antes, después y entre; los números, límites inclusivos, entre e igualdad; el estado, Ninguno, Gamma, Neutrón o Gamma y Neutrón; y la adjudicación, Sí/No y vacío/no vacío.
+- Marque alarmas no adjudicadas por separado o pulse **Seleccionar todas las alarmas filtradas** para fijar el conjunto elegible completo en el momento de la carga, incluidas otras páginas. Después puede desmarcar filas concretas. La adjudicación masiva aplica a la selección un código, estado de inspección secundaria, ID de vehículo opcional y notas, con un máximo de seis eventos simultáneos. No adjunta evidencias ni selecciones de isótopos; use Detalles del evento cuando sean necesarias.
+- Revise el recuento y la advertencia antes de enviar. Los eventos correctos salen de la cola o aparecen como adjudicados. Los fallidos permanecen visibles y seleccionados; **Reintentar fallidos** procesa solo esos fallos. Si OSCAR no puede enumerar todo el resultado filtrado, no selecciona nada en vez de adjudicar silenciosamente un subconjunto.
 - Los resultados se ordenan del más reciente y se paginan de 15 en 15.
 - Seleccione una fila para vista previa; doble clic o la acción **Detalles** abre la página completa.
 - Si un nodo federado no responde, sus filas o conteos pueden estar incompletos; no interprete cero como ausencia sin comprobar conectividad.
@@ -483,7 +539,7 @@ El envío añade un registro de adjudicación; no modifica la observación del d
 
 La página puede incluir:
 
-- carril, ocupación, horas, alarma, velocidad y otros campos;
+- UUID del evento, carril, ocupación, horas, alarma, velocidad y otros campos;
 - gráficos gamma, umbral, neutrones y RS-350 compatibles;
 - vídeo grabado durante el evento;
 - datos varios y adjudicaciones anteriores;
@@ -492,7 +548,9 @@ La página puede incluir:
 - ID de vehículo, notas, inspección secundaria y código; y
 - **Exportar como PDF**.
 
-**Atrás** vuelve a la lista. **CPS/NSIGMA** cambia la presentación gamma compatible; las flechas recorren vídeos. **Exportar como PDF** abre la impresión del navegador para la página renderizada; es distinto de los informes del servidor de la sección 10.
+Use **Copiar UUID** para que otro operador pueda buscar el mismo evento. **Copiar enlace directo** crea una URL con el nodo que abre el evento sin repetir los filtros y conserva la vista operativa activa. El enlace funciona solo mientras se conserve la observación, el nodo siga accesible y la vista actual autorice el carril. OSCAR rechaza identificadores de otros flujos o de carriles fuera del ámbito.
+
+**Atrás** vuelve a la lista. **CPS/NSIGMA** cambia la presentación gamma compatible; las flechas recorren vídeos. **Exportar como PDF** abre la impresión del navegador para la página renderizada e incluye el UUID visible. Para un evento en directo recién recibido, la exportación PDF y QR permanece deshabilitada mientras OSCAR resuelve el UUID almacenado; si falla la resolución automática, seleccione **Reintentar** o vuelva a abrir el evento desde **Eventos**. Es distinto de los informes del servidor de la sección 10.
 
 La disponibilidad depende del detector, cámara, retención, antigüedad, permisos y conectividad WebID. Un panel vacío no demuestra ausencia de datos: compruebe carril, flujo, cámara y retención.
 
@@ -533,6 +591,58 @@ Eliminar antes del envío solo quita el elemento pendiente. Tras subirlo, use la
 2. Elija cero o más isótopos. **Desconocido** excluye los nombrados: Neptunio, Plutonio, Uranio-233/235/238, Americio, Bario, Bismuto, Californio, Cesio-134/137, Cobalto-57/60, Europio-152, Iridio, Manganeso, Selenio, Sodio, Estroncio, Flúor, Galio, Yodo-123/131, Indio, Paladio, Tecnecio, Xenón, Potasio, Radio y Torio.
 3. Añada notas y seleccione inspección **Ninguna**, **Solicitada** o **Completada**.
 4. Pulse **Enviar**, revise la confirmación completa y use **Confirmar y enviar**. Compruebe el mensaje de éxito y la fila nueva. Ante fallo, conserve el formulario y corrija nodo/flujo de control/carga antes de reintentar.
+
+### 8.6 Transferir una alarma mediante código QR en un entorno aislado
+
+OSCAR puede incluir un resumen compacto de la alarma en un solo código QR sin usar un servicio de Internet. La exportación contiene nodo y carril de origen, UUID del evento e ID de ocupación legible, horas, estado y máximos, metadatos compactos de adjudicación si existen, y datos reducidos de los gráficos gamma, neutrón y umbral. **No** contiene vídeo, archivos de evidencia, espectros ni todas las muestras originales. Las exportaciones nuevas requieren un UUID resuelto; los paquetes heredados de versión 1 que no lo contienen siguen siendo legibles y se identifican como tales.
+
+Para exportar:
+
+1. Abra la vista previa en el panel o **Detalles del evento** y pulse **Exportar alarma como QR**.
+2. Espere mientras OSCAR consulta las observaciones del intervalo. El diálogo indica los puntos gamma y neutrón exportados y originales.
+3. Permita que el receptor escanee el código, use **Descargar imagen QR** para obtener un PNG, **Descargar archivo de alarma** para guardar `.oscar-alarm.json`, o **Compartir alarma**. Si el navegador no puede compartir archivos, OSCAR descarga el archivo.
+
+El muestreo conserva extremos inicial/final, mínimos/máximos globales, los puntos gamma a ambos lados de cada cruce del umbral y mínimos/máximos locales. Los valores se redondean a tres decimales. El paquete guarda un resumen SHA-256 de las series completas para compararlas posteriormente con el origen, pero las muestras omitidas no pueden reconstruirse desde el QR.
+
+Para recibir:
+
+1. Abra **Transferencia de alarmas** en la navegación del Viewer.
+2. Use **Iniciar escaneo con cámara**, **Escanear imagen QR**, **Importar archivo de alarma** o pegue el texto `OSCAR-ALARM:1:`. La cámara exige permiso y HTTPS seguro; la importación por imagen/archivo funciona cuando la cámara está prohibida.
+3. OSCAR descomprime, aplica límites de tamaño y datos, verifica el resumen SHA-256 de transferencia y vuelve a dibujar los gráficos reducidos.
+4. Confirme nodo, carril, UUID del evento, ocupación, horas, estado y gráficos; después descargue o comparta el archivo solo si está autorizado. El UUID solo localiza el original en un sistema OSCAR que todavía conserve y autorice esa observación; importar el paquete no crea un evento nuevo en el servidor.
+
+> **Límite de seguridad.** El paquete está comprimido y comprueba integridad, pero no está cifrado ni firmado digitalmente. El resumen detecta daños; no identifica al remitente, pues quien cambie el contenido puede calcular otro. Trátelo como vista previa portátil, confirme independientemente su origen antes del uso operativo y transfiéralo solo mediante soportes y dispositivos autorizados.
+
+### 8.7 Supervisar el Estado de salud
+
+Abra **Estado de salud** mediante el icono de monitor cardíaco de la navegación o vaya directamente a `/health`. La página muestra una fila por cada carril visible en el ámbito actual; `/health?view=<clave>` la limita a la vista operativa asignada.
+
+- **Conexiones** indica el RPM y cada cámara configurada como **En línea**, **Sin conexión** o **Esperando**. Esperando significa que todavía no llegó un valor de conexión utilizable y no se considera saludable.
+- **Estado de fallas** muestra gamma alta, gamma baja, neutrón alto, manipulación y ocupación prolongada como **Fallo**, **Normal** o **Desconocido**. La telemetría ausente o fallida permanece en **Desconocido**; nunca se considera saludable ni se muestra como normal.
+- **Ocupación actual** usa el flujo canónico `occupancyStatus` del Sistema de carril para mostrar un tiempo estable con RPM Rapiscan, Aspect y RS350.
+- **Última actualización** usa la hora local del navegador para la actualización más reciente de conexión o falla.
+
+La ocupación prolongada usa un minuto de forma predeterminada. Introduzca de 1 a 1440 minutos en **Umbral de ocupación prolongada**. El valor se guarda en ese navegador y reevalúa de inmediato una ocupación en curso; no modifica observaciones ni informes del servidor.
+
+Los mensajes de manipulación de Rapiscan informan transiciones, no una instantánea que se repite periódicamente. La [guía de mantenimiento Rapiscan del DOE/PNNL](https://d5.pnnl.gov/sites/default/files/2023-02/RPM_Maint_Guide_Drawings.pdf) especifica que el RPM envía `TT` una sola vez al entrar en manipulación y `TC` una sola vez al restablecerse. Por política de OSCAR, cada conexión Rapiscan recién establecida publica una línea base de manipulación **Normal** antes de procesar los mensajes del dispositivo. Un `TT` posterior la cambia inmediatamente a **Falla** y un `TC` posterior restablece **Normal**. Un flujo de manipulación ausente o ilegible permanece **Desconocido**.
+
+Después de actualizar, confirme que cada Sistema de carril publica `occupancyStatus` y que cada RPM y cámara FFmpeg publica su conexión. Detenga y reinicie una cámara de prueba autorizada y compruebe Sin conexión y luego En línea. Confirme que la telemetría de fallas no disponible permanece en Desconocido; pruebe gamma, neutrón, manipulación y ocupación larga solo conforme al procedimiento aprobado del sitio.
+
+### 8.8 Usar una estación con vista operativa
+
+Abra `https://<host-oscar>/?view=<clave>` o `https://<host-oscar>/view/<clave>`. OSCAR conserva la clave al navegar y limita carriles, eventos, mapas, notificaciones, informes, transferencia de alarmas y Estado de salud a los carriles asignados. La URL raíz sin ámbito carga todos los carriles. Las claves no válidas y las vistas sin carriles fallan de forma cerrada y no cargan datos.
+
+Las vistas operativas separan la presentación de estaciones; no son un límite de autorización. Use autenticación OSCAR y controles de red cuando deba restringirse el acceso.
+
+### 8.9 Ver el vídeo en directo de un carril
+
+Abra **Detalles del carril** para un carril que tenga una cámara configurada. Al principio, el panel muestra **Preparando el vídeo en directo… esperando un fotograma clave.** mientras OSCAR crea una lista de reproducción HLS decodificable. Con una cámara compatible, la reproducción suele comenzar dentro del intervalo entre fotogramas clave de la cámara —de uno a dos segundos— más la latencia normal de la red y del navegador.
+
+La cámara debe proporcionar vídeo H.264 con un GOP cerrado y un fotograma IDR/clave cada uno o dos segundos. Un GOP abierto o más largo puede retrasar el inicio o impedir que el primer segmento se decodifique de forma independiente.
+
+La grabación de alarmas aplica el mismo requisito de fotograma clave. Un comando `OPEN` queda pendiente durante cinco segundos como máximo, hasta que la generación de grabación actual haya multiplexado correctamente su primer fotograma clave; los paquetes que comienzan en medio de un GOP se descartan. Un `CLOSE` de una ocupación muy breve espera detrás de ese `OPEN` y, cuando corresponde, la decisión acotada de alarma/guardado de OSCAR. El temporizador de vigilancia de comandos de cada cámara comienza solo después de que finalicen ambas esperas y se envíe realmente la operación a la cámara; ninguno de esos periodos de espera se considera una falla de la cámara. Si el fotograma clave no llega, o la grabadora se detiene o falla, OSCAR cancela esa generación y elimina su archivo parcial oculto en vez de adjuntar al evento un MP4 vacío o no decodificable. Si una alarma no tiene vídeo, compruebe que el intervalo entre fotogramas clave H.264 sea de cinco segundos o menos.
+
+Si se agota la recuperación automática limitada, el panel muestra **No se pudo reproducir el vídeo en directo.** Compruebe que la cámara y la red estén disponibles y seleccione **Reintentar**. Este botón detiene el intento anterior e inicia uno nuevo; no requiere restablecer ni reiniciar OSCAR, volver a importar carriles ni eliminar el estado de la aplicación o los volúmenes de Docker.
 
 ## 9. Estadísticas nacionales
 
@@ -583,16 +693,74 @@ Verifique carriles/eventos del remoto, su fila Nacional, un informe y un evento 
 
 ## 12. Retención de datos y almacenamiento
 
-Con un **ID de base de datos** explícito, el servicio inicia:
+El perfil estándar 3.11.0 utiliza la base de datos PostgreSQL por niveles. Los registros recientes y
+operativos permanecen en PostgreSQL; las observaciones configuradas de detectores de gran volumen
+con más de dos días se copian mediante trabajos de fondo limitados a Parquet catalogado y comprimido
+con ZSTD. La eliminación verificada de filas calientes está activada de forma predeterminada tras la
+paridad exacta entre datos calientes y fríos y un día de gracia de reversión, por lo que Parquet suele
+quedar como única copia de las filas base después de unas 72 horas. Antes de eliminar se vuelven a
+comprobar, con fallo seguro, la propiedad del archivo, la integridad de los objetos, la paridad y las
+retenciones activas de generación u observación.
 
-- cada hora, eliminación de estados de conexión de más de una hora y mediciones de alto volumen fuera de ventanas de ocupación amortiguadas; y
-- a medianoche UTC, exportación del `dailyFile` del día anterior por carril al bucket `dailyfiles` y eliminación de esas observaciones ya exportadas.
+Cada controlador RPM requiere el diario directo de archivos diarios. Captura el registro fuente
+antes del análisis cuando es posible y publica el día terminado como CSV heredado inmutable más un
+manifiesto SHA-256. La retención de la base de datos nunca debe sustituir este diario. El
+mantenimiento del estado de conexión y la limpieza, validada por manifiesto, de observaciones
+`dailyFile` heredadas continúan por separado.
+Los segmentos privados sellados del diario se conservan durante 30 días desde el momento posterior
+entre el cierre del día y la publicación real. Con el valor predeterminado
+`requireBackupBeforeSealedJournalDeletion=false`, la eliminación exige además validar el CSV
+inmutable, el manifiesto y el libro de estado, y que la reproducción exacta de los segmentos sellados
+actuales coincida con el CSV publicado. El sitio puede activar la opción para exigir como condición
+adicional la confirmación de una copia verificada coincidente.
 
-Si no existen ventanas de ocupación, se omite la purga fuera de ocupación para evitar pérdida accidental. Se conserva un margen reciente y se aplica un búfer de cinco segundos alrededor de cada ocupación.
+Cada nueva grabación de ocupación queda vinculada al carril, la cámara, la marca de tiempo de la
+ocupación y la generación inmutable exactos. Las órdenes de cámara se ejecutan en orden, el nombre
+fuente incluye un sufijo de generación y solo se adjunta a la alarma la ruta validada de un cierre
+correcto. Las grabaciones que no son alarmas, obsoletas, fallidas, agotadas o tardías sin publicar,
+y los archivos parciales ocultos, se eliminan en vez de reutilizarse en un evento posterior. Una
+ruta vacía, duplicada o asociada al evento o cámara equivocados, o un nuevo archivo huérfano, es un
+fallo de integridad que bloquea la versión; no repare la base adivinando un nombre de archivo.
 
-El Servicio de buckets maneja planos, hojas, vídeos, informes y exportaciones. Los registros de base de datos y los archivos necesitan copias de seguridad separadas. La retención por edad y la de presión son independientes: la primera reduce/elimina vídeos de ocupación; la segunda reacciona al uso del disco y actualmente elimina solo objetos elegibles de `videos`.
+Los vídeos de alarma elegibles se ponen en cola para su conversión asíncrona a exactamente cinco
+JPEG decodificables de forma independiente (primero, cuarto, centro, tres cuartos y último) en cuanto
+se descubren. Tras una publicación correcta, el vídeo fuente se conserva durante otras 24 horas de
+gracia de reversión, por lo que la eliminación normal no puede ocurrir antes de ese plazo relativo a
+la publicación; cualquier fallo de conversión y toda retención aplicable lo conservan. Los eventos
+antiguos o no convertidos mantienen
+la reproducción heredada. La limpieza por presión solo puede quitar conjuntos completos y aptos de
+medios retenidos. No elimina archivos diarios, informes, adjudicaciones, vídeo heredado sin catálogo
+ni el archivo Parquet.
 
-Antes de cambiar retención, base de datos, ruta o **Eliminar datos al eliminar el carril**, confirme las obligaciones de evidencias y copias.
+Las copias gestionadas por OSCAR están desactivadas de forma predeterminada. En ese modo, `backup`,
+`backup-verify`, `backup-prune` y `restore` se rechazan antes de cualquier cambio. PostgreSQL se
+ejecuta con `archive_mode=off`, sin orden de archivado externa ni montaje WAL del host. Un sitio que
+necesite un punto de recuperación gestionado puede usar la actualización validada para elegir el
+modo `single` con una ruta de copia de seguridad absoluta y segura, elegida por el operador, que no
+se solape con las raíces de la versión ni del archivo. Se recomienda una unidad física
+separada para aislar fallos, pero no es obligatoria. Cada copia manual es una instantánea
+autocontenida con el WAL necesario transmitido dentro de la copia base; la nueva instantánea debe
+verificarse antes de cambiar `CURRENT` y eliminar la instantánea gestionada anterior. El comando
+heredado `backup-prune` está retirado.
+
+Use los comandos `archive status`, `archive verify`, retenciones, exportación portátil y eliminación
+con vista previa y token del lanzador, y `backup` y `backup-verify` solo en modo `single`. Proteja por
+separado la clave de cifrado y conserve una copia externa si la política del sitio exige otro dominio
+de fallo. Nunca borre directamente archivos catalogados. Una actualización anterior a 3.11.0 conserva
+la base y configuración anteriores: no crea todo el perfil ni activa las sumas de comprobación de
+PostgreSQL. Inicialice un despliegue 3.11.0 nuevo o aplique una migración de producción validada aparte.
+Las guías de almacenamiento de `documentation/` son los procedimientos autorizados.
+
+Use el lanzador de la versión para `stop` y `restart` de todo el despliegue. Primero detiene la
+puerta de enlace, después permite que OSCAR vacíe sus colas y guarde mientras PostgreSQL sigue
+disponible, y detiene PostgreSQL al final. No ejecute
+`docker compose stop` ni `docker compose restart` sin limitar los servicios: las señales simultáneas
+pueden retirar la base de datos mientras
+OSCAR todavía completa escrituras en cola y el cierre de módulos.
+
+Antes de cambiar retención, base, rutas, modo de copia o **Eliminar datos al eliminar
+el carril**, confirme las obligaciones de evidencia, privacidad, retención legal, recuperación y
+destrucción de registros.
 
 ## 13. Lista de validación
 
@@ -606,13 +774,16 @@ Antes de cambiar retención, base de datos, ruta o **Eliminar datos al eliminar 
 
 - [ ] ID de nodo único; base de datos, Web ID, estadísticas y Auto Start revisados.
 - [ ] Retención de vídeo y presión revisadas antes de activar limpieza.
+- [ ] Se usó una base/configuración 3.11.0 nueva o una migración aprobada; el estado y la integridad del archivo son correctos.
+- [ ] Se ha registrado el modo de copia. El modo desactivado no crea copias gestionadas por OSCAR; si se activa `single`, su instantánea actual se verifica, la clave externa se custodia aparte y se ha superado una restauración aislada.
+- [ ] Un carril de muestra publica CSV/manifiesto desde el diario; eventos retenidos muestran cinco JPEG y los heredados siguen reproduciéndose.
 - [ ] Servicios de buckets y OSCAR están iniciados.
 
 ### Plano
 
 - [ ] Imagen orientada al norte, recortada y PNG/JPG/JPEG.
 - [ ] Límites válidos, ordenados y no cero.
-- [ ] Carga correcta, Aplicar cambios y Guardar realizados.
+- [ ] La carga fue correcta, se aplicaron los cambios, se confirmó Guardar con Sí y apareció el mensaje de configuración guardada.
 - [ ] Viewer usa la extensión del plano y los marcadores están alineados.
 
 ### Carriles y dispositivos
@@ -621,7 +792,7 @@ Antes de cambiar retención, base de datos, ruta o **Eliminar datos al eliminar 
 - [ ] Tipo/host/puerto/opciones del RPM correctos.
 - [ ] Tipo, host/puerto, credenciales, ruta/códec y búfer de cámaras correctos.
 - [ ] Hijos esperados en estado Iniciado; un fallo de hardware no bloquea la validación de otros carriles.
-- [ ] Guardado global tras importación o alta manual.
+- [ ] Guardado global confirmado con Sí tras importación o alta manual; apareció el mensaje de configuración guardada.
 
 ### Viewer
 
@@ -630,7 +801,10 @@ Antes de cambiar retención, base de datos, ruta o **Eliminar datos al eliminar 
 - [ ] Vídeo directo y grabado funcionan incluso tras recargar el navegador.
 - [ ] Detalles abre sin excepción de cliente.
 - [ ] Una adjudicación controlada puede revisarse y enviarse.
-- [ ] Se probaron filtros de Eventos, actualización Nacional e informes requeridos.
+- [ ] Se probaron filtros anidados Y/O de Eventos, selección de todo el resultado filtrado, una adjudicación masiva controlada, actualización Nacional e informes requeridos.
+- [ ] Un QR de alarma controlada se exporta, escanea/importa, supera la integridad y vuelve a dibujar curvas gamma/neutrón plausibles.
+- [ ] **Estado de salud** enumera todos los carriles previstos; RPM y cámaras muestran correctamente En línea/Sin conexión/Esperando, las fallas muestran correctamente Fallo/Normal/Desconocido y las pruebas aprobadas de gamma, neutrón, manipulación y ocupación prolongada de un minuto producen el estado previsto.
+- [ ] La URL sin ámbito muestra todos los carriles, y cada URL aprobada `?view=<clave>` o `/view/<clave>` muestra solo sus carriles asignados en Panel, Eventos, informes, Transferencia de alarmas y Estado de salud.
 - [ ] Se revisaron nodos federados tras recargar y no hay credenciales en almacenamiento del navegador.
 
 ## 14. Solución de problemas
@@ -645,16 +819,24 @@ Antes de cambiar retención, base de datos, ruta o **Eliminar datos al eliminar 
 | OSM 403/bloqueado | No use directamente servidores voluntarios incumpliendo su política. Configure proveedor/proxy OSM aprobado o use Esri mientras se corrige. |
 | CSV rechazado | Revise encabezado/orden, grupos de seis, índices secuenciales, número de celdas, numéricos, vacíos sin comillas y ausencia de comas internas. |
 | Falta un carril tras CSV | Busque UniqueID ya cargado, nombre mayor de 12, errores de hijos y espere la carga asíncrona. |
+| **Sensores** está vacío tras reiniciar después de cargar el CSV | La carga creó módulos en memoria, pero no se conservó la configuración completa. Vuelva a cargar si hace falta, espere a que aparezcan todos los carriles e hijos, pulse **Guardar** globalmente, reinicie OSCAR y compruebe otra vez **Sensores**. Si un nodo 3.11.0 sigue perdiendo los carriles, revise los logs de OSCAR y verifique que el propietario pueda escribir en `/var/lib/oscar/config.json`. |
+| Una vista operativa está vacía o rechaza su clave | Confirme que **Claves de vista operativa** del carril contiene exactamente la clave en minúsculas, aplique y guarde globalmente, reinicie el carril si procede y use `?view=<clave>` o `/view/<clave>`. Una asignación vacía nunca coincide con una vista delimitada. |
 | RPM no inicia | Pruebe alcance del host, puerto, cortafuegos, rango Aspect y disponibilidad; revise el error del hijo. |
 | Cámara no inicia | Pruebe RTSP/credenciales, quite `rtsp://` del host, no duplique puerto, confirme códec Axis o ruta Custom y pruebe desde el host OSCAR. |
 | Vídeo falla al recargar | Confirme cámara e HLS iniciados y revise logs. Recargar no debe exigir recrear el carril. |
 | Evento sin medios | Confirme carril disponible, flujos en el intervalo, retención y permisos. |
+| Falta un carril/dispositivo en Estado de salud, o su conexión aparece Esperando/Sin conexión | Confirme que el carril pertenece a la vista actual, que el carril y el dispositivo hijo están iniciados y que el RPM o la cámara FFmpeg publica el estado de conexión. Esperando se aplica a la telemetría de conexión e indica que aún no llegó un valor de conexión utilizable; pruebe conectividad y revise los logs del hijo. |
+| Una falla o el estado de manipulación aparece como Desconocido | Confirme que existe su flujo de datos y que la última observación se puede leer. Un controlador Rapiscan actual publica una línea base Normal cada vez que establece la conexión; confirme que el controlador secundario se reconectó y que la observación es legible. Un `TT` posterior del equipo todavía debe cambiar el estado a Falla. |
+| No aparece la ocupación prolongada | Confirme que el Sistema de carril publica `occupancyStatus`, verifique que la entrada de archivo diario/estado del RPM informa inicio y fin, configure entre 1 y 1440 minutos en este navegador y espere a que el tiempo estable supere el umbral. |
+| La adjudicación masiva falla parcialmente | Mantenga seleccionadas las filas fallidas, revise la conectividad del carril/nodo y el flujo de control de adjudicación, y pulse **Reintentar fallidos**. Las filas correctas no se vuelven a enviar. |
 | Falla la adjudicación | Seleccione código; compruebe nodo/carril, flujo de control y carga de evidencias. No repita hasta conocer el resultado original. |
 | WebID sin DRF/resultados | Compruebe Full Spectrum, DRF, primer plano/fondo y columnas de aviso/error. La decisión sigue siendo humana. |
 | Nacional vacío/cero | Actualice el rango y compruebe control estadístico, datos retenidos y autenticación del nodo. |
 | Informe no generado | Complete nodo/tipo/rango y carril/tipo de evento; compruebe fechas, control y bucket `reports`. Una solicitud idéntica puede reutilizar archivo. |
 | Nodo remoto falla tras recargar | La sesión necesita cookie válida; Basic requiere reintroducir secretos. Compruebe TLS, CORS, rutas, puerto y permisos. |
-| Cambios desaparecen al reiniciar | Aplique el formulario y después pulse Guardar global. |
+| No se genera el QR de alarma | Confirme carril disponible y observaciones gamma/neutrón retenidas en el intervalo. Si no cabe en un solo QR, use el archivo de alarma descargable. |
+| El QR no se escanea/importa | Aumente brillo o use el PNG a tamaño original; como alternativa importe `.oscar-alarm.json`. Un fallo de integridad exige una nueva exportación, no omitir la validación. |
+| Cambios desaparecen al reiniciar | Aplique el formulario, pulse Guardar global, confirme Sí y espere el mensaje de configuración guardada antes de reiniciar. |
 
 Para soporte, registre versión OSCAR, navegador, carril/ocupación, hora y zona, estados y logs saneados. Elimine contraseñas, tokens, claves privadas y evidencias sensibles.
 
@@ -668,4 +850,4 @@ Para soporte, registre versión OSCAR, navegador, carril/ocupación, hora y zona
 
 ---
 
-Base del documento: comportamiento del código OSCAR 3.8.3, revisado el 2026-09-21. Si una versión posterior cambia campos o flujos, actualice conjuntamente el manual canónico en inglés y las tres traducciones.
+Base del documento: comportamiento del código OSCAR 3.11.0, revisado el 2026-10-18. Si una versión posterior cambia campos o flujos, actualice conjuntamente el manual canónico en inglés y las tres traducciones.

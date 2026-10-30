@@ -106,6 +106,14 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public Text createAspectMessageFile(){
+        return createText()
+                .name("aspectMessage")
+                .label("Aspect Message")
+                .definition(getRadUri("AspectMessage"))
+                .build();
+    }
+
     public Time createBackgroundTime() {
         return createTime()
                 .name("backgroundTime")
@@ -114,7 +122,6 @@ public class RADHelper extends GeoPosHelper {
                 //range 20-120seconds
                 .build();
     }
-
     public Time createOccupancyStartTime(){
         return createTime()
                 .asPhenomenonTimeIsoUTC()
@@ -837,6 +844,13 @@ public class RADHelper extends GeoPosHelper {
                 .build();
     }
 
+    public Text createRapiscanMessage(){
+        return createText()
+                .name("rapiscanMessage")
+                .label("Rapiscan Message")
+                .definition(getRadInstrumentUri("RapiscanMessage"))
+                .build();
+    }
     public Text createRIComponentVersion() {
         return createText()
                 .name("radInstrumentComponentVersion")

@@ -233,6 +233,21 @@ public abstract class AbstractBucketStoreTest {
         System.out.println(resourceURI);
     }
 
+    @Test
+    public void testGetWritableResourceURIDoesNotCreatePlaceholder() throws DataStoreException {
+        addTestBucket();
+        String key = "streams/camera-01/live.m3u8";
+
+        String resourceURI = bucketStore.getWritableResourceURI(TEST_BUCKET, key);
+
+        assertNotNull(resourceURI);
+        assertFalse(resourceURI.isBlank());
+        assertFalse("Preparing an output URI must not expose an empty object",
+                bucketStore.objectExists(TEST_BUCKET, key));
+        assertTrue("Writable output parent was not prepared",
+                new File(resourceURI).getParentFile().isDirectory());
+    }
+
     @After
     public void cleanup() throws DataStoreException {
         List<String> buckets = bucketStore.listBuckets();

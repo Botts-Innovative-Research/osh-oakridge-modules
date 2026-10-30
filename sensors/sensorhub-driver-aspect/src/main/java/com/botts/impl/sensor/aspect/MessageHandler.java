@@ -1,15 +1,20 @@
 package com.botts.impl.sensor.aspect;
 
+import com.botts.impl.sensor.aspect.output.DailyFileOutput;
 import com.botts.impl.sensor.aspect.registers.DeviceDescriptionRegisters;
 import com.botts.impl.sensor.aspect.registers.MonitorRegisters;
-import org.sensorhub.impl.utils.rad.dailyfile.DailyFileAppender;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileJournalConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.io.IOException;
+import java.time.Instant;
 import java.util.LinkedList;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static java.lang.Thread.sleep;
 
@@ -21,8 +26,9 @@ import static java.lang.Thread.sleep;
  */
 public class MessageHandler {
     private final AspectSensor parentSensor;
-    private final DailyFileAppender dailyFile;
     private static final Logger log = LoggerFactory.getLogger(MessageHandler.class);
+    private static final long STOP_TIMEOUT_MILLIS = 2_000L;
+    private final AtomicBoolean stopRequested = new AtomicBoolean();
     Thread thread;
 
     int occupancyCount = -1;
@@ -47,20 +53,20 @@ public class MessageHandler {
         return timeSinceLastMessage;
     }
 
-    /**
-     * @param parentSensor  owning sensor module
-     * @param deviceAddress Modbus unit address
-     * @param dailyFile     appender that records every daily file line before it is published (may be null in tests)
-     */
-    public MessageHandler(AspectSensor parentSensor, int deviceAddress, DailyFileAppender dailyFile) {
+    /** Testable initialization path that does not start the device reader thread. */
+    MessageHandler(AspectSensor parentSensor) {
         this.parentSensor = parentSensor;
-        this.deviceAddress = deviceAddress;
-        this.dailyFile = dailyFile;
-
         occupancyGammaBatch = new LinkedList<>();
         occupancyNeutronBatch = new LinkedList<>();
+    }
+
+    public MessageHandler(AspectSensor parentSensor, int deviceAddress) {
+        this(parentSensor);
+        this.deviceAddress = deviceAddress;
 
 
+
+//        thread = new Thread(this, "Message Handler");
 
         thread = new Thread(()->{
 
@@ -72,63 +78,68 @@ public class MessageHandler {
                 timer = 0;
 
                 MonitorRegisters monitorRegisters = new MonitorRegisters(parentSensor.commProviderModule.getConnection(), 100, 21);
-                while (!Thread.currentThread().isInterrupted()) {
+                while (!stopRequested.get() && !Thread.currentThread().isInterrupted()) {
                     timer += timeSinceLastMessage;
                     timeSinceLastMessage = System.currentTimeMillis() - timeOfLastMessage;
                     timeOfLastMessage = System.currentTimeMillis();
 
                     monitorRegisters.readRegisters(deviceAddress);
 
-                    double timestamp = System.currentTimeMillis() / 1000d;
+                    SampleClock sampleClock = sampleClock(Instant.now());
+                    Instant sampleTime = sampleClock.observationTime();
+                    double timestamp = sampleClock.epochSeconds();
+                    int previousOccupancyCount = occupancyCount;
+                    boolean occupancyRecordReady = checkOccupancyRecord(
+                            monitorRegisters, timestamp);
+                    boolean occupancyStartedThisSample = previousOccupancyCount >= 0
+                            && occupancyCount != previousOccupancyCount;
 
-                    try {
-                        if (checkScan(monitorRegisters)) {
-                            if (timer >= SCAN_INTERVAL_MS) {
-                                timer = 0;
+                    if (checkScan(monitorRegisters)) {
+                        if (shouldPublishDailyFile(true, timer, occupancyStartedThisSample)) {
+                            timer = 0;
 
-                                publishDailyFile(monitorRegisters);
+                            publishDailyFile(monitorRegisters, sampleTime);
 
-                                parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
-                                parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
-                                parentSensor.speedOutput.setData(monitorRegisters, timestamp);
-                            }
-
-                        } else {
-                            if (timer >= BACKGROUND_INTERVAL_MS) {
-                                timer = 0;
-
-                                publishDailyFile(monitorRegisters);
-
-                                parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
-                                parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
-                            }
+                            parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
+                            parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
+                            parentSensor.speedOutput.setData(monitorRegisters, timestamp);
                         }
 
-                        if (checkOccupancyRecord(monitorRegisters, timestamp)) {
-                            Occupancy occupancy = new Occupancy.Builder()
-                                    .occupancyCount(monitorRegisters.getObjectCounter())
-                                    .startTime(startTime)
-                                    .endTime(endTime)
-                                    .samplingTime(timestamp)
-                                    .neutronBackground(monitorRegisters.getNeutronChannelBackground())
-                                    .gammaAlarm(gammaAlarm)
-                                    .neutronAlarm(neutronAlarm)
-                                    .maxGammaCount(maxGamma)
-                                    .maxNeutronCount(maxNeutron)
-                                    .build();
+                    } else {
+                        if (shouldPublishDailyFile(false, timer, occupancyStartedThisSample)) {
+                            timer = 0;
 
-                            parentSensor.occupancyOutput.setData(occupancy);
+                            publishDailyFile(monitorRegisters, sampleTime);
+
+                            parentSensor.gammaOutput.setData(monitorRegisters, timestamp);
+                            parentSensor.neutronOutput.setData(monitorRegisters, timestamp);
                         }
-                    } catch (Exception e) {
-                        // A failure while publishing one poll must not kill the polling loop
-                        log.warn("Error processing Aspect register poll: {}", e.toString());
+                    }
+
+                    if (occupancyRecordReady) {
+                        Occupancy occupancy = new Occupancy.Builder()
+                                .occupancyCount(monitorRegisters.getObjectCounter())
+                                .startTime(startTime)
+                                .endTime(endTime)
+                                .samplingTime(timestamp)
+                                .neutronBackground(monitorRegisters.getNeutronChannelBackground())
+                                .gammaAlarm(gammaAlarm)
+                                .neutronAlarm(neutronAlarm)
+                                .maxGammaCount(maxGamma)
+                                .maxNeutronCount(maxNeutron)
+                                .build();
+
+                        parentSensor.occupancyOutput.setData(occupancy);
                     }
 
                 }
             } catch (Exception e) {
-                StringWriter stringWriter = new StringWriter();
-                e.printStackTrace(new PrintWriter(stringWriter));
-                log.error("Error in worker thread: {} due to exception: {}", Thread.currentThread().getName(), stringWriter);
+                if (!stopRequested.get() && !Thread.currentThread().isInterrupted()) {
+                    StringWriter stringWriter = new StringWriter();
+                    e.printStackTrace(new PrintWriter(stringWriter));
+                    log.error("Error in worker thread: {} due to exception: {}",
+                            Thread.currentThread().getName(), stringWriter);
+                }
             }
 
         }, "Aspect-Reader-" + parentSensor.getUniqueIdentifier());
@@ -136,44 +147,82 @@ public class MessageHandler {
         thread.start();
     }
 
-    /**
-     * Builds the daily file line once, appends it to the daily file first, then publishes it.
-     */
-    private void publishDailyFile(MonitorRegisters monitorRegisters) {
-        String line = buildDailyFileLine(monitorRegisters);
-        if (dailyFile != null)
-            dailyFile.append(line);
-        parentSensor.dailyFileOutput.onNewMessage(line);
+    /** Builds, journals, and only then publishes one generated Aspect daily-file line. */
+    private void publishDailyFile(MonitorRegisters monitorRegisters, Instant timestamp) throws IOException {
+        publishDailyFile(monitorRegisters, timestamp, parentSensor.getDailyFileJournal(),
+                parentSensor.dailyFileOutput);
     }
 
     /**
-     * Builds the daily file line for the current monitor registers: 14 comma separated register values,
-     * unquoted, no timestamp. This exact text is written to the daily file and published on this output.
+     * Synchronous journal/publication boundary kept package-visible so ordering and
+     * fail-closed policy can be verified without starting a Modbus reader thread.
      */
-    static String buildDailyFileLine(MonitorRegisters monitorRegisters){
-        return String.join(",",
-                String.valueOf(monitorRegisters.getTimeElapsed()),
-                String.valueOf(monitorRegisters.getInputSignals()),
-                String.valueOf(monitorRegisters.getGammaChannelStatus()),
-                String.valueOf(monitorRegisters.getGammaChannelCount()),
-                String.valueOf(monitorRegisters.getGammaChannelBackground()),
-                String.valueOf(monitorRegisters.getGammaChannelVariance()),
-                String.valueOf(monitorRegisters.getNeutronChannelStatus()),
-                String.valueOf(monitorRegisters.getNeutronChannelCount()),
-                String.valueOf(monitorRegisters.getNeutronChannelBackground()),
-                String.valueOf(monitorRegisters.getNeutronChannelVariance()),
-                String.valueOf(monitorRegisters.getObjectCounter()),
-                String.valueOf(monitorRegisters.getObjectMark()),
-                String.valueOf(monitorRegisters.getObjectSpeed()),
-                String.valueOf(monitorRegisters.getOutputSignals())
-        );
-    }
-
-    public void stop() {
-        if (thread != null) {
-            thread.interrupt();
-            thread = null;
+    static void publishDailyFile(MonitorRegisters monitorRegisters, Instant timestamp,
+                                 DailyFileJournalConnection journal,
+                                 DailyFileOutput dailyFileOutput) throws IOException {
+        String line = DailyFileOutput.buildDailyFileLine(monitorRegisters);
+        if (journal != null) {
+            try {
+                journal.append(line, timestamp);
+            } catch (IOException e) {
+                log.error("Unable to append generated Aspect line to daily-file journal", e);
+                if (journal.isRequired())
+                    throw e;
+            }
         }
+        if (journal == null || journal.shouldPublishLegacyObservation())
+            dailyFileOutput.onNewMessage(line, timestamp);
+    }
+
+    /** One captured clock value drives both the daily observation and occupancy start time. */
+    static SampleClock sampleClock(Instant observationTime) {
+        // Aspect and the other supported RPMs expose millisecond timestamps. Quantizing here makes
+        // the double occupancy value and the Instant phenomenon time an exact correlation pair.
+        Instant millisecondTime = Instant.ofEpochMilli(observationTime.toEpochMilli());
+        return new SampleClock(millisecondTime, millisecondTime.toEpochMilli() / 1_000.0);
+    }
+
+    record SampleClock(Instant observationTime, double epochSeconds) {}
+
+    /** Occupancy transitions bypass cadence throttling so correlation never uses a later sample. */
+    static boolean shouldPublishDailyFile(boolean scan, long elapsedMillis,
+                                          boolean occupancyStartedThisSample) {
+        return occupancyStartedThisSample
+                || elapsedMillis >= (scan ? SCAN_INTERVAL_MS : BACKGROUND_INTERVAL_MS);
+    }
+
+    public void requestStop() {
+        stopRequested.set(true);
+    }
+
+    public void awaitStop() throws IOException {
+        Thread current = thread;
+        if (current == null)
+            return;
+        long deadlineNanos = System.nanoTime()
+                + TimeUnit.MILLISECONDS.toNanos(STOP_TIMEOUT_MILLIS);
+        try {
+            // Give a source read or durable append a chance to finish after the
+            // provider is closed. Interrupt only as the bounded fallback.
+            current.join(STOP_TIMEOUT_MILLIS / 2);
+            if (current.isAlive())
+                current.interrupt();
+            long remaining = deadlineNanos - System.nanoTime();
+            if (current.isAlive() && remaining > 0)
+                current.join(Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remaining)));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while stopping Aspect reader", e);
+        }
+        if (current.isAlive())
+            throw new IOException("Aspect reader did not stop within "
+                    + STOP_TIMEOUT_MILLIS + " ms");
+        thread = null;
+    }
+
+    public void stop() throws IOException {
+        requestStop();
+        awaitStop();
     }
 
     private boolean checkScan(MonitorRegisters monitorRegisters) {
@@ -187,7 +236,7 @@ public class MessageHandler {
      * @param timestamp        the timestamp
      * @return true if the record should be written, false otherwise
      */
-    private boolean checkOccupancyRecord(MonitorRegisters monitorRegisters, double timestamp) {
+    boolean checkOccupancyRecord(MonitorRegisters monitorRegisters, double timestamp) {
         // Initialize the occupancy count
         if (occupancyCount == -1) {
             occupancyCount = monitorRegisters.getObjectCounter();

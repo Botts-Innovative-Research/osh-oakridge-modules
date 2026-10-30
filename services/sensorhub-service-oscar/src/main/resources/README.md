@@ -2,7 +2,7 @@
 
 ## Administrator and operator manual
 
-The detailed OSCAR 3.8.3 manual is maintained beside `OSCARServiceConfig`, where the administration UI can select it using the active language:
+The detailed OSCAR 3.11.0 manual is maintained beside `OSCARServiceConfig`, where the administration UI can select it using the active language:
 
 - [English](com/botts/impl/service/oscar/i18n/README.md)
 - [Español](com/botts/impl/service/oscar/i18n/README_es.md)
@@ -26,6 +26,25 @@ The purpose of this module is to handle the following aspects of OSCAR (3.0+)
   - Trigger and target filesystem usage
   - Check period, minimum object age, and monitored storage path
 
+OSCAR 3.11.0 retains exactly five verified JPEG frames per eligible aging camera clip and keeps
+legacy video playback for events without the new retained-media representation. High-volume
+detector observations are owned by the tiered database lifecycle, while the required direct
+daily-file journal publishes immutable legacy CSVs independently of database retention. Use the
+release's `documentation/STORAGE_OPERATIONS.md` for archive verification, holds, portable export,
+coordinated backup/restore, and tokenized deletion; do not delete cataloged files or rows manually.
+
+Retained-media housekeeping is bounded as well: processed-observation IDs share at most twelve
+checksummed five-minute index files per UTC event hour, and a complete hour is reclaimed only after
+it is strictly behind the durable late-arrival overlap. This moves the in-memory single-file
+threshold above 1.2 million evenly distributed occupancies/hour while retaining fixed memory and
+inode bounds. Pressure-deletion state uses an exact, file-locked compact
+index rather than one permanent JSON tombstone per camera set. Back up the complete
+`videos/retained-media/v1` prefix; its indexes and checkpoints prevent intentionally deleted media
+from being reconstructed during reconciliation. The 3.11.0 compact layout requires fresh state for
+pre-release/test deployments; do not reuse prototype `.deleted.json` or per-observation marker
+trees. Downgrade only by restoring the database and this complete prefix from the same coordinated
+pre-3.11.0 backup.
+
 ### Systems/DataStreams/ControlStreams
 - OSCAR client config (urn:ornl:oscar:client:config)
 - Adjudication records (urn:ornl:oscar:adjudication:xxx) under each lane
@@ -42,7 +61,8 @@ The purpose of this module is to handle the following aspects of OSCAR (3.0+)
         - "siteBoundingBox" ([lat, lon], [lat, lon])
 
 ### Background Operations/Services
-- Purging/trimming of occupancy video past the configured age
-- Video cleanup when filesystem usage exceeds the configured threshold
-- Hourly database cleanup outside buffered occupancy windows
-- Midnight UTC export of daily-file data to CSV
+- Exact-five JPEG publication for eligible aging occupancy video, followed by source rollback grace
+- Manifest- and hold-aware video cleanup when filesystem usage exceeds the configured threshold
+- Connection-status maintenance and manifest-gated legacy daily-file observation cleanup
+- Direct journal publication of immutable per-lane daily CSVs and SHA-256 manifests
+- Delegation of eligible detector-observation retention to the tiered PostgreSQL/Parquet database

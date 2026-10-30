@@ -6,6 +6,7 @@ version = '2.1.0'
 //    implementation('org.bytedeco:javacv-platform:1.5.2')
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation project(':sensorhub-utils-rad')
     implementation project(':sensorhub-driver-videocam')
     implementation project(':sensorhub-service-bucket')
     //implementation project(':sensorhub-service-oscar')

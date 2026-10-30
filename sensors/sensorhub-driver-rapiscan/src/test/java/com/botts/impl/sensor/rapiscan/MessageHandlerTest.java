@@ -1,102 +1,234 @@
 package com.botts.impl.sensor.rapiscan;
 
-import com.botts.api.service.bucket.IBucketStore;
-import org.sensorhub.impl.utils.rad.output.DailyFileOutput;
+import com.botts.impl.sensor.rapiscan.output.DailyFileOutput;
+import com.botts.impl.sensor.rapiscan.output.GammaOutput;
 import com.botts.impl.sensor.rapiscan.output.TamperOutput;
-import com.botts.impl.service.bucket.filesystem.FileSystemBucketStore;
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
-import org.sensorhub.impl.utils.rad.dailyfile.DailyFileAppender;
-import org.slf4j.LoggerFactory;
+import org.sensorhub.impl.utils.rad.model.Occupancy;
+import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
 
 import java.io.ByteArrayInputStream;
-import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Clock;
-import java.time.LocalDate;
-import java.util.Comparator;
-import java.util.concurrent.CompletableFuture;
-import java.util.stream.Stream;
+import java.time.Instant;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Mockito.*;
+import static org.junit.Assert.assertTrue;
 
-/**
- * Verifies that the Rapiscan message reader records every raw line in the daily file before parsing,
- * and that a malformed line does not stop processing of the lines that follow.
- */
 public class MessageHandlerTest {
 
-    private Path root;
-    private IBucketStore store;
-    private RapiscanSensor sensor;
-    private TamperOutput tamperOutput;
-    private DailyFileOutput<RapiscanSensor> dailyFileOutput;
+    @Test
+    public void startsOneReaderAndStopsBlockedRead() throws Exception {
+        var input = new BlockingInputStream();
+        var handler = new MessageHandler(input, configuredSensor());
 
-    @Before
-    public void setUp() throws Exception {
-        root = Files.createTempDirectory("rapiscan-handler-test-");
-        store = new FileSystemBucketStore(root);
+        assertTrue("reader did not start", input.readStarted.await(2, TimeUnit.SECONDS));
 
-        sensor = mock(RapiscanSensor.class);
-        when(sensor.getLogger()).thenReturn(LoggerFactory.getLogger(MessageHandlerTest.class));
-        when(sensor.getUniqueIdentifier()).thenReturn("urn:osh:sensor:rapiscan:test001");
-        when(sensor.getConfiguration()).thenReturn(new RapiscanConfig());
+        handler.start();
+        handler.stop();
 
-        tamperOutput = mock(TamperOutput.class);
-        dailyFileOutput = mock(DailyFileOutput.class);
-        when(sensor.getTamperOutput()).thenReturn(tamperOutput);
-        when(sensor.getDailyFileOutput()).thenReturn(dailyFileOutput);
+        assertTrue(input.closed.getCount() == 0);
+        assertTrue("reader did not exit", input.readStopped.await(2, TimeUnit.SECONDS));
+        assertEquals(1, input.readCalls.get());
+        assertEquals(1, input.maxConcurrentReaders.get());
+        assertEquals(0, input.activeReaders.get());
     }
 
-    @After
-    public void tearDown() throws Exception {
-        if (root != null && Files.exists(root)) {
-            try (Stream<Path> paths = Files.walk(root)) {
-                paths.sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
+    @Test
+    public void rpmTamperMessageOverridesConnectionClearBaseline() throws Exception {
+        var sensor = new RecordingSensor();
+        sensor.setConfiguration(new RapiscanConfig());
+        sensor.tamperOutput.onConnected();
+
+        // The deliberately incomplete SP message fails in the recording
+        // sensor, but must not prevent the following tamper transition.
+        var input = new ByteArrayInputStream("SP\nTT\n".getBytes(StandardCharsets.UTF_8));
+        var handler = new MessageHandler(input, sensor);
+
+        assertTrue("TT message was not processed", sensor.tamperOutput.tamperReceived.await(2, TimeUnit.SECONDS));
+        handler.stop();
+
+        assertEquals(List.of(false, true), sensor.tamperOutput.states);
+    }
+
+    @Test
+    public void endOfStreamStopsWithoutRestartingReader() throws Exception {
+        var input = new CountingEofInputStream();
+        var handler = new MessageHandler(input, configuredSensor());
+
+        assertTrue("EOF was not read", input.eofRead.await(2, TimeUnit.SECONDS));
+        Thread.sleep(50);
+        handler.stop();
+
+        assertEquals(1, input.readCalls.get());
+    }
+
+    @Test
+    public void occupancySummaryAllowsConnectionBeforeFirstNeutronSample() {
+        assertEquals(0, MessageHandler.getNeutronMax(List.of()));
+        assertEquals(17, MessageHandler.getNeutronMax(List.of(4, 17, 9)));
+    }
+
+    @Test
+    public void receivedDailyTimestampIsExactOccupancyStartCorrelationKey() throws Exception {
+        var sensor = new RecordingSensor();
+        sensor.setConfiguration(new RapiscanConfig());
+        var handler = new MessageHandler(new ByteArrayInputStream(new byte[0]), sensor);
+        Instant start = Instant.parse("2026-10-18T10:00:00.123Z");
+        Instant end = start.plusSeconds(1);
+
+        handler.onNewMainChar("GS", new String[]{"GS", "1", "2", "3", "4"}, start);
+        handler.onNewMainChar("GX", new String[]{"GX", "7", "9000"}, end);
+        handler.stop();
+
+        Occupancy occupancy = sensor.occupancyOutput.lastOccupancy;
+        assertTrue(occupancy != null);
+        assertEquals(start.toEpochMilli(), Math.round(occupancy.getStartTime() * 1_000.0));
+        assertEquals(end.toEpochMilli(), Math.round(occupancy.getEndTime() * 1_000.0));
+    }
+
+    private RapiscanSensor configuredSensor() {
+        var sensor = new RapiscanSensor();
+        sensor.setConfiguration(new RapiscanConfig());
+        return sensor;
+    }
+
+    private static class RecordingSensor extends RapiscanSensor {
+        private final RecordingTamperOutput tamperOutput = new RecordingTamperOutput(this);
+        private final RecordingDailyFileOutput dailyFileOutput = new RecordingDailyFileOutput(this);
+        private final RecordingGammaOutput gammaOutput = new RecordingGammaOutput(this);
+        private final RecordingOccupancyOutput occupancyOutput = new RecordingOccupancyOutput(this);
+
+        @Override
+        public TamperOutput getTamperOutput() {
+            return tamperOutput;
+        }
+
+        @Override
+        public DailyFileOutput getDailyFileOutput() {
+            return dailyFileOutput;
+        }
+
+        @Override
+        public GammaOutput getGammaOutput() {
+            return gammaOutput;
+        }
+
+        @Override
+        public OccupancyOutput<RapiscanSensor> getOccupancyOutput() {
+            return occupancyOutput;
+        }
+    }
+
+    private static class RecordingGammaOutput extends GammaOutput {
+        private RecordingGammaOutput(RapiscanSensor parentSensor) {
+            super(parentSensor);
+        }
+
+        @Override
+        public void onNewMessage(String[] csvString, long timeStamp, String alarmState,
+                                 int[] foregroundCountsPerSecond) {
+            // Timestamp correlation is under test, not gamma publication.
+        }
+    }
+
+    private static class RecordingOccupancyOutput extends OccupancyOutput<RapiscanSensor> {
+        private volatile Occupancy lastOccupancy;
+
+        private RecordingOccupancyOutput(RapiscanSensor parentSensor) {
+            super(parentSensor);
+        }
+
+        @Override
+        public void setData(Occupancy occupancy) {
+            lastOccupancy = occupancy;
+        }
+    }
+
+    private static class RecordingTamperOutput extends TamperOutput {
+        private final List<java.lang.Boolean> states = new CopyOnWriteArrayList<>();
+        private final CountDownLatch tamperReceived = new CountDownLatch(1);
+
+        private RecordingTamperOutput(RapiscanSensor parentSensor) {
+            super(parentSensor);
+        }
+
+        @Override
+        public void onNewMessage(boolean tamperState) {
+            states.add(tamperState);
+            if (tamperState) {
+                tamperReceived.countDown();
             }
         }
     }
 
-    @Test
-    public void badLineIsRecordedAndDoesNotStopTheReader() throws Exception {
-        String stream = "GX,000001\r\n"                                    // too few fields: parse fails
-                + "\r\n"                                                  // stray blank line
-                + "\"unterminated,quote\r\n"                              // opencsv error
-                + "TC,111111,111111,111111,111111\r\n";                   // valid, must still be dispatched
-        InputStream in = new ByteArrayInputStream(stream.getBytes(StandardCharsets.UTF_8));
-
-        DailyFileAppender appender = new DailyFileAppender(
-                CompletableFuture.completedFuture(store), "test001", Clock.systemDefaultZone(),
-                LoggerFactory.getLogger(MessageHandlerTest.class));
-
-        MessageHandler handler = new MessageHandler(in, sensor, appender);
-
-        // The valid line after the bad ones is still dispatched
-        verify(tamperOutput, timeout(5000)).onNewMessage(false);
-        handler.stop();
-        appender.close();
-
-        // Every non-blank raw line (including the unparseable ones) reached the daily file with
-        // local and UTC CAS timestamps.
-        String key = "test001_" + LocalDate.now() + ".csv";
-        try (InputStream file = store.getObject(DailyFileAppender.BUCKET, key)) {
-            String[] lines = new String(file.readAllBytes(), StandardCharsets.UTF_8).split("\\r\\n");
-            assertEquals(3, lines.length);
-            assertEquals("GX,000001", lines[0].substring(0, "GX,000001".length()));
-            assertEquals("\"unterminated,quote", lines[1].substring(0, "\"unterminated,quote".length()));
-            assertEquals("TC,111111,111111,111111,111111",
-                    lines[2].substring(0, "TC,111111,111111,111111,111111".length()));
-            for (String line : lines)
-                org.junit.Assert.assertTrue(line.matches(".*\\d{2}-\\d{2}-\\d{2}\\.\\d{3},"
-                        + "\\d{2}-\\d{2}-\\d{2}\\.\\d{3}"));
+    private static class RecordingDailyFileOutput extends DailyFileOutput {
+        private RecordingDailyFileOutput(RapiscanSensor parentSensor) {
+            super(parentSensor);
         }
 
-        // The live dailyFile output saw the same three lines
-        verify(dailyFileOutput, times(3)).onNewMessage(anyString());
+        @Override
+        public void onNewMessage(String csvString) {
+            // The routing behavior is under test, not persistence.
+        }
+
+        @Override
+        public void onNewMessage(String csvString, java.time.Instant timestamp) {
+            // The production reader deliberately supplies the journal timestamp to the legacy
+            // observation too, so midnight partitioning cannot split one received record.
+        }
+    }
+
+    private static class BlockingInputStream extends InputStream {
+        private final CountDownLatch readStarted = new CountDownLatch(1);
+        private final CountDownLatch readStopped = new CountDownLatch(1);
+        private final CountDownLatch closed = new CountDownLatch(1);
+        private final AtomicInteger readCalls = new AtomicInteger();
+        private final AtomicInteger activeReaders = new AtomicInteger();
+        private final AtomicInteger maxConcurrentReaders = new AtomicInteger();
+
+        @Override
+        public int read() throws IOException {
+            readCalls.incrementAndGet();
+            int active = activeReaders.incrementAndGet();
+            maxConcurrentReaders.accumulateAndGet(active, Math::max);
+            readStarted.countDown();
+
+            try {
+                if (!closed.await(5, TimeUnit.SECONDS)) {
+                    throw new IOException("test input was not closed");
+                }
+                return -1;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("reader interrupted", e);
+            } finally {
+                activeReaders.decrementAndGet();
+                readStopped.countDown();
+            }
+        }
+
+        @Override
+        public void close() {
+            closed.countDown();
+        }
+    }
+
+    private static class CountingEofInputStream extends InputStream {
+        private final AtomicInteger readCalls = new AtomicInteger();
+        private final CountDownLatch eofRead = new CountDownLatch(1);
+
+        @Override
+        public int read() {
+            readCalls.incrementAndGet();
+            eofRead.countDown();
+            return -1;
+        }
     }
 }

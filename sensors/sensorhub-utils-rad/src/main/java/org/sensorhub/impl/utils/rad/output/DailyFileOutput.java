@@ -22,6 +22,10 @@ public class DailyFileOutput<SensorType extends IDataProducer> extends AbstractD
 
     public DailyFileOutput(SensorType parentSensor) {
         super(NAME, parentSensor);
+        init();
+    }
+
+    public void init() {
         RADHelper radHelper = new RADHelper();
 
         var samplingTime = radHelper.createPrecisionTimeStamp();
@@ -40,6 +44,10 @@ public class DailyFileOutput<SensorType extends IDataProducer> extends AbstractD
     }
 
     public void onNewMessage(String csvString) {
+        onNewMessage(csvString, Instant.now());
+    }
+
+    public void onNewMessage(String csvString, Instant timeStamp) {
         DataBlock dataBlock;
 
         if (latestRecord == null) {
@@ -47,8 +55,6 @@ public class DailyFileOutput<SensorType extends IDataProducer> extends AbstractD
         } else {
             dataBlock = latestRecord.renew();
         }
-        Instant timeStamp = Instant.now();
-
         dataBlock.setTimeStamp(0, timeStamp);
         dataBlock.setStringValue(1, csvString);
 

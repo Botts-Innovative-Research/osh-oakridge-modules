@@ -31,6 +31,7 @@ import com.botts.impl.system.lane.helpers.webid.WebIdHelper;
 import org.sensorhub.impl.utils.rad.output.N42Output;
 import com.botts.impl.system.lane.config.*;
 import com.botts.impl.system.lane.helpers.occupancy.OccupancyWrapper;
+import com.botts.impl.system.lane.helpers.occupancy.OccupancyStatusOutput;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.data.IDataProducerModule;
 import org.sensorhub.api.database.IObsSystemDatabase;
@@ -70,7 +71,7 @@ import java.util.concurrent.*;
  * @author Kalyn Stricklin
  * @since March 2025
  */
-public class LaneSystem extends SensorSystem {
+public class LaneSystem extends SensorSystem implements IAutoStartDispatchStatus {
 
     private static final String URN_PREFIX = "urn:";
     private static final String LANE_SYSTEM_PREFIX = URN_PREFIX + "osh:system:lane:";
@@ -89,13 +90,37 @@ public class LaneSystem extends SensorSystem {
     private final Object subscriptionLock = new Object();
     private long subscriptionGeneration = 0;
     private ExecutorService threadPool = null;
+    private volatile boolean autoStartDispatchComplete;
     Map<String, FFMPEGConfig> ffmpegConfigs = null;
     OccupancyWrapper occupancyWrapper;
+    OccupancyStatusOutput occupancyStatusOutput;
     WebIdHelper webIdHelper;
 
     AdjudicationControl adjudicationControl;
     WebIdOutput webIdOutput;
     N42Output<?> n42Output;
+
+    @Override
+    protected void setState(ModuleEvent.ModuleState newState) {
+        // SensorSystem publishes STARTED immediately before it synchronously
+        // dispatches start to each auto-start child. Keep the separate boundary
+        // false across that entire pass so application readiness cannot race it.
+        if (newState == ModuleEvent.ModuleState.STARTED) {
+            autoStartDispatchComplete = false;
+            try {
+                super.setState(newState);
+            } finally {
+                autoStartDispatchComplete = true;
+            }
+        } else {
+            super.setState(newState);
+        }
+    }
+
+    @Override
+    public boolean isAutoStartDispatchComplete() {
+        return autoStartDispatchComplete;
+    }
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -168,6 +193,9 @@ public class LaneSystem extends SensorSystem {
 
         n42Output = new N42Output<>(this);
         addOutput(n42Output, false);
+
+        occupancyStatusOutput = new OccupancyStatusOutput(this);
+        addOutput(occupancyStatusOutput, false);
 
         adjudicationControl = new AdjudicationControl(this);
         addControlInput(adjudicationControl);
@@ -269,6 +297,10 @@ public class LaneSystem extends SensorSystem {
         return this.n42Output;
     }
 
+    public OccupancyStatusOutput getOccupancyStatusOutput() {
+        return occupancyStatusOutput;
+    }
+
     private FFMPEGSensorBase<?> createFFmpegModule(FFMPEGConfig ffmpegConfig) throws SensorHubException {
         // Get ffmpeg submodule with the same unique serial num
         // If there is a module registered for this serial number, then the driver was already registered
@@ -319,7 +351,9 @@ public class LaneSystem extends SensorSystem {
             occupancyProducer = existingRPMModule;
         }
         if (occupancyProducer != null) {
-            occupancyWrapper = new OccupancyWrapper(getParentHub(), occupancyProducer);
+            occupancyWrapper = new OccupancyWrapper(getParentHub(), occupancyProducer, occupancyStatusOutput);
+            if (occupancyProducer.getCurrentState() == ModuleEvent.ModuleState.STARTED)
+                occupancyWrapper.start();
             //occupancyWrapper.videoNamePrefix = BASE_VIDEO_DIRECTORY + "lane" + getConfiguration().groupID + "/";
         }
 
@@ -352,7 +386,7 @@ public class LaneSystem extends SensorSystem {
         if (webIdHelper != null) {
             webIdHelper.stop();
         }
-        if (occupancyProducer != existingRPMModule) {
+        if (occupancyProducer != null && occupancyProducer != existingRPMModule) {
             removeSubSystem(occupancyProducer.getConfiguration().id);
         }
         if (occupancyWrapper != null) {

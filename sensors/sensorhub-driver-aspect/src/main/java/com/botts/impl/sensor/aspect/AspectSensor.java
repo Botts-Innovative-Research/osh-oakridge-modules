@@ -20,9 +20,8 @@ import com.ghgande.j2mod.modbus.ModbusException;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
-import org.sensorhub.impl.utils.rad.dailyfile.DailyFileAppender;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileJournalConnection;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
-import org.sensorhub.impl.utils.rad.output.DailyFileOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,14 +41,14 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     IModbusTCPCommProvider<?> commProviderModule;
 
     MessageHandler messageHandler;
-    private DailyFileAppender dailyFileAppender;
+    DailyFileJournalConnection dailyFileJournal;
 
     GammaOutput gammaOutput;
     NeutronOutput neutronOutput;
     OccupancyOutput<AspectSensor> occupancyOutput;
     SpeedOutput speedOutput;
     SensorLocationOutput sensorLocationOutput;
-    DailyFileOutput<AspectSensor> dailyFileOutput;
+    DailyFileOutput dailyFileOutput;
     ConnectionStatusOutput connectionStatusOutput;
 
     public int laneID;
@@ -97,8 +96,9 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         sensorLocationOutput = new SensorLocationOutput(this);
         sensorLocationOutput.init();
 
-        dailyFileOutput = new DailyFileOutput<>(this);
+        dailyFileOutput = new DailyFileOutput(this);
         addOutput(dailyFileOutput, false);
+        dailyFileOutput.init();
 
         connectionStatusOutput = new ConnectionStatusOutput(this);
         addOutput(connectionStatusOutput, false);
@@ -160,17 +160,14 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
         }
 
         // Start message handler
-        messageHandler = new MessageHandler(this, primaryDeviceAddress, dailyFileAppender);
+        messageHandler = new MessageHandler(this, primaryDeviceAddress);
     }
 
     @Override
     protected void doStart() throws SensorHubException {
 
         connection.waitForConnection();
-
-        // Daily file lines are appended as they are produced
-        if (dailyFileAppender == null)
-            dailyFileAppender = DailyFileAppender.forHub(getParentHub(), dailyFileId(), getLogger());
+        connectDailyFileJournal();
 
         try{
             initMsgHandler();
@@ -189,13 +186,24 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     }
 
     @Override
-    public void doStop() {
+    public void doStop() throws SensorHubException {
         isRunning = false;
-        if(tcpConnectionThread != null)
+        MessageHandler activeHandler = messageHandler;
+        if (activeHandler != null)
+            activeHandler.requestStop();
+        if(tcpConnectionThread != null) {
+            tcpConnectionThread.interrupt();
             tcpConnectionThread = null;
+        }
         // cancel reconnection loop
+        SensorHubException stopFailure = null;
         if(connection != null){
-            connection.cancel();
+            try {
+                connection.cancel();
+            } catch (Exception e) {
+                stopFailure = new SensorHubException(
+                        "Unable to cancel the Aspect connection", e);
+            }
         }
 
         // stop comm module
@@ -203,24 +211,59 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
             try {
                 commProviderModule.stop();
             } catch (Exception e) {
-                log.error("Uncaught exception attempting to stop comm module", e);
+                SensorHubException providerFailure = new SensorHubException(
+                        "Unable to stop the Aspect communication provider", e);
+                if (stopFailure == null)
+                    stopFailure = providerFailure;
+                else
+                    stopFailure.addSuppressed(providerFailure);
             } finally {
                 commProviderModule = null;
             }
         }
 
-        // stop message handler
-        if (messageHandler != null) {
-            messageHandler.stop();
-            messageHandler = null;
+        if (activeHandler != null) {
+            try {
+                activeHandler.awaitStop();
+                messageHandler = null;
+            } catch (IOException e) {
+                SensorHubException readerFailure = new SensorHubException(
+                        "Aspect reader did not stop before journal close", e);
+                if (stopFailure != null)
+                    readerFailure.addSuppressed(stopFailure);
+                throw readerFailure;
+            }
         }
 
-        if (dailyFileAppender != null) {
-            dailyFileAppender.close();
-            dailyFileAppender = null;
+        if (dailyFileJournal != null) {
+            try {
+                dailyFileJournal.close();
+                dailyFileJournal = null;
+            } catch (IOException e) {
+                SensorHubException writerFailure = new SensorHubException(
+                        "Unable to close the Aspect daily-file writer", e);
+                if (stopFailure == null)
+                    stopFailure = writerFailure;
+                else
+                    stopFailure.addSuppressed(writerFailure);
+            }
         }
+        if (stopFailure != null)
+            throw stopFailure;
+    }
 
+    private void connectDailyFileJournal() throws SensorHubException {
+        if (dailyFileJournal != null)
+            return;
+        String laneId = getParentSystemUID();
+        if (laneId == null || laneId.isBlank())
+            laneId = "urn:oscar:lane:" + config.laneId;
+        dailyFileJournal = DailyFileJournalConnection.connect(getParentHub(), laneId,
+                config.dailyFileJournal, getLogger());
+    }
 
+    DailyFileJournalConnection getDailyFileJournal() {
+        return dailyFileJournal;
     }
 
     public void checkConnection(){
@@ -239,15 +282,7 @@ public class AspectSensor extends AbstractSensorModule<AspectConfig> {
     }
 
     public ConnectionStatusOutput getConnectionStatusOutput() {return connectionStatusOutput;}
-    /**
-     * Daily file name prefix: the part of the unique ID after the last ':' (the serial number).
-     */
-    private String dailyFileId() {
-        String uid = getUniqueIdentifier();
-        return uid != null && uid.contains(":") ? uid.substring(uid.lastIndexOf(':') + 1) : uid;
-    }
-
-    public DailyFileOutput<AspectSensor> getDailyFileOutput() {
+    public DailyFileOutput getDailyFileOutput() {
         return dailyFileOutput;
     }
     public GammaOutput getGammaOutput() {

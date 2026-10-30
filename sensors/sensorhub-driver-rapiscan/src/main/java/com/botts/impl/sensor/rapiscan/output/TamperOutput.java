@@ -66,6 +66,14 @@ public class TamperOutput  extends AbstractSensorOutput<RapiscanSensor> {
 
     }
 
+    /**
+     * Establishes the OSCAR tamper baseline for a newly connected RPM.
+     * Rapiscan TT/TC messages remain authoritative after the connection is up.
+     */
+    public void onConnected() {
+        onNewMessage(false);
+    }
+
     @Override
     public DataComponent getRecordDescription() {
         return dataStruct;

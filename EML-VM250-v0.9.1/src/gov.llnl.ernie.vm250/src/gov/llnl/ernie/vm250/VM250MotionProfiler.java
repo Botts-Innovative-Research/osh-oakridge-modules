@@ -76,8 +76,11 @@ public class VM250MotionProfiler implements AnalysisPreprocessor
     if (recordInternal.getVelocities().isEmpty())
     {
       bestVelocity = DEFAULT_VELOCITY; // approximate mean of velocity distribution
+      // Missing velocity is the normal fallback path for feeds that do not
+      // provide a velocity channel. Keep it available for fine-grained
+      // diagnostics without emitting one production warning per occupancy.
       Logger.getLogger(VM250MotionProfiler.class.getName()).log(
-              Level.WARNING, String.format(
+              Level.FINE, String.format(
                       "No velocity reading for scan, assuming %f m/s.", DEFAULT_VELOCITY));
       // not currently sending to fallback:
       //record.addFault(VM250Record.Fault.MISSING_VELOCITY);

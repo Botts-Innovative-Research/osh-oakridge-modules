@@ -1,11 +1,11 @@
 package org.sensorhub.impl.sensor.ffmpeg.tests.sony;
 
-import org.sensorhub.impl.sensor.ffmpeg.ConnectionTest;
+import org.sensorhub.impl.sensor.ffmpeg.ExternalCameraConnectionTest;
 import org.sensorhub.impl.sensor.ffmpeg.FFMPEGSensor;
 import org.sensorhub.impl.sensor.ffmpeg.config.FFMPEGConfig;
 
 
-public class SonyMjpegNoAuth extends ConnectionTest {
+public class SonyMjpegNoAuth extends ExternalCameraConnectionTest {
 
     private final static String SONY_MJPEG_NO_AUTH_IP = "SONY_MJPEG_NO_AUTH_IP";
 

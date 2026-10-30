@@ -1,6 +1,13 @@
 # OSCAR Lane System Change Log
 All notable changes to this project will be documented in this file. 
 
+## [Unreleased]
+### Changed
+- Camera recordings are now matched by exact occupancy timestamp, camera, lifecycle epoch, and
+  immutable generation instead of mutable filenames or callback order.
+- Per-camera command ordering, bounded timeout quarantine, and late-result cleanup prevent
+  back-to-back occupancies, reconnects, or RPM replacement from cross-attaching or orphaning clips.
+
 ## [2.1.0] - 2025-10-29
 ### Changed
 - Updated the name of occupancyId to be occupancyObsId to be clearer on which field is being used. 

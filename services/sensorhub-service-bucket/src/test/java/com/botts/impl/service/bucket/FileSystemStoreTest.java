@@ -15,8 +15,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.junit.Assert.*;
 
@@ -43,6 +49,62 @@ public class FileSystemStoreTest extends AbstractBucketStoreTest {
         assertPutRejected("nested/../../config.txt", Collections.emptyMap());
         assertPutRejected("/tmp/config.txt", Collections.emptyMap());
         assertPutRejected("C:\\temp\\config.txt", Collections.emptyMap());
+    }
+
+    @Test
+    public void testBucketCreateAndDeleteCannotEscapeStoreRoot() throws Exception {
+        Path absoluteRoot = TEST_ROOT.toAbsolutePath().normalize();
+        Path outside = absoluteRoot.resolveSibling("bucket-escape-target");
+        Path sentinel = outside.resolve("sentinel.txt");
+        Files.createDirectories(outside);
+        Files.writeString(sentinel, "must survive");
+        try {
+            assertBucketCreateRejected("../" + outside.getFileName());
+            assertBucketCreateRejected("nested/bucket");
+            assertBucketCreateRejected("nested\\bucket");
+            assertBucketCreateRejected(outside.toString());
+            assertFalse(bucketStore.bucketExists("../" + outside.getFileName()));
+
+            try {
+                bucketStore.deleteBucket("../" + outside.getFileName());
+                fail("Expected escaping bucket delete to be rejected");
+            } catch (DataStoreException expected) {
+                // The external directory must never become a deletion root.
+            }
+            assertEquals("must survive", Files.readString(sentinel));
+        } finally {
+            Files.deleteIfExists(sentinel);
+            Files.deleteIfExists(outside);
+        }
+    }
+
+    @Test
+    public void testBucketSymlinkIsNeverTreatedAsManagedDirectory() throws Exception {
+        Path absoluteRoot = TEST_ROOT.toAbsolutePath().normalize();
+        Path outside = absoluteRoot.resolveSibling("bucket-link-target");
+        Path sentinel = outside.resolve("sentinel.txt");
+        Path link = absoluteRoot.resolve("linked-bucket");
+        Files.createDirectories(outside);
+        Files.writeString(sentinel, "must survive");
+        try {
+            try {
+                Files.createSymbolicLink(link, outside);
+            } catch (UnsupportedOperationException | IOException e) {
+                return;
+            }
+            assertFalse(bucketStore.bucketExists("linked-bucket"));
+            try {
+                bucketStore.deleteBucket("linked-bucket");
+                fail("Expected linked bucket delete to be rejected");
+            } catch (DataStoreException expected) {
+                // Never follow a bucket-level link during recursive deletion.
+            }
+            assertEquals("must survive", Files.readString(sentinel));
+        } finally {
+            Files.deleteIfExists(link);
+            Files.deleteIfExists(sentinel);
+            Files.deleteIfExists(outside);
+        }
     }
 
     @Test
@@ -158,6 +220,71 @@ public class FileSystemStoreTest extends AbstractBucketStoreTest {
     }
 
     @Test
+    public void testConcurrentOutputStreamCreationDoesNotRace() throws Exception {
+        bucketStore.createBucket(TEST_BUCKET);
+        String objectKey = "clips/camera/concurrent.mp4";
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<?> first = concurrentPut(executor, ready, start, objectKey);
+            Future<?> second = concurrentPut(executor, ready, start, objectKey);
+            ready.await();
+            start.countDown();
+
+            assertFutureSucceeded(first);
+            assertFutureSucceeded(second);
+            assertTrue(bucketStore.objectExists(TEST_BUCKET, objectKey));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    public void testPartialObjectsAreNeverListedOrReadableAsPublishedObjects() throws Exception {
+        bucketStore.createBucket(TEST_BUCKET);
+        String partialKey = "clips/camera/recording.mp4.partial-job";
+        Path partial = Path.of(bucketStore.getWritableResourceURI(TEST_BUCKET, partialKey));
+        Files.writeString(partial, "in progress");
+
+        assertFalse(bucketStore.objectExists(TEST_BUCKET, partialKey));
+        assertFalse(bucketStore.listObjects(TEST_BUCKET).contains(partialKey));
+        assertEquals(0, bucketStore.getNumObjects(TEST_BUCKET));
+        try {
+            bucketStore.getObject(TEST_BUCKET, partialKey);
+            fail("A partial must not be readable");
+        } catch (DataStoreException expected) {
+            // Hidden until atomically renamed.
+        }
+        try {
+            bucketStore.getObjectSize(TEST_BUCKET, partialKey);
+            fail("A partial must not expose metadata");
+        } catch (DataStoreException expected) {
+            // Hidden until atomically renamed.
+        }
+
+        String finalKey = "clips/camera/recording.mp4";
+        Files.move(partial, Path.of(bucketStore.getWritableResourceURI(TEST_BUCKET, finalKey)));
+        assertTrue(bucketStore.objectExists(TEST_BUCKET, finalKey));
+        assertTrue(bucketStore.listObjects(TEST_BUCKET).contains(finalKey));
+    }
+
+    @Test
+    public void testPrefixListingIsScopedAndHidesPartials() throws Exception {
+        bucketStore.createBucket(TEST_BUCKET);
+        bucketStore.putObject(TEST_BUCKET, "retained/event-a/frame-01.jpg", testData(), Collections.emptyMap());
+        bucketStore.putObject(TEST_BUCKET, "retained/event-b/frame-01.jpg", testData(), Collections.emptyMap());
+        Path partial = Path.of(bucketStore.getWritableResourceURI(
+                TEST_BUCKET, "retained/event-a/frame-02.jpg.partial-job"));
+        Files.writeString(partial, "in progress");
+
+        assertEquals(List.of("retained/event-a/frame-01.jpg"),
+                bucketStore.listObjects(TEST_BUCKET, "retained/event-a/"));
+        assertTrue(bucketStore.listObjects(TEST_BUCKET, "retained/missing/").isEmpty());
+    }
+
+    @Test
     public void testAppendObjectAppendsToExisting() throws Exception {
         bucketStore.createBucket(TEST_BUCKET);
 
@@ -228,12 +355,42 @@ public class FileSystemStoreTest extends AbstractBucketStoreTest {
         }
     }
 
+    private Future<?> concurrentPut(ExecutorService executor, CountDownLatch ready,
+                                    CountDownLatch start, String objectKey) {
+        return executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            try (OutputStream output = bucketStore.putObject(
+                    TEST_BUCKET, objectKey, Collections.emptyMap())) {
+                output.write(1);
+            }
+            return null;
+        });
+    }
+
+    private void assertFutureSucceeded(Future<?> future) throws Exception {
+        try {
+            future.get();
+        } catch (ExecutionException e) {
+            throw new AssertionError("Concurrent object creation failed", e.getCause());
+        }
+    }
+
     private void assertPutRejected(String key, Map<String, String> metadata) throws IOException {
         try {
             bucketStore.putObject(TEST_BUCKET, key, testData(), metadata);
             fail("Expected upload to be rejected: " + key);
         } catch (DataStoreException expected) {
             assertFalse("Rejected object should not exist: " + key, bucketStore.objectExists(TEST_BUCKET, key));
+        }
+    }
+
+    private void assertBucketCreateRejected(String bucketName) {
+        try {
+            bucketStore.createBucket(bucketName);
+            fail("Expected bucket name to be rejected: " + bucketName);
+        } catch (DataStoreException expected) {
+            // expected
         }
     }
 

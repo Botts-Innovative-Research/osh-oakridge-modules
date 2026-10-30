@@ -74,7 +74,6 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
 
             ICommandResult result;
             if (start != null) {
-                // TODO: Return result of createCountStatistics
                 DataBlock resultData = resultDescription.createDataBlock();
                 statsOutput.populateDataBlock(resultData, 0, start, end, laneUIDs);
                 result = CommandResult.withData(resultData);
@@ -82,9 +81,7 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
                 if (!laneUIDs.isEmpty())
                     return CommandStatus.rejected(command.getID(), "Scoped statistics require both start and end");
 
-                // TODO: Call update for latest site statistics output, and return output observation id
-                statsOutput.publishLatestStatistics();
-                var latestObsId = statsOutput.waitForLatestObservationId();
+                var latestObsId = statsOutput.publishLatestStatisticsAndGetObservationId();
                 if (latestObsId == null)
                     return CommandStatus.failed(command.getID(), "Could not generate latest statistics observation.");
                 result = CommandResult.withObservation(latestObsId);
@@ -92,7 +89,7 @@ public class StatisticsControl extends AbstractSensorControl<OSCARSystem> implem
             return new CommandStatus.Builder()
                     .withResult(result)
                     .withCommand(command.getID())
-                    .withStatusCode(ICommandStatus.CommandStatusCode.ACCEPTED)
+                    .withStatusCode(ICommandStatus.CommandStatusCode.COMPLETED)
                     .withExecutionTime(TimeExtent.period(Instant.ofEpochMilli(execStartTime), Instant.now()))
                     .build();
         });

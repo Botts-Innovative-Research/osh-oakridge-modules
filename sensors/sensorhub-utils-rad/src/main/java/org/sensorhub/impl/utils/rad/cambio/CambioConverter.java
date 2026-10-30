@@ -4,9 +4,12 @@ import gov.sandia.specutils.*;
 
 import java.io.*;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 
 public class CambioConverter {
+
+    private static final String DATA_TEMP_DIR_PROPERTY = "oscar.data.tmpdir";
 
     static {
         SpecUtilsNativeLoader.load();
@@ -289,7 +292,7 @@ public class CambioConverter {
         File tempOutputFile = null;
         try {
             String extension = getExtensionForFormat(request.getOutputFormat());
-            tempOutputFile = File.createTempFile("cambio_output_", extension);
+            tempOutputFile = createDataTempFile("cambio_output_", extension);
             // SpecUtils won't overwrite existing files, so delete the temp file first
             tempOutputFile.delete();
 
@@ -341,12 +344,12 @@ public class CambioConverter {
         }
     }
 
-    private File createTempFile(InputStream inputStream, String filename) throws IOException {
+    File createTempFile(InputStream inputStream, String filename) throws IOException {
         String extension = "";
         if (filename != null && filename.contains(".")) {
             extension = filename.substring(filename.lastIndexOf("."));
         }
-        File tempFile = File.createTempFile("cambio_input_", extension);
+        File tempFile = createDataTempFile("cambio_input_", extension);
         try (FileOutputStream fos = new FileOutputStream(tempFile)) {
             byte[] buffer = new byte[8192];
             int bytesRead;
@@ -355,6 +358,38 @@ public class CambioConverter {
             }
         }
         return tempFile;
+    }
+
+    static File createDataTempFile(String prefix, String extension) throws IOException {
+        return File.createTempFile(prefix, extension, dataTempDirectory());
+    }
+
+    static File dataTempDirectory() throws IOException {
+        String configured = System.getProperty(DATA_TEMP_DIR_PROPERTY);
+        boolean managed = configured != null;
+        if (managed && configured.isBlank())
+            throw new IOException(DATA_TEMP_DIR_PROPERTY + " must not be blank");
+        String selected = managed ? configured : System.getProperty("java.io.tmpdir");
+        if (selected == null || selected.isBlank())
+            throw new IOException("temporary directory is not configured");
+
+        Path requested = Path.of(selected);
+        if (managed && !requested.isAbsolute())
+            throw new IOException(DATA_TEMP_DIR_PROPERTY + " must be absolute");
+
+        Path normalized = requested.toAbsolutePath().normalize();
+        Path real = normalized.toRealPath();
+        if (managed && !normalized.equals(real))
+            throw new IOException(DATA_TEMP_DIR_PROPERTY + " must not contain symbolic links or aliases");
+        if (!Files.isDirectory(real) || !Files.isWritable(real))
+            throw new IOException("temporary directory must be an existing writable directory");
+        if (managed) {
+            String nativeTemp = System.getProperty("java.io.tmpdir");
+            if (nativeTemp != null && !nativeTemp.isBlank()
+                && real.equals(Path.of(nativeTemp).toAbsolutePath().normalize().toRealPath()))
+                throw new IOException(DATA_TEMP_DIR_PROPERTY + " must differ from java.io.tmpdir");
+        }
+        return real.toFile();
     }
 
     private void deleteTempFile(File tempFile) {

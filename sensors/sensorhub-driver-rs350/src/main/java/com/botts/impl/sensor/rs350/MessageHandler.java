@@ -9,6 +9,7 @@ import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.datastore.system.SystemFilter;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileJournalConnection;
 import org.sensorhub.impl.utils.rad.webid.WebIdAnalyzer;
 import org.sensorhub.impl.utils.rad.webid.WebIdRequestContext;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
@@ -21,6 +22,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -29,16 +31,19 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
 public class MessageHandler {
 
     private static final Logger log = LoggerFactory.getLogger(MessageHandler.class);
+    private static final long STOP_TIMEOUT_MILLIS = 2_000L;
     final LinkedList<String> messageQueue = new LinkedList<>();
     private final AbstractSensorModule<?> sensorModule;
     WebIdAnalyzer webIdAnalyzer;
     boolean hasAlarm = false;
     String laneUID;
     IBucketStore bucketStore;
+    private final DailyFileJournalConnection dailyFileJournal;
 
     RADHelper radHelper = new RADHelper();
 
@@ -72,6 +77,7 @@ public class MessageHandler {
     //private final ArrayList<N42Output> n42Listeners = new ArrayList<>();
 
     private final AtomicBoolean isProcessing = new AtomicBoolean(true);
+    private volatile long stopDeadlineNanos;
 
     // The RS350 occupancy is created by the Rs350OutputToOccupancy process module
     // ~10 seconds after an alarm fires (see OCCUPANCY_INTERVAL_MS in that class).
@@ -118,7 +124,8 @@ public class MessageHandler {
                             sb.append(c);
                         }
 
-                        String n42Message = sb.toString().replaceAll("\\<\\?xml(.+?)\\?\\>", "").trim();
+                        String n42Message = journalBeforeParsing(sb.toString(), Instant.now(),
+                                dailyFileJournal, MessageHandler::normalizeN42Message);
 
                         synchronized (messageQueue) {
 
@@ -135,7 +142,12 @@ public class MessageHandler {
                     }
                 }
             } catch (IOException exception) {
-
+                if (isProcessing.get())
+                    log.error("RS350 message reader stopped after an I/O failure", exception);
+                isProcessing.set(false);
+                synchronized (messageQueue) {
+                    messageQueue.notifyAll();
+                }
             }
         }
     });
@@ -163,8 +175,8 @@ public class MessageHandler {
                     //n42Listeners.forEach(listener -> listener.onNewMessage(currentMessage));
 
                 } catch (InterruptedException e) {
-
-                    throw new RuntimeException(e);
+                    Thread.currentThread().interrupt();
+                    return;
                 }
             }
 
@@ -199,7 +211,8 @@ public class MessageHandler {
                     }
                 }
                 catch (Exception e){
-                    log.error("Error reading message: " + e, e);
+                    if (isProcessing.get())
+                        log.error("Error reading message: " + e, e);
                 }
             }
 
@@ -211,16 +224,47 @@ public class MessageHandler {
     });
 
     public MessageHandler(WebIdAnalyzer webIdAnalyzer, InputStream msgIn, String messageDelimiter, AbstractSensorModule<?> parentSensor) {
+        this(webIdAnalyzer, msgIn, messageDelimiter, parentSensor, null);
+    }
+
+    public MessageHandler(WebIdAnalyzer webIdAnalyzer, InputStream msgIn, String messageDelimiter,
+                          AbstractSensorModule<?> parentSensor,
+                          DailyFileJournalConnection dailyFileJournal) {
         this.sensorModule = parentSensor;
         this.webIdAnalyzer = webIdAnalyzer;
         this.msgIn = msgIn;
         this.messageDelimiter = messageDelimiter;
+        this.dailyFileJournal = dailyFileJournal;
         laneUID = parentSensor.getParentSystemUID();
         var bucketService = parentSensor.getParentHub().getModuleRegistry().getModuleByType(IBucketService.class);
         bucketStore = bucketService.getBucketStore();
 
         this.messageReader.start();
         this.messageNotifier.start();
+    }
+
+    /**
+     * Captures the exact framed payload before any normalization or parser sees it.
+     * Package visibility provides a deterministic test seam around this durability
+     * boundary without starting the driver's reader/notifier threads.
+     */
+    static String journalBeforeParsing(String rawN42Message, Instant receivedAt,
+                                       DailyFileJournalConnection journal,
+                                       Function<String, String> normalizer) throws IOException {
+        if (journal != null) {
+            try {
+                journal.append(rawN42Message, receivedAt);
+            } catch (IOException e) {
+                log.error("Unable to append raw RS350 payload to daily-file journal", e);
+                if (journal.isRequired())
+                    throw e;
+            }
+        }
+        return normalizer.apply(rawN42Message);
+    }
+
+    private static String normalizeN42Message(String rawN42Message) {
+        return rawN42Message.replaceAll("\\<\\?xml(.+?)\\?\\>", "").trim();
     }
 
     public void addStatusListener(StatusListener listener) {
@@ -239,21 +283,74 @@ public class MessageHandler {
         alarmListeners.add(listener);
     }
 
-    public void stopProcessing() {
+    public synchronized void requestStop() {
+        if (stopDeadlineNanos == 0L) {
+            stopDeadlineNanos = System.nanoTime()
+                    + TimeUnit.MILLISECONDS.toNanos(STOP_TIMEOUT_MILLIS);
+        }
 
         synchronized (isProcessing) {
 
             isProcessing.set(false);
         }
-
-        webIdScheduler.shutdown();
         try {
-            if (!webIdScheduler.awaitTermination(WEBID_PUBLISH_DELAY_SECONDS + 5, TimeUnit.SECONDS)) {
-                webIdScheduler.shutdownNow();
+            msgIn.close();
+        } catch (IOException e) {
+            log.debug("Error closing RS350 message stream", e);
+        }
+        messageNotifier.interrupt();
+        synchronized (messageQueue) {
+            messageQueue.notifyAll();
+        }
+
+        // Deferred WebID work is not source capture and must not hold an RPM
+        // writer lease open during application shutdown.
+        webIdScheduler.shutdownNow();
+    }
+
+    public void awaitSourceStopped() throws IOException {
+        requestStop();
+        try {
+            awaitStopped(messageReader, stopDeadlineNanos, "RS350 message reader");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while stopping RS350 message reader", e);
+        }
+    }
+
+    public void awaitAncillaryStopped() throws IOException {
+        requestStop();
+        try {
+            awaitStopped(messageNotifier, stopDeadlineNanos, "RS350 message notifier");
+            if (!webIdScheduler.isTerminated()) {
+                long remaining = stopDeadlineNanos - System.nanoTime();
+                if (remaining <= 0 ||
+                        !webIdScheduler.awaitTermination(remaining, TimeUnit.NANOSECONDS))
+                    throw new IOException("RS350 deferred WebID worker did not stop within "
+                            + STOP_TIMEOUT_MILLIS + " ms");
             }
         } catch (InterruptedException e) {
             webIdScheduler.shutdownNow();
             Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while stopping RS350 ancillary workers", e);
+        }
+    }
+
+    public void stopProcessing() throws IOException {
+        requestStop();
+        awaitSourceStopped();
+        awaitAncillaryStopped();
+    }
+
+    static void awaitStopped(Thread worker, long deadlineNanos, String description)
+            throws InterruptedException, IOException {
+        while (worker.isAlive()) {
+            long remaining = deadlineNanos - System.nanoTime();
+            if (remaining <= 0)
+                throw new IOException(description + " did not stop within "
+                        + STOP_TIMEOUT_MILLIS + " ms");
+            long millis = Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remaining));
+            worker.join(millis);
         }
     }
 

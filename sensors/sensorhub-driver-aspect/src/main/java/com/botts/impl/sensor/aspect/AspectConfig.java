@@ -21,6 +21,7 @@ import org.sensorhub.api.sensor.PositionConfig;
 import org.sensorhub.api.sensor.PositionConfig.EulerOrientation;
 import org.sensorhub.api.sensor.PositionConfig.LLALocation;
 import org.sensorhub.api.sensor.SensorConfig;
+import org.sensorhub.impl.utils.rad.dailyfile.DailyFileJournalClientConfig;
 
 /**
  * Configuration settings for the Aspect driver exposed via the OpenSensorHub Admin panel.
@@ -44,6 +45,9 @@ public class AspectConfig extends SensorConfig {
 
     @DisplayInfo(desc="Lane ID")
     public int laneId;
+
+    @DisplayInfo(label = "Daily File Journal", desc = "Durable generated daily-file capture policy")
+    public DailyFileJournalClientConfig dailyFileJournal = new DailyFileJournalClientConfig();
 
 //    @DisplayInfo(desc="Lane Name")
 //    public String laneName;

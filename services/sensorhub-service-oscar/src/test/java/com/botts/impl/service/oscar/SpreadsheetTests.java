@@ -203,4 +203,39 @@ public class SpreadsheetTests {
         assertEquals(3, laneConfigs.size());
     }
 
+    @Test
+    public void testRetentionPoliciesRoundTripWith57Defaults() throws IOException {
+        var lanes = parser.deserialize(readFile("1-camera.csv"));
+        var defaults = parser.getRetentionPolicyConfig();
+        assertEquals(0, defaults.timeToRetentionDays);
+        assertEquals(1, defaults.videoQueryPeriodMinutes);
+        assertTrue(defaults.enableFrameRetention);
+        assertEquals(5, defaults.frameRetentionCount);
+        assertEquals(24, defaults.sourceRollbackGraceHours);
+        assertTrue(defaults.enableSecondaryFramePruning);
+        assertEquals(30, defaults.secondaryFrameRetentionDays);
+        assertEquals(85, defaults.storagePressureTriggerUsagePercent);
+        assertEquals(80, defaults.storagePressureTargetUsagePercent);
+        assertTrue(defaults.delegateObservationLifecycleToDatabase);
+        assertEquals(50, defaults.dailyFilePurgeWorkLimit);
+        assertEquals(1, defaults.connectionStatusRetentionHours);
+        assertEquals("LATEST", defaults.dailyFileObservationMode);
+        assertEquals(30, defaults.sealedJournalRetentionDays);
+        assertEquals("PARQUET_PRIMARY", defaults.archiveStorageMode);
+        assertEquals(2, defaults.archiveHotRetentionDays);
+        assertEquals(3, defaults.archiveRollbackGraceDays);
+        assertTrue(defaults.archiveDeleteHotAfterArchive);
+
+        defaults.secondaryFrameRetentionDays = 45;
+        defaults.enableSecondaryFramePruning = false;
+        lanes.get(0).autoDelete = false;
+        String serialized = parser.serialize(lanes);
+        assertTrue(serialized.lines().findFirst().orElseThrow().contains("SecondaryFrameRetentionDays"));
+
+        var roundTripped = parser.deserialize(serialized);
+        assertFalse(roundTripped.get(0).autoDelete);
+        assertEquals(45, parser.getRetentionPolicyConfig().secondaryFrameRetentionDays);
+        assertFalse(parser.getRetentionPolicyConfig().enableSecondaryFramePruning);
+    }
+
 }

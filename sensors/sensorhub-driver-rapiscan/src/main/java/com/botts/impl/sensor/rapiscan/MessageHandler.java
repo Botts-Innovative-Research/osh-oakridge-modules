@@ -2,7 +2,6 @@ package com.botts.impl.sensor.rapiscan;
 
 
 import com.opencsv.CSVReader;
-import org.sensorhub.impl.utils.rad.dailyfile.DailyFileAppender;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 
 import java.io.BufferedReader;
@@ -10,16 +9,21 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MessageHandler {
+    private static final long STOP_WARNING_MILLIS = 2_000L;
 
     private final RapiscanSensor parentSensor;
-    private final DailyFileAppender dailyFile;
 
+    List<String[]> csvList;
+    CSVReader reader;
     Boolean currentOccupancy = false;
     Boolean isGammaAlarm = false;
     Boolean isNeutronAlarm = false;
@@ -45,26 +49,23 @@ public class MessageHandler {
     int neutronMax;
     int gammaMax;
 
-    private final AtomicBoolean isProcessing = new AtomicBoolean(true);
     private volatile long timeSinceLastMessage;
 
     private final InputStream msgIn;
-    private final Thread readerThread;
+    private volatile Thread messageReaderThread;
+    private final AtomicBoolean hasStarted = new AtomicBoolean(false);
+    private final AtomicBoolean isRunning = new AtomicBoolean(false);
+    private final CountDownLatch readerStopped = new CountDownLatch(1);
+    private volatile BufferedReader bufferedReader;
 
     public long getTimeSinceLastMessage() {
         long now = System.currentTimeMillis();
         return (now - timeSinceLastMessage);
     }
 
-    /**
-     * @param msgIn        stream of CRLF/LF delimited RPM messages
-     * @param parentSensor owning sensor module
-     * @param dailyFile    appender that records every raw message before it is parsed (may be null in tests)
-     */
-    public MessageHandler(InputStream msgIn, RapiscanSensor parentSensor, DailyFileAppender dailyFile) {
+    public MessageHandler(InputStream msgIn, RapiscanSensor parentSensor) {
         this.parentSensor = parentSensor;
         this.msgIn = msgIn;
-        this.dailyFile = dailyFile;
 
         gammaScanRunningSumBatch = new LinkedList<>();
         occupancyGammaBatch = new LinkedList<>();
@@ -72,84 +73,169 @@ public class MessageHandler {
 
         timeSinceLastMessage = System.currentTimeMillis();
 
-        readerThread = new Thread(this::readLoop, "Rapiscan-Reader-" + parentSensor.getUniqueIdentifier());
-        readerThread.setDaemon(true);
-        readerThread.start();
+        start();
     }
 
-    private void readLoop() {
-        try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(msgIn))) {
-            String msgLine;
-            while (isProcessing.get() && (msgLine = bufferedReader.readLine()) != null) {
-                timeSinceLastMessage = System.currentTimeMillis();
-                processLine(msgLine);
-            }
-            if (isProcessing.get())
-                parentSensor.getLogger().info("End of RPM message stream reached");
-        } catch (IOException e) {
-            if (isProcessing.get())
-                parentSensor.getLogger().error("Error reading RPM message stream: {}", e.getMessage());
-        } catch (Exception e) {
-            parentSensor.getLogger().error("Rapiscan message reader terminated unexpectedly", e);
-        } finally {
-            parentSensor.getLogger().debug("Message reader exiting for sensor {}", parentSensor.getUniqueIdentifier());
-        }
-    }
-
-    /**
-     * Handles one raw message line. The line is written to the daily file first, exactly as received,
-     * then published on the dailyFile output, then parsed. A failure in any later step only affects
-     * that line; the reader keeps going.
-     */
-    void processLine(String msgLine) {
-        if (msgLine.isBlank())
+    public synchronized void start() {
+        if (!hasStarted.compareAndSet(false, true)) {
+            parentSensor.getLogger().warn("MessageHandler already running");
             return;
-
-        // 1. Daily file: raw message, before anything can fail
-        if (dailyFile != null)
-            dailyFile.append(msgLine);
-
-        // 2. Live dailyFile output (lane system state tracking)
-        try {
-            parentSensor.getDailyFileOutput().onNewMessage(msgLine);
-        } catch (Exception e) {
-            parentSensor.getLogger().warn("Failed to publish dailyFile output for line '{}': {}", msgLine, e.toString());
         }
 
-        // 3. Parse and dispatch
+        isRunning.set(true);
+        bufferedReader = new BufferedReader(new InputStreamReader(msgIn));
+
         try {
-            List<String[]> csvList;
-            try (CSVReader reader = new CSVReader(new StringReader(msgLine))) {
-                csvList = reader.readAll();
-            }
-            if (!csvList.isEmpty() && csvList.get(0).length > 0 && !csvList.get(0)[0].isEmpty())
-                onNewMainChar(csvList.get(0)[0], csvList.get(0));
-        } catch (Exception e) {
-            parentSensor.getLogger().warn("Failed to process RPM message '{}': {}", msgLine, e.toString());
+            RapiscanThreadPoolManager.getInstance().submitMessageReader(() -> {
+                messageReaderThread = Thread.currentThread();
+                parentSensor.getLogger().debug("Message reader started for sensor {}", parentSensor.getUniqueIdentifier());
+
+                try {
+                    String msgLine;
+                    while (isRunning.get() && !Thread.currentThread().isInterrupted()) {
+                        try {
+                            msgLine = bufferedReader.readLine();
+                        } catch (IOException e) {
+                            if (isRunning.get()) {
+                                parentSensor.getLogger().error("Error reading RPM message", e);
+                            }
+                            break;
+                        }
+
+                        if (msgLine == null) {
+                            break;
+                        }
+                        if (msgLine.isEmpty())
+                            continue;
+
+                        // Daily-file phenomenon time and Occupancy.startTime share this exact
+                        // millisecond correlation key. Record receipt before durable journal I/O
+                        // so a slow append cannot make the heartbeat mistake healthy RPM traffic
+                        // for a dead connection and start an unnecessary reconnect.
+                        long receivedAtMillis = System.currentTimeMillis();
+                        timeSinceLastMessage = receivedAtMillis;
+                        Instant receivedAt = Instant.ofEpochMilli(receivedAtMillis);
+                        var journal = parentSensor.getDailyFileJournal();
+                        if (journal != null) {
+                            try {
+                                // Audit capture happens before CSV parsing or any output publication.
+                                journal.append(msgLine, receivedAt);
+                            } catch (IOException e) {
+                                parentSensor.getLogger().error("Unable to append raw RPM line to daily-file journal", e);
+                                if (journal.isRequired())
+                                    throw e;
+                            }
+                        }
+
+                        try {
+                            reader = new CSVReader(new StringReader(msgLine));
+                            csvList = reader.readAll();
+
+                            if (!csvList.isEmpty() && csvList.get(0).length > 0 && isRunning.get()) {
+                                if (journal == null || journal.shouldPublishLegacyObservation())
+                                    parentSensor.getDailyFileOutput().onNewMessage(msgLine, receivedAt);
+                                onNewMainChar(csvList.get(0)[0], csvList.get(0), receivedAt);
+                            }
+                        } catch (Exception e) {
+                            if (isRunning.get()) {
+                                parentSensor.getLogger().error("Error processing RPM message: {}", msgLine, e);
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    if (isRunning.get()) {
+                        parentSensor.getLogger().error("Fatal error in message reader", e);
+                    }
+                } finally {
+                    isRunning.set(false);
+                    messageReaderThread = null;
+                    readerStopped.countDown();
+                    parentSensor.getLogger().debug("Message reader exiting for sensor {}", parentSensor.getUniqueIdentifier());
+                }
+            });
+        } catch (RuntimeException e) {
+            isRunning.set(false);
+            readerStopped.countDown();
+            closeInput();
+            throw e;
         }
     }
 
-    public synchronized void stop() {
-        if (!isProcessing.getAndSet(false))
-            return;
-
-        parentSensor.getLogger().debug("Stopping MessageHandler for sensor {}", parentSensor.getUniqueIdentifier());
-
-        // Closing the stream unblocks readLine()
+    private void closeInput() {
         try {
+            // Close the raw stream first so a socket-backed readLine() is
+            // unblocked before BufferedReader.close() waits on its lock.
             msgIn.close();
         } catch (IOException e) {
-            parentSensor.getLogger().debug("Error closing RPM message stream: {}", e.getMessage());
+            parentSensor.getLogger().debug("Error closing RPM input stream", e);
         }
 
-        readerThread.interrupt();
         try {
-            readerThread.join(2000);
-            if (readerThread.isAlive())
-                parentSensor.getLogger().warn("Message reader did not stop within timeout");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            if (bufferedReader != null) {
+                bufferedReader.close();
+            }
+        } catch (IOException e) {
+            parentSensor.getLogger().debug("Error closing RPM message reader", e);
         }
+    }
+
+    public synchronized void requestStop() {
+        if (!hasStarted.get()) {
+            return;
+        }
+
+        parentSensor.getLogger().debug("Stopping MessageHandler for sensor {}", parentSensor.getUniqueIdentifier());
+        isRunning.set(false);
+        closeInput();
+    }
+
+    public synchronized void awaitStop() throws IOException {
+        awaitStop(STOP_WARNING_MILLIS);
+    }
+
+    synchronized void awaitStop(long warningMillis) throws IOException {
+        if (!hasStarted.get())
+            return;
+
+        if (warningMillis < 2)
+            throw new IllegalArgumentException("Rapiscan stop warning interval must be at least 2 ms");
+
+        long deadlineNanos = System.nanoTime()
+                + TimeUnit.MILLISECONDS.toNanos(warningMillis);
+        try {
+            long gracefulNanos = TimeUnit.MILLISECONDS.toNanos(warningMillis / 2);
+            if (!readerStopped.await(gracefulNanos, TimeUnit.NANOSECONDS)) {
+                Thread activeReader = messageReaderThread;
+                if (activeReader != null)
+                    activeReader.interrupt();
+            }
+            long remaining = deadlineNanos - System.nanoTime();
+            if (readerStopped.getCount() != 0 &&
+                    (remaining <= 0 || !readerStopped.await(remaining, TimeUnit.NANOSECONDS))) {
+                // A reader can be inside a non-interruptible durable journal append while a
+                // loaded Windows deployment is reconnecting many lanes. Closing the writer or
+                // reporting a clean stop here would lose the final accepted line; throwing leaves
+                // AbstractModule in STOPPING and makes the automatic reconnect fail permanently.
+                // Keep the module honestly STOPPING until that append drains, then let doStop()
+                // close the writer before the replacement reader is started.
+                parentSensor.getLogger().warn(
+                        "Rapiscan message reader is still draining after {} ms; " +
+                                "waiting before closing the daily-file journal",
+                        warningMillis);
+                readerStopped.await();
+            }
+        } catch (InterruptedException e) {
+            Thread activeReader = messageReaderThread;
+            if (activeReader != null)
+                activeReader.interrupt();
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while stopping Rapiscan message reader", e);
+        }
+    }
+
+    public void stop() throws IOException {
+        requestStop();
+        awaitStop();
     }
 
     public int[] getGammaForegroundCountsPerSecond() {
@@ -171,6 +257,11 @@ public class MessageHandler {
     }
 
     void onNewMainChar(String mainChar, String[] csvLine) {
+        onNewMainChar(mainChar, csvLine, Instant.now());
+    }
+
+    void onNewMainChar(String mainChar, String[] csvLine, Instant receivedAt) {
+        long receivedAtMillis = receivedAt.toEpochMilli();
 
         // Add scan data for EML service. Background and other data gives EML context, so we must show EML everything until end of occupancy
         if (parentSensor.getConfiguration().emlConfig.emlEnabled && !mainChar.equals("GB") && !mainChar.equals("NB")) {
@@ -209,7 +300,7 @@ public class MessageHandler {
             case "GA" -> {
                 gammaScanRunningSumBatch.addLast(csvLine);
                 if (!currentOccupancy) {
-                    occupancyStartTime = System.currentTimeMillis();
+                    occupancyStartTime = receivedAtMillis;
                     currentOccupancy = true;
                 }
 
@@ -233,7 +324,7 @@ public class MessageHandler {
 
                 //usually the foreground value will switch to "GA" in an alarm state
                 if (!currentOccupancy) {
-                    occupancyStartTime = System.currentTimeMillis();
+                    occupancyStartTime = receivedAtMillis;
                     currentOccupancy = true;
                 }
                 int gamma = Integer.parseInt(csvLine[1]) +
@@ -251,7 +342,7 @@ public class MessageHandler {
 
             case "NA" -> {
                 if (!currentOccupancy) {
-                    occupancyStartTime = System.currentTimeMillis();
+                    occupancyStartTime = receivedAtMillis;
                     currentOccupancy = true;
 
                 }
@@ -267,7 +358,7 @@ public class MessageHandler {
 
             case "NS" -> {
                 if (!currentOccupancy) {
-                    occupancyStartTime = System.currentTimeMillis();
+                    occupancyStartTime = receivedAtMillis;
                     currentOccupancy = true;
                 }
                 int neutron = Integer.parseInt(csvLine[1]) +
@@ -280,15 +371,15 @@ public class MessageHandler {
             }
 
             case "GX" -> {
-                occupancyEndTime = System.currentTimeMillis();
+                occupancyEndTime = receivedAtMillis;
                 gammaMax = getGammaMax(occupancyGammaBatch);
-                neutronMax = occupancyNeutronBatch.isEmpty() ? 0 : Collections.max(occupancyNeutronBatch);
+                neutronMax = getNeutronMax(occupancyNeutronBatch);
 
                 Occupancy occupancy = new Occupancy.Builder()
                         .occupancyCount(Integer.parseInt(csvLine[1]))
                         .startTime(occupancyStartTime/1000d)
                         .endTime(occupancyEndTime/1000d)
-                        .samplingTime(System.currentTimeMillis()/1000d)
+                        .samplingTime(receivedAtMillis/1000d)
                         .neutronBackground(Double.parseDouble(csvLine[2])/1000)
                         .gammaAlarm(isGammaAlarm)
                         .neutronAlarm(isNeutronAlarm)
@@ -367,6 +458,13 @@ public class MessageHandler {
         }
 
         return maxSum;
+    }
+
+    static int getNeutronMax(List<Integer> neutronBatch) {
+        if (neutronBatch == null || neutronBatch.isEmpty()) {
+            return 0;
+        }
+        return Collections.max(neutronBatch);
     }
 
 }
