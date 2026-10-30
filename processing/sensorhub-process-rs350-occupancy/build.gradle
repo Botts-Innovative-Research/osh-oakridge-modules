@@ -8,8 +8,10 @@ dependencies {
   implementation project(':sensorhub-driver-rs350')
 }
 
-test {
-    exclude '**/TestProcessWriter.java'
+sourceSets {
+  test {
+    java.exclude '**/TestProcessWriter.java'
+  }
 }
 
 // add info to OSGi manifest
@@ -29,4 +31,3 @@ ext.pom >>= {
     }
   }
 }
-

@@ -21,12 +21,22 @@ package org.sensorhub.mpegts;
  */
 public class DataBufferRecord implements Cloneable {
 
+    /** Matches FFmpeg's AV_NOPTS_VALUE without coupling this data carrier to a native pointer. */
+    public static final long NO_TIMESTAMP = Long.MIN_VALUE;
+
     /**
      * The timestamp associated for the data
      */
     double presentationTimeStamp;
 
     boolean keyFrame;
+
+    /** Original packet timing, kept in the source stream time base for lossless remuxing. */
+    long packetPts = NO_TIMESTAMP;
+    long packetDts = NO_TIMESTAMP;
+    long packetDuration;
+    int timeBaseNumerator;
+    int timeBaseDenominator;
 
     /**
      * The data buffer to be stored
@@ -53,6 +63,19 @@ public class DataBufferRecord implements Cloneable {
         keyFrame = isKeyFrame;
     }
 
+    public DataBufferRecord(double presentationTimeStamp, byte[] dataBuffer, boolean isKeyFrame,
+                            long packetPts, long packetDts, long packetDuration,
+                            int timeBaseNumerator, int timeBaseDenominator) {
+        this.presentationTimeStamp = presentationTimeStamp;
+        this.dataBuffer = dataBuffer;
+        this.keyFrame = isKeyFrame;
+        this.packetPts = packetPts;
+        this.packetDts = packetDts;
+        this.packetDuration = packetDuration;
+        this.timeBaseNumerator = timeBaseNumerator;
+        this.timeBaseDenominator = timeBaseDenominator;
+    }
+
     /**
      * Returns the timestamp associated with this data record
      *
@@ -72,6 +95,21 @@ public class DataBufferRecord implements Cloneable {
     }
 
     public boolean isKeyFrame() { return keyFrame; }
+
+    public boolean hasPacketTiming() {
+        return timeBaseNumerator > 0 && timeBaseDenominator > 0
+                && (packetPts != NO_TIMESTAMP || packetDts != NO_TIMESTAMP);
+    }
+
+    public long getPacketPts() { return packetPts; }
+
+    public long getPacketDts() { return packetDts; }
+
+    public long getPacketDuration() { return packetDuration; }
+
+    public int getTimeBaseNumerator() { return timeBaseNumerator; }
+
+    public int getTimeBaseDenominator() { return timeBaseDenominator; }
 
 
     @Override

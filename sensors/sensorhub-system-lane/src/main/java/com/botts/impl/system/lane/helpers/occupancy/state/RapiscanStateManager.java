@@ -3,9 +3,7 @@ package com.botts.impl.system.lane.helpers.occupancy.state;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashSet;
 import java.util.Set;
-import java.util.stream.Stream;
 
 public class RapiscanStateManager extends StateManager {
     private static final Logger logger = LoggerFactory.getLogger(RapiscanStateManager.class);
@@ -31,11 +29,21 @@ public class RapiscanStateManager extends StateManager {
 
 
     @Override
-    protected void parseDailyFile() {
-        if (dailyFile.hasData() && dailyFile.getData().getStringValue(1) != null) {
-            stateChars = dailyFile.getData().getStringValue(1).substring(0, 2);
-        } else {
-            //logger.warn("Daily file has no data");
-        }
+    protected boolean parseDailyFile() {
+        if (!dailyFile.hasData())
+            return false;
+
+        var message = dailyFile.getData().getStringValue(1);
+        if (message == null || message.length() < 2)
+            return false;
+
+        var candidateState = message.substring(0, 2);
+        if (!nonOccupiedStates.contains(candidateState)
+                && !occupiedStates.contains(candidateState)
+                && !alarmingStates.contains(candidateState))
+            return false;
+
+        stateChars = candidateState;
+        return true;
     }
 }

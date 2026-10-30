@@ -16,15 +16,18 @@ import com.botts.impl.system.lane.AdjudicationControl;
 import com.botts.impl.system.lane.Descriptor;
 import com.botts.impl.system.lane.LaneSystem;
 import com.botts.impl.system.lane.config.*;
-import net.opengis.swe.v20.DataComponent;
+import com.botts.impl.system.lane.helpers.occupancy.OccupancyStatusOutput;
 import org.junit.*;
+import org.junit.rules.Timeout;
 import org.junit.runners.MethodSorters;
 import org.sensorhub.api.command.CommandData;
 import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.BigIdLong;
 import org.sensorhub.api.common.SensorHubException;
-import org.sensorhub.api.datastore.obs.DataStreamKey;
+import org.sensorhub.api.data.DataStreamInfo;
+import org.sensorhub.api.data.ObsData;
+import org.sensorhub.api.feature.FeatureId;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.SensorHub;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
@@ -33,6 +36,8 @@ import org.sensorhub.impl.database.system.SystemDriverDatabaseDescriptor;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig;
 import org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseDescriptor;
 import org.sensorhub.impl.module.ModuleRegistry;
+import org.sensorhub.impl.sensor.SensorSystem;
+import org.sensorhub.impl.system.wrapper.SystemWrapper;
 import org.sensorhub.impl.utils.rad.model.Adjudication;
 import org.sensorhub.impl.utils.rad.model.Occupancy;
 import org.sensorhub.impl.utils.rad.output.OccupancyOutput;
@@ -41,6 +46,7 @@ import org.slf4j.LoggerFactory;
 import org.vast.data.DataArrayImpl;
 import org.vast.data.DataBlockMixed;
 import org.vast.data.DataBlockString;
+import org.vast.sensorML.SMLHelper;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -50,8 +56,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.*;
 
@@ -62,14 +67,20 @@ import static org.junit.Assert.*;
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class LaneTests {
     private static final Logger log = LoggerFactory.getLogger(LaneTests.class);
+    private static final String RUN_EXTERNAL_TESTS_ENV = "OSCAR_RUN_RPM_HARDWARE_TESTS";
+    private static final String HARDWARE_TIMEOUT_ENV = "OSCAR_EXTERNAL_HARDWARE_TEST_TIMEOUT_MS";
+    private static final long DEFAULT_HARDWARE_TIMEOUT_MS = 600_000L;
+    private static final String RPM_HOST_ENV = "RPM_HOST";
+
+    @Rule
+    public final Timeout externalHardwareTimeout =
+            new Timeout(hardwareTimeoutMillis(), TimeUnit.MILLISECONDS);
     // Constants
     private String RPM_UID = "rpm1";
     private String RPM_NAME = "My RPM";
     private String LANE_UID = "1";
     private String LANE_NAME = "Test Lane";
 
-//    private static final String RPM_HOST = "100.94.197.23";
-    private static final String RPM_HOST = System.getenv("RPM_HOST"); //"192.168.1.211";
     private static final int RAPISCAN_PORT = 1601;
     private static final int ASPECT_PORT = 502;
 
@@ -94,15 +105,41 @@ public class LaneTests {
         config.uniqueID = rpmHost + rpmPort;
         config.name = "Lane " + rpmPort;
 
-        List<FFMpegConfig> ffmpegList = new ArrayList();
-        ffmpegList.add(new CustomCameraConfig());
-
-//        http://66.27.116.187/mjpg/video.mjpg
-        config.laneOptionsConfig.ffmpegConfig = ffmpegList;
-        config.laneOptionsConfig.ffmpegConfig.get(0).remoteHost = "66.27.116.187";
-        ((CustomCameraConfig) config.laneOptionsConfig.ffmpegConfig.get(0)).streamPath = "/mjpg/video.mjpg";
+        // RPM integration tests do not need a camera. Keeping this empty also
+        // prevents the tests from depending on a public MJPEG endpoint.
+        config.laneOptionsConfig.ffmpegConfig = new ArrayList<>();
 
         return config;
+    }
+
+    private static void requireExternalIntegration() {
+        Assume.assumeTrue(
+                "Requires an explicitly configured RPM integration environment; see the lane module README",
+                Boolean.parseBoolean(System.getenv(RUN_EXTERNAL_TESTS_ENV)));
+    }
+
+    private static long hardwareTimeoutMillis() {
+        String configured = System.getenv(HARDWARE_TIMEOUT_ENV);
+        if (configured == null || configured.isBlank()) {
+            return DEFAULT_HARDWARE_TIMEOUT_MS;
+        }
+
+        try {
+            long timeout = Long.parseLong(configured);
+            if (timeout <= 0) {
+                throw new IllegalArgumentException(HARDWARE_TIMEOUT_ENV + " must be greater than zero");
+            }
+            return timeout;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(HARDWARE_TIMEOUT_ENV + " must be a positive integer", e);
+        }
+    }
+
+    private static String requiredEnvironment(String name) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank())
+            throw new IllegalStateException(name + " must be set when live lane integration tests are enabled");
+        return value;
     }
 
     private LaneSystem testLoadAndStart(LaneConfig config) throws SensorHubException {
@@ -130,6 +167,7 @@ public class LaneTests {
         assertEquals(List.of("north-gate", "secondary"), config.operationalViewKeys);
         assertTrue(keywords.contains("oscar:view:north-gate"));
         assertTrue(keywords.contains("oscar:view:secondary"));
+        assertSame(lane.getOccupancyStatusOutput(), lane.getOutputs().get(OccupancyStatusOutput.NAME));
     }
 
     @Test
@@ -149,22 +187,26 @@ public class LaneTests {
 
     @Test
     public void testSingleRapiscan() throws SensorHubException {
-        var config = createLaneConfig(true, RPM_HOST, RAPISCAN_PORT);
+        requireExternalIntegration();
+        var config = createLaneConfig(true, requiredEnvironment(RPM_HOST_ENV), RAPISCAN_PORT);
         testLoadAndStart(config);
     }
 
     @Test
     public void testSingleAspect() throws SensorHubException {
-        var config = createLaneConfig(false, RPM_HOST, ASPECT_PORT);
+        requireExternalIntegration();
+        var config = createLaneConfig(false, requiredEnvironment(RPM_HOST_ENV), ASPECT_PORT);
         testLoadAndStart(config);
     }
 
     @Test
     public void test25RapiscanEML() throws SensorHubException {
+        requireExternalIntegration();
+        String rpmHost = requiredEnvironment(RPM_HOST_ENV);
 
         for (int i = 1; i < 25; i++) {
             int port = 1600 + i;
-            var config = createLaneConfig(true, RPM_HOST, port);
+            var config = createLaneConfig(true, rpmHost, port);
 
             ((RapiscanRPMConfig) config.laneOptionsConfig.rpmConfig).emlConfig = new RapiscanRPMConfig.EMLConfig();
             ((RapiscanRPMConfig) config.laneOptionsConfig.rpmConfig).emlConfig.emlEnabled = true;
@@ -174,9 +216,12 @@ public class LaneTests {
 
     @Test
     public void test25Rapiscan() throws SensorHubException {
+        requireExternalIntegration();
+        String rpmHost = requiredEnvironment(RPM_HOST_ENV);
+
         for (int i = 1; i < 25; i++) {
             int port = 1600 + i;
-            var config = createLaneConfig(true, RPM_HOST, port);
+            var config = createLaneConfig(true, rpmHost, port);
             testLoadAndStart(config);
         }
     }
@@ -194,17 +239,27 @@ public class LaneTests {
         return (SystemDriverDatabase) reg.loadModule(config);
     }
 
-    private void generateOccupancy(LaneSystem lane) throws SensorHubException {
+    private BigId addOccupancy(SystemDriverDatabase database, LaneSystem lane) throws Exception {
         long start = Instant.now().minus(1, ChronoUnit.MINUTES).toEpochMilli();
         long end = Instant.now().toEpochMilli();
 
-        AtomicReference<OccupancyOutput> occOutput = new AtomicReference<>();
-        lane.getMembers().values().forEach((member) -> {
-            if (member.getOutputs().containsKey(OccupancyOutput.NAME))
-                occOutput.set((OccupancyOutput) member.getOutputs().get(OccupancyOutput.NAME));
-        });
+        var process = new SMLHelper().createPhysicalComponent()
+                .uniqueID(lane.getUniqueIdentifier())
+                .name(lane.getName())
+                .build();
+        BigId systemId = database.getSystemDescStore().add(new SystemWrapper(process)).getInternalID();
+
+        var occupancyOutput = new OccupancyOutput<>(new SensorSystem());
+        var dataStream = new DataStreamInfo.Builder()
+                .withName(OccupancyOutput.NAME)
+                .withSystem(new FeatureId(systemId, lane.getUniqueIdentifier()))
+                .withRecordDescription(occupancyOutput.getRecordDescription())
+                .withRecordEncoding(occupancyOutput.getRecommendedEncoding())
+                .build();
+        BigId dataStreamId = database.getObservationStore().getDataStreams().add(dataStream).getInternalID();
 
         var occ = new Occupancy.Builder()
+                .samplingTime(end / 1000d)
                 .occupancyCount(1)
                 .startTime(start/1000d)
                 .endTime(end/1000d)
@@ -215,29 +270,35 @@ public class LaneTests {
                 .maxNeutronCount(1000)
                 .build();
 
-        occOutput.get().setData(occ);
+        return database.getObservationStore().add(new ObsData.Builder()
+                .withDataStream(dataStreamId)
+                .withPhenomenonTime(Instant.ofEpochMilli(end))
+                .withResult(Occupancy.fromOccupancy(occ))
+                .build());
     }
 
     @Test
-    public void testAdjudication() throws ExecutionException, InterruptedException, SensorHubException {
-        // Start database
+    public void testAdjudication() throws Exception {
+        // Adjudication logic does not require physical hardware. Initialize a
+        // lane without devices and insert a real occupancy into the local H2
+        // system-driver database so the default suite keeps this coverage.
+        var config = (LaneConfig) reg.createModuleConfig(new Descriptor());
+        config.uniqueID = "adjudication-test";
+        config.name = "Adj Lane";
+        var lane = (LaneSystem) reg.loadModule(config);
+        lane.init();
+
         var database = loadAndStartDB();
-
-        // Start lane
-        var config = createLaneConfig(true, RPM_HOST, RAPISCAN_PORT);
-        var lane = testLoadAndStart(config);
-
-        // Gen occ
-        generateOccupancy(lane);
+        assertTrue(database.waitForState(ModuleEvent.ModuleState.STARTED, 10_000));
+        var obsId = addOccupancy(database, lane);
 
         var obsIdEncoder = hub.getIdEncoders().getObsIdEncoder();
         var cmdIdEncoder = hub.getIdEncoders().getCommandIdEncoder();
-        var obsStore = hub.getDatabaseRegistry().getFederatedDatabase().getObservationStore();
-        var filter = obsStore.selectAllFilter();
-        var obsId = obsStore.selectKeys(filter).toList().get(0);
+        var obsStore = database.getObservationStore();
         var encodedObsId = obsIdEncoder.encodeID(obsId);
 
         var control = (AdjudicationControl) lane.getCommandInputs().get(AdjudicationControl.NAME);
+        control.setObsStore(obsStore);
         var adjData = Adjudication.fromAdjudication(new Adjudication.Builder()
                 .feedback("hey where did u get that")
                 .adjudicationCode(0)

@@ -7,7 +7,6 @@ import com.botts.impl.system.lane.helpers.occupancy.state.*;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.command.CommandData;
-import org.sensorhub.api.command.IStreamingControlInterface;
 import org.sensorhub.api.data.IDataProducerModule;
 import org.sensorhub.api.data.ObsEvent;
 import org.sensorhub.api.datastore.obs.IObsStore;
@@ -35,6 +34,7 @@ public class OccupancyWrapper {
     private final List<FFMPEGSensorBase<?>> cameras = new ArrayList<>();
     private IDataProducerModule<?> rpm;
     private volatile StateManager stateManager;
+    private final OccupancyStatusOutput occupancyStatusOutput;
     private final ObservationHelper observationHelper = new ObservationHelper();
     Instant startTime = Instant.now();
     Instant endTime = Instant.now();
@@ -48,23 +48,36 @@ public class OccupancyWrapper {
     private final Object lifecycleLock = new Object();
     private boolean started = false;
     private long lifecycleGeneration = 0;
+    private boolean hasValidOccupancyState = false;
+    private boolean occupancyActive = false;
+    private Instant occupancyStartedAt = null;
 
     public OccupancyWrapper(ISensorHub hub) {
+        this(hub, (OccupancyStatusOutput) null);
+    }
+
+    public OccupancyWrapper(ISensorHub hub, OccupancyStatusOutput occupancyStatusOutput) {
         this.hub = hub;
+        this.occupancyStatusOutput = occupancyStatusOutput;
     }
 
     public OccupancyWrapper(ISensorHub hub, IDataProducerModule<?> rpm) {
-        this(hub);
+        this(hub, (OccupancyStatusOutput) null);
+        setRpmSensor(rpm);
+    }
+
+    public OccupancyWrapper(ISensorHub hub, IDataProducerModule<?> rpm, OccupancyStatusOutput occupancyStatusOutput) {
+        this(hub, occupancyStatusOutput);
         setRpmSensor(rpm);
     }
 
     public OccupancyWrapper(ISensorHub hub, IDataProducerModule<?> rpm, FFMPEGSensorBase<?>... cameras) {
-        this(hub);
+        this(hub, (OccupancyStatusOutput) null);
         init(rpm, cameras);
     }
 
     public OccupancyWrapper(ISensorHub hub, IDataProducerModule<?> rpm, List<FFMPEGSensorBase<?>> cameras) {
-        this(hub);
+        this(hub, (OccupancyStatusOutput) null);
         init(rpm, cameras);
     }
 
@@ -153,7 +166,10 @@ public class OccupancyWrapper {
 
                     for (var obs : observations) {
                         record.setData(obs.getResult());
-                        currentStateManager.updateDailyFile(record);
+                        var observationTime = obs.getPhenomenonTime() != null
+                                ? obs.getPhenomenonTime()
+                                : Instant.now();
+                        processDailyFile(currentStateManager, record, observationTime);
                     }
                 }).thenAccept(newSubscription -> {
                     synchronized (lifecycleLock) {
@@ -190,7 +206,16 @@ public class OccupancyWrapper {
                 //observationHelper.clear();
 
                 for(int i = 0; i < size; i++) {
-                    IStreamingControlInterface commandInterface = cameras.get(i).getCommandInputs().values().stream().findFirst().get();
+                    var camera = cameras.get(i);
+                    var commandInterface = camera.getCommandInputs().values().stream()
+                            .filter(FileControl.class::isInstance)
+                            .findFirst()
+                            .orElse(null);
+                    if (commandInterface == null) {
+                        logger.warn("Camera {} has no FFmpeg file control; skipping occupancy recording",
+                                camera.getUniqueIdentifier());
+                        continue;
+                    }
                     DataComponent command = commandInterface.getCommandDescription().clone();
                     command.renewDataBlock();
                     DataChoice fileIO = (DataChoice) command.getComponent(0);
@@ -217,7 +242,16 @@ public class OccupancyWrapper {
                 observationHelper.notifyOccupancyEnd();
 
                 for (int i = 0; i < size; i++) {
-                    IStreamingControlInterface commandInterface = cameras.get(i).getCommandInputs().values().stream().findFirst().get();
+                    var camera = cameras.get(i);
+                    var commandInterface = camera.getCommandInputs().values().stream()
+                            .filter(FileControl.class::isInstance)
+                            .findFirst()
+                            .orElse(null);
+                    if (commandInterface == null) {
+                        logger.warn("Camera {} has no FFmpeg file control; skipping occupancy recording close",
+                                camera.getUniqueIdentifier());
+                        continue;
+                    }
                     DataComponent command = commandInterface.getCommandDescription().clone();
                     command.renewDataBlock();
                     DataChoice fileIO = (DataChoice) command.getComponent(0);
@@ -277,23 +311,38 @@ public class OccupancyWrapper {
         Asserts.checkNotNull(sensor);
         // TODO For now, assuming the added sensor is an rpm. Need to figure out the correct way to check.
         if (setStateManager(sensor)) {
-            rpm = sensor;
+            boolean registerListener;
+            synchronized (lifecycleLock) {
+                rpm = sensor;
+                hasValidOccupancyState = false;
+                occupancyActive = false;
+                occupancyStartedAt = null;
+                registerListener = started;
+            }
+            if (registerListener)
+                registerStateListener();
         }
         if (observationHelper != null)
             observationHelper.clear();
     }
 
     private boolean setStateManager(IDataProducerModule<?> sensor) {
+        StateManager nextStateManager;
         if (sensor instanceof AspectSensor) {
-            stateManager = new AspectStateManager();
+            nextStateManager = new AspectStateManager();
         } else if (sensor instanceof RapiscanSensor) {
-            stateManager = new RapiscanStateManager();
+            nextStateManager = new RapiscanStateManager();
         } else if (sensor instanceof Rs350OccupancyProcessModule){
-            stateManager = new Rs350StateManager();
+            nextStateManager = new Rs350StateManager();
         } else {
             logger.error("Could not determine RPM type from provided module.");
             return false;
         }
+
+        var previousStateManager = stateManager;
+        stateManager = nextStateManager;
+        if (previousStateManager != null)
+            previousStateManager.clearListeners();
         return true;
     }
 
@@ -302,6 +351,11 @@ public class OccupancyWrapper {
         rpm = null;
         rpmObs = null;
         stateManager = null;
+        synchronized (lifecycleLock) {
+            hasValidOccupancyState = false;
+            occupancyActive = false;
+            occupancyStartedAt = null;
+        }
     }
 
     public void removeFFmpegSensor(FFMPEGSensorBase<?> sensor) {
@@ -312,6 +366,41 @@ public class OccupancyWrapper {
 
     public void clearFFmpegSensors() {
         cameras.clear();
+    }
+
+    boolean processDailyFile(DataComponent dailyFile, Instant observationTime) {
+        return processDailyFile(stateManager, dailyFile, observationTime);
+    }
+
+    private boolean processDailyFile(StateManager manager, DataComponent dailyFile, Instant observationTime) {
+        if (manager == null || dailyFile == null || observationTime == null || !manager.updateDailyFile(dailyFile))
+            return false;
+
+        boolean shouldPublish;
+        boolean isOccupied = manager.hasActiveOccupancy();
+        Instant activeStart;
+        synchronized (lifecycleLock) {
+            if (manager != stateManager)
+                return false;
+
+            shouldPublish = !hasValidOccupancyState || isOccupied != occupancyActive;
+            if (shouldPublish) {
+                if (isOccupied && (!hasValidOccupancyState || !occupancyActive))
+                    occupancyStartedAt = manager.getOccupancyStartTimeHint() != null
+                            ? manager.getOccupancyStartTimeHint()
+                            : observationTime;
+                else if (!isOccupied)
+                    occupancyStartedAt = null;
+
+                occupancyActive = isOccupied;
+                hasValidOccupancyState = true;
+            }
+            activeStart = occupancyStartedAt;
+        }
+
+        if (shouldPublish && occupancyStatusOutput != null)
+            occupancyStatusOutput.publish(observationTime, isOccupied, activeStart);
+        return true;
     }
 
 

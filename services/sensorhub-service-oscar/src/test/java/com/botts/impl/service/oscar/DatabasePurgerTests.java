@@ -128,6 +128,27 @@ public class DatabasePurgerTests {
         assertTrue(database.getDataStreamStore().isEmpty());
     }
 
+    @Test
+    public void testConnectionStatusPurgeKeepsRecentHeartbeat() throws Exception {
+        BigId sysId = addSystem();
+        BigId dsId = addConnectionStatusDataStream(sysId);
+        Instant now = Instant.now();
+        addConnectionStatusObservation(dsId, now.minusSeconds(2 * 60 * 60), false);
+        addConnectionStatusObservation(dsId, now.minusSeconds(30), true);
+
+        DatabasePurger purger = new DatabasePurger(database, bucketStore, 30);
+        purger.purgeOldConnectionStatus();
+
+        List<IObsData> remaining = database.getObservationStore()
+                .select(new ObsFilter.Builder()
+                        .withDataStreams(dsId)
+                        .build())
+                .toList();
+        assertEquals("Expired connection history should be removed", 1, remaining.size());
+        assertTrue("The recent Online heartbeat must remain queryable",
+                remaining.get(0).getResult().getBooleanValue(1));
+    }
+
     // ==================== Helper Methods ====================
 
     private BigId addSystem() throws DataStoreException {
