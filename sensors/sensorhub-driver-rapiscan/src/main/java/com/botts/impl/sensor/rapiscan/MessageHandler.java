@@ -345,13 +345,12 @@ public class MessageHandler {
                     occupancyStartTime = receivedAtMillis;
                     currentOccupancy = true;
 
-                } else {
-                    int neutron = Integer.parseInt(csvLine[1]) +
-                            Integer.parseInt(csvLine[2]) +
-                            Integer.parseInt(csvLine[3]) +
-                            Integer.parseInt(csvLine[4]);
-                    occupancyNeutronBatch.addLast(neutron);
                 }
+                int neutron = Integer.parseInt(csvLine[1]) +
+                        Integer.parseInt(csvLine[2]) +
+                        Integer.parseInt(csvLine[3]) +
+                        Integer.parseInt(csvLine[4]);
+                occupancyNeutronBatch.addLast(neutron);
                 parentSensor.getNeutronOutput().onNewMessage(csvLine, System.currentTimeMillis(), ALARM);
 
                 isNeutronAlarm = true;
@@ -361,13 +360,12 @@ public class MessageHandler {
                 if (!currentOccupancy) {
                     occupancyStartTime = receivedAtMillis;
                     currentOccupancy = true;
-                } else {
-                    int neutron = Integer.parseInt(csvLine[1]) +
-                            Integer.parseInt(csvLine[2]) +
-                            Integer.parseInt(csvLine[3]) +
-                            Integer.parseInt(csvLine[4]);
-                    occupancyNeutronBatch.addLast(neutron);
                 }
+                int neutron = Integer.parseInt(csvLine[1]) +
+                        Integer.parseInt(csvLine[2]) +
+                        Integer.parseInt(csvLine[3]) +
+                        Integer.parseInt(csvLine[4]);
+                occupancyNeutronBatch.addLast(neutron);
                 parentSensor.getNeutronOutput().onNewMessage(csvLine, System.currentTimeMillis(), SCAN);
 
             }
