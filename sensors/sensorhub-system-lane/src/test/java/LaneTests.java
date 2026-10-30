@@ -16,6 +16,7 @@ import com.botts.impl.system.lane.AdjudicationControl;
 import com.botts.impl.system.lane.Descriptor;
 import com.botts.impl.system.lane.LaneSystem;
 import com.botts.impl.system.lane.config.*;
+import com.botts.impl.system.lane.helpers.occupancy.OccupancyStatusOutput;
 import net.opengis.swe.v20.DataComponent;
 import org.junit.*;
 import org.junit.runners.MethodSorters;
@@ -130,6 +131,7 @@ public class LaneTests {
         assertEquals(List.of("north-gate", "secondary"), config.operationalViewKeys);
         assertTrue(keywords.contains("oscar:view:north-gate"));
         assertTrue(keywords.contains("oscar:view:secondary"));
+        assertSame(lane.getOccupancyStatusOutput(), lane.getOutputs().get(OccupancyStatusOutput.NAME));
     }
 
     @Test

@@ -31,6 +31,7 @@ import com.botts.impl.system.lane.helpers.webid.WebIdHelper;
 import org.sensorhub.impl.utils.rad.output.N42Output;
 import com.botts.impl.system.lane.config.*;
 import com.botts.impl.system.lane.helpers.occupancy.OccupancyWrapper;
+import com.botts.impl.system.lane.helpers.occupancy.OccupancyStatusOutput;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.data.IDataProducerModule;
 import org.sensorhub.api.database.IObsSystemDatabase;
@@ -91,6 +92,7 @@ public class LaneSystem extends SensorSystem {
     private ExecutorService threadPool = null;
     Map<String, FFMPEGConfig> ffmpegConfigs = null;
     OccupancyWrapper occupancyWrapper;
+    OccupancyStatusOutput occupancyStatusOutput;
     WebIdHelper webIdHelper;
 
     AdjudicationControl adjudicationControl;
@@ -168,6 +170,9 @@ public class LaneSystem extends SensorSystem {
 
         n42Output = new N42Output<>(this);
         addOutput(n42Output, false);
+
+        occupancyStatusOutput = new OccupancyStatusOutput(this);
+        addOutput(occupancyStatusOutput, false);
 
         adjudicationControl = new AdjudicationControl(this);
         addControlInput(adjudicationControl);
@@ -269,6 +274,10 @@ public class LaneSystem extends SensorSystem {
         return this.n42Output;
     }
 
+    public OccupancyStatusOutput getOccupancyStatusOutput() {
+        return occupancyStatusOutput;
+    }
+
     private FFMPEGSensorBase<?> createFFmpegModule(FFMPEGConfig ffmpegConfig) throws SensorHubException {
         // Get ffmpeg submodule with the same unique serial num
         // If there is a module registered for this serial number, then the driver was already registered
@@ -319,7 +328,9 @@ public class LaneSystem extends SensorSystem {
             occupancyProducer = existingRPMModule;
         }
         if (occupancyProducer != null) {
-            occupancyWrapper = new OccupancyWrapper(getParentHub(), occupancyProducer);
+            occupancyWrapper = new OccupancyWrapper(getParentHub(), occupancyProducer, occupancyStatusOutput);
+            if (occupancyProducer.getCurrentState() == ModuleEvent.ModuleState.STARTED)
+                occupancyWrapper.start();
             //occupancyWrapper.videoNamePrefix = BASE_VIDEO_DIRECTORY + "lane" + getConfiguration().groupID + "/";
         }
 

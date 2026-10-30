@@ -2,7 +2,7 @@
 
 ## Administrator and operator manual
 
-The detailed OSCAR 3.8.3 manual is maintained beside `OSCARServiceConfig`, where the administration UI can select it using the active language:
+The detailed OSCAR 4.0.0 manual is maintained beside `OSCARServiceConfig`, where the administration UI can select it using the active language:
 
 - [English](com/botts/impl/service/oscar/i18n/README.md)
 - [Español](com/botts/impl/service/oscar/i18n/README_es.md)
