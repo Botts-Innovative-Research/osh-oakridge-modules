@@ -65,8 +65,8 @@ Consulte la [Guía de inicio rápido](https://github.com/ORNL/oscar/blob/main/di
 | **Vista operativa (`Operational View`)** | Filtro con nombre (`?view=<clave>` o `/view/<clave>`) que limita el Panel, Eventos, Estado de salud y Generador de informes de una estación a un grupo específico de carriles. |
 | **Nivel frío Parquet (`PARQUET_PRIMARY`)** | Modo de almacenamiento predeterminado de OSCAR 3.11.0 donde PostgreSQL mantiene una ventana temporal de 30 minutos y las particiones cerradas se exportan a archivos Apache Parquet comprimidos con ZSTD (`archive/parquet/`). |
 | **Medios retenidos de 5 fotogramas** | En cada ocupación con alarma, OSCAR extrae 5 instantáneas JPEG (`frame-01.jpg` a `frame-05.jpg`). Tras 30 días, se depuran los fotogramas secundarios (`01`, `02`, `04`, `05`) y se conserva el fotograma central (`frame-03.jpg`). |
-| **OCR de contenedores y matrículas (`ocrConfig`)** | Reconocimiento óptico opcional por carril (`enabled = false` de forma predeterminada) que lee de forma asíncrona códigos de contenedor ISO 6346 (con dígito de control) y matrículas según lo permitan los recursos de CPU y memoria, autocompletando **ID del vehículo** para contenedores ISO válidos o matrículas con confianza `>= 85%` y mostrando chips de sugerencia con recortes JPEG (`/sensorhub/buckets/ocr/crops/`). |
-| **SAN (Nombre alternativo del sujeto)** | Lista de nombres de host y direcciones IP (como `oscar.local` y `192.168.0.57`) incluidos dentro de un certificado HTTPS que el navegador comprueba antes de confiar en la conexión. |
+| **OCR de vehículos (`ocrConfig`)** | Reconocimiento óptico opcional por carril (`Activar OCR de vehículos = false` de forma predeterminada) que lee de forma asíncrona códigos de contenedor ISO 6346 (con dígito de control) y matrículas según lo permitan los recursos de CPU y memoria (`OcrResourceGovernor`), publicando candidatos `vehicleOcr` (`PARQUET_PRIMARY`), recortes JPEG acotados (`/sensorhub/buckets/ocr/crops/`, techo FIFO de `2.000` archivos) y autocompletado de **ID del vehículo** para contenedores ISO válidos o matrículas con confianza `>= 85%`. Si se desmarca `Solo alarmas`, los clips sin alarma se analizan de forma transitoria y se eliminan tras el OCR manteniendo `occupancy.videoPaths` vacío (`[]`). |
+| **SAN (Nombre alternativo del sujeto)** | Lista de nombres de host y direcciones IP (como `oscar.local` y `192.0.2.10`) incluidos dentro de un certificado HTTPS que el navegador comprueba antes de confiar en la conexión. |
 
 ## 2. Confiar en el certificado de OSCAR
 
@@ -442,7 +442,7 @@ La lista varía con los paquetes instalados. Para un carril normal, seleccione *
 | Inicio automático | Inicia el carril al cargar la configuración. Actívelo tras verificar. |
 | Claves de vista operativa | Lista opcional de claves de estación autorizadas para mostrar este carril. Añada cada clave por separado; use entre 1 y 63 letras ASCII minúsculas (`a`–`z`), números o guiones, sin guion inicial ni final. Déjela vacía si el carril no debe pertenecer a una vista delimitada. |
 | Umbral de ocupación prolongada (min) | Duración en minutos (`1`–`1440`, predeterminado `1`) antes de que una ocupación activa publique `Fault - Extended Occupancy` e incremente el contador de fallas `Ext-Occ`. Cuando una ocupación prolongada termina con una alarma solo gamma (sin alarma de neutrones), OSCAR la suprime del panel activo y la adjudica automáticamente como **Código 9998: Alarma gamma de ocupación prolongada**. |
-| OCR de contenedores y matrículas | Ajuste opcional por carril (`enabled = false` de forma predeterminada). Cuando se activa en un carril, OSCAR ejecuta reconocimiento PP-OCRv3 ONNX en segundo plano según los recursos disponibles, publica candidatos `vehicleOcr` y autocompleta **ID del vehículo** al adjudicar; los carriles desactivados no registran `vehicleOcr` ni consumen recursos adicionales. |
+| OCR de vehículos | Ajuste opcional por carril (`Activar OCR de vehículos`, `Solo alarmas`, `Directorio de modelos`, `Leer números de contenedor`, `Leer matrículas`, `UID de cámaras`, `Fotogramas por clip`, `Confianza mínima de contenedor`, `Confianza mínima de matrícula`, `Fracción superior ignorada`, `Fracción inferior ignorada`, predeterminado `enabled = false`). Cuando se activa en un carril, OSCAR ejecuta reconocimiento PP-OCRv3 ONNX en segundo plano según los recursos disponibles, publica candidatos `vehicleOcr` (`PARQUET_PRIMARY`) y recortes con límite FIFO de `2.000` archivos, elimina de inmediato los clips transitorios sin alarma cuando `Solo alarmas = false` y autocompleta **ID del vehículo** al adjudicar; los carriles desactivados no consumen recursos adicionales. |
 | Eliminar datos al eliminar el carril | Activo de forma predeterminada. Al eliminar el carril borra sus registros de base de datos. Desactívelo si debe conservar el historial. |
 | Información de fuente de datos | Metadatos heredados opcionales; úselos solo si el modelo SensorML del sitio los exige. |
 
@@ -497,6 +497,10 @@ Todos muestran **Host remoto**, **Usuario**, **Contraseña** y **Longitud del b�
 Los hijos FFmpeg generados usan TCP, solicitan 24 fps, activan HLS, desactivan fotogramas individuales, usan tiempo de conexión de 5 segundos y reintentos. La capacidad real depende de la cámara y la red.
 
 ![RPM y cámaras configurados](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/25-lane-options-filled.png)
+
+**OCR vehicular opcional por carril:** Abra la pestaña **OCR vehicular** (**Vehicle OCR**) solo en los carriles que requieran reconocimiento asíncrono de contenedores o matrículas (desactivado por defecto, con cero memoria ONNX en carriles inactivos). Revise **Solo alarmas** (`Alarms Only`, recomendado `true`; si se desmarca, los clips sin alarma se eliminan de inmediato tras el muestreo OCR), **Fotogramas por clip** (`6`), **Confianza mínima de contenedor** (`0.5`) y **Confianza mínima de matrícula** (`0.6`). Las salidas `vehicleOcr` se archivan en `PARQUET_PRIMARY` y los recortes JPEG mantienen un límite FIFO de `2.000` archivos (`< 100 MiB`).
+
+![Configuración opcional de OCR vehicular por carril](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/33-lane-vehicle-ocr.png)
 
 ### 7.6 Finalizar y verificar
 
@@ -724,17 +728,17 @@ Verifique carriles/eventos del remoto, su fila Nacional, un informe y un evento 
 El perfil estándar 3.11.0 utiliza la arquitectura por niveles PostgreSQL + Apache Parquet en modo
 `PARQUET_PRIMARY` (`OSCAR_TIER_STORAGE_MODE=PARQUET_PRIMARY`). Los flujos de configuración estáticos
 (`sensorLocation`, `adjudicationCodes`, `siteInfo`) permanecen en PostgreSQL `ONLY oscar.obs`, mientras
-que las 21 salidas operativas y probatorias permitidas (`gammaCounts`, `gammaThreshold`, `neutronCounts`,
+que las 22 salidas operativas y probatorias permitidas (`gammaCounts`, `gammaThreshold`, `neutronCounts`,
 `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`,
 `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`,
-`occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`) se escriben en particiones
+`occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`) se escriben en particiones
 temporales de 30 minutos (`osg_*`). Cinco minutos después del cierre de cada ventana de 30 minutos,
 trabajos de fondo exportan la partición a archivos Apache Parquet catalogados y comprimidos con ZSTD
 (`archive/datasets/observations/`), actualizan `oscar_obs_latest`, los contadores de resumen de
 `oscar_archive_schema` y `oscar_event_locator`, verifican la paridad exacta de filas/hashes y retiran la
 partición temporal para mantener compacto PostgreSQL (y al iniciar, OSCAR reconcilia las rutas existentes
 y exporta retroactivamente a Parquet cualquier fila heredada sin archivar en la tabla principal para esas
-21 salidas). Las adjudicaciones y readjudicaciones de ocupaciones archivadas se registran en
+22 salidas). Las adjudicaciones y readjudicaciones de ocupaciones archivadas se registran en
 `oscar_obs_overlay` + `oscar_obs_latest` sin reescribir Parquet, y cada hora se depuran los comandos
 operativos transitorios en `cmd_commands`/`cmd_status` con más de 24 horas (conservando permanentemente
 los comandos de auditoría `%adjudicate%`). (Los sitios que configuran explícitamente `HOT_RETENTION`
@@ -883,6 +887,8 @@ destrucción de registros.
 Para soporte técnico, exporte un paquete de diagnóstico saneado (`.zip`):
 - **Desde el Visor OSCAR (cuando la interfaz responde):** Abra **Ayuda (`?`)** en la barra superior y pulse **Exportar paquete de soporte** (también disponible en **Solución de problemas y preguntas frecuentes**). OSCAR reúne advertencias/errores recientes del navegador, solicitudes API fallidas o lentas, estado de módulos y carriles, resumen de JVM y almacenamiento, configuración saneada y registros rotativos del servidor (`oscar-support-<UTC>.zip`), o descarga un paquete solo del cliente (`oscar-client-support-<UTC>.zip`) si el servidor no responde.
 - **Desde la CLI del servidor anfitrión (si OSCAR está degradado o no arranca):** Ejecute `sudo bash oscar.sh support-bundle` en Ubuntu o `.\oscar.bat support-bundle` en Windows (opciones `--tail`/`-Tail` y `--output`/`-Destination`) para recopilar estado del host y Docker, registros de contenedores, metadatos del certificado TLS y registros/configuración en solo lectura de `oscar_oscar_state` en `oscar-host-support-<UTC>.zip`. Las contraseñas, tokens, cookies de sesión, correos electrónicos, `secrets/*` y claves privadas TLS (`tls/server.key`) se redactan o excluyen automáticamente; verifique la política del sitio antes de compartir el archivo.
+
+![Guía rápida del operador y exportación de paquete de soporte saneado](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/34-viewer-help-support-bundle.png)
 
 ## 15. Documentación relacionada
 

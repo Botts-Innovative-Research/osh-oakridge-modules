@@ -31,6 +31,10 @@ public final class PlateHeuristics {
     /** 6 digits + 1 check character: almost certainly the right half of a split ISO 6346 stencil. */
     private static final Pattern CONTAINER_SERIAL_FRAGMENT = Pattern.compile("^\\d{6}[A-Z0-9]$");
 
+    /** ISO 6346 size/type stencil (e.g. 22G1, 45G1, 45R1) plus an optional trailing border artifact (e.g. 45C1P). */
+    private static final Pattern ISO_SIZE_TYPE_STENCIL = Pattern.compile(
+            "^(?:20|22|25|40|42|45|L2|L5)[CGHPRUTVBSK][0-9][A-Z0-9]?$");
+
     private PlateHeuristics() {
     }
 
@@ -69,6 +73,8 @@ public final class PlateHeuristics {
         if (OSD_TOKEN.matcher(compact).matches())
             return Optional.empty();
         if (CONTAINER_SERIAL_FRAGMENT.matcher(compact).matches())
+            return Optional.empty();
+        if (ISO_SIZE_TYPE_STENCIL.matcher(compact).matches())
             return Optional.empty();
 
         // Reject 4-letter ISO 6346 owner+category prefix fragments (e.g. MSCU1)

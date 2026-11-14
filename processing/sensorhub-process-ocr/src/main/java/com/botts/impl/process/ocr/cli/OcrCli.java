@@ -44,7 +44,8 @@ public final class OcrCli {
         try (OcrEngine engine = OnnxOcrEngine.acquireShared(modelDir)) {
             List<CandidateAggregator.FrameInput> frames = new ArrayList<>();
             String lower = input.getFileName().toString().toLowerCase(Locale.ROOT);
-            if (lower.endsWith(".mp4") || lower.endsWith(".mkv") || lower.endsWith(".mov") || lower.endsWith(".ts")) {
+            if (lower.endsWith(".mp4") || lower.endsWith(".mkv") || lower.endsWith(".mov")
+                    || lower.endsWith(".ts") || lower.endsWith(".avi") || lower.endsWith(".webm")) {
                 FrameSampler sampler = new FrameSampler();
                 for (FrameSampler.SampledFrame sf : sampler.sampleFrames(input, maxFrames)) {
                     try {

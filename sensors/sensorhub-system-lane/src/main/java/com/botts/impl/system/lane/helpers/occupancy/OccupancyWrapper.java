@@ -39,9 +39,15 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 public class OccupancyWrapper {
     public static final String DAILYFILE_NAME = "dailyFile";
+
+    @FunctionalInterface
+    public interface TransientNonAlarmClipConsumer {
+        void accept(Occupancy occupancy, List<String> videoPaths, Runnable discardCallback);
+    }
 
     private static final Logger logger = LoggerFactory.getLogger(OccupancyWrapper.class);
     private static final ScheduledExecutorService EXTENDED_OCCUPANCY_SCHEDULER =
@@ -55,10 +61,12 @@ public class OccupancyWrapper {
     private IDataProducerModule<?> rpm;
     private volatile StateManager stateManager;
     private final OccupancyStatusOutput occupancyStatusOutput;
+    private volatile TransientNonAlarmClipConsumer transientNonAlarmClipConsumer;
     private final CameraRecordingCoordinator recordingCoordinator = new CameraRecordingCoordinator();
     private final ObservationHelper observationHelper = new ObservationHelper(
             recordingCoordinator,
-            this::evaluateCompletedOccupancy);
+            this::evaluateCompletedOccupancy,
+            () -> this.transientNonAlarmClipConsumer);
     Instant startTime = Instant.now();
     Instant endTime = Instant.now();
     ISensorHub hub;
@@ -459,6 +467,10 @@ public class OccupancyWrapper {
         cameras.clear();
     }
 
+    public void setTransientNonAlarmClipConsumer(TransientNonAlarmClipConsumer consumer) {
+        this.transientNonAlarmClipConsumer = consumer;
+    }
+
     public int getExtendedOccupancyThresholdMinutes() {
         return extendedOccupancyThresholdMinutes;
     }
@@ -678,14 +690,17 @@ public class OccupancyWrapper {
         private final OccupancyRecordingRegistry recordings = new OccupancyRecordingRegistry();
         private final CameraRecordingCoordinator coordinator;
         private final Consumer<Occupancy> completedOccupancyEvaluator;
+        private final Supplier<TransientNonAlarmClipConsumer> transientClipConsumerSupplier;
         private boolean active;
         private long lifecycleEpoch;
 
         private ObservationHelper(
                 CameraRecordingCoordinator coordinator,
-                Consumer<Occupancy> completedOccupancyEvaluator) {
+                Consumer<Occupancy> completedOccupancyEvaluator,
+                Supplier<TransientNonAlarmClipConsumer> transientClipConsumerSupplier) {
             this.coordinator = coordinator;
             this.completedOccupancyEvaluator = completedOccupancyEvaluator;
+            this.transientClipConsumerSupplier = transientClipConsumerSupplier;
         }
 
         public void register(CameraRecordingCoordinator.Recording recording) {
@@ -739,19 +754,41 @@ public class OccupancyWrapper {
                 completedOccupancyEvaluator.accept(occupancy);
             }
 
+            boolean alarm = occupancy.hasGammaAlarm() || occupancy.hasNeutronAlarm();
+            TransientNonAlarmClipConsumer transientConsumer =
+                    !alarm && transientClipConsumerSupplier != null
+                            ? transientClipConsumerSupplier.get()
+                            : null;
+            boolean retainNonAlarm = !alarm && transientConsumer != null;
+
             OccupancyRecordingRegistry.Resolution resolution =
-                    recordings.resolve(occupancy, FILE_TIMEOUT, coordinator::finish);
+                    recordings.resolve(occupancy, FILE_TIMEOUT, retainNonAlarm, coordinator::finish);
             if (resolution == null)
                 return;
 
+            boolean handoffTransient = false;
             synchronized (lock) {
-                boolean alarm = occupancy.hasGammaAlarm() || occupancy.hasNeutronAlarm();
-                boolean publish = active && callbackEpoch == lifecycleEpoch && alarm
-                        && !resolution.paths().isEmpty();
-                if (!recordings.complete(resolution, publish))
-                    return;
+                boolean valid = active && callbackEpoch == lifecycleEpoch && !resolution.paths().isEmpty();
+                if (alarm) {
+                    if (!recordings.complete(resolution, valid))
+                        return;
+                    appendDistinctVideoPaths(occupancy, resolution.paths());
+                } else {
+                    boolean retain = valid && retainNonAlarm;
+                    if (!recordings.complete(resolution, retain))
+                        return;
+                    handoffTransient = true;
+                }
+            }
 
-                appendDistinctVideoPaths(occupancy, resolution.paths());
+            if (handoffTransient) {
+                Runnable discardCallback = resolution.recording()::discardSavedPaths;
+                try {
+                    transientConsumer.accept(occupancy, resolution.paths(), discardCallback);
+                } catch (Throwable t) {
+                    discardCallback.run();
+                    logger.warn("Transient non-alarm clip consumer failed; discarded temporary clips immediately", t);
+                }
             }
         }
 

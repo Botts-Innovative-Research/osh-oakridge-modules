@@ -23,5 +23,9 @@ class PlateHeuristicsTest {
         assertTrue(PlateHeuristics.normalizePlate("CAMERA01").isEmpty());
         assertTrue(PlateHeuristics.normalizePlate("CH01").isEmpty());
         assertTrue(PlateHeuristics.normalizePlate("CSQU3054383").isEmpty());
+        assertTrue(PlateHeuristics.normalizePlate("45C1P").isEmpty());
+        assertTrue(PlateHeuristics.normalizePlate("22G10").isEmpty());
+        assertEquals("SRG195", PlateHeuristics.normalizePlate("SRG 195").orElse(""));
+        assertEquals("TS2103", PlateHeuristics.normalizePlate("TS2103").orElse(""));
     }
 }

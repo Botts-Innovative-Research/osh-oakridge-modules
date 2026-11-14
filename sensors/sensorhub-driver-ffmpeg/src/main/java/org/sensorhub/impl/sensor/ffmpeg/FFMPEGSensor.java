@@ -37,15 +37,18 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
     private static final Logger logger = LoggerFactory.getLogger(FFMPEGSensor.class);
 
     static final long DEFAULT_RECONNECT_PERIOD_MS = 2_000L;
+    static final long POST_CONNECT_STATUS_CONFIRMATION_DELAY_MS = 1_500L;
 
     private final Object reconnectLock = new Object();
     private Thread streamMonitorThread;
     private ScheduledExecutorService reconnectExecutor;
     private ScheduledFuture<?> reconnectTask;
     private ScheduledFuture<?> connectionStatusHeartbeatTask;
+    private ScheduledFuture<?> postConnectStatusTask;
     private boolean reconnectEnabled;
     private int currentReconnect;
     private int heartbeatTickCount;
+    long postConnectStatusDelayMs = POST_CONNECT_STATUS_CONFIRMATION_DELAY_MS;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -93,6 +96,7 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
             return;
         }
         publishConnectionStatus(true);
+        schedulePostConnectStatusConfirmation();
 
         currentReconnect = 0;
         startStreamMonitor(mpegTsProcessor);
@@ -109,6 +113,7 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
                 });
             }
             if (connectionStatusHeartbeatTask == null || connectionStatusHeartbeatTask.isDone()) {
+                heartbeatTickCount = 0;
                 connectionStatusHeartbeatTask = reconnectExecutor.scheduleAtFixedRate(
                         this::runConnectionStatusHeartbeat,
                         CONNECTION_STATUS_HEARTBEAT_PERIOD_SECONDS,
@@ -118,7 +123,35 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
         }
     }
 
-    private void runConnectionStatusHeartbeat() {
+    /**
+     * Republishes the current status shortly after stream startup completes so
+     * asynchronous datastream consumers registered by {@code DefaultSystemRegistry}
+     * after a module/lane restart always persist the post-start {@code Online}
+     * transition without waiting for the 15-minute background heartbeat cadence.
+     */
+    private void schedulePostConnectStatusConfirmation() {
+        synchronized (reconnectLock) {
+            if (!reconnectEnabled || reconnectExecutor == null || reconnectExecutor.isShutdown())
+                return;
+            if (postConnectStatusTask != null)
+                postConnectStatusTask.cancel(false);
+            long delayMs = Math.max(10L, postConnectStatusDelayMs);
+            postConnectStatusTask = reconnectExecutor.schedule(() -> {
+                synchronized (reconnectLock) {
+                    postConnectStatusTask = null;
+                    if (!reconnectEnabled)
+                        return;
+                    try {
+                        publishConnectionStatusHeartbeat();
+                    } catch (Exception e) {
+                        logger.warn("Unable to publish post-connect FFmpeg connection-status confirmation", e);
+                    }
+                }
+            }, delayMs, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    void runConnectionStatusHeartbeat() {
         synchronized (reconnectLock) {
             if (!reconnectEnabled)
                 return;
@@ -140,6 +173,12 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
     }
 
     void scheduleReconnect(Exception cause) {
+        synchronized (reconnectLock) {
+            if (postConnectStatusTask != null) {
+                postConnectStatusTask.cancel(false);
+                postConnectStatusTask = null;
+            }
+        }
         publishConnectionStatus(false);
         final int attempt;
         final int maxAttempts;
@@ -214,6 +253,7 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
             currentReconnect = 0;
         }
         publishConnectionStatus(true);
+        schedulePostConnectStatusConfirmation();
         reportStatus("Connected to video input stream.");
         startStreamMonitor(mpegTsProcessor);
     }
@@ -269,12 +309,16 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
         Thread monitor;
         ScheduledExecutorService executor;
         ScheduledFuture<?> heartbeatTask;
+        ScheduledFuture<?> postConnectTask;
         synchronized (reconnectLock) {
             reconnectEnabled = false;
+            heartbeatTickCount = 0;
             if (reconnectTask != null) {
                 reconnectTask.cancel(true);
                 reconnectTask = null;
             }
+            postConnectTask = postConnectStatusTask;
+            postConnectStatusTask = null;
             heartbeatTask = connectionStatusHeartbeatTask;
             connectionStatusHeartbeatTask = null;
             monitor = streamMonitorThread;
@@ -283,6 +327,8 @@ public class FFMPEGSensor extends FFMPEGSensorBase<FFMPEGConfig> {
             reconnectExecutor = null;
         }
 
+        if (postConnectTask != null)
+            postConnectTask.cancel(true);
         if (heartbeatTask != null)
             heartbeatTask.cancel(true);
         if (monitor != null)

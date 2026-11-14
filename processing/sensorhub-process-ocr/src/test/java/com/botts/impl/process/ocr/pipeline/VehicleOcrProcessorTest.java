@@ -231,6 +231,102 @@ class VehicleOcrProcessorTest {
         assertEquals(10, store.listObjects("ocr").size());
     }
 
+    @Test
+    void invokesCleanupCallbackExactlyOnceAcrossCompletionSheddingOverflowAndClose() throws Exception {
+        AtomicReference<Double> heapRatio = new AtomicReference<>(0.30);
+        OcrResourceGovernor governor = new OcrResourceGovernor(new OcrResourceGovernor.TelemetrySource() {
+            @Override public double systemCpuLoad() { return 0.20; }
+            @Override public double processCpuLoad() { return 0.15; }
+            @Override public double heapUsedRatio() { return heapRatio.get(); }
+            @Override public long freeAllocatableBytes() {
+                return heapRatio.get() > 0.90 ? 16L * 1024 * 1024 : 512L * 1024 * 1024;
+            }
+        }, 0.85, 0.80, 0.85, 96L * 1024 * 1024);
+
+        InMemoryBucketStore store = new InMemoryBucketStore();
+        store.createBucket("videos");
+        String dir = "retained-media/v1/events/obs-clean/lane/cam";
+        store.putBytes("videos", dir + "/manifest.json", "{}".getBytes(StandardCharsets.UTF_8));
+        store.putBytes("videos", dir + "/frame-01.jpg", makeJpegBytes(160, 120));
+
+        // 1. Normal completion invokes cleanupCallback exactly once
+        AtomicInteger normalCleanup = new AtomicInteger();
+        CountDownLatch normalDone = new CountDownLatch(1);
+        try (VehicleOcrProcessor proc = new VehicleOcrProcessor(
+                new FrameSampler(), store, null, governor, 2, 0L, new long[0], new long[0], 10L)) {
+            OcrJob normalJob = new OcrJob(
+                    "lane", "obs-clean", null, 1, 2, 2, List.of(),
+                    new OcrSettings(Paths.get("models/ocr"), 1, 0.5, 0, 0),
+                    r -> {},
+                    () -> {
+                        normalCleanup.incrementAndGet();
+                        normalDone.countDown();
+                    });
+            proc.submit(normalJob,
+                    img -> List.of(new OcrRead("EGHU 397269 4", 0.99, new Rectangle(10, 10, 80, 25))),
+                    new AtomicBoolean(true));
+            assertTrue(normalDone.await(3, TimeUnit.SECONDS));
+            assertEquals(1, normalCleanup.get());
+
+            // 2. Critical heap shedding invokes cleanupCallback exactly once
+            heapRatio.set(0.95);
+            AtomicInteger shedCleanup = new AtomicInteger();
+            CountDownLatch shedDone = new CountDownLatch(1);
+            OcrJob shedJob = new OcrJob(
+                    "lane", "obs-clean", null, 1, 2, 2, List.of(),
+                    new OcrSettings(Paths.get("models/ocr"), 1, 0.5, 0, 0),
+                    r -> {},
+                    () -> {
+                        shedCleanup.incrementAndGet();
+                        shedDone.countDown();
+                    });
+            proc.submit(shedJob, img -> List.of(), new AtomicBoolean(true));
+            assertTrue(shedDone.await(3, TimeUnit.SECONDS));
+            assertEquals(1, shedCleanup.get());
+
+            // 3. Queue overflow eviction + close() invoke every job's cleanupCallback once
+            heapRatio.set(0.30);
+            CountDownLatch workerBlocked = new CountDownLatch(1);
+            CountDownLatch releaseWorker = new CountDownLatch(1);
+            AtomicInteger batchCleanups = new AtomicInteger();
+
+            OcrJob blocker = new OcrJob(
+                    "lane", "obs-clean", null, 1, 2, 2, List.of(),
+                    new OcrSettings(Paths.get("models/ocr"), 1, 0.5, 0, 0),
+                    r -> {},
+                    batchCleanups::incrementAndGet);
+            proc.submit(blocker, img -> {
+                workerBlocked.countDown();
+                try {
+                    releaseWorker.await(3, TimeUnit.SECONDS);
+                } catch (InterruptedException ignored) {
+                }
+                return List.of();
+            }, new AtomicBoolean(true));
+            assertTrue(workerBlocked.await(2, TimeUnit.SECONDS));
+
+            for (int i = 0; i < 5; i++) {
+                proc.submit(new OcrJob(
+                        "lane", "obs-clean", null, 1, 2, 2, List.of(),
+                        new OcrSettings(Paths.get("models/ocr"), 1, 0.5, 0, 0),
+                        r -> {},
+                        batchCleanups::incrementAndGet),
+                        img -> List.of(),
+                        new AtomicBoolean(true));
+            }
+            // Queue capacity is 2, so at least 3 of the 5 queued jobs were evicted and cleaned up immediately
+            assertTrue(batchCleanups.get() >= 3);
+            proc.close();
+            releaseWorker.countDown();
+            // After close() + worker exit, all 6 jobs (1 blocker + 5 queued) must have cleaned up once each
+            long waitDeadline = System.currentTimeMillis() + 2_000L;
+            while (System.currentTimeMillis() < waitDeadline && batchCleanups.get() < 6) {
+                Thread.sleep(15L);
+            }
+            assertEquals(6, batchCleanups.get());
+        }
+    }
+
     private static byte[] makeJpegBytes(int w, int h) throws Exception {
         BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_3BYTE_BGR);
         Graphics2D g = img.createGraphics();

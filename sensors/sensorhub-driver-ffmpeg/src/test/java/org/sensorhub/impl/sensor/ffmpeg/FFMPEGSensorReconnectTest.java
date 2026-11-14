@@ -194,6 +194,67 @@ public class FFMPEGSensorReconnectTest {
         assertTrue(sensor.recoveredInterfacesRegistered);
     }
 
+    @Test
+    public void restartResetsHeartbeatTickCounterAndPublishesPostStartOnlineConfirmation() throws Exception {
+        initializeWithUnavailableSource();
+        sensor.postConnectStatusDelayMs = 40L;
+        sensor.failOpen = false;
+        sensor.doStart();
+
+        // Advance the background tick counter into its coalesced window before restarting.
+        sensor.runConnectionStatusHeartbeat();
+        sensor.runConnectionStatusHeartbeat();
+
+        sensor.doStop();
+        assertConnectionStatus(false);
+
+        sensor.doStart();
+        assertConnectionStatus(true);
+
+        // Attach listener AFTER doStart() returns, modeling DefaultSystemRegistry's
+        // asynchronous datastream subscription after a LaneSystem Apply Changes restart.
+        IStreamingDataInterface output = sensor.getOutputs().get(CONNECTION_STATUS_OUTPUT);
+        List<Boolean> lateSubscriberStates = java.util.Collections.synchronizedList(new ArrayList<>());
+        output.registerListener(event -> {
+            if (event instanceof DataEvent) {
+                DataEvent dataEvent = (DataEvent) event;
+                lateSubscriberStates.add(dataEvent.getRecords()[0].getBooleanValue(1));
+            }
+        });
+
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline && lateSubscriberStates.isEmpty()) {
+            Thread.sleep(15L);
+        }
+        assertTrue("Late subscriber after restart must receive post-connect Online confirmation",
+                lateSubscriberStates.contains(Boolean.TRUE));
+
+        // Verify the periodic heartbeat tick counter was also reset to 0 on restart
+        // so tick #1 emits immediately rather than waiting 29 ticks (14.5 minutes).
+        int countBeforeFirstTick = lateSubscriberStates.size();
+        sensor.runConnectionStatusHeartbeat();
+        assertEquals("First periodic heartbeat tick after restart must publish immediately",
+                countBeforeFirstTick + 1, lateSubscriberStates.size());
+        sensor.runConnectionStatusHeartbeat();
+        assertEquals("Second periodic heartbeat tick must remain coalesced",
+                countBeforeFirstTick + 1, lateSubscriberStates.size());
+    }
+
+    @Test
+    public void disconnectCancelsPendingPostStartConfirmation() throws Exception {
+        initializeWithUnavailableSource();
+        sensor.postConnectStatusDelayMs = 80L;
+        sensor.failOpen = false;
+        sensor.doStart();
+        assertConnectionStatus(true);
+
+        sensor.scheduleReconnect(new Exception("stream dropped right after connect"));
+        assertConnectionStatus(false);
+
+        Thread.sleep(160L);
+        assertConnectionStatus(false);
+    }
+
     private void initializeWithUnavailableSource() throws SensorHubException {
         sensor.failOpen = true;
         sensor.doInit();

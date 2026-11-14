@@ -51,7 +51,16 @@ public class BucketServiceTest {
         httpConfig.autoStart = true;
         httpConfig.moduleClass = HttpServer.class.getCanonicalName();
         httpConfig.id = UUID.randomUUID().toString();
+        httpConfig.httpPort = freePort();
         return (IHttpServer<?>) reg.loadModule(httpConfig);
+    }
+
+    private static int freePort() {
+        try (java.net.ServerSocket socket = new java.net.ServerSocket(0)) {
+            return socket.getLocalPort();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Test

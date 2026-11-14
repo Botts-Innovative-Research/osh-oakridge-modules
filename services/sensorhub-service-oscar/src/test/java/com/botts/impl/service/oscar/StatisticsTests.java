@@ -506,7 +506,17 @@ public class StatisticsTests {
         httpConfig.autoStart = true;
         httpConfig.moduleClass = HttpServer.class.getCanonicalName();
         httpConfig.id = UUID.randomUUID().toString();
+        httpConfig.httpPort = freePort();
         httpServer = (IHttpServer<?>) reg.loadModule(httpConfig);
+        assertTrue(httpServer.waitForState(ModuleEvent.ModuleState.STARTED, 5000));
+    }
+
+    private static int freePort() {
+        try (java.net.ServerSocket socket = new java.net.ServerSocket(0)) {
+            return socket.getLocalPort();
+        } catch (java.io.IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @After

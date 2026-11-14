@@ -23,7 +23,32 @@ public record OcrJob(
         double resultTimestamp,
         List<CameraClip> clips,
         OcrSettings settings,
-        Consumer<VehicleOcrResult> resultConsumer
+        Consumer<VehicleOcrResult> resultConsumer,
+        Runnable cleanupCallback
 ) {
+    private static final Runnable NOOP_CLEANUP = () -> {};
+
+    public OcrJob {
+        if (cleanupCallback == null) {
+            cleanupCallback = NOOP_CLEANUP;
+        }
+    }
+
+    public OcrJob(
+            String laneUid,
+            String initialOccupancyObsId,
+            Supplier<String> occupancyObsIdResolver,
+            double occupancyStartTime,
+            double occupancyEndTime,
+            double resultTimestamp,
+            List<CameraClip> clips,
+            OcrSettings settings,
+            Consumer<VehicleOcrResult> resultConsumer
+    ) {
+        this(laneUid, initialOccupancyObsId, occupancyObsIdResolver,
+                occupancyStartTime, occupancyEndTime, resultTimestamp,
+                clips, settings, resultConsumer, NOOP_CLEANUP);
+    }
+
     public record CameraClip(String cameraUid, Path videoPath) {}
 }

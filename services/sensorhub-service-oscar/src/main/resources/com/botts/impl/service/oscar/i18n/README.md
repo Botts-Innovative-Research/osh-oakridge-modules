@@ -65,8 +65,8 @@ Use the release [Quick Start](https://github.com/ORNL/oscar/blob/main/dist/relea
 | **Operational View** | A named filter (`?view=<key>` or `/view/<key>`) that scopes a workstation's Dashboard, Events, Status of Health, and Report Generator to a specific group of lanes (for example, `north-gate`). |
 | **Parquet Cold Tier (`PARQUET_PRIMARY`)** | OSCAR 3.11.0's default storage mode where PostgreSQL holds a 30-minute hot staging window and completed 30-minute partitions are exported to ZSTD-compressed Apache Parquet files (`archive/parquet/`) for fast, compact long-term querying. |
 | **Retained 5-Frame Media** | For every alarm occupancy, OSCAR extracts 5 evenly spaced JPEG snapshots (`frame-01.jpg` to `frame-05.jpg`). After 30 days, secondary frames (`01`, `02`, `04`, `05`) are pruned while the midpoint keyframe (`frame-03.jpg`) is preserved. |
-| **Container & License Plate OCR (`ocrConfig`)** | Optional per-lane background OCR (`enabled = false` by default) that asynchronously reads ISO 6346 shipping container codes (with check-digit verification) and license plates from occupancy camera frames as CPU and heap resources allow, auto-filling **Vehicle ID** for checksum-valid containers or high-confidence (`>= 85%`) plates while providing clickable suggestion chips and JPEG evidence crops (`/sensorhub/buckets/ocr/crops/`). |
-| **SAN (Subject Alternative Name)** | The list of hostnames and IP addresses (such as `oscar.local` and `192.168.0.57`) embedded inside an HTTPS certificate that a browser checks before trusting the connection. |
+| **Vehicle OCR (`ocrConfig`)** | Optional per-lane background OCR (`Enable Vehicle OCR = false` by default) that asynchronously reads ISO 6346 shipping container codes (with check-digit verification) and license plates from occupancy camera clips as CPU and heap resources allow (`OcrResourceGovernor`), publishing `vehicleOcr` (`PARQUET_PRIMARY`) candidates, bounded JPEG evidence crops (`/sensorhub/buckets/ocr/crops/`, `2,000`-file FIFO ceiling), and auto-filled **Vehicle ID** for checksum-valid containers or high-confidence (`>= 85%`) plates. When `Alarms Only` is cleared, non-alarm clips are scanned transiently and deleted immediately after OCR while keeping `occupancy.videoPaths` empty (`[]`). |
+| **SAN (Subject Alternative Name)** | The list of hostnames and IP addresses (such as `oscar.local` and `192.0.2.10`) embedded inside an HTTPS certificate that a browser checks before trusting the connection. |
 
 ## 2. Trust the OSCAR certificate
 
@@ -442,7 +442,7 @@ The available list can change with installed bundles. For ordinary lane setup, s
 | Auto Start | Starts the lane automatically when configuration loads. Enable for operational lanes after configuration is verified. |
 | Operational View Keys | Optional list of workstation view keys allowed to display this lane. Add each key separately; use 1–63 lowercase ASCII letters (`a`–`z`), numbers, or hyphens, with no leading or trailing hyphen. Leave empty when the lane should have no scoped-view assignment. |
 | Extended Occupancy Threshold (min) | Duration in minutes (`1`–`1440`, default `1`) before an active occupancy publishes a `Fault - Extended Occupancy` status observation and increments the lane's `Ext-Occ` fault count. When an extended occupancy completes with a gamma-only alarm (no neutron alarm), OSCAR suppresses it from the live Dashboard queue and automatically adjudicates it as **Code 9998: Extended Occupancy Gamma Alarm**. |
-| Container & License Plate OCR | Optional per-lane OCR settings (`Enable Container / Plate OCR`, `Frames Sampled per Video`, `Min Confidence`, `Require ISO 6346 Check Digit`, `Recognize License Plates`, `Save Crop Evidence`, `Model Directory`, default `enabled = false`). When enabled on a lane, OSCAR runs PP-OCRv3 ONNX recognition asynchronously on a low-priority resource-governed worker, publishes `vehicleOcr` candidates, and auto-fills **Vehicle ID** during adjudication; disabled lanes register no `vehicleOcr` output and incur zero runtime overhead. |
+| Vehicle OCR | Optional per-lane OCR settings (`Enable Vehicle OCR`, `Alarms Only`, `Model Directory`, `Read Container Numbers`, `Read License Plates`, `Camera UIDs`, `Frames Per Clip`, `Container Min Confidence`, `Plate Min Confidence`, `Ignore Top Band Fraction`, `Ignore Bottom Band Fraction`, default `enabled = false`). When enabled on a lane, OSCAR runs PP-OCRv3 ONNX recognition asynchronously on a low-priority resource-governed worker, publishes `vehicleOcr` (`PARQUET_PRIMARY`) candidates and bounded crop thumbnails (`2,000`-crop FIFO ceiling), discards temporary non-alarm clips immediately when `Alarms Only = false`, and auto-fills **Vehicle ID** during adjudication; disabled lanes register no active OCR worker subscription and incur zero runtime overhead. |
 | Delete Data on Lane Removal | Defaults enabled. If selected, removing the lane deletes its database records. Clear it when decommissioning must preserve historical data. |
 | Data Source Info | Optional inherited metadata shown by some builds; use only when the site's SensorML/data-source model requires it. |
 
@@ -508,6 +508,10 @@ Manufacturer-specific behavior:
 The generated FFmpeg children use TCP, request 24 frames per second, enable HLS output, disable individual video-frame output, use a 5-second connection timeout, and attempt reconnects. Camera capability and network capacity still determine the actual result.
 
 ![Configured RPM and camera options](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/25-lane-options-filled.png)
+
+**Optional per-lane Vehicle OCR:** Open the **Vehicle OCR** tab on a lane only when asynchronous container or license-plate recognition is required on that lane (**Enable Vehicle OCR** is off by default, consuming zero ONNX memory or datastreams on disabled lanes). Configure **Alarms Only** (recommended `true`; when cleared, non-alarm occupancy clips are deleted immediately after OCR sampling), **Frames Per Clip** (default `6`), **Container Min Confidence** (`0.5`), and **Plate Min Confidence** (`0.6`). Published `vehicleOcr` candidates tier to `PARQUET_PRIMARY`, while `/sensorhub/buckets/ocr/crops/` enforces a `2,000`-file FIFO cap (`< 100 MiB`).
+
+![Optional per-lane Vehicle OCR configuration](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/33-lane-vehicle-ocr.png)
 
 ### 7.6 Finish and verify
 
@@ -757,17 +761,17 @@ Duplicate names and duplicate address/port pairs are rejected. **Edit** changes 
 
 The standard 3.11.0 profile uses the tiered PostgreSQL + Apache Parquet architecture in `PARQUET_PRIMARY`
 mode (`OSCAR_TIER_STORAGE_MODE=PARQUET_PRIMARY`). Static singleton configuration streams (`sensorLocation`,
-`adjudicationCodes`, `siteInfo`) remain in PostgreSQL `ONLY oscar.obs`, while all 21 allowlisted operational
+`adjudicationCodes`, `siteInfo`) remain in PostgreSQL `ONLY oscar.obs`, while all 22 allowlisted operational
 and evidentiary outputs (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`,
 `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`,
 `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`, `adjudication`,
-`report`, `siteStatistics`, `nationalSummary`) land in 30-minute PostgreSQL staging partitions (`osg_*`).
+`report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`) land in 30-minute PostgreSQL staging partitions (`osg_*`).
 Five minutes after each 30-minute window closes, bounded background jobs export the completed window to
 cataloged, ZSTD-compressed Apache Parquet (`archive/datasets/observations/`), populate `oscar_obs_latest`,
 `oscar_archive_schema` summary counters, and `oscar_event_locator`, verify exact row/hash parity, and drop
 the staging partition so the live PostgreSQL working set stays compact (and on startup, OSCAR reconciles
 existing route entries and retroactively exports and compacts any legacy unarchived parent-table rows for
-those 21 outputs to Parquet). Adjudications and re-adjudications of archived `occupancy` rows are recorded
+those 22 outputs to Parquet). Adjudications and re-adjudications of archived `occupancy` rows are recorded
 in `oscar_obs_overlay` + `oscar_obs_latest` without rewriting Parquet, while transient operational commands
 in `cmd_commands`/`cmd_status` (> 24 hours old, preserving `%adjudicate%` audit commands) are pruned hourly.
 (Sites that explicitly configure `HOT_RETENTION` retain hot PostgreSQL rows for the configured multi-day
@@ -910,6 +914,8 @@ records-destruction requirements.
 When collecting support data, export a redacted troubleshooting support bundle (`.zip`):
 - **From the OSCAR Viewer (when the UI is reachable):** Select **Help (`?`)** in the top navigation bar and select **Export Support Bundle** (also available under **Troubleshooting & FAQ**). OSCAR packages recent browser warnings/errors, failed or slow API requests, module/lane states, JVM and storage summaries, redacted configuration, and rolling server logs (`oscar-support-<UTC>.zip`), or downloads a client-only bundle (`oscar-client-support-<UTC>.zip`) if the server cannot be reached.
 - **From the host server CLI (when OSCAR is degraded or not booting):** Run `sudo bash oscar.sh support-bundle` on Ubuntu or `.\oscar.bat support-bundle` on Windows (optional `--tail`/`-Tail` and `--output`/`-Destination`) to collect host/Docker state, container logs, TLS certificate metadata, and read-only `oscar_oscar_state` logs/configuration into `oscar-host-support-<UTC>.zip`. Passwords, tokens, session cookies, email addresses, `secrets/*`, and TLS private keys (`tls/server.key`) are automatically redacted or excluded; review site policy before sharing any bundle externally.
+
+![Operator Quick Guide and redacted support bundle export](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/34-viewer-help-support-bundle.png)
 
 ## 15. Related documentation
 

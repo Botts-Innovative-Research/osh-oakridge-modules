@@ -47,6 +47,11 @@ public class FrameSampler {
 
     private static final Logger logger = LoggerFactory.getLogger(FrameSampler.class);
 
+    static {
+        // Silence noisy FFmpeg/swscaler deprecation warnings (e.g. MJPEG yuvj420p range notices)
+        av_log_set_level(AV_LOG_ERROR);
+    }
+
     static final long MIN_VALID_FILE_BYTES = 512L;
     static final long MAX_DECODER_PIXELS = 4096L * 4096L;
     static final int MAX_DIMENSION = 4096;

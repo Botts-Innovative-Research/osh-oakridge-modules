@@ -25,6 +25,7 @@ import com.botts.impl.process.ocr.pipeline.VehicleOcrProcessor;
 import com.botts.impl.system.lane.LaneSystem;
 import com.botts.impl.system.lane.VehicleOcrOutput;
 import com.botts.impl.system.lane.config.OcrConfig;
+import com.botts.impl.system.lane.helpers.occupancy.OccupancyWrapper;
 import net.opengis.swe.v20.DataComponent;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.common.BigId;
@@ -51,9 +52,13 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -70,6 +75,8 @@ public final class OcrHelper implements AutoCloseable {
     private static final String VIDEO_BUCKET = "videos";
     private static final long MAX_OCCUPANCY_PRODUCER_WAIT_MS = 10_000L;
     private static final long PHENOMENON_TIME_TOLERANCE_MS = 5L;
+    private static final int MAX_STASHED_TRANSIENT_CLIPS = 32;
+    private static final long TRANSIENT_CLIP_TTL_MS = 15_000L;
 
     private final LaneSystem laneSystem;
     private final ISensorHub hub;
@@ -77,6 +84,8 @@ public final class OcrHelper implements AutoCloseable {
     private final VehicleOcrOutput output;
     private final OcrConfig config;
     private final AtomicBoolean laneActive = new AtomicBoolean(true);
+    private final Object stashLock = new Object();
+    private final LinkedHashMap<OccupancyMatchKey, StashedClips> transientClipStash = new LinkedHashMap<>();
 
     private volatile OcrEngine engineLease;
     private volatile VehicleOcrProcessor processorLease;
@@ -109,6 +118,13 @@ public final class OcrHelper implements AutoCloseable {
                     laneSystem.getUniqueIdentifier(), t.getMessage(), t);
             stop();
             return;
+        }
+
+        if (!config.alarmsOnly) {
+            OccupancyWrapper wrapper = laneSystem.getOccupancyWrapper();
+            if (wrapper != null) {
+                wrapper.setTransientNonAlarmClipConsumer(this::onTransientNonAlarmClips);
+            }
         }
 
         if (occupancyProducer.getCurrentState() == ModuleEvent.ModuleState.STARTED) {
@@ -192,6 +208,99 @@ public final class OcrHelper implements AutoCloseable {
         }
     }
 
+    private void onTransientNonAlarmClips(Occupancy occupancy,
+                                          List<String> videoPaths,
+                                          Runnable discardCallback) {
+        StashedClips incoming = new StashedClips(
+                videoPaths != null ? List.copyOf(videoPaths) : List.of(),
+                discardCallback);
+        if (!laneActive.get()
+                || occupancy == null
+                || incoming.videoPaths.isEmpty()
+                || config.alarmsOnly
+                || (!config.readContainerIds && !config.readPlates)) {
+            incoming.discardOnce();
+            return;
+        }
+
+        OccupancyMatchKey key = OccupancyMatchKey.from(occupancy);
+        List<StashedClips> evicted = new ArrayList<>();
+        synchronized (stashLock) {
+            if (!laneActive.get()) {
+                evicted.add(incoming);
+            } else {
+                StashedClips prev = transientClipStash.put(key, incoming);
+                if (prev != null) {
+                    evicted.add(prev);
+                }
+                while (transientClipStash.size() > MAX_STASHED_TRANSIENT_CLIPS) {
+                    Iterator<Map.Entry<OccupancyMatchKey, StashedClips>> it =
+                            transientClipStash.entrySet().iterator();
+                    if (!it.hasNext())
+                        break;
+                    evicted.add(it.next().getValue());
+                    it.remove();
+                }
+            }
+        }
+        for (StashedClips old : evicted) {
+            old.discardOnce();
+        }
+        if (evicted.contains(incoming)) {
+            return;
+        }
+        CompletableFuture.delayedExecutor(TRANSIENT_CLIP_TTL_MS, TimeUnit.MILLISECONDS)
+                .execute(() -> expireStashedClips(key, incoming));
+    }
+
+    private void expireStashedClips(OccupancyMatchKey key, StashedClips expected) {
+        boolean removed = false;
+        synchronized (stashLock) {
+            if (transientClipStash.get(key) == expected) {
+                transientClipStash.remove(key);
+                removed = true;
+            }
+        }
+        if (removed) {
+            expected.discardOnce();
+        }
+    }
+
+    private StashedClips takeStashedClips(Occupancy occupancy) {
+        if (occupancy == null)
+            return null;
+        OccupancyMatchKey exactKey = OccupancyMatchKey.from(occupancy);
+        synchronized (stashLock) {
+            StashedClips exact = transientClipStash.remove(exactKey);
+            if (exact != null)
+                return exact;
+            // Fallback within +-5 ms tolerance if text serialization rounded samplingTime
+            Iterator<Map.Entry<OccupancyMatchKey, StashedClips>> it =
+                    transientClipStash.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<OccupancyMatchKey, StashedClips> entry = it.next();
+                if (entry.getKey().occupancyCount == exactKey.occupancyCount
+                        && Math.abs(entry.getKey().samplingTimeMillis - exactKey.samplingTimeMillis) <= PHENOMENON_TIME_TOLERANCE_MS) {
+                    StashedClips found = entry.getValue();
+                    it.remove();
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private void clearAllStashedClips() {
+        List<StashedClips> drained;
+        synchronized (stashLock) {
+            drained = new ArrayList<>(transientClipStash.values());
+            transientClipStash.clear();
+        }
+        for (StashedClips stashed : drained) {
+            stashed.discardOnce();
+        }
+    }
+
     private void onOccupancyEvent(ObsEvent event) {
         if (!laneActive.get() || event == null || event.getObservations() == null)
             return;
@@ -202,58 +311,78 @@ public final class OcrHelper implements AutoCloseable {
             }
 
             OcrSettings settings = toSettings(config);
-            if (!settings.readContainerIds() && !settings.readPlates())
-                return;
-
             String producerUid = occupancyProducer.getUniqueIdentifier();
             for (IObsData obs : event.getObservations()) {
-                if (!laneActive.get() || obs == null || obs.getResult() == null)
+                if (obs == null || obs.getResult() == null)
                     continue;
 
                 Occupancy occupancy = readOccupancy(obs);
                 if (occupancy == null)
                     continue;
 
-                if (config.alarmsOnly && !occupancy.hasGammaAlarm() && !occupancy.hasNeutronAlarm())
-                    continue;
+                StashedClips stashed = takeStashedClips(occupancy);
+                Runnable cleanupCallback = stashed != null ? stashed::discardOnce : () -> {};
 
-                List<OcrJob.CameraClip> clips = resolveCameraClips(occupancy.getVideoPaths());
-                if (clips.isEmpty()) {
-                    logger.debug("Occupancy on lane {} has no matching camera clips for OCR",
-                            laneSystem.getUniqueIdentifier());
-                    continue;
-                }
+                try {
+                    if (!laneActive.get() || (!settings.readContainerIds() && !settings.readPlates())) {
+                        cleanupCallback.run();
+                        continue;
+                    }
 
-                AtomicInteger resolverAttempt = new AtomicInteger(0);
-                Instant phenomenonTime = obs.getPhenomenonTime();
-                int targetOccupancyCount = occupancy.getOccupancyCount();
-                double resultTs = obs.getResultTime() != null
-                        ? (obs.getResultTime().toEpochMilli() / 1000.0)
-                        : occupancy.getSamplingTime();
+                    if (config.alarmsOnly && !occupancy.hasGammaAlarm() && !occupancy.hasNeutronAlarm()) {
+                        cleanupCallback.run();
+                        continue;
+                    }
 
-                OcrJob job = new OcrJob(
-                        laneSystem.getUniqueIdentifier(),
-                        null,
-                        () -> resolvePersistedOccupancyObsId(
-                                producerUid,
-                                phenomenonTime,
-                                targetOccupancyCount,
-                                resolverAttempt.getAndIncrement() > 0),
-                        occupancy.getStartTime(),
-                        occupancy.getEndTime(),
-                        resultTs,
-                        clips,
-                        settings,
-                        result -> {
-                            if (laneActive.get()) {
-                                output.publishData(result);
-                            }
-                        });
+                    List<String> sourcePaths = (occupancy.getVideoPaths() != null && !occupancy.getVideoPaths().isEmpty())
+                            ? occupancy.getVideoPaths()
+                            : (stashed != null ? stashed.videoPaths : List.of());
 
-                OcrEngine eng = this.engineLease;
-                VehicleOcrProcessor proc = this.processorLease;
-                if (eng != null && proc != null) {
-                    proc.submit(job, eng, laneActive);
+                    List<OcrJob.CameraClip> clips = resolveCameraClips(sourcePaths);
+                    if (clips.isEmpty()) {
+                        cleanupCallback.run();
+                        logger.debug("Occupancy on lane {} has no matching camera clips for OCR",
+                                laneSystem.getUniqueIdentifier());
+                        continue;
+                    }
+
+                    AtomicInteger resolverAttempt = new AtomicInteger(0);
+                    Instant phenomenonTime = obs.getPhenomenonTime();
+                    int targetOccupancyCount = occupancy.getOccupancyCount();
+                    double resultTs = obs.getResultTime() != null
+                            ? (obs.getResultTime().toEpochMilli() / 1000.0)
+                            : occupancy.getSamplingTime();
+
+                    OcrJob job = new OcrJob(
+                            laneSystem.getUniqueIdentifier(),
+                            null,
+                            () -> resolvePersistedOccupancyObsId(
+                                    producerUid,
+                                    phenomenonTime,
+                                    targetOccupancyCount,
+                                    resolverAttempt.getAndIncrement() > 0),
+                            occupancy.getStartTime(),
+                            occupancy.getEndTime(),
+                            resultTs,
+                            clips,
+                            settings,
+                            result -> {
+                                if (laneActive.get()) {
+                                    output.publishData(result);
+                                }
+                            },
+                            cleanupCallback);
+
+                    OcrEngine eng = this.engineLease;
+                    VehicleOcrProcessor proc = this.processorLease;
+                    if (eng != null && proc != null) {
+                        proc.submit(job, eng, laneActive);
+                    } else {
+                        cleanupCallback.run();
+                    }
+                } catch (Throwable jobErr) {
+                    cleanupCallback.run();
+                    throw jobErr;
                 }
             }
         } catch (Throwable t) {
@@ -433,6 +562,15 @@ public final class OcrHelper implements AutoCloseable {
     public void stop() {
         laneActive.set(false);
 
+        try {
+            OccupancyWrapper wrapper = laneSystem.getOccupancyWrapper();
+            if (wrapper != null) {
+                wrapper.setTransientNonAlarmClipConsumer(null);
+            }
+        } catch (Exception ignored) {
+        }
+        clearAllStashedClips();
+
         Thread init = this.startupThread;
         this.startupThread = null;
         if (init != null) {
@@ -470,5 +608,32 @@ public final class OcrHelper implements AutoCloseable {
     @Override
     public void close() {
         stop();
+    }
+
+    private record OccupancyMatchKey(long samplingTimeMillis, int occupancyCount) {
+        static OccupancyMatchKey from(Occupancy occupancy) {
+            double ts = occupancy.getSamplingTime() > 0 ? occupancy.getSamplingTime() : occupancy.getStartTime();
+            return new OccupancyMatchKey(Math.round(ts * 1000.0), occupancy.getOccupancyCount());
+        }
+    }
+
+    private static final class StashedClips {
+        final List<String> videoPaths;
+        private final Runnable discardCallback;
+        private final AtomicBoolean discarded = new AtomicBoolean(false);
+
+        StashedClips(List<String> videoPaths, Runnable discardCallback) {
+            this.videoPaths = videoPaths;
+            this.discardCallback = discardCallback;
+        }
+
+        void discardOnce() {
+            if (discarded.compareAndSet(false, true) && discardCallback != null) {
+                try {
+                    discardCallback.run();
+                } catch (Throwable ignored) {
+                }
+            }
+        }
     }
 }

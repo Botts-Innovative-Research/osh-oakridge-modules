@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -84,6 +85,7 @@ public class VehicleOcrProcessor implements AutoCloseable {
     private final ArrayBlockingQueue<Runnable> workQueue;
     private final ThreadPoolExecutor workerPool;
     private final ScheduledExecutorService timerWheel;
+    private final Set<TaskState> inFlightStates = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     private final AtomicLong jobsSubmitted = new AtomicLong();
@@ -91,6 +93,7 @@ public class VehicleOcrProcessor implements AutoCloseable {
     private final AtomicLong jobsDeferred = new AtomicLong();
     private final AtomicLong jobsDroppedOverflow = new AtomicLong();
     private final AtomicLong jobsShedHeap = new AtomicLong();
+    private final AtomicLong totalInferenceMillis = new AtomicLong();
 
     public static VehicleOcrProcessor acquireShared(IBucketStore bucketStore) {
         return acquireShared(bucketStore, null);
@@ -157,6 +160,8 @@ public class VehicleOcrProcessor implements AutoCloseable {
         public void submit(OcrJob job, OcrEngine engine, AtomicBoolean laneActive) {
             if (!leaseClosed.get()) {
                 delegate.submit(job, engine, laneActive);
+            } else if (job != null) {
+                runCleanupQuietly(job);
             }
         }
 
@@ -170,6 +175,10 @@ public class VehicleOcrProcessor implements AutoCloseable {
         public long getJobsDroppedOverflow() { return delegate.getJobsDroppedOverflow(); }
         @Override
         public long getJobsShedHeap() { return delegate.getJobsShedHeap(); }
+        @Override
+        public long getTotalInferenceMillis() { return delegate.getTotalInferenceMillis(); }
+        @Override
+        public int getQueueDepth() { return delegate.getQueueDepth(); }
 
         @Override
         public void close() {
@@ -254,19 +263,28 @@ public class VehicleOcrProcessor implements AutoCloseable {
      * Safe to invoke directly from SensorHub {@code EventBus} subscriber callbacks.
      */
     public void submit(OcrJob job, OcrEngine engine, AtomicBoolean laneActive) {
-        if (job == null || engine == null || closed.get())
+        if (job == null)
             return;
-        if (laneActive != null && !laneActive.get())
+        if (engine == null || closed.get() || (laneActive != null && !laneActive.get())) {
+            runCleanupQuietly(job);
             return;
+        }
 
         jobsSubmitted.incrementAndGet();
-        TaskState state = new TaskState(job, engine, laneActive);
+        TaskState state = new TaskState(job, engine, laneActive, inFlightStates);
+        inFlightStates.add(state);
+        if (closed.get()) {
+            state.runCleanupOnce();
+            return;
+        }
         scheduleOnTimer(state, initialSettleDelayMs);
     }
 
     private void scheduleOnTimer(TaskState state, long delayMs) {
-        if (closed.get() || !state.isActive())
+        if (closed.get() || !state.isActive()) {
+            state.runCleanupOnce();
             return;
+        }
         try {
             if (delayMs <= 0L) {
                 enqueueWorker(state);
@@ -275,26 +293,37 @@ public class VehicleOcrProcessor implements AutoCloseable {
                     try {
                         enqueueWorker(state);
                     } catch (Throwable t) {
+                        state.runCleanupOnce();
                         logger.warn("Unexpected error enqueueing OCR job for lane {}", state.job.laneUid(), t);
                     }
                 }, delayMs, TimeUnit.MILLISECONDS);
             }
         } catch (Throwable t) {
+            state.runCleanupOnce();
             logger.debug("OCR scheduler rejected job for lane {}: {}", state.job.laneUid(), t.getMessage());
         }
     }
 
     private void enqueueWorker(TaskState state) {
-        if (closed.get() || !state.isActive())
+        if (closed.get() || !state.isActive()) {
+            state.runCleanupOnce();
             return;
-        Runnable runner = () -> executeSafely(state);
+        }
+        QueuedTask runner = new QueuedTask(state, () -> executeSafely(state));
         while (!workQueue.offer(runner)) {
             Runnable evicted = workQueue.poll();
             if (evicted != null) {
+                if (evicted instanceof QueuedTask qt) {
+                    qt.state.runCleanupOnce();
+                }
                 jobsDroppedOverflow.incrementAndGet();
                 logger.warn("OCR background queue full ({}); dropped oldest pending OCR job to keep up with live occupancies",
                         queueCapacity);
             }
+        }
+        if (closed.get()) {
+            drainAndCleanupWorkQueue();
+            return;
         }
         try {
             if (workerPool.getPoolSize() == 0) {
@@ -305,6 +334,7 @@ public class VehicleOcrProcessor implements AutoCloseable {
     }
 
     private void executeSafely(TaskState state) {
+        boolean rescheduled = false;
         try {
             if (closed.get() || !state.isActive())
                 return;
@@ -317,6 +347,7 @@ public class VehicleOcrProcessor implements AutoCloseable {
                 jobsDeferred.incrementAndGet();
                 logger.debug("Deferring OCR job for lane {} (deferral {}/{}) while CPU/heap is busy",
                         state.job.laneUid(), state.resourceDefers, MAX_RESOURCE_DEFERRALS);
+                rescheduled = true;
                 scheduleOnTimer(state, resourceDeferDelayMs);
                 return;
             }
@@ -336,6 +367,7 @@ public class VehicleOcrProcessor implements AutoCloseable {
                     state.resolvedObsId = resolved;
                 } else if (state.obsIdRetries < obsIdRetryDelaysMs.length) {
                     long delay = obsIdRetryDelaysMs[state.obsIdRetries++];
+                    rescheduled = true;
                     scheduleOnTimer(state, delay);
                     return;
                 } else {
@@ -352,10 +384,12 @@ public class VehicleOcrProcessor implements AutoCloseable {
                     ? Math.min(2, state.job.settings().framesPerVideo())
                     : state.job.settings().framesPerVideo();
 
+            long tStartNs = System.nanoTime();
             List<LoadedFrame> loadedFrames = loadFrames(state, maxFrames);
             if (loadedFrames.isEmpty()) {
                 if (state.clipRetries < clipRetryDelaysMs.length) {
                     long delay = clipRetryDelaysMs[state.clipRetries++];
+                    rescheduled = true;
                     scheduleOnTimer(state, delay);
                     return;
                 }
@@ -367,7 +401,15 @@ public class VehicleOcrProcessor implements AutoCloseable {
             // Step 4: Run ONNX detection + recognition frame-by-frame with cooperative resource checks
             try {
                 runInferenceAndPublish(state, loadedFrames, ecoMode);
-                jobsCompleted.incrementAndGet();
+                long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - tStartNs);
+                long totalMs = totalInferenceMillis.addAndGet(Math.max(0L, elapsedMs));
+                long completed = jobsCompleted.incrementAndGet();
+                if (completed == 1L || completed % 10L == 0L) {
+                    logger.info("OCR governor telemetry: submitted={} completed={} deferred={} droppedOverflow={} shedHeap={} queueDepth={} lastJobMs={} avgJobMs={}",
+                            jobsSubmitted.get(), completed, jobsDeferred.get(),
+                            jobsDroppedOverflow.get(), jobsShedHeap.get(),
+                            workQueue.size(), elapsedMs, totalMs / Math.max(1L, completed));
+                }
             } finally {
                 for (LoadedFrame lf : loadedFrames) {
                     if (lf.image != null) {
@@ -378,6 +420,10 @@ public class VehicleOcrProcessor implements AutoCloseable {
         } catch (Throwable t) {
             logger.warn("Isolated OCR fault on lane {} (system unaffected): {}",
                     state.job.laneUid(), t.toString(), t);
+        } finally {
+            if (!rescheduled) {
+                state.runCleanupOnce();
+            }
         }
     }
 
@@ -578,6 +624,29 @@ public class VehicleOcrProcessor implements AutoCloseable {
     public long getJobsDeferred() { return jobsDeferred.get(); }
     public long getJobsDroppedOverflow() { return jobsDroppedOverflow.get(); }
     public long getJobsShedHeap() { return jobsShedHeap.get(); }
+    public long getTotalInferenceMillis() { return totalInferenceMillis.get(); }
+    public int getQueueDepth() { return workQueue != null ? workQueue.size() : 0; }
+
+    private void drainAndCleanupWorkQueue() {
+        if (workQueue == null)
+            return;
+        List<Runnable> drained = new ArrayList<>();
+        workQueue.drainTo(drained);
+        for (Runnable r : drained) {
+            if (r instanceof QueuedTask qt) {
+                qt.state.runCleanupOnce();
+            }
+        }
+    }
+
+    private static void runCleanupQuietly(OcrJob job) {
+        if (job == null)
+            return;
+        try {
+            job.cleanupCallback().run();
+        } catch (Throwable ignored) {
+        }
+    }
 
     @Override
     public void close() {
@@ -586,31 +655,61 @@ public class VehicleOcrProcessor implements AutoCloseable {
         if (timerWheel != null)
             timerWheel.shutdownNow();
         if (workerPool != null) {
-            workQueue.clear();
+            drainAndCleanupWorkQueue();
             workerPool.shutdownNow();
+        }
+        for (TaskState state : List.copyOf(inFlightStates)) {
+            state.runCleanupOnce();
         }
     }
 
     private record LoadedFrame(String cameraUid, double timestampSeconds, BufferedImage image) {}
 
+    private static final class QueuedTask implements Runnable {
+        final TaskState state;
+        final Runnable delegate;
+
+        QueuedTask(TaskState state, Runnable delegate) {
+            this.state = state;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void run() {
+            delegate.run();
+        }
+    }
+
     private static final class TaskState {
         final OcrJob job;
         final OcrEngine engine;
         final AtomicBoolean laneActive;
+        final Set<TaskState> ownerSet;
+        final AtomicBoolean cleanedUp = new AtomicBoolean(false);
         String resolvedObsId;
         int obsIdRetries = 0;
         int clipRetries = 0;
         int resourceDefers = 0;
 
-        TaskState(OcrJob job, OcrEngine engine, AtomicBoolean laneActive) {
+        TaskState(OcrJob job, OcrEngine engine, AtomicBoolean laneActive, Set<TaskState> ownerSet) {
             this.job = job;
             this.engine = engine;
             this.laneActive = laneActive;
+            this.ownerSet = ownerSet;
             this.resolvedObsId = job.initialOccupancyObsId();
         }
 
         boolean isActive() {
             return laneActive == null || laneActive.get();
+        }
+
+        void runCleanupOnce() {
+            if (cleanedUp.compareAndSet(false, true)) {
+                if (ownerSet != null) {
+                    ownerSet.remove(this);
+                }
+                runCleanupQuietly(job);
+            }
         }
     }
 }

@@ -123,6 +123,22 @@ final class CameraRecordingCoordinator {
             terminalCallback.accept(this);
         }
 
+        /**
+         * Deletes finalized clip files that were retained transiently (for example, for
+         * non-alarm asynchronous Vehicle OCR when {@code alarmsOnly=false}) without affecting
+         * coordinator lifecycle accounting after {@link #markPublished()} has completed.
+         */
+        void discardSavedPaths() {
+            List<SavedPath> cleanup;
+            synchronized (savedPaths) {
+                if (savedPaths.isEmpty())
+                    return;
+                cleanup = List.copyOf(savedPaths);
+                savedPaths.clear();
+            }
+            cleanup.forEach(Recording::discardQuietly);
+        }
+
         private Optional<String> retain(CameraTarget target, String path) {
             SavedPath saved = new SavedPath(target, path);
             synchronized (savedPaths) {

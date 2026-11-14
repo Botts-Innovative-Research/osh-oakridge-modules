@@ -61,10 +61,15 @@ final class OccupancyRecordingRegistry {
     }
 
     Resolution resolve(Occupancy occupancy, Duration timeout) {
-        return resolve(occupancy, timeout, (recording, alarm) -> { });
+        return resolve(occupancy, timeout, false, (recording, save) -> { });
     }
 
     Resolution resolve(Occupancy occupancy, Duration timeout,
+                       BiConsumer<CameraRecordingCoordinator.Recording, Boolean> matched) {
+        return resolve(occupancy, timeout, false, matched);
+    }
+
+    Resolution resolve(Occupancy occupancy, Duration timeout, boolean retainNonAlarm,
                        BiConsumer<CameraRecordingCoordinator.Recording, Boolean> matched) {
         if (timeout == null || timeout.isNegative() || timeout.isZero())
             throw new IllegalArgumentException("timeout must be positive");
@@ -78,16 +83,17 @@ final class OccupancyRecordingRegistry {
         if (recording == null)
             return null;
         boolean alarm = occupancy.hasGammaAlarm() || occupancy.hasNeutronAlarm();
-        recording.decide(alarm);
+        boolean shouldSave = alarm || retainNonAlarm;
+        recording.decide(shouldSave);
         try {
-            matched.accept(recording, alarm);
+            matched.accept(recording, shouldSave);
         } catch (RuntimeException failure) {
             logger.error("Failed to finish matched camera recording generation {}",
                     recording.generation(), failure);
             abandon(recording);
             return null;
         }
-        if (!alarm)
+        if (!shouldSave)
             return new Resolution(recording, List.of(), expectedEpoch);
 
         try {

@@ -65,8 +65,8 @@ Consultez le [Guide de démarrage rapide](https://github.com/ORNL/oscar/blob/mai
 | **Vue opérationnelle (`Operational View`)** | Filtre nommé (`?view=<clé>` ou `/view/<clé>`) limitant le Tableau de bord, les Événements, l'État de santé et le Générateur de rapports d'un poste à un groupe de voies précis. |
 | **Niveau froid Parquet (`PARQUET_PRIMARY`)** | Mode de stockage par défaut d'OSCAR 3.11.0 dans lequel PostgreSQL conserve une fenêtre de transit de 30 minutes et les partitions terminées sont exportées en fichiers Apache Parquet compressés ZSTD (`archive/parquet/`). |
 | **Médias conservés à 5 images** | Pour chaque occupation avec alarme, OSCAR extrait 5 instantanés JPEG (`frame-01.jpg` à `frame-05.jpg`). Après 30 jours, les images secondaires (`01`, `02`, `04`, `05`) sont purgées et l'image centrale (`frame-03.jpg`) est conservée. |
-| **OCR de conteneurs et plaques (`ocrConfig`)** | Lecture optique facultative par voie (`enabled = false` par défaut) analysant de façon asynchrone les codes conteneur ISO 6346 (avec chiffre de contrôle) et les plaques d'immatriculation selon les ressources CPU et mémoire disponibles, préremplissant l'**ID véhicule** pour les conteneurs ISO valides ou les plaques `>= 85%` et affichant des puces de suggestion avec vignettes JPEG (`/sensorhub/buckets/ocr/crops/`). |
-| **SAN (Nom alternatif du sujet)** | Liste des noms d'hôtes et adresses IP (tels que `oscar.local` et `192.168.0.57`) inscrits dans un certificat HTTPS que le navigateur vérifie avant d'établir la connexion. |
+| **OCR des véhicules (`ocrConfig`)** | Lecture optique facultative par voie (`Activer l'OCR des véhicules = false` par défaut) analysant de façon asynchrone les codes conteneur ISO 6346 (avec chiffre de contrôle) et les plaques d'immatriculation selon les ressources CPU et mémoire disponibles (`OcrResourceGovernor`), publiant des candidats `vehicleOcr` (`PARQUET_PRIMARY`), des vignettes JPEG bornées (`/sensorhub/buckets/ocr/crops/`, plafond FIFO de `2 000` fichiers) et préremplissant l'**ID véhicule** pour les conteneurs ISO valides ou les plaques `>= 85%`. Lorsque `Alarmes uniquement` est décoché, les séquences hors alarme sont analysées de manière transitoire puis supprimées immédiatement tout en gardant `occupancy.videoPaths` vide (`[]`). |
+| **SAN (Nom alternatif du sujet)** | Liste des noms d'hôtes et adresses IP (tels que `oscar.local` et `192.0.2.10`) inscrits dans un certificat HTTPS que le navigateur vérifie avant d'établir la connexion. |
 
 ## 2. Approuver le certificat OSCAR
 
@@ -442,7 +442,7 @@ La liste varie selon les paquets installés. Pour une voie ordinaire, choisissez
 | Démarrage automatique | Démarre la voie au chargement. Activez après vérification. |
 | Clés de vue opérationnelle | Liste facultative des clés de poste autorisées à afficher cette voie. Ajoutez chaque clé séparément ; utilisez 1 à 63 lettres ASCII minuscules (`a`–`z`), chiffres ou tirets, sans tiret initial ni final. Laissez vide si la voie ne doit appartenir à aucune vue limitée. |
 | Seuil d'occupation prolongée (min) | Durée en minutes (`1`–`1440`, défaut `1`) avant qu'une occupation active ne publie `Fault - Extended Occupancy` et n'incrémente le compteur de défauts `Ext-Occ`. Lorsqu'une occupation prolongée se termine par une alarme gamma seule (sans alarme neutron), OSCAR la masque du tableau de bord actif et l'adjuge automatiquement comme **Code 9998 : Alarme gamma d'occupation prolongée**. |
-| OCR de conteneurs et plaques | Réglage facultatif par voie (`enabled = false` par défaut). Lorsqu'il est activé sur une voie, OSCAR exécute la reconnaissance PP-OCRv3 ONNX en arrière-plan selon les ressources disponibles, publie les candidats `vehicleOcr` et préremplit l'**ID véhicule** lors de l'adjudication ; les voies désactivées n'enregistrent pas `vehicleOcr` et n'ajoutent aucune surcharge. |
+| OCR des véhicules | Réglages facultatifs par voie (`Activer l'OCR des véhicules`, `Alarmes uniquement`, `Répertoire des modèles`, `Lire les numéros de conteneur`, `Lire les plaques d'immatriculation`, `UID des caméras`, `Images par séquence`, `Confiance minimale conteneur`, `Confiance minimale plaque`, `Fraction supérieure ignorée`, `Fraction inférieure ignorée`, `enabled = false` par défaut). Lorsqu'il est activé sur une voie, OSCAR exécute la reconnaissance PP-OCRv3 ONNX en arrière-plan selon les ressources disponibles, publie les candidats `vehicleOcr` (`PARQUET_PRIMARY`) et des vignettes bornées (`2 000` fichiers FIFO), supprime immédiatement les séquences transitoires hors alarme lorsque `Alarmes uniquement = false` et préremplit l'**ID véhicule** lors de l'adjudication ; les voies désactivées n'ajoutent aucune surcharge. |
 | Supprimer les données avec la voie | Activé par défaut. La suppression de la voie efface ses données. Désactivez-le si l'historique doit être conservé. |
 | Informations de source de données | Métadonnées héritées facultatives, seulement si le modèle SensorML du site les exige. |
 
@@ -497,6 +497,10 @@ Tous exposent **Hôte distant**, **Nom d'utilisateur**, **Mot de passe** et **Lo
 Les enfants FFmpeg générés utilisent TCP, demandent 24 i/s, activent HLS, désactivent les images individuelles, utilisent un délai de connexion de cinq secondes et des reconnexions. Le résultat réel dépend de la caméra et du réseau.
 
 ![RPM et caméras configurés](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/25-lane-options-filled.png)
+
+**OCR véhicule optionnel par voie :** Ouvrez l'onglet **OCR véhicule** (**Vehicle OCR**) uniquement sur les voies nécessitant une reconnaissance asynchrone des conteneurs ou des plaques (désactivé par défaut, avec zéro mémoire ONNX sur les voies inactives). Vérifiez **Alarmes uniquement** (`Alarms Only`, recommandé `true` ; s'il est décoché, les clips sans alarme sont supprimés immédiatement après l'échantillonnage OCR), **Images par clip** (`6`), **Confiance minimale conteneur** (`0.5`) et **Confiance minimale plaque** (`0.6`). Les sorties `vehicleOcr` sont archivées dans `PARQUET_PRIMARY` et les vignettes JPEG respectent un plafond FIFO de `2 000` fichiers (`< 100 Mio`).
+
+![Configuration optionnelle de l'OCR véhicule par voie](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/33-lane-vehicle-ocr.png)
 
 ### 7.6 Terminer et vérifier
 
@@ -723,17 +727,17 @@ Vérifiez voies/événements distants, ligne Nationale, rapport et événement a
 Le profil standard 3.11.0 utilise l'architecture à plusieurs niveaux PostgreSQL + Apache Parquet en mode
 `PARQUET_PRIMARY` (`OSCAR_TIER_STORAGE_MODE=PARQUET_PRIMARY`). Les flux de configuration statiques
 (`sensorLocation`, `adjudicationCodes`, `siteInfo`) restent dans PostgreSQL `ONLY oscar.obs`, tandis que
-les 21 sorties opérationnelles et probantes autorisées (`gammaCounts`, `gammaThreshold`, `neutronCounts`,
+les 22 sorties opérationnelles et probantes autorisées (`gammaCounts`, `gammaThreshold`, `neutronCounts`,
 `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`,
 `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`,
-`occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`) sont écrites dans des
+`occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`) sont écrites dans des
 partitions de transit de 30 minutes (`osg_*`). Cinq minutes après la clôture de chaque fenêtre de
 30 minutes, des tâches d'arrière-plan exportent la partition vers des fichiers Apache Parquet catalogués
 et compressés en ZSTD (`archive/datasets/observations/`), alimentent `oscar_obs_latest`, les compteurs de
 résumé de `oscar_archive_schema` et `oscar_event_locator`, vérifient la parité exacte des lignes/empreintes
 et suppriment la partition de transit afin de garder PostgreSQL compact (et au démarrage, OSCAR réconcilie
 les routes existantes et exporte rétroactivement vers Parquet toute ligne historique non archivée de la
-table parente pour ces 21 sorties). Les décisions et ré-adjudications portant sur des occupations archivées
+table parente pour ces 22 sorties). Les décisions et ré-adjudications portant sur des occupations archivées
 sont enregistrées dans `oscar_obs_overlay` + `oscar_obs_latest` sans réécrire Parquet, et chaque heure
 OSCAR purge les commandes opérationnelles transitoires dans `cmd_commands`/`cmd_status` de plus de
 24 heures (tout en conservant définitivement les commandes d'audit `%adjudicate%`). (Les sites configurés
@@ -884,6 +888,8 @@ reprise et destruction des documents.
 Pour l'assistance technique, exportez une archive de diagnostic expurgée (`.zip`) :
 - **Depuis la Visionneuse OSCAR (lorsque l'interface est accessible) :** Ouvrez **Aide (`?`)** dans la barre supérieure et sélectionnez **Exporter le pack d'assistance** (également disponible sous **Dépannage et FAQ**). OSCAR regroupe les avertissements/erreurs récents du navigateur, les requêtes API lentes ou en échec, l'état des modules et des voies, le résumé JVM et stockage, la configuration expurgée et les journaux serveur rotatifs (`oscar-support-<UTC>.zip`), ou télécharge une archive client seul (`oscar-client-support-<UTC>.zip`) si le serveur est injoignable.
 - **Depuis la CLI de l'hôte (si OSCAR est dégradé ou ne démarre pas) :** Exécutez `sudo bash oscar.sh support-bundle` sous Ubuntu ou `.\oscar.bat support-bundle` sous Windows (options `--tail`/`-Tail` et `--output`/`-Destination`) pour collecter l'état hôte/Docker, les journaux de conteneurs, les métadonnées du certificat TLS et les journaux/configurations en lecture seule de `oscar_oscar_state` dans `oscar-host-support-<UTC>.zip`. Les mots de passe, jetons, témoins de session, courriels, `secrets/*` et clés privées TLS (`tls/server.key`) sont automatiquement masqués ou exclus ; vérifiez la politique du site avant tout partage externe.
+
+![Guide rapide opérateur et exportation d'archive d'assistance expurgée](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/34-viewer-help-support-bundle.png)
 
 ## 15. Documentation associée
 

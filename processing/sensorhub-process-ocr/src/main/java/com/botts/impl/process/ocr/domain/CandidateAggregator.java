@@ -138,11 +138,36 @@ public final class CandidateAggregator {
             all.add(c);
         }
 
-        // Remove any "plate" that is merely a substring fragment of a detected container number
+        // 1. Suppress repaired/unverified container shadows when a stronger direct-valid container
+        //    with a near-identical 10-character prefix (<= 2 char edits) is already present.
+        List<AggregatedCandidate> snapshotForContainerShadows = List.copyOf(all);
+        all.removeIf(c -> VehicleOcrResult.ID_TYPE_CONTAINER.equals(c.idType())
+                && (!c.checksumValid() || c.checkDigitRepaired())
+                && snapshotForContainerShadows.stream().anyMatch(other ->
+                other != c
+                        && VehicleOcrResult.ID_TYPE_CONTAINER.equals(other.idType())
+                        && other.checksumValid()
+                        && !other.checkDigitRepaired()
+                        && other.effectiveScore() > c.effectiveScore()
+                        && prefixHammingDistance(other.normalizedValue(), c.normalizedValue(), 10) <= 2));
+
+        // 2. Remove any "plate" that is a substring, corrugated-rib subsequence, or 1-2 char misread
+        //    window of a detected container number.
+        List<AggregatedCandidate> snapshotForPlateFragments = List.copyOf(all);
         all.removeIf(c -> VehicleOcrResult.ID_TYPE_PLATE.equals(c.idType())
-                && all.stream().anyMatch(other ->
+                && snapshotForPlateFragments.stream().anyMatch(other ->
                 VehicleOcrResult.ID_TYPE_CONTAINER.equals(other.idType())
-                        && other.normalizedValue().contains(c.normalizedValue())));
+                        && isContainerFragment(c.normalizedValue(), other.normalizedValue())));
+
+        // 3. Suppress clipped edge-frame plate shadows (e.g. S2103 alongside TS2103, ET313 alongside JET313).
+        List<AggregatedCandidate> snapshotForPlateShadows = List.copyOf(all);
+        all.removeIf(c -> VehicleOcrResult.ID_TYPE_PLATE.equals(c.idType())
+                && snapshotForPlateShadows.stream().anyMatch(other ->
+                other != c
+                        && VehicleOcrResult.ID_TYPE_PLATE.equals(other.idType())
+                        && !other.normalizedValue().equals(c.normalizedValue())
+                        && other.normalizedValue().contains(c.normalizedValue())
+                        && other.effectiveScore() >= c.effectiveScore()));
 
         all.sort(Comparator.comparingDouble(AggregatedCandidate::effectiveScore).reversed());
 
@@ -330,6 +355,57 @@ public final class CandidateAggregator {
         int qy = (int) Math.round((cy / frame.frameHeight()) * 25.0);
         String normText = read.text().trim().toUpperCase(Locale.ROOT);
         return qx + ":" + qy + ":" + normText;
+    }
+
+    private static int prefixHammingDistance(String a, String b, int prefixLen) {
+        if (a == null || b == null || a.length() < prefixLen || b.length() < prefixLen)
+            return Integer.MAX_VALUE;
+        int dist = 0;
+        for (int i = 0; i < prefixLen; i++) {
+            if (a.charAt(i) != b.charAt(i))
+                dist++;
+        }
+        return dist;
+    }
+
+    private static boolean isContainerFragment(String plate, String container) {
+        if (plate == null || container == null || plate.isEmpty() || plate.length() > container.length())
+            return false;
+        if (container.contains(plate))
+            return true;
+        if (isSubsequence(plate, container))
+            return true;
+        int maxAllowedWindowDist = plate.length() >= 6 ? 2 : 1;
+        return minWindowHammingDistance(plate, container) <= maxAllowedWindowDist;
+    }
+
+    private static boolean isSubsequence(String sub, String target) {
+        int si = 0;
+        for (int ti = 0; ti < target.length() && si < sub.length(); ti++) {
+            if (sub.charAt(si) == target.charAt(ti))
+                si++;
+        }
+        return si == sub.length();
+    }
+
+    private static int minWindowHammingDistance(String needle, String haystack) {
+        if (needle.length() > haystack.length())
+            return Integer.MAX_VALUE;
+        int best = Integer.MAX_VALUE;
+        int maxStart = haystack.length() - needle.length();
+        for (int start = 0; start <= maxStart; start++) {
+            int dist = 0;
+            for (int i = 0; i < needle.length(); i++) {
+                if (needle.charAt(i) != haystack.charAt(start + i)) {
+                    dist++;
+                    if (dist >= best)
+                        break;
+                }
+            }
+            if (dist < best)
+                best = dist;
+        }
+        return best;
     }
 
     private static final class Accumulator {

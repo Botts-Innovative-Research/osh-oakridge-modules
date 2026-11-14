@@ -349,6 +349,10 @@ public class LaneSystem extends SensorSystem implements IAutoStartDispatchStatus
         return occupancyStatusOutput;
     }
 
+    public OccupancyWrapper getOccupancyWrapper() {
+        return occupancyWrapper;
+    }
+
     private FFMPEGSensorBase<?> createFFmpegModule(FFMPEGConfig ffmpegConfig) throws SensorHubException {
         // Get ffmpeg submodule with the same unique serial num
         // If there is a module registered for this serial number, then the driver was already registered
@@ -401,6 +405,12 @@ public class LaneSystem extends SensorSystem implements IAutoStartDispatchStatus
         if (occupancyProducer != null) {
             occupancyWrapper = new OccupancyWrapper(getParentHub(), occupancyProducer, occupancyStatusOutput);
             occupancyWrapper.setExtendedOccupancyThresholdMinutes(getExtendedOccupancyThresholdMinutes());
+            for (var member : getMembers().values()) {
+                if (member instanceof FFMPEGSensorBase<?> cam
+                        && cam.getCurrentState() == ModuleEvent.ModuleState.STARTED) {
+                    occupancyWrapper.addFFmpegSensor(cam);
+                }
+            }
             if (occupancyProducer.getCurrentState() == ModuleEvent.ModuleState.STARTED)
                 occupancyWrapper.start();
             //occupancyWrapper.videoNamePrefix = BASE_VIDEO_DIRECTORY + "lane" + getConfiguration().groupID + "/";

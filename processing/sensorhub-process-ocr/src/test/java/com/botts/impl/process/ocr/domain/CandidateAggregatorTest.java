@@ -58,4 +58,36 @@ class CandidateAggregatorTest {
         assertEquals("ABC1234", results.get(0).normalizedValue());
         assertEquals(2, results.get(0).readCount());
     }
+
+    @Test
+    void suppressesRepairedContainerShadowsCorrugatedFragmentsAndClippedPlateSubstrings() {
+        CandidateAggregator aggregator = new CandidateAggregator(0.55);
+
+        var results = aggregator.aggregate(List.of(
+                new CandidateAggregator.FrameInput(0, 640, 480, List.of(
+                        new OcrRead("EGHU9674700", 0.97, new Rectangle(180, 120, 210, 34)),
+                        new OcrRead("SRG195", 0.95, new Rectangle(240, 320, 96, 28))
+                )),
+                new CandidateAggregator.FrameInput(1, 640, 480, List.of(
+                        // Single-frame blurred misread G->C where check digit 0 gets repaired to 3 (ECHU9674703)
+                        new OcrRead("ECHU9674700", 0.78, new Rectangle(182, 122, 208, 34)),
+                        // Corrugated-wall partial read of EGHU9674700 + clipped tractor plate shadow RG195
+                        new OcrRead("U9674101", 0.81, new Rectangle(220, 122, 140, 32)),
+                        new OcrRead("RG195", 0.79, new Rectangle(248, 320, 80, 28))
+                )),
+                new CandidateAggregator.FrameInput(2, 640, 480, List.of(
+                        new OcrRead("EGHU9674700", 0.96, new Rectangle(185, 124, 210, 34)),
+                        new OcrRead("SRG195", 0.93, new Rectangle(242, 322, 96, 28))
+                ))
+        ));
+
+        assertEquals(2, results.size());
+        assertEquals(VehicleOcrResult.ID_TYPE_CONTAINER, results.get(0).idType());
+        assertEquals("EGHU9674700", results.get(0).normalizedValue());
+        assertTrue(results.get(0).checksumValid());
+        assertFalse(results.get(0).checkDigitRepaired());
+
+        assertEquals(VehicleOcrResult.ID_TYPE_PLATE, results.get(1).idType());
+        assertEquals("SRG195", results.get(1).normalizedValue());
+    }
 }

@@ -544,6 +544,41 @@ public class CameraRecordingCoordinatorTest {
                 "videos/clips/camera/second.mp4"), occupancy.getVideoPaths());
     }
 
+    @Test
+    public void transientNonAlarmResolutionRetainsThenDiscardsSavedPathsOnce() throws Exception {
+        CameraRecordingCoordinator coordinator = new CameraRecordingCoordinator(
+                Duration.ofSeconds(2), Duration.ofSeconds(2));
+        OccupancyRecordingRegistry registry = new OccupancyRecordingRegistry();
+        FakeCamera camera = new FakeCamera("urn:osh:camera:transient-ocr");
+        Instant start = Instant.parse("2026-11-14T12:00:00Z");
+
+        CameraRecordingCoordinator.Recording recording = coordinator.begin(
+                start, "transient-ocr", List.of(camera));
+        camera.take().complete(accepted());
+        registry.register(recording, registry.epoch());
+        coordinator.finishActive(false);
+
+        CompletableFuture<OccupancyRecordingRegistry.Resolution> resolvedFuture =
+                CompletableFuture.supplyAsync(() -> registry.resolve(
+                        occupancy(start, false), Duration.ofSeconds(2), true, coordinator::finish));
+
+        Invocation closeCall = camera.take();
+        assertEquals(Operation.CLOSE, closeCall.operation);
+        assertTrue("retainNonAlarm=true must close with save=true for transient OCR", closeCall.save);
+        String path = camera.path(recording.fileName());
+        closeCall.complete(completedWithPath(path));
+
+        OccupancyRecordingRegistry.Resolution resolution = resolvedFuture.get(2, TimeUnit.SECONDS);
+        assertNotNull(resolution);
+        assertEquals(List.of(path), resolution.paths());
+        assertTrue(registry.complete(resolution, true));
+        assertTrue("Transient clip must remain on disk until OCR finishes", camera.discarded.isEmpty());
+
+        resolution.recording().discardSavedPaths();
+        resolution.recording().discardSavedPaths();
+        assertEquals(List.of(path), camera.discarded);
+    }
+
     private static CameraRecordingCoordinator.Recording finishedRecording(
             CameraRecordingCoordinator coordinator, FakeCamera camera, Instant start,
             String prefix) throws Exception {
