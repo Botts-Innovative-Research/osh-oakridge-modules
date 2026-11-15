@@ -14,14 +14,17 @@ import org.vast.data.TextEncodingImpl;
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.Duration;
+import jakarta.xml.bind.JAXBElement;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
-import java.time.temporal.ChronoField;
-import java.time.temporal.TemporalField;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.GregorianCalendar;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.TimeZone;
+import java.util.Locale;
+import java.util.Set;
 
 public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorOutput<T> {
 
@@ -73,7 +76,7 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
                 .label("Foreground Report")
                 .definition(RADHelper.getRadUri("ForegroundReport"))
                 .addField(samplingTime.getName(), samplingTime.copy())
-                .addField(duration.getName(), duration)
+                .addField(duration.getName(), duration.copy())
                 .addField(linearSpectrumCount.getName(), linearSpectrumCount.copy())
                 .addField(linearSpectrumArray.getName(), linearSpectrumArray.copy())
                 .addField(compressedSpectrumCount.getName(), compressedSpectrumCount.copy())
@@ -171,10 +174,91 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
 
     public synchronized void onNewMessage(String n42Message, String fileName, String occupancyObsId) {
         parseN42Message(n42Message, fileName, occupancyObsId);
-
-        eventHandler.publish(new DataEvent(latestRecordTime, N42Output.this, dataStruct.getData().clone()));
+        latestRecord = dataStruct.getData().clone();
+        eventHandler.publish(new DataEvent(latestRecordTime, N42Output.this, latestRecord));
     }
 
+
+    private record ParsedMeasurement(
+            String classCode,
+            long startDateTimeMs,
+            double realTimeDurationSec,
+            List<Double> linearSpectrum,
+            List<Double> compressedSpectrum,
+            double gammaGrossCount,
+            double neutronGrossCount,
+            double doseRate,
+            double lat,
+            double lon,
+            double elv
+    ) {}
+
+    private record ParsedAlarm(
+            long startDateTimeMs,
+            String categoryCode,
+            String description
+    ) {}
+
+    /**
+     * Normalizes vendor N42 XML quirks before JAXB unmarshalling:
+     * - Strips leading UTF-8 BOM
+     * - Removes undeclared InterSpec extension elements/attributes emitted by SpecUtils
+     * - Normalizes FLIR R225 singular {@code <NuclideAnalysisResult>} tags to N42-2012 {@code <NuclideAnalysisResults>}
+     */
+    public static String sanitizeN42Xml(String n42Xml) {
+        if (n42Xml == null || n42Xml.isEmpty()) {
+            return n42Xml;
+        }
+        String cleaned = n42Xml;
+        if (!cleaned.isEmpty() && cleaned.charAt(0) == '\uFEFF') {
+            cleaned = cleaned.substring(1);
+        }
+        cleaned = cleaned.replaceAll("<InterSpec:[^>]*?/>", "");
+        String prev;
+        int guard = 0;
+        do {
+            prev = cleaned;
+            cleaned = cleaned.replaceAll("(?s)<(InterSpec:[A-Za-z0-9_.-]+)(?:\\s[^>]*)?>((?!<InterSpec:).)*?</\\1>", "");
+        } while (!cleaned.equals(prev) && ++guard < 16);
+        cleaned = cleaned.replaceAll("</?InterSpec:[^>]*>", "");
+        cleaned = cleaned.replaceAll("\\s+(?:xmlns:)?InterSpec:[A-Za-z0-9_.-]*=\"[^\"]*\"", "");
+        cleaned = cleaned.replaceAll("\\s+xmlns:InterSpec=\"[^\"]*\"", "");
+        cleaned = cleaned.replaceAll("<(/?)NuclideAnalysisResult(\\s|>)", "<$1NuclideAnalysisResults$2");
+        return cleaned;
+    }
+
+    /**
+     * Expands N42-2012 {@code CountedZeroes} run-length channel encoding ({@code 0 N -> N zeroes})
+     * so downstream spectrum charts and gross-count sums operate on linear channel bins.
+     */
+    public static List<Double> expandChannelData(ChannelDataType channelData) {
+        if (channelData == null || channelData.getValue() == null || channelData.getValue().isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Double> raw = channelData.getValue();
+        if (channelData.getCompressionCode() == CompressionCodeSimpleType.COUNTED_ZEROES) {
+            List<Double> expanded = new ArrayList<>(Math.max(raw.size(), 1024));
+            for (int i = 0; i < raw.size(); i++) {
+                Double v = raw.get(i);
+                double val = v != null ? v : 0.0;
+                if (val == 0.0 && i + 1 < raw.size()) {
+                    Double runObj = raw.get(++i);
+                    int runLen = runObj != null ? Math.max(0, Math.min(65536, (int) Math.round(runObj))) : 1;
+                    for (int z = 0; z < runLen; z++) {
+                        expanded.add(0.0);
+                    }
+                } else {
+                    expanded.add(val);
+                }
+            }
+            return expanded;
+        }
+        List<Double> copy = new ArrayList<>(raw.size());
+        for (Double v : raw) {
+            copy.add(v != null ? v : 0.0);
+        }
+        return copy;
+    }
 
     protected void parseN42Message(String n42Message, String fileName, String occupancyObsId) {
 
@@ -182,155 +266,494 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         backgroundReports.clearData();
         alarmReports.clearData();
 
-        // Determine counts
-        var message = radHelper.getRadInstrumentData(n42Message);
-        int foregroundElementCount = 0;
-        int backgroundElementCount = 0;
-        int alarmElementCount = 0;
+        String sanitizedXml = sanitizeN42Xml(n42Message);
+        var message = radHelper.getRadInstrumentData(sanitizedXml);
+        long nowMs = Instant.now().toEpochMilli();
 
-        for (var jaxbElement : message.getRadMeasurementOrRadMeasurementGroupOrEnergyCalibration()) {
-            Class<?> jaxbType = jaxbElement.getDeclaredType();
+        List<RadMeasurementType> rawFg = new ArrayList<>();
+        List<RadMeasurementType> rawBg = new ArrayList<>();
+        List<RadMeasurementType> rawUnspecifiedWithSpectrum = new ArrayList<>();
+        List<AnalysisResultsType> rawAnalyses = new ArrayList<>();
 
-            if (jaxbType == RadMeasurementType.class) {
-                RadMeasurementType radMeasurementType = (RadMeasurementType) jaxbElement.getValue();
-                String measurementClass = radMeasurementType.getMeasurementClassCode().value();
-
-                switch (measurementClass) {
-                    case "Background":
-                        backgroundElementCount++;
-                        break;
-                    case "Foreground":
-                        foregroundElementCount++;
-                        break;
-                    default:
+        if (message != null && message.getRadMeasurementOrRadMeasurementGroupOrEnergyCalibration() != null) {
+            for (var jaxbElement : message.getRadMeasurementOrRadMeasurementGroupOrEnergyCalibration()) {
+                if (jaxbElement == null || jaxbElement.getValue() == null) {
+                    continue;
                 }
-            } else if (jaxbType == AnalysisResultsType.class) {
-                AnalysisResultsType analysisResultsType = (AnalysisResultsType) jaxbElement.getValue();
-                alarmElementCount += analysisResultsType.getRadAlarm().size();
+                Class<?> jaxbType = jaxbElement.getDeclaredType();
+                if (jaxbType == RadMeasurementType.class) {
+                    RadMeasurementType rm = (RadMeasurementType) jaxbElement.getValue();
+                    String mc = rm.getMeasurementClassCode() != null ? rm.getMeasurementClassCode().value() : "NotSpecified";
+                    if ("Foreground".equalsIgnoreCase(mc)) {
+                        rawFg.add(rm);
+                    } else if ("Background".equalsIgnoreCase(mc)) {
+                        rawBg.add(rm);
+                    } else if (!"Calibration".equalsIgnoreCase(mc)
+                            && !"IntrinsicActivity".equalsIgnoreCase(mc)
+                            && hasNonEmptySpectrum(rm)) {
+                        rawUnspecifiedWithSpectrum.add(rm);
+                    }
+                } else if (jaxbType == AnalysisResultsType.class) {
+                    rawAnalyses.add((AnalysisResultsType) jaxbElement.getValue());
+                }
             }
         }
 
-        foregroundCount.setValue(foregroundElementCount);
-        //foregroundReports.clearData();
+        if (rawFg.isEmpty() && !rawUnspecifiedWithSpectrum.isEmpty()) {
+            rawFg.addAll(rawUnspecifiedWithSpectrum);
+        }
+
+        List<ParsedMeasurement> parsedForeground = consolidateMeasurements(rawFg, "FOREGROUND", nowMs);
+        List<ParsedMeasurement> parsedBackground = consolidateMeasurements(rawBg, "BACKGROUND", nowMs);
+
+        long fallbackAlarmTimeMs = !parsedForeground.isEmpty()
+                ? parsedForeground.get(0).startDateTimeMs()
+                : (!parsedBackground.isEmpty() ? parsedBackground.get(0).startDateTimeMs() : nowMs);
+        List<ParsedAlarm> parsedAlarms = extractAlarmAndNuclideReports(rawAnalyses, fallbackAlarmTimeMs);
+
+        foregroundCount.setValue(parsedForeground.size());
         foregroundReports.updateSize();
         foregroundReports.setElementCount(foregroundCount);
-        //foregroundReports.getData().updateAtomCount();
         foregroundReports.assignNewDataBlock();
 
-        backgroundCount.setValue(backgroundElementCount);
-        //backgroundReports.clearData();
+        backgroundCount.setValue(parsedBackground.size());
         backgroundReports.updateSize();
         backgroundReports.setElementCount(backgroundCount);
-        //backgroundReports.getData().updateAtomCount();
         backgroundReports.assignNewDataBlock();
 
-        alarmCount.setValue(alarmElementCount);
-        //alarmReports.clearData();
+        alarmCount.setValue(parsedAlarms.size());
         alarmReports.updateSize();
         alarmReports.setElementCount(alarmCount);
-        //alarmReports.getData().updateAtomCount();
         alarmReports.assignNewDataBlock();
 
-        // Populate components with corresponding data
-        int foregroundIndex = 0;
-        int backgroundIndex = 0;
-        int alarmIndex = 0;
+        for (int i = 0; i < parsedBackground.size(); i++) {
+            ParsedMeasurement pm = parsedBackground.get(i);
+            var reportComponent = backgroundReports.getComponent(i);
+            populateBackgroundReport(
+                    reportComponent,
+                    pm.classCode(),
+                    pm.startDateTimeMs(),
+                    pm.realTimeDurationSec(),
+                    pm.linearSpectrum(),
+                    pm.compressedSpectrum(),
+                    pm.gammaGrossCount(),
+                    pm.neutronGrossCount()
+            );
+        }
 
-        for (var jaxbElement : message.getRadMeasurementOrRadMeasurementGroupOrEnergyCalibration()) {
-            Class<?> jaxbType = jaxbElement.getDeclaredType();
+        for (int i = 0; i < parsedForeground.size(); i++) {
+            ParsedMeasurement pm = parsedForeground.get(i);
+            var reportComponent = foregroundReports.getComponent(i);
+            populateForegroundReport(
+                    reportComponent,
+                    pm.classCode(),
+                    pm.startDateTimeMs(),
+                    pm.realTimeDurationSec(),
+                    pm.linearSpectrum(),
+                    pm.compressedSpectrum(),
+                    pm.gammaGrossCount(),
+                    pm.neutronGrossCount(),
+                    pm.doseRate(),
+                    pm.lat(),
+                    pm.lon(),
+                    pm.elv()
+            );
+        }
 
-            if (jaxbType == RadMeasurementType.class) {
-                RadMeasurementType radMeasurementType = (RadMeasurementType) jaxbElement.getValue();
-                String measurementClass = radMeasurementType.getMeasurementClassCode().value();
+        for (int i = 0; i < parsedAlarms.size(); i++) {
+            ParsedAlarm pa = parsedAlarms.get(i);
+            var reportComponent = alarmReports.getComponent(i);
+            populateAlarmReport(
+                    reportComponent,
+                    pa.startDateTimeMs(),
+                    pa.categoryCode(),
+                    pa.description()
+            );
+        }
 
-                switch (measurementClass) {
-                    case "Background": {
-                        var reportComponent = backgroundReports.getComponent(backgroundIndex++);
-                        //reportComponent.getData().updateAtomCount();
-                        cleanRadMeasurement(radMeasurementType);
-                        populateBackgroundReport(reportComponent, radMeasurementType.getMeasurementClassCode().name(),
-                                radMeasurementType.getStartDateTime().toGregorianCalendar().getTimeInMillis(),
-                                durationToDouble(radMeasurementType.getRealTimeDuration()),
-                                radMeasurementType.getSpectrum().get(0).getChannelData().getValue(),
-                                radMeasurementType.getSpectrum().get(1).getChannelData().getValue(),
-                                radMeasurementType.getGrossCounts().get(0).getCountData().get(0),
-                                radMeasurementType.getGrossCounts().get(1).getCountData().get(0));
+        DataBlockMixed dataBlock = (DataBlockMixed) dataStruct.getData();
+
+        latestRecordTime = System.currentTimeMillis() / 1000;
+        AbstractDataBlock[] rootBlocks = dataBlock.getUnderlyingObject();
+        rootBlocks[0].setLongValue(0, latestRecordTime);
+        rootBlocks[1].setStringValue(0, fileName != null ? fileName : "");
+        rootBlocks[2].setStringValue(0, occupancyObsId != null ? occupancyObsId : "");
+        rootBlocks[3].setIntValue(0, foregroundCount.getValue());
+        dataBlock.setBlock(4, (AbstractDataBlock) foregroundReports.getData());
+        rootBlocks[5].setIntValue(0, backgroundCount.getValue());
+        dataBlock.setBlock(6, (AbstractDataBlock) backgroundReports.getData());
+        rootBlocks[7].setIntValue(0, alarmCount.getValue());
+        dataBlock.setBlock(8, (AbstractDataBlock) alarmReports.getData());
+
+        dataBlock.updateAtomCount();
+    }
+
+    private static boolean hasNonEmptySpectrum(RadMeasurementType rm) {
+        if (rm == null || rm.getSpectrum() == null || rm.getSpectrum().isEmpty()) {
+            return false;
+        }
+        for (SpectrumType sp : rm.getSpectrum()) {
+            if (sp != null && sp.getChannelData() != null && !sp.getChannelData().getValue().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Converts N42 {@link RadMeasurementType} blocks into {@link ParsedMeasurement} items while merging
+     * sibling neutron/gamma gross-count or dose-rate blocks onto spectrum-bearing blocks (e.g. Symetrica S100/S200).
+     */
+    private static List<ParsedMeasurement> consolidateMeasurements(
+            List<RadMeasurementType> measurements,
+            String defaultClassName,
+            long fallbackTimeMs
+    ) {
+        if (measurements == null || measurements.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        boolean anyHasSpectrum = measurements.stream().anyMatch(N42Output::hasNonEmptySpectrum);
+        double siblingGammaCounts = Double.NaN;
+        double siblingNeutronCounts = Double.NaN;
+        double siblingDoseRate = Double.NaN;
+
+        if (anyHasSpectrum) {
+            for (RadMeasurementType rm : measurements) {
+                if (!hasNonEmptySpectrum(rm)) {
+                    double[] gn = extractGammaAndNeutronGrossCounts(rm, Collections.emptyList());
+                    if (!Double.isNaN(gn[0]) && Double.isNaN(siblingGammaCounts)) {
+                        siblingGammaCounts = gn[0];
                     }
-                    break;
-                    case "Foreground": {
-                        var reportComponent = foregroundReports.getComponent(foregroundIndex++);
-                        //reportComponent.getData().updateAtomCount();
-
-                        Double lat = 0.0;
-                        Double lon = 0.0;
-                        Double elv = 0.0;
-                        try {
-                            if (radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLongitudeValue() != null) {
-                                lat = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLatitudeValue().getValue().doubleValue();
-                                lon = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getLongitudeValue().getValue().doubleValue();
-                                elv = radMeasurementType.getRadInstrumentState().getStateVector().getGeographicPoint().getElevationValue().doubleValue();
-                            }
-                        } catch (NullPointerException ignored) {
-                        }
-                        cleanRadMeasurement(radMeasurementType);
-                        populateForegroundReport(reportComponent, radMeasurementType.getMeasurementClassCode().name(),
-                                radMeasurementType.getStartDateTime().toGregorianCalendar().getTimeInMillis(),
-                                durationToDouble(radMeasurementType.getRealTimeDuration()),
-                                radMeasurementType.getSpectrum().get(0).getChannelData().getValue(),
-                                radMeasurementType.getSpectrum().get(1).getChannelData().getValue(),
-                                radMeasurementType.getGrossCounts().get(0).getCountData().get(0),
-                                radMeasurementType.getGrossCounts().get(1).getCountData().get(0),
-                                radMeasurementType.getDoseRate().get(0).getDoseRateValue().getValue(), lat, lon, elv);
+                    if (!Double.isNaN(gn[1]) && Double.isNaN(siblingNeutronCounts)) {
+                        siblingNeutronCounts = gn[1];
                     }
-                    break;
-                }
-            } else if (jaxbType == AnalysisResultsType.class) {
-                AnalysisResultsType analysisResultsType = (AnalysisResultsType) jaxbElement.getValue();
-                for (var radAlarmType : analysisResultsType.getRadAlarm()) {
-                    cleanRadAlarm(radAlarmType);
-                    var reportComponent = alarmReports.getComponent(alarmIndex++);
-                    populateAlarmReport(reportComponent,
-                            radAlarmType.getRadAlarmDateTime().toGregorianCalendar().getTimeInMillis(),
-                            radAlarmType.getRadAlarmCategoryCode().value(),
-                            radAlarmType.getRadAlarmDescription());
+                    double dr = extractDoseRate(rm);
+                    if (!Double.isNaN(dr) && Double.isNaN(siblingDoseRate)) {
+                        siblingDoseRate = dr;
+                    }
                 }
             }
         }
 
-        // 0 double
-        // 1 int
-        // 2 list mixed
-        // 3 int
-        // 4 list mixed
-        // 5 int
-        // 6 parallel
+        List<ParsedMeasurement> result = new ArrayList<>();
+        for (RadMeasurementType rm : measurements) {
+            if (anyHasSpectrum && !hasNonEmptySpectrum(rm)) {
+                continue;
+            }
 
-        DataBlockMixed dataBlock = (DataBlockMixed) dataStruct.getData();
-        //dataStruct.toString();
+            List<Double> linSpec = Collections.emptyList();
+            List<Double> cmpSpec = Collections.emptyList();
+            if (rm.getSpectrum() != null && !rm.getSpectrum().isEmpty()) {
+                if (rm.getSpectrum().get(0) != null) {
+                    linSpec = expandChannelData(rm.getSpectrum().get(0).getChannelData());
+                }
+                if (rm.getSpectrum().size() > 1 && rm.getSpectrum().get(1) != null) {
+                    cmpSpec = expandChannelData(rm.getSpectrum().get(1).getChannelData());
+                }
+            }
 
-        int index = 0;
-        latestRecordTime = System.currentTimeMillis() / 1000;
-        dataBlock.setLongValue(index++, latestRecordTime);
-        dataBlock.setStringValue(index++, fileName);
-        dataBlock.setStringValue(index++, occupancyObsId != null ? occupancyObsId : "");
-        dataBlock.setIntValue(index++, foregroundCount.getValue());
-        dataBlock.setBlock(index++, (AbstractDataBlock) foregroundReports.getData());
-        dataBlock.setIntValue(index++, backgroundCount.getValue());
-        dataBlock.setBlock(index++, (AbstractDataBlock) backgroundReports.getData());
-        dataBlock.setIntValue(index++, alarmCount.getValue());
-        dataBlock.setBlock(index++, (AbstractDataBlock) alarmReports.getData());
+            double[] gn = extractGammaAndNeutronGrossCounts(rm, linSpec);
+            double gammaGross = !Double.isNaN(gn[0]) ? gn[0] : siblingGammaCounts;
+            double neutronGross = !Double.isNaN(gn[1]) ? gn[1] : siblingNeutronCounts;
+            double doseRate = extractDoseRate(rm);
+            if (Double.isNaN(doseRate)) {
+                doseRate = siblingDoseRate;
+            }
 
-        dataBlock.updateAtomCount();
+            long startMs = fallbackTimeMs;
+            if (rm.getStartDateTime() != null) {
+                try {
+                    startMs = rm.getStartDateTime().toGregorianCalendar().getTimeInMillis();
+                } catch (Exception ignored) {
+                }
+            }
 
-        /*
-        dataStruct.getComponent(index++).setData(foregroundCount.getData());
-        dataStruct.getComponent(index++).setData(foregroundReports.getData());
-        dataStruct.getComponent(index++).setData(backgroundCount.getData());
-        dataStruct.getComponent(index++).setData(backgroundReports.getData());
-        dataStruct.getComponent(index++).setData(alarmCount.getData());
-        dataStruct.getComponent(index++).setData(alarmReports.getData());
+            double durationSec = durationToDouble(rm.getRealTimeDuration());
+            if ((Double.isNaN(durationSec) || durationSec <= 0.0)
+                    && rm.getSpectrum() != null
+                    && !rm.getSpectrum().isEmpty()
+                    && rm.getSpectrum().get(0) != null) {
+                durationSec = durationToDouble(rm.getSpectrum().get(0).getLiveTimeDuration());
+            }
+            if (Double.isNaN(durationSec)) {
+                durationSec = 0.0;
+            }
 
-         */
+            double lat = 0.0;
+            double lon = 0.0;
+            double elv = 0.0;
+            try {
+                if (rm.getRadInstrumentState() != null
+                        && rm.getRadInstrumentState().getStateVector() != null
+                        && rm.getRadInstrumentState().getStateVector().getGeographicPoint() != null
+                        && rm.getRadInstrumentState().getStateVector().getGeographicPoint().getLongitudeValue() != null) {
+                    var gp = rm.getRadInstrumentState().getStateVector().getGeographicPoint();
+                    if (gp.getLatitudeValue() != null && gp.getLatitudeValue().getValue() != null) {
+                        lat = gp.getLatitudeValue().getValue().doubleValue();
+                    }
+                    if (gp.getLongitudeValue() != null && gp.getLongitudeValue().getValue() != null) {
+                        lon = gp.getLongitudeValue().getValue().doubleValue();
+                    }
+                    if (gp.getElevationValue() != null) {
+                        elv = gp.getElevationValue().doubleValue();
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+
+            String classCode = rm.getMeasurementClassCode() != null
+                    ? rm.getMeasurementClassCode().name()
+                    : defaultClassName;
+
+            result.add(new ParsedMeasurement(
+                    classCode,
+                    startMs,
+                    durationSec,
+                    linSpec,
+                    cmpSpec,
+                    gammaGross,
+                    neutronGross,
+                    doseRate,
+                    lat,
+                    lon,
+                    elv
+            ));
+        }
+
+        return result;
+    }
+
+    private static double[] extractGammaAndNeutronGrossCounts(RadMeasurementType rm, List<Double> linSpec) {
+        double gamma = Double.NaN;
+        double neutron = Double.NaN;
+        boolean foundTotalNeutron = false;
+
+        if (rm != null && rm.getGrossCounts() != null && !rm.getGrossCounts().isEmpty()) {
+            List<GrossCountsType> gcs = rm.getGrossCounts();
+            List<Double> unlabeled = new ArrayList<>();
+
+            for (GrossCountsType gc : gcs) {
+                if (gc == null || gc.getCountData() == null || gc.getCountData().isEmpty() || gc.getCountData().get(0) == null) {
+                    continue;
+                }
+                double val = gc.getCountData().get(0);
+                String hint = buildGrossCountHint(gc);
+                if (hint.contains("neutron")) {
+                    boolean isMinOrMax = hint.contains("minimum") || hint.contains("maximum");
+                    if (!isMinOrMax) {
+                        neutron = val;
+                        foundTotalNeutron = true;
+                    } else if (!foundTotalNeutron && Double.isNaN(neutron)) {
+                        neutron = val;
+                    }
+                } else if (hint.contains("gamma")) {
+                    if (Double.isNaN(gamma)) {
+                        gamma = val;
+                    }
+                } else {
+                    unlabeled.add(val);
+                }
+            }
+
+            if (Double.isNaN(gamma) && !unlabeled.isEmpty()) {
+                gamma = unlabeled.get(0);
+            }
+            if (Double.isNaN(neutron) && unlabeled.size() > 1) {
+                neutron = unlabeled.get(1);
+            }
+        }
+
+        if (Double.isNaN(gamma) && linSpec != null && !linSpec.isEmpty()) {
+            double sum = 0.0;
+            for (Double c : linSpec) {
+                if (c != null && !Double.isNaN(c)) {
+                    sum += c;
+                }
+            }
+            gamma = sum;
+        }
+
+        return new double[]{gamma, neutron};
+    }
+
+    private static String buildGrossCountHint(GrossCountsType gc) {
+        StringBuilder sb = new StringBuilder();
+        if (gc.getId() != null) {
+            sb.append(gc.getId()).append(' ');
+        }
+        Object detRef = gc.getRadDetectorInformationReference();
+        if (detRef instanceof RadDetectorInformationType detInfo) {
+            if (detInfo.getId() != null) {
+                sb.append(detInfo.getId()).append(' ');
+            }
+            if (detInfo.getRadDetectorName() != null) {
+                sb.append(detInfo.getRadDetectorName()).append(' ');
+            }
+            if (detInfo.getRadDetectorCategoryCode() != null) {
+                sb.append(detInfo.getRadDetectorCategoryCode().value()).append(' ');
+            }
+        } else if (detRef != null) {
+            sb.append(detRef.toString());
+        }
+        return sb.toString().toLowerCase(Locale.ROOT);
+    }
+
+    private static double extractDoseRate(RadMeasurementType rm) {
+        if (rm == null || rm.getDoseRate() == null || rm.getDoseRate().isEmpty()) {
+            return Double.NaN;
+        }
+        for (DoseRateType dr : rm.getDoseRate()) {
+            if (dr != null && dr.getDoseRateValue() != null) {
+                return dr.getDoseRateValue().getValue();
+            }
+        }
+        return Double.NaN;
+    }
+
+    private static List<ParsedAlarm> extractAlarmAndNuclideReports(
+            List<AnalysisResultsType> analyses,
+            long fallbackTimeMs
+    ) {
+        if (analyses == null || analyses.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<ParsedAlarm> out = new ArrayList<>();
+        Set<String> emittedNuclideKeys = new LinkedHashSet<>();
+        List<ParsedAlarm> pendingRadAlarms = new ArrayList<>();
+
+        for (AnalysisResultsType ar : analyses) {
+            if (ar == null) {
+                continue;
+            }
+            long analysisTimeMs = fallbackTimeMs;
+            if (ar.getAnalysisStartDateTime() != null) {
+                try {
+                    long candidate = ar.getAnalysisStartDateTime().toGregorianCalendar().getTimeInMillis();
+                    if (candidate > 86_400_000L) {
+                        analysisTimeMs = candidate;
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            if (ar.getNuclideAnalysisResults() != null && ar.getNuclideAnalysisResults().getNuclide() != null) {
+                for (NuclideType nuclide : ar.getNuclideAnalysisResults().getNuclide()) {
+                    if (nuclide == null || nuclide.getNuclideName() == null) {
+                        continue;
+                    }
+                    String rawName = nuclide.getNuclideName().trim();
+                    if (rawName.isEmpty()
+                            || "none".equalsIgnoreCase(rawName)
+                            || "background".equalsIgnoreCase(rawName)
+                            || "nothing".equalsIgnoreCase(rawName)) {
+                        continue;
+                    }
+
+                    String category = normalizeDeviceNuclideCategory(nuclide.getNuclideCategoryDescription());
+                    String confidence = extractNuclideConfidenceText(nuclide);
+
+                    StringBuilder desc = new StringBuilder("Isotope: ").append(rawName);
+                    List<String> metaParts = new ArrayList<>(2);
+                    if (!category.isEmpty()) {
+                        metaParts.add(category);
+                    }
+                    if (!confidence.isEmpty()) {
+                        metaParts.add("Confidence: " + confidence);
+                    }
+                    if (!metaParts.isEmpty()) {
+                        desc.append(" (").append(String.join(", ", metaParts)).append(")");
+                    }
+
+                    String dedupKey = rawName.replaceAll("[\\s_-]+", "").toLowerCase(Locale.ROOT);
+                    if (emittedNuclideKeys.add(dedupKey)) {
+                        out.add(new ParsedAlarm(analysisTimeMs, "Isotope", desc.toString()));
+                    }
+                }
+            }
+
+            if (ar.getRadAlarm() != null) {
+                for (RadAlarmType radAlarm : ar.getRadAlarm()) {
+                    if (radAlarm == null) {
+                        continue;
+                    }
+                    cleanRadAlarm(radAlarm);
+                    long alarmMs = analysisTimeMs;
+                    if (radAlarm.getRadAlarmDateTime() != null) {
+                        try {
+                            alarmMs = radAlarm.getRadAlarmDateTime().toGregorianCalendar().getTimeInMillis();
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    String cat = radAlarm.getRadAlarmCategoryCode() != null
+                            ? radAlarm.getRadAlarmCategoryCode().value()
+                            : "Other";
+                    String desc = radAlarm.getRadAlarmDescription() != null
+                            ? radAlarm.getRadAlarmDescription().trim()
+                            : "";
+                    pendingRadAlarms.add(new ParsedAlarm(alarmMs, cat, desc));
+                }
+            }
+        }
+
+        for (ParsedAlarm ra : pendingRadAlarms) {
+            if ("Isotope".equalsIgnoreCase(ra.categoryCode()) && ra.description().isEmpty() && !emittedNuclideKeys.isEmpty()) {
+                // Skip blank Isotope alarm placeholders (e.g. SRM N42) when explicit <Nuclide> entries were emitted
+                continue;
+            }
+            if ("Isotope".equalsIgnoreCase(ra.categoryCode()) && !ra.description().isEmpty()) {
+                int colon = ra.description().lastIndexOf(':');
+                if (colon >= 0 && colon + 1 < ra.description().length()) {
+                    String trailingNuclide = ra.description().substring(colon + 1).trim()
+                            .replaceAll("[\\s_-]+", "")
+                            .toLowerCase(Locale.ROOT);
+                    if (emittedNuclideKeys.contains(trailingNuclide)) {
+                        continue;
+                    }
+                }
+            }
+            out.add(ra);
+        }
+
+        return out;
+    }
+
+    private static String normalizeDeviceNuclideCategory(String rawCategory) {
+        if (rawCategory == null || rawCategory.isBlank()) {
+            return "";
+        }
+        String trimmed = rawCategory.trim();
+        String upper = trimmed.toUpperCase(Locale.ROOT);
+        if (upper.contains("USAGE:MED") || "MED".equals(upper) || upper.contains("MEDICAL")) {
+            return "Medical";
+        }
+        if (upper.contains("USAGE:IND") || "IND".equals(upper) || upper.contains("INDUSTRIAL")) {
+            return "Industrial";
+        }
+        if (upper.contains("USAGE:SNM") || "SNM".equals(upper) || upper.contains("NUCLEAR") || upper.contains("SPECIAL")) {
+            return "SNM";
+        }
+        if (upper.contains("USAGE:NORM") || "NORM".equals(upper) || upper.contains("NATURAL")) {
+            return "NORM";
+        }
+        return trimmed;
+    }
+
+    private static String extractNuclideConfidenceText(NuclideType nuclide) {
+        if (nuclide.getNuclideIdentificationConfidence() == null || nuclide.getNuclideIdentificationConfidence().isEmpty()) {
+            return "";
+        }
+        for (JAXBElement<?> elem : nuclide.getNuclideIdentificationConfidence()) {
+            if (elem == null || elem.getValue() == null) {
+                continue;
+            }
+            String valStr = elem.getValue().toString().trim();
+            if (!valStr.isEmpty()) {
+                return valStr;
+            }
+        }
+        return "";
     }
 
     private static void cleanRadAlarm(RadAlarmType radAlarmType) {
@@ -351,32 +774,11 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         }
     }
 
-    private static void cleanRadMeasurement(RadMeasurementType radMeasurementType) {
-        while (radMeasurementType.getSpectrum().size() < 2) {
-            var spectrum = new SpectrumType();
-            var channelData = new ChannelDataType();
-            spectrum.setChannelData(channelData);
-            radMeasurementType.getSpectrum().add(spectrum);
-        }
-        while (radMeasurementType.getGrossCounts().size() < 2) {
-            var counts = new GrossCountsType();
-            counts.getCountData().add(Double.NaN);
-            radMeasurementType.getGrossCounts().add(counts);
-        }
-        while (radMeasurementType.getDoseRate().size() < 1) {
-            var doseRate = new DoseRateType();
-            var drValue = new DoseRateuSvhType();
-            drValue.setValue(Double.NaN);
-            doseRate.setDoseRateValue(drValue);
-            radMeasurementType.getDoseRate().add(doseRate);
-        }
-    }
-
     private void populateBackgroundReport(DataComponent backgroundComponent, String classCode, Long startDateTime, Double realTimeDuration, List<Double> linEnCalSpectrum, List<Double> cmpEnCalSpectrum, Double gammaGrossCount, Double neutronGrossCount) {
         int index = 0;
         var dataBlock = backgroundComponent.getData();
         dataBlock.setLongValue(index++, startDateTime / 1000);
-        dataBlock.setDoubleValue(index++, realTimeDuration);
+        dataBlock.setDoubleValue(index++, (realTimeDuration == null || Double.isNaN(realTimeDuration)) ? 0.0 : realTimeDuration);
 
         // -- Linear Spectrum --
         int linearSpectrumSize = linEnCalSpectrum.size();
@@ -386,7 +788,8 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         linearSpectrumArray.updateSize();
         dataBlock.updateAtomCount();
         for (int i = 0; i < linearSpectrumSize; i++) {
-            dataBlock.setDoubleValue(index++, linEnCalSpectrum.get(i));
+            Double v = linEnCalSpectrum.get(i);
+            dataBlock.setDoubleValue(index++, (v == null || Double.isNaN(v)) ? 0.0 : v);
         }
 
         // -- Compressed Spectrum --
@@ -397,18 +800,19 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         compressedSpectrumArray.updateSize();
         dataBlock.updateAtomCount();
         for (int i = 0; i < compressedSpectrumSize; i++) {
-            dataBlock.setDoubleValue(index++, cmpEnCalSpectrum.get(i));
+            Double v = cmpEnCalSpectrum.get(i);
+            dataBlock.setDoubleValue(index++, (v == null || Double.isNaN(v)) ? 0.0 : v);
         }
 
-        dataBlock.setDoubleValue(index++, gammaGrossCount);
-        dataBlock.setDoubleValue(index++, neutronGrossCount);
+        dataBlock.setDoubleValue(index++, (gammaGrossCount == null || Double.isNaN(gammaGrossCount)) ? 0.0 : gammaGrossCount);
+        dataBlock.setDoubleValue(index++, (neutronGrossCount == null || Double.isNaN(neutronGrossCount)) ? 0.0 : neutronGrossCount);
     }
 
     private void populateForegroundReport(DataComponent foregroundComponent, String classCode, Long startDateTime, Double realTimeDuration, List<Double> linEnCalSpectrum, List<Double> cmpEnCalSpectrum, Double gammaGrossCount, Double neutronGrossCount, Double doseRate, Double lat, Double lon, Double alt) {
         int index = 0;
         var dataBlock = foregroundComponent.getData();
         dataBlock.setLongValue(index++, startDateTime / 1000);
-        dataBlock.setDoubleValue(index++, realTimeDuration);
+        dataBlock.setDoubleValue(index++, (realTimeDuration == null || Double.isNaN(realTimeDuration)) ? 0.0 : realTimeDuration);
 
         // -- Linear Spectrum --
         int linearSpectrumSize = linEnCalSpectrum.size();
@@ -418,7 +822,8 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         linearSpectrumArray.updateSize();
         dataBlock.updateAtomCount();
         for (int i = 0; i < linearSpectrumSize; i++) {
-            dataBlock.setDoubleValue(index++, linEnCalSpectrum.get(i));
+            Double v = linEnCalSpectrum.get(i);
+            dataBlock.setDoubleValue(index++, (v == null || Double.isNaN(v)) ? 0.0 : v);
         }
 
         // -- Compressed Spectrum --
@@ -429,12 +834,13 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
         compressedSpectrumArray.updateSize();
         dataBlock.updateAtomCount();
         for (int i = 0; i < compressedSpectrumSize; i++) {
-            dataBlock.setDoubleValue(index++, cmpEnCalSpectrum.get(i));
+            Double v = cmpEnCalSpectrum.get(i);
+            dataBlock.setDoubleValue(index++, (v == null || Double.isNaN(v)) ? 0.0 : v);
         }
 
-        dataBlock.setDoubleValue(index++, gammaGrossCount);
-        dataBlock.setDoubleValue(index++, neutronGrossCount);
-        dataBlock.setDoubleValue(index++, doseRate);
+        dataBlock.setDoubleValue(index++, (gammaGrossCount == null || Double.isNaN(gammaGrossCount)) ? 0.0 : gammaGrossCount);
+        dataBlock.setDoubleValue(index++, (neutronGrossCount == null || Double.isNaN(neutronGrossCount)) ? 0.0 : neutronGrossCount);
+        dataBlock.setDoubleValue(index++, (doseRate == null || Double.isNaN(doseRate)) ? 0.0 : doseRate);
     }
 
     private void populateAlarmReport(DataComponent alarmComponent, Long startDateTime, String categoryCode, String description) {
@@ -446,7 +852,14 @@ public class N42Output<T extends IDataProducerModule<?>> extends AbstractSensorO
     }
 
     private static double durationToDouble(Duration duration) {
-        return duration.multiply(1000).getSeconds() / 1000.0;
+        if (duration == null) {
+            return 0.0;
+        }
+        try {
+            return duration.getTimeInMillis(new java.util.Date(0L)) / 1000.0;
+        } catch (Exception e) {
+            return duration.multiply(1000).getSeconds() / 1000.0;
+        }
     }
 
     @Override

@@ -25,3 +25,19 @@ El **Servicio de diario duradero de archivos diarios OSCAR** registra los mensaj
 - **Máximo de bytes por registro**: Tamaño máximo permitido para un único mensaje RPM en bytes UTF-8.
 - **Retención del diario sellado (días)**: Días que se conservan los segmentos binarios sellados después de cerrar y verificar el día (`0` los conserva indefinidamente).
 - **Requerir copia de seguridad antes de eliminar el diario sellado**: Si está activado, exige confirmación de copia de seguridad externa antes de borrar segmentos sellados vencidos.
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#13, 19.4s): Revisar los 5 fotogramas retenidos, el archivo diario y adjudicar</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/13-event-details-adjudication-and-daily-file.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/13-event-details-adjudication-and-daily-file.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#03, 11.4s): Verificar archivos Parquet de nivel frío y copia de seguridad instantánea</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/03-archive-and-snapshot-backup.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/03-archive-and-snapshot-backup.vtt" srclang="en" label="English" default>
+  </video>
+</details>

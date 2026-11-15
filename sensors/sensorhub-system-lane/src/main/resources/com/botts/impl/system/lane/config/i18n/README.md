@@ -9,7 +9,7 @@ The **Lane Sensor System** creates a parent lane container for one Radiation Por
 | **Operational View Key** | An optional tag (for example, `north-gate` or `cargo-inbound`) that groups this lane into a named operator workspace in the OSCAR Viewer. |
 | **Extended Occupancy Threshold (min)** | Duration in minutes (`1`–`1440`, default `1`) before an active occupancy is logged as a `Fault - Extended Occupancy` event. Any gamma-only alarm (no neutron alarm) during an extended occupancy is automatically adjudicated as `Code 9998: Extended Occupancy Gamma Alarm`. |
 | **Enhanced Machine Learning (EML)** | Optional Rapiscan algorithm that compares low-, mid-, and high-energy gamma counts to distinguish natural cargo radiation (**NORM**, auto-adjudicated as `Code 9999: EML Non-Threat`) from concentrated threat sources. |
-| **Vehicle OCR (`ocrConfig`)** | Optional per-lane background OCR (`Enable Vehicle OCR = false` by default) that asynchronously reads ISO 6346 shipping container codes (with check-digit verification) and license plates from occupancy camera clips as CPU and heap resources allow, publishing `vehicleOcr` (`PARQUET_PRIMARY`) suggestions, bounded crop thumbnails (`files/ocr/crops`, `2,000`-file FIFO cap), and **Vehicle ID** auto-fill during adjudication. When `Alarms Only` is cleared, non-alarm clips are scanned transiently and deleted immediately after OCR while keeping `occupancy.videoPaths` empty (`[]`). |
+| **Vehicle OCR (`ocrConfig`)** | Optional per-lane background OCR (`Enable Vehicle OCR = false` by default) that asynchronously reads ISO 6346 shipping container codes (with check-digit verification) and license plates from occupancy camera clips as CPU and heap resources allow, publishing `vehicleOcr` (`PARQUET_PRIMARY`) suggestions, date-partitioned crop thumbnails (`files/ocr/crops/<YYYY-MM-DD>/`, aligned with retained `frame-03.jpg` media and `ocrCropRetentionDays = 365`), and **Vehicle ID** auto-fill during adjudication. When `Alarms Only` is cleared, non-alarm clips are scanned transiently and deleted immediately after OCR while keeping `occupancy.videoPaths` empty (`[]`). |
 | **Modbus Address Range** | Register range (`From` and `To`) used by Aspect RPM controllers over TCP/IP. |
 
 ## General Configuration
@@ -31,3 +31,27 @@ The **Lane Sensor System** creates a parent lane container for one Radiation Por
   - Add up to **4** **Sony**, **Axis**, or **Custom** cameras per lane.
   - For **Axis** cameras, select the stream codec (`H.264`). For **Custom** cameras, enter the RTSP/HTTP stream path after the host and port.
 - Click **Apply** and **Save** in the top toolbar so SensorHub creates and starts the child RPM, occupancy process, and camera modules.
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#06, 14.9s): Configure a Lane System &amp; Georeferenced Site Diagram</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/06-admin-manual-lane-and-site-diagram.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/06-admin-manual-lane-and-site-diagram.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#07, 11.8s): Upload External EML VM-250 Plugin &amp; Enable Per-Lane EML</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/07-admin-eml-plugin-setup.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/07-admin-eml-plugin-setup.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#17, 32.4s): Configure Vehicle OCR, Compare Multi-Pass Transits &amp; Adjudicate</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/17-vehicle-ocr-and-adjudication.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/17-vehicle-ocr-and-adjudication.vtt" srclang="en" label="English" default>
+  </video>
+</details>

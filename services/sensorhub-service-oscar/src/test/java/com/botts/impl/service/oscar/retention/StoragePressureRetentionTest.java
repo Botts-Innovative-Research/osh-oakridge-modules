@@ -416,4 +416,112 @@ public class StoragePressureRetentionTest {
             super.deleteObject(bucketName, key);
         }
     }
+
+    @Test
+    public void datePartitionedOcrCropAgeSweepPreservesMiddleFrameHeldAndAdjudicatedCrops() throws Exception {
+        Path root = Files.createTempDirectory("oscar-ocr-crop-age-");
+        try {
+            FileSystemBucketStore store = new FileSystemBucketStore(root);
+            store.createBucket("videos");
+            store.createBucket("ocr");
+            MediaSetStore mediaStore = new MediaSetStore(store);
+
+            // 1. Occupancy whose middle frame (AVAILABLE media set) is still retained on disk
+            createMediaSet(store, mediaStore, "obs-middle-retained", "cam-1", false);
+            String middleRetainedKey = "crops/2025-06-01/" + encodeObsCropName("obs-middle-retained", "1111");
+            put(store, "ocr", middleRetainedKey, "jpeg-middle");
+
+            // 2. Occupancy without retained media, but operator-adjudicated
+            String adjudicatedKey = "crops/2025-06-01/" + encodeObsCropName("obs-adjudicated", "2222");
+            put(store, "ocr", adjudicatedKey, "jpeg-adjudicated");
+
+            // 3. Expired non-adjudicated crop whose retained media was already deleted
+            String expiredEligibleKey = "crops/2025-05-15/" + encodeObsCropName("obs-expired", "3333");
+            put(store, "ocr", expiredEligibleKey, "jpeg-expired");
+
+            // 4. Recent crop within the 365-day window
+            String recentKey = "crops/2026-11-10/" + encodeObsCropName("obs-recent", "4444");
+            put(store, "ocr", recentKey, "jpeg-recent");
+
+            StoragePressureRetentionConfig config = new StoragePressureRetentionConfig();
+            config.storagePath = root.toString();
+            config.ocrCropRetentionDays = 365;
+            StoragePressureRetention retention = new StoragePressureRetention(
+                    store,
+                    mediaStore,
+                    config,
+                    "obs-adjudicated"::equals,
+                    LoggerFactory.getLogger(StoragePressureRetentionTest.class));
+
+            int deleted = retention.pruneExpiredOcrCrops(Instant.parse("2026-11-15T12:00:00Z"));
+            assertEquals(1, deleted);
+
+            assertFalse("Expired unprotected crop must be deleted",
+                    store.objectExists("ocr", expiredEligibleKey));
+            assertFalse("Emptied expired date directory must be removed",
+                    Files.exists(root.resolve("ocr/crops/2025-05-15")));
+            assertTrue("Crop whose occupancy still retains its middle frame must be preserved",
+                    store.objectExists("ocr", middleRetainedKey));
+            assertTrue("Crop whose occupancy was operator-adjudicated must be preserved",
+                    store.objectExists("ocr", adjudicatedKey));
+            assertTrue("Recent crop within retention window must be preserved",
+                    store.objectExists("ocr", recentKey));
+        } finally {
+            try (var paths = Files.walk(root)) {
+                paths.sorted((left, right) -> right.compareTo(left)).forEach(path -> path.toFile().delete());
+            }
+        }
+    }
+
+    @Test
+    public void storagePressureCleanupReclaimsEligibleOcrCropsWhileProtectingHeldAndAdjudicated() throws Exception {
+        Path root = Files.createTempDirectory("oscar-ocr-crop-pressure-");
+        try {
+            FileSystemBucketStore store = new FileSystemBucketStore(root);
+            store.createBucket("videos");
+            store.createBucket("ocr");
+            MediaSetStore mediaStore = new MediaSetStore(store);
+            createMediaSet(store, mediaStore, "obs-held", "cam-held", true);
+
+            String heldCropKey = "crops/2026-11-01/" + encodeObsCropName("obs-held", "aaaa");
+            String adjudicatedCropKey = "crops/2026-11-01/" + encodeObsCropName("obs-adj", "bbbb");
+            String eligibleCropKey = "crops/2026-11-01/" + encodeObsCropName("obs-clear", "cccc");
+            put(store, "ocr", heldCropKey, "jpeg-held");
+            put(store, "ocr", adjudicatedCropKey, "jpeg-adj");
+            put(store, "ocr", eligibleCropKey, "jpeg-clear");
+
+            StoragePressureRetentionConfig config = new StoragePressureRetentionConfig();
+            config.triggerUsagePercent = 1;
+            config.targetUsagePercent = 0;
+            config.minimumObjectAgeMinutes = 0;
+            config.ocrCropRetentionDays = 365;
+            config.storagePath = root.toString();
+
+            StoragePressureRetention retention = new StoragePressureRetention(
+                    store,
+                    mediaStore,
+                    config,
+                    "obs-adj"::equals,
+                    LoggerFactory.getLogger(StoragePressureRetentionTest.class));
+            retention.cleanupIfNeeded();
+
+            assertFalse("Eligible crop must be reclaimed under storage pressure",
+                    store.objectExists("ocr", eligibleCropKey));
+            assertTrue("Held occupancy crop must survive storage-pressure cleanup",
+                    store.objectExists("ocr", heldCropKey));
+            assertTrue("Operator-adjudicated crop must survive storage-pressure cleanup",
+                    store.objectExists("ocr", adjudicatedCropKey));
+        } finally {
+            try (var paths = Files.walk(root)) {
+                paths.sorted((left, right) -> right.compareTo(left)).forEach(path -> path.toFile().delete());
+            }
+        }
+    }
+
+    private static String encodeObsCropName(String obsId, String suffix) {
+        String encoded = java.util.Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(obsId.getBytes(StandardCharsets.UTF_8));
+        return OcrCropRetention.OBS_FILENAME_PREFIX + encoded + "_" + suffix + ".jpg";
+    }
 }

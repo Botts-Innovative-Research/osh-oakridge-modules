@@ -232,6 +232,27 @@ class VehicleOcrProcessorTest {
     }
 
     @Test
+    void defaultEvidenceWriterPerformsUnboundedWritesWithoutBucketListingAndRoundTripsObsId() throws Exception {
+        InMemoryBucketStore store = new InMemoryBucketStore();
+        EvidenceWriter writer = new EvidenceWriter(store);
+        BufferedImage img = new BufferedImage(160, 96, BufferedImage.TYPE_3BYTE_BGR);
+
+        for (int i = 0; i < 60; i++) {
+            String obsId = "0j9q3jjm-" + i;
+            String key = writer.writeCrop(
+                    img,
+                    new Rectangle(12, 12, 64, 32),
+                    Instant.parse("2026-11-15T12:00:00Z"),
+                    obsId);
+            assertFalse(key.isBlank());
+            assertEquals(obsId, EvidenceWriter.extractOccupancyObsId(key).orElse(""));
+        }
+        writer.pruneOldestIfNeeded();
+        assertEquals(60, store.listObjects("ocr").size());
+        assertTrue(EvidenceWriter.extractOccupancyObsId("ocr/crops/2026-11-15/12345678-1234-1234-1234-1234567890ab.jpg").isEmpty());
+    }
+
+    @Test
     void invokesCleanupCallbackExactlyOnceAcrossCompletionSheddingOverflowAndClose() throws Exception {
         AtomicReference<Double> heapRatio = new AtomicReference<>(0.30);
         OcrResourceGovernor governor = new OcrResourceGovernor(new OcrResourceGovernor.TelemetrySource() {

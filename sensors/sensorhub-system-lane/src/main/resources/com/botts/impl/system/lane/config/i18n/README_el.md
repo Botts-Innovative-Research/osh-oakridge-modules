@@ -8,7 +8,7 @@
 | --- | --- |
 | **Κλειδί επιχειρησιακής προβολής (`Operational View Key`)** | Προαιρετική ετικέτα (π.χ. `north-gate` ή `cargo-inbound`) που ομαδοποιεί τη λωρίδα σε έναν επώνυμο χώρο εργασίας χειριστή στο OSCAR Viewer. |
 | **Ενισχυμένη μηχανική μάθηση (`EML`, Enhanced Machine Learning)** | Προαιρετικός αλγόριθμος Rapiscan που συγκρίνει μετρήσεις γάμμα χαμηλής, μεσαίας και υψηλής ενέργειας για να διακρίνει τη φυσική ακτινοβολία φορτίων (**NORM**, αυτόματη αξιολόγηση ως `Code 9999: EML Non-Threat`) από πηγές απειλής. |
-| **OCR οχημάτων (`ocrConfig`)** | Προαιρετική ασύγχρονη οπτική αναγνώριση ανά λωρίδα (`Ενεργοποίηση OCR οχημάτων = false` από προεπιλογή) που διαβάζει αριθμούς εμπορευματοκιβωτίων ISO 6346 (με επαλήθευση ψηφίου ελέγχου) και πινακίδες κυκλοφορίας ανάλογα με τους διαθέσιμους πόρους CPU/μνήμης, δημοσιεύοντας προτάσεις `vehicleOcr` (`PARQUET_PRIMARY`), αποκόμματα με όριο FIFO `2.000` αρχείων (`files/ocr/crops`) και αυτόματη συμπλήρωση του **ID οχήματος**. Όταν η επιλογή `Μόνο συναγερμοί` απενεργοποιηθεί, οι καταγραφές χωρίς συναγερμό σαρώνονται προσωρινά και διαγράφονται αμέσως μετά το OCR διατηρώντας το `occupancy.videoPaths` κενό (`[]`). |
+| **OCR οχημάτων (`ocrConfig`)** | Προαιρετική ασύγχρονη οπτική αναγνώριση ανά λωρίδα (`Ενεργοποίηση OCR οχημάτων = false` από προεπιλογή) που διαβάζει αριθμούς εμπορευματοκιβωτίων ISO 6346 (με επαλήθευση ψηφίου ελέγχου) και πινακίδες κυκλοφορίας ανάλογα με τους διαθέσιμους πόρους CPU/μνήμης, δημοσιεύοντας προτάσεις `vehicleOcr` (`PARQUET_PRIMARY`), αποκόμματα ανά ημερομηνία (`files/ocr/crops/<YYYY-MM-DD>/`, ευθυγραμμισμένα με το `frame-03.jpg` και `ocrCropRetentionDays = 365`) και αυτόματη συμπλήρωση του **ID οχήματος**. Όταν η επιλογή `Μόνο συναγερμοί` απενεργοποιηθεί, οι καταγραφές χωρίς συναγερμό σαρώνονται προσωρινά και διαγράφονται αμέσως μετά το OCR διατηρώντας το `occupancy.videoPaths` κενό (`[]`). |
 | **Εύρος διευθύνσεων Modbus** | Εύρος καταχωρητών (`Από` και `Έως`) που χρησιμοποιείται από τους ελεγκτές Aspect μέσω TCP/IP. |
 
 ## Γενικές ρυθμίσεις
@@ -29,3 +29,27 @@
   - Προσθέστε έως **4** κάμερες **Sony**, **Axis** ή **Custom** ανά λωρίδα.
   - Για κάμερες **Axis**, επιλέξτε τον κωδικοποιητή ροής (`H.264`). Για κάμερες **Custom**, εισαγάγετε τη διαδρομή μετά το host και τη θύρα.
 - Πατήστε **Εφαρμογή** και **Αποθήκευση** στην επάνω γραμμή εργαλείων για τη δημιουργία και εκκίνηση των θυγατρικών μονάδων.
+
+<details class="oscar-video-guide">
+  <summary>Βιντεοοδηγός (#06, 14.9s): Ρύθμιση συστήματος λωρίδας &amp; γεωαναφερθέντος διαγράμματος εγκατάστασης</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/06-admin-manual-lane-and-site-diagram.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/06-admin-manual-lane-and-site-diagram.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Βιντεοοδηγός (#07, 11.8s): Μεταφόρτωση εξωτερικού προσθέτου EML VM-250 &amp; ενεργοποίηση EML ανά λωρίδα</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/07-admin-eml-plugin-setup.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/07-admin-eml-plugin-setup.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Βιντεοοδηγός (#17, 32.4s): Ρύθμιση OCR οχημάτων, σύγκριση πολλαπλών διελεύσεων &amp; αξιολόγηση</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/17-vehicle-ocr-and-adjudication.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/17-vehicle-ocr-and-adjudication.vtt" srclang="en" label="English" default>
+  </video>
+</details>

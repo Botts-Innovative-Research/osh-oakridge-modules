@@ -75,6 +75,7 @@ public class VehicleOcrProcessor implements AutoCloseable {
     private final FrameSampler frameSampler;
     private volatile IBucketStore bucketStore;
     private volatile IBucketService bucketService;
+    private volatile EvidenceWriter cachedEvidenceWriter;
     private final OcrResourceGovernor governor;
     private final int queueCapacity;
     private final long initialSettleDelayMs;
@@ -119,10 +120,18 @@ public class VehicleOcrProcessor implements AutoCloseable {
                         DEFAULT_RESOURCE_DEFER_DELAY_MS);
                 sharedRefCount = 0;
             } else {
-                if (bucketStore != null && sharedInstance.bucketStore == null)
+                boolean updated = false;
+                if (bucketStore != null && sharedInstance.bucketStore == null) {
                     sharedInstance.bucketStore = bucketStore;
-                if (bucketService != null && sharedInstance.bucketService == null)
+                    updated = true;
+                }
+                if (bucketService != null && sharedInstance.bucketService == null) {
                     sharedInstance.bucketService = bucketService;
+                    updated = true;
+                }
+                if (updated) {
+                    sharedInstance.cachedEvidenceWriter = null;
+                }
             }
             sharedRefCount++;
             final VehicleOcrProcessor target = sharedInstance;
@@ -471,9 +480,7 @@ public class VehicleOcrProcessor implements AutoCloseable {
         if (candidates.isEmpty())
             return;
 
-        EvidenceWriter evidenceWriter = bucketStore != null
-                ? new EvidenceWriter(bucketStore, bucketService)
-                : null;
+        EvidenceWriter evidenceWriter = resolveEvidenceWriter();
         double baseTs = state.job.resultTimestamp() > 0
                 ? state.job.resultTimestamp()
                 : (System.currentTimeMillis() / 1000.0);
@@ -492,7 +499,11 @@ public class VehicleOcrProcessor implements AutoCloseable {
 
             String cropKey = "";
             if (evidenceWriter != null && c.bestBoundingBox() != null) {
-                cropKey = evidenceWriter.writeCrop(bestFrame.image, c.bestBoundingBox(), cropTime);
+                cropKey = evidenceWriter.writeCrop(
+                        bestFrame.image,
+                        c.bestBoundingBox(),
+                        cropTime,
+                        state.resolvedObsId);
             }
 
             // Offset by +1 ms per additional candidate so multiple candidates on one occupancy
@@ -517,6 +528,18 @@ public class VehicleOcrProcessor implements AutoCloseable {
 
             state.job.resultConsumer().accept(result);
         }
+    }
+
+    private EvidenceWriter resolveEvidenceWriter() {
+        IBucketStore store = this.bucketStore;
+        if (store == null)
+            return null;
+        EvidenceWriter existing = this.cachedEvidenceWriter;
+        if (existing != null)
+            return existing;
+        EvidenceWriter created = new EvidenceWriter(store, this.bucketService);
+        this.cachedEvidenceWriter = created;
+        return created;
     }
 
     private List<LoadedFrame> loadFrames(TaskState state, int maxFramesPerCamera) {

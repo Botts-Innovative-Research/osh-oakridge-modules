@@ -59,13 +59,13 @@ Consulte la [Guía de inicio rápido](https://github.com/ORNL/oscar/blob/main/di
 | **NORM (Material radiactivo de origen natural)** | Carga benigna que contiene radioisótopos naturales (como potasio-40 en fertilizantes, arena para gatos, cerámica o plátanos, o series de torio/uranio en granito y baldosas). |
 | **EML (Aprendizaje automático mejorado / Enhanced Machine Learning) y Código `9999`** | Algoritmo para pórticos Rapiscan que compara ventanas gamma de baja, media y alta energía para distinguir carga **NORM** benigna de fuentes de amenaza. Cuando EML clasifica una alarma como no amenazante, OSCAR registra una adjudicación automática (`Code 9999: EML Non-Threat`). |
 | **Ocupación prolongada (`Fault - Extended Occupancy`) y Código `9998`** | Cuando un vehículo ocupa un carril durante al menos su **Umbral de ocupación prolongada (min)** (`extendedOccupancyThresholdMinutes`, `1`–`1440` min, predeterminado `1` min), OSCAR publica `Fault - Extended Occupancy` y contabiliza la falla en informes y estadísticas hasta que el carril quede libre. Si esa ocupación prolongada finaliza con una **alarma solo gamma** (`gammaAlarm = true`, `neutronAlarm = false`), OSCAR la suprime de la cola activa del panel y registra una adjudicación automática (`Code 9998: Extended Occupancy Gamma Alarm`). Cualquier ocupación prolongada con alarma de neutrones nunca se adjudica automáticamente. |
-| **WebID y DRF (Función de respuesta del detector)** | **WebID** es el servicio Full Spectrum de Sandia para identificar isótopos en espectros cargados (`N42`/SPC). Una **DRF** indica a WebID el modelo físico y la geometría del detector usado. |
+| **WebID y DRF (Función de respuesta del detector)** | **WebID** es el servicio Full Spectrum de Sandia para identificar isótopos en espectros cargados (`.n42`, `.spe` ASCII de Ortec, `.spc` binario de Ortec/Canberra y `.xml`), con identificación local automática por fotopicos cuando Full Spectrum está sin conexión; los espectrogramas gamma usan escala logarítmica `Cuentas (Log)` por defecto con cambio en un clic a `Lineal`. Una **DRF** indica a WebID el modelo físico y la geometría del detector usado. |
 | **Archivo diario y códigos (`GB`, `GS`, `GA`, `NS`, `GX`, `SG1`–`SG3`, `SN1`–`SN2`)** | Registro CSV diario por carril con mensajes RPM sin procesar: `GB`/`NB` = fondo gamma/neutrones, `GS` = inicio de ocupación, `GC`/`NC` = perfil de conteo, `GA`/`NA`/`NS` = alarma gamma/neutrones, `GX` = fin de ocupación, `TT`/`TC` = fallo/restablecimiento de manipulación, y `SG1`–`SG3`/`SN1`–`SN2` = parámetros diarios de configuración gamma/neutrones (que actualizan automáticamente los parámetros del controlador Rapiscan en memoria y agrupan cambios en `config.json`). |
 | **UUID de evento (`Event UUID`)** | Identificador único global asignado a cada evento de ocupación para buscarlo, exportar resúmenes QR y rastrearlo en informes y nodos federados. |
 | **Vista operativa (`Operational View`)** | Filtro con nombre (`?view=<clave>` o `/view/<clave>`) que limita el Panel, Eventos, Estado de salud y Generador de informes de una estación a un grupo específico de carriles. |
 | **Nivel frío Parquet (`PARQUET_PRIMARY`)** | Modo de almacenamiento predeterminado de OSCAR 3.11.0 donde PostgreSQL mantiene una ventana temporal de 30 minutos y las particiones cerradas se exportan a archivos Apache Parquet comprimidos con ZSTD (`archive/parquet/`). |
 | **Medios retenidos de 5 fotogramas** | En cada ocupación con alarma, OSCAR extrae 5 instantáneas JPEG (`frame-01.jpg` a `frame-05.jpg`). Tras 30 días, se depuran los fotogramas secundarios (`01`, `02`, `04`, `05`) y se conserva el fotograma central (`frame-03.jpg`). |
-| **OCR de vehículos (`ocrConfig`)** | Reconocimiento óptico opcional por carril (`Activar OCR de vehículos = false` de forma predeterminada) que lee de forma asíncrona códigos de contenedor ISO 6346 (con dígito de control) y matrículas según lo permitan los recursos de CPU y memoria (`OcrResourceGovernor`), publicando candidatos `vehicleOcr` (`PARQUET_PRIMARY`), recortes JPEG acotados (`/sensorhub/buckets/ocr/crops/`, techo FIFO de `2.000` archivos) y autocompletado de **ID del vehículo** para contenedores ISO válidos o matrículas con confianza `>= 85%`. Si se desmarca `Solo alarmas`, los clips sin alarma se analizan de forma transitoria y se eliminan tras el OCR manteniendo `occupancy.videoPaths` vacío (`[]`). |
+| **OCR de vehículos (`ocrConfig`)** | Reconocimiento óptico opcional por carril (`Activar OCR de vehículos = false` de forma predeterminada) que lee de forma asíncrona códigos de contenedor ISO 6346 (con dígito de control) y matrículas según lo permitan los recursos de CPU y memoria (`OcrResourceGovernor`), publicando candidatos `vehicleOcr` (`PARQUET_PRIMARY`), recortes JPEG particionados por fecha (`/sensorhub/buckets/ocr/crops/<YYYY-MM-DD>/`, alineados con `frame-03.jpg` y `ocrCropRetentionDays = 365`) y autocompletado de **ID del vehículo** para contenedores ISO válidos o matrículas con confianza `>= 85%`. Si se desmarca `Solo alarmas`, los clips sin alarma se analizan de forma transitoria y se eliminan tras el OCR manteniendo `occupancy.videoPaths` vacío (`[]`). |
 | **SAN (Nombre alternativo del sujeto)** | Lista de nombres de host y direcciones IP (como `oscar.local` y `192.0.2.10`) incluidos dentro de un certificado HTTPS que el navegador comprueba antes de confiar en la conexión. |
 
 ## 2. Confiar en el certificado de OSCAR
@@ -239,6 +239,22 @@ En la configuración del módulo de servicio OSCAR, añada entradas a **Custom D
 
 Aplique la configuración del servicio antes de enviar `adjudicationCode: 12`. Los carriles consultan la configuración actual en cada envío y rechazan códigos no configurados. Eliminar un código impide nuevos envíos con ese código y conserva las adjudicaciones existentes. El servicio publica estas opciones después de completar el registro del sistema y de la base de datos, también tras cambios de configuración. El Viewer lee el flujo `adjudicationCodes` y ofrece las opciones junto a los códigos integrados en detalle, vista previa del panel y adjudicación masiva. El Viewer se suscribe a la salida de disposición mediante el cliente MQTT compartido y lee la última observación una vez para el estado inicial. Las adiciones, ediciones y eliminaciones publicadas actualizan las listas abiertas inmediatamente, sin consultas periódicas ni recargar la página. Las suscripciones se desconectan al retirar el componente o cambiar los nodos de destino. Al abrir la lista se reintentan las suscripciones fallidas o los flujos ausentes. Las selecciones masivas entre nodos solo ofrecen códigos personalizados cuyo número y descripción coinciden en todos los nodos de destino.
 
+<details class="oscar-video-guide">
+  <summary>Videoguía (#04, 12.3s): Configurar retención del Servicio OSCAR y códigos personalizados</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/04-admin-oscar-service-and-custom-codes.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/04-admin-oscar-service-and-custom-codes.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#07, 11.8s): Cargar complemento externo EML VM-250 y activar EML por carril</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/07-admin-eml-plugin-setup.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/07-admin-eml-plugin-setup.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ## 5. Crear y cargar un plano georreferenciado
 
 El plano es una imagen rectangular orientada al norte que se interpola linealmente entre dos esquinas geográficas. OSCAR muestra OSM de forma predeterminada cuando está disponible y no hay plano. Con un plano válido, Viewer ajusta la extensión a sus límites, lo dibuja como capa ráster superior y conserva los marcadores de carril por encima.
@@ -301,6 +317,14 @@ Compruebe que:
 
 Otra carga válida sustituye la referencia activa, pero no cambia las coordenadas de los carriles. Si los límites son inválidos, corrija el orden y rango antes de reintentar.
 
+<details class="oscar-video-guide">
+  <summary>Videoguía (#06, 14.9s): Configurar un sistema de carril y plano georreferenciado del sitio</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/06-admin-manual-lane-and-site-diagram.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/06-admin-manual-lane-and-site-diagram.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ## 6. Importar o exportar carriles con `config.csv`
 
 La importación masiva es preferible para muchos carriles. En un sitio existente, use primero **Descargar** para obtener una plantilla exacta. Trate el archivo como sensible: los usuarios y contraseñas de cámara se exportan en texto claro.
@@ -323,6 +347,14 @@ La importación masiva es preferible para muchos carriles. En un sitio existente
 ![Carriles importados](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/17-sensors-overview.png)
 
 Se omite una fila cuyo `UniqueID` ya pertenezca a un Sistema de carril cargado; no se sobrescriben carriles existentes. `UniqueID` también debe ser único dentro del propio archivo. El CSV se analiza antes de cargar módulos, pero la inicialización de hijos es asíncrona: un dispositivo que falle puede afectar a ese carril sin revertir otros ya aceptados.
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#05, 10.6s): Sincronizar hoja de cálculo multicarril (config.csv)</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/05-admin-lane-spreadsheet-sync.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/05-admin-lane-spreadsheet-sync.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ### 6.2 Esquema exacto
 
@@ -442,7 +474,7 @@ La lista varía con los paquetes instalados. Para un carril normal, seleccione *
 | Inicio automático | Inicia el carril al cargar la configuración. Actívelo tras verificar. |
 | Claves de vista operativa | Lista opcional de claves de estación autorizadas para mostrar este carril. Añada cada clave por separado; use entre 1 y 63 letras ASCII minúsculas (`a`–`z`), números o guiones, sin guion inicial ni final. Déjela vacía si el carril no debe pertenecer a una vista delimitada. |
 | Umbral de ocupación prolongada (min) | Duración en minutos (`1`–`1440`, predeterminado `1`) antes de que una ocupación activa publique `Fault - Extended Occupancy` e incremente el contador de fallas `Ext-Occ`. Cuando una ocupación prolongada termina con una alarma solo gamma (sin alarma de neutrones), OSCAR la suprime del panel activo y la adjudica automáticamente como **Código 9998: Alarma gamma de ocupación prolongada**. |
-| OCR de vehículos | Ajuste opcional por carril (`Activar OCR de vehículos`, `Solo alarmas`, `Directorio de modelos`, `Leer números de contenedor`, `Leer matrículas`, `UID de cámaras`, `Fotogramas por clip`, `Confianza mínima de contenedor`, `Confianza mínima de matrícula`, `Fracción superior ignorada`, `Fracción inferior ignorada`, predeterminado `enabled = false`). Cuando se activa en un carril, OSCAR ejecuta reconocimiento PP-OCRv3 ONNX en segundo plano según los recursos disponibles, publica candidatos `vehicleOcr` (`PARQUET_PRIMARY`) y recortes con límite FIFO de `2.000` archivos, elimina de inmediato los clips transitorios sin alarma cuando `Solo alarmas = false` y autocompleta **ID del vehículo** al adjudicar; los carriles desactivados no consumen recursos adicionales. |
+| OCR de vehículos | Ajuste opcional por carril (`Activar OCR de vehículos`, `Solo alarmas`, `Directorio de modelos`, `Leer números de contenedor`, `Leer matrículas`, `UID de cámaras`, `Fotogramas por clip`, `Confianza mínima de contenedor`, `Confianza mínima de matrícula`, `Fracción superior ignorada`, `Fracción inferior ignorada`, predeterminado `enabled = false`). Cuando se activa en un carril, OSCAR ejecuta reconocimiento PP-OCRv3 ONNX en segundo plano según los recursos disponibles, publica candidatos `vehicleOcr` (`PARQUET_PRIMARY`) y recortes particionados por fecha (`ocrCropRetentionDays = 365`, preservados junto con `frame-03.jpg`, retenciones y adjudicaciones del operador), elimina de inmediato los clips transitorios sin alarma cuando `Solo alarmas = false` y autocompleta **ID del vehículo** al adjudicar; los carriles desactivados no consumen recursos adicionales. |
 | Eliminar datos al eliminar el carril | Activo de forma predeterminada. Al eliminar el carril borra sus registros de base de datos. Desactívelo si debe conservar el historial. |
 | Información de fuente de datos | Metadatos heredados opcionales; úselos solo si el modelo SensorML del sitio los exige. |
 
@@ -498,7 +530,7 @@ Los hijos FFmpeg generados usan TCP, solicitan 24 fps, activan HLS, desactivan f
 
 ![RPM y cámaras configurados](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/25-lane-options-filled.png)
 
-**OCR vehicular opcional por carril:** Abra la pestaña **OCR vehicular** (**Vehicle OCR**) solo en los carriles que requieran reconocimiento asíncrono de contenedores o matrículas (desactivado por defecto, con cero memoria ONNX en carriles inactivos). Revise **Solo alarmas** (`Alarms Only`, recomendado `true`; si se desmarca, los clips sin alarma se eliminan de inmediato tras el muestreo OCR), **Fotogramas por clip** (`6`), **Confianza mínima de contenedor** (`0.5`) y **Confianza mínima de matrícula** (`0.6`). Las salidas `vehicleOcr` se archivan en `PARQUET_PRIMARY` y los recortes JPEG mantienen un límite FIFO de `2.000` archivos (`< 100 MiB`).
+**OCR vehicular opcional por carril:** Abra la pestaña **OCR vehicular** (**Vehicle OCR**) solo en los carriles que requieran reconocimiento asíncrono de contenedores o matrículas (desactivado por defecto, con cero memoria ONNX en carriles inactivos). Revise **Solo alarmas** (`Alarms Only`, recomendado `true`; si se desmarca, los clips sin alarma se eliminan de inmediato tras el muestreo OCR), **Fotogramas por clip** (`6`), **Confianza mínima de contenedor** (`0.5`) y **Confianza mínima de matrícula** (`0.6`). Las salidas `vehicleOcr` se archivan en `PARQUET_PRIMARY` y `/sensorhub/buckets/ocr/crops/<YYYY-MM-DD>/` conserva recortes JPEG particionados por fecha junto con `frame-03.jpg` (`ocrCropRetentionDays = 365`, preservando ocupaciones retenidas o adjudicadas por el operador y reclamando recortes antiguos elegibles bajo presión de almacenamiento).
 
 ![Configuración opcional de OCR vehicular por carril](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/33-lane-vehicle-ocr.png)
 
@@ -512,6 +544,14 @@ Los hijos FFmpeg generados usan TCP, solicitan 24 fps, activan HLS, desactivan f
 6. Pulse **Guardar** global.
 
 Consulte la documentación de [Rapiscan](https://github.com/ORNL/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-rapiscan), [Aspect](https://github.com/ORNL/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-aspect), [RS-350](https://github.com/ORNL/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-rs350) y [FFmpeg](https://github.com/ORNL/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-ffmpeg).
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#17, 32.4s): Configurar OCR de vehículos, comparar múltiples pasadas y adjudicar</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/17-vehicle-ocr-and-adjudication.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/17-vehicle-ocr-and-adjudication.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ## 8. Operar OSCAR Viewer
 
@@ -531,6 +571,14 @@ Abra `https://<host-oscar>/`. El panel debe mostrar estados, tabla de eventos y 
    Seleccione una fila para abrir/cerrar su vista previa; el estado distingue Gamma, Neutrón o Gamma y Neutrón por color. Las alarmas no leídas del panel se muestran en negrita con un punto indicador y su estado leído se comparte por carril entre estaciones de trabajo (solo en el Panel, sin alterar **Eventos**). Los operadores pueden activar el filtro efímero **Solo no leídas** (desde el aviso o la barra de herramientas) o acotar la ventana activa mediante los ajustes rápidos (`15m`, `1h`, `24h`, `15d` predeterminado). Abrir la vista previa o detalles, adjudicar o usar **Reconocer seleccionadas** / **Reconocer todas** (limitado a la Vista operativa, ventana temporal y filtros activos) las marca como leídas; en **Configuración**, los operadores pueden activar opcionalmente **Aviso de alarmas no leídas** (con recuento completo más allá de la primera página y límite `100+` cuando superan `150` con claves individuales) y/o **Audio continuo de alarma** (se detiene al instante tras el reconocimiento).
 6. Revise las pestañas CPS/NSIGMA, la tira interactiva de 5 instantáneas JPEG (`FIRST`, `QUARTER`, `MIDDLE`, `THREE_QUARTERS`, `LAST`) y cada vídeo disponible. Las flechas cambian de elemento multimedia.
 7. Use expandir o haga doble clic en la fila para abrir **Detalles del evento**.
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#09, 12.9s): Supervisar el panel en vivo de 50 carriles e inspeccionar alarmas</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/09-dashboard-monitoring-and-quick-adjudication.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/09-dashboard-monitoring-and-quick-adjudication.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ### 8.2 Adjudicación rápida en el panel
 
@@ -563,6 +611,14 @@ El envío añade un registro de adjudicación; no modifica la observación del d
 - Seleccione una fila para vista previa; doble clic o la acción **Detalles** abre la página completa.
 - Si un nodo federado no responde, sus filas o conteos pueden estar incompletos; no interprete cero como ausencia sin comprobar conectividad.
 
+<details class="oscar-video-guide">
+  <summary>Videoguía (#12, 18.9s): Filtrar el registro de eventos por vehículo, código de adjudicación y UUID</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/12-event-log-filtering-and-adjudication-codes.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/12-event-log-filtering-and-adjudication-codes.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ### 8.4 Detalles del evento
 
 ![Resumen, gráficos y vídeo del evento](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/28-event-details-summary.png)
@@ -583,6 +639,14 @@ Use **Copiar UUID** para que otro operador pueda buscar el mismo evento. **Copia
 **Atrás** vuelve a la lista. **CPS/NSIGMA** cambia la presentación gamma compatible; las flechas recorren vídeos. **Exportar como PDF** abre la impresión del navegador para la página renderizada e incluye el UUID visible. Para un evento en directo recién recibido, la exportación PDF y QR permanece deshabilitada mientras OSCAR resuelve el UUID almacenado; si falla la resolución automática, seleccione **Reintentar** o vuelva a abrir el evento desde **Eventos**. Es distinto de los informes del servidor de la sección 10.
 
 La disponibilidad depende del detector, cámara, retención, antigüedad, permisos y conectividad WebID. Un panel vacío no demuestra ausencia de datos: compruebe carril, flujo, cámara y retención.
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#13, 19.4s): Revisar los 5 fotogramas retenidos, el archivo diario y adjudicar</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/13-event-details-adjudication-and-daily-file.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/13-event-details-adjudication-and-daily-file.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 #### Códigos de adjudicación
 
@@ -611,7 +675,7 @@ Elija según el procedimiento del sitio, no por conveniencia.
 1. **Subir archivos** añade uno o varios. No hay filtro de tipo en el navegador: respete la política del sitio.
 2. Para analizar un espectro, active **WebID**, elija una DRF recibida del servicio Sandia Full Spectrum, **Primer plano** o **Fondo** y, solo para primer plano, **Sintetizar fondo**. Un par primer plano/fondo se envía junto.
 3. **Escáner QR** usa la cámara del dispositivo para texto espectroscópico. Conceda permiso, escanee/revise/elimine códigos, configure WebID/DRF/tipo y pulse **Terminar**. Los códigos se convierten en evidencia de texto.
-4. **Subir a WebID** procesa evidencias WebID aún no enviadas; permanece desactivado si no hay ninguna. Requiere acceso al bucket y al servicio Full Spectrum.
+4. **Subir a WebID** procesa evidencias WebID aún no enviadas (`.n42`, `.spe`, `.spc` o `.xml`); permanece desactivado si no hay ninguna. Requiere acceso al bucket; si Sandia Full Spectrum no está disponible o el entorno está aislado, OSCAR utiliza automáticamente identificación local de núclidos por fotopicos.
 5. Seleccione resultados en **Evidencia WebID** y pulse **Usar resultado seleccionado** para aplicar sus isótopos. La decisión final sigue siendo responsabilidad del operador.
 
 Eliminar antes del envío solo quita el elemento pendiente. Tras subirlo, use la ruta registrada y el procedimiento de retención; no suponga que quitarlo del formulario borra el objeto del servidor.
@@ -648,6 +712,14 @@ Para recibir:
 
 > **Límite de seguridad.** El paquete está comprimido y comprueba integridad, pero no está cifrado ni firmado digitalmente. El resumen detecta daños; no identifica al remitente, pues quien cambie el contenido puede calcular otro. Trátelo como vista previa portátil, confirme independientemente su origen antes del uso operativo y transfiéralo solo mediante soportes y dispositivos autorizados.
 
+<details class="oscar-video-guide">
+  <summary>Videoguía (#14, 25.2s): Exportar código QR firmado y verificar alarmas sin conexión</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/14-airgapped-alarm-qr-transfer.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/14-airgapped-alarm-qr-transfer.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ### 8.7 Supervisar el Estado de salud
 
 Abra **Estado de salud** mediante el icono de monitor cardíaco de la navegación o vaya directamente a `/health`. La página muestra una fila por cada carril visible en el ámbito actual; `/health?view=<clave>` la limita a la vista operativa asignada.
@@ -663,11 +735,27 @@ Los mensajes de manipulación de Rapiscan informan transiciones, no una instant�
 
 Después de actualizar, confirme que cada Sistema de carril publica `occupancyStatus` y que cada RPM y cámara FFmpeg publica su conexión. Detenga y reinicie una cámara de prueba autorizada y compruebe Sin conexión y luego En línea. Confirme que la telemetría de fallas no disponible permanece en Desconocido; pruebe gamma, neutrón, manipulación y ocupación larga solo conforme al procedimiento aprobado del sitio.
 
+<details class="oscar-video-guide">
+  <summary>Videoguía (#15, 10.2s): Supervisar el Estado de salud de RPM/cámaras y el Mapa del sitio</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/15-status-of-health-and-site-map.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/15-status-of-health-and-site-map.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ### 8.8 Usar una estación con vista operativa
 
 Abra `https://<host-oscar>/?view=<clave>` o `https://<host-oscar>/view/<clave>`. OSCAR conserva la clave al navegar y limita carriles, eventos, mapas, notificaciones, informes, transferencia de alarmas y Estado de salud a los carriles asignados. La URL raíz sin ámbito carga todos los carriles. Las claves no válidas y las vistas sin carriles fallan de forma cerrada y no cargan datos.
 
 Las vistas operativas separan la presentación de estaciones; no son un límite de autorización. Use autenticación OSCAR y controles de red cuando deba restringirse el acceso.
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#10, 11.4s): Delimitar carriles por estación mediante Vistas Operativas seguras</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/10-operational-views-scoping.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/10-operational-views-scoping.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ### 8.9 Ver el vídeo en directo de un carril
 
@@ -678,6 +766,14 @@ La cámara debe proporcionar vídeo H.264 con un GOP cerrado y un fotograma IDR/
 La grabación de alarmas aplica el mismo requisito de fotograma clave. Un comando `OPEN` queda pendiente durante cinco segundos como máximo, hasta que la generación de grabación actual haya multiplexado correctamente su primer fotograma clave; los paquetes que comienzan en medio de un GOP se descartan. Un `CLOSE` de una ocupación muy breve espera detrás de ese `OPEN` y, cuando corresponde, la decisión acotada de alarma/guardado de OSCAR. El temporizador de vigilancia de comandos de cada cámara comienza solo después de que finalicen ambas esperas y se envíe realmente la operación a la cámara; ninguno de esos periodos de espera se considera una falla de la cámara. Si el fotograma clave no llega, o la grabadora se detiene o falla, OSCAR cancela esa generación y elimina su archivo parcial oculto en vez de adjuntar al evento un MP4 vacío o no decodificable. Si una alarma no tiene vídeo, compruebe que el intervalo entre fotogramas clave H.264 sea de cinco segundos o menos.
 
 Si se agota la recuperación automática limitada, el panel muestra **No se pudo reproducir el vídeo en directo.** Compruebe que la cámara y la red estén disponibles y seleccione **Reintentar**. Este botón detiene el intento anterior e inicia uno nuevo; no requiere restablecer ni reiniciar OSCAR, volver a importar carriles ni eliminar el estado de la aplicación o los volúmenes de Docker.
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#11, 12.0s): Inspeccionar vídeo en vivo del carril y curvas gamma/neutrones</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/11-live-lane-video-and-charts.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/11-live-lane-video-and-charts.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ## 9. Estadísticas nacionales
 
@@ -712,6 +808,14 @@ El **Generador de informes** solicita al Servicio OSCAR del nodo seleccionado qu
 
 Cada solicitud genera un archivo nuevo y sobrescribe cualquier informe previo con los mismos parámetros para incluir de inmediato las ocupaciones o adjudicaciones recientes. Solo se informan datos conservados.
 
+<details class="oscar-video-guide">
+  <summary>Videoguía (#16, 19.6s): Analizar estadísticas nacionales y generar informes multiformato</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/16-national-statistics-and-reports.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/16-national-statistics-and-reports.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ## 11. Federación de nodos
 
 ![Federación de nodos](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/32-node-federation.png)
@@ -728,6 +832,14 @@ Cada solicitud genera un archivo nuevo y sobrescribe cualquier informe previo co
 Se guardan nombre, red, TLS/modo y mapa, nunca usuario ni contraseña; entradas antiguas también se limpian al cargarse. Nombres duplicados y pares dirección/puerto duplicados se rechazan. **Eliminar** solo quita el remoto de este navegador, no borra su servidor ni datos.
 
 Verifique carriles/eventos del remoto, su fila Nacional, un informe y un evento con multimedia. Esto prueba API, control, bucket y medios. Tras recargar, confirme la sesión; vuelva a introducir credenciales Basic. El remoto debe permitir origen, CORS, rutas, WebSocket/MQTT, permisos y confianza TLS necesarios.
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#08, 16.9s): Iniciar sesión en OSCAR Viewer, cambiar idioma y gestionar nodos</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/08-viewer-signin-language-and-nodes.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/08-viewer-signin-language-and-nodes.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ## 12. Retención de datos y almacenamiento
 
@@ -814,6 +926,30 @@ Antes de cambiar retención, base, rutas, modo de copia o **Eliminar datos al el
 el carril**, confirme las obligaciones de evidencia, privacidad, retención legal, recuperación y
 destrucción de registros.
 
+<details class="oscar-video-guide">
+  <summary>Videoguía (#01, 11.2s): Inicializar despliegue de OSCAR, credenciales de administrador y TLS</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/01-deployment-init-and-credentials.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/01-deployment-init-and-credentials.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#02, 12.8s): Actualizar OSCAR en un directorio de versión limpio</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/02-clean-directory-upgrade.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/02-clean-directory-upgrade.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#03, 11.4s): Verificar archivos Parquet de nivel frío y copia de seguridad instantánea</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/03-archive-and-snapshot-backup.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/03-archive-and-snapshot-backup.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ## 13. Lista de validación
 
 ### Certificado y acceso
@@ -895,6 +1031,14 @@ Para soporte técnico, exporte un paquete de diagnóstico saneado (`.zip`):
 - **Desde la CLI del servidor anfitrión (si OSCAR está degradado o no arranca):** Ejecute `sudo bash oscar.sh support-bundle` en Ubuntu o `.\oscar.bat support-bundle` en Windows (opciones `--tail`/`-Tail` y `--output`/`-Destination`) para recopilar estado del host y Docker, registros de contenedores, metadatos del certificado TLS y registros/configuración en solo lectura de `oscar_oscar_state` en `oscar-host-support-<UTC>.zip`. Las contraseñas, tokens, cookies de sesión, correos electrónicos, `secrets/*` y claves privadas TLS (`tls/server.key`) se redactan o excluyen automáticamente; verifique la política del sitio antes de compartir el archivo.
 
 ![Guía rápida del operador y exportación de paquete de soporte saneado](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/34-viewer-help-support-bundle.png)
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#18, 10.9s): Usar la Guía rápida (?) y exportar paquete de soporte redactado</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/18-operator-help-and-support-bundle.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/18-operator-help-and-support-bundle.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ## 15. Documentación relacionada
 

@@ -85,7 +85,7 @@ public class WebIdClient {
         List<String> queryParams = new ArrayList<>();
 
         if (webIdRequest.getDrf() != null && !webIdRequest.getDrf().isBlank()) {
-            queryParams.add("drf=" + webIdRequest.getDrf().replace(" ", "%20"));
+            queryParams.add("drf=" + java.net.URLEncoder.encode(webIdRequest.getDrf().trim(), StandardCharsets.UTF_8));
         }
         if (webIdRequest.synthesizeBackground()) {
             queryParams.add("synthesizeBackground=true");

@@ -25,3 +25,19 @@ The **Durable OSCAR Daily File Journal Service** records raw Radiation Portal Mo
 - **Max Record Bytes**: Maximum allowed size of a single raw RPM message in UTF-8 bytes.
 - **Sealed Journal Retention (days)**: Number of days to keep sealed binary journal segments after a day closes and its published CSV passes verification (`0` retains sealed segments indefinitely).
 - **Require Backup Before Sealed Journal Deletion**: When enabled, OSCAR will not delete an expired sealed journal day until an external backup verification marker confirms the day has been archived off-host.
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#13, 19.4s): Review Retained 5-Frame Media, Daily File Output &amp; Adjudicate</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/13-event-details-adjudication-and-daily-file.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/13-event-details-adjudication-and-daily-file.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#03, 11.4s): Verify Parquet Cold-Tier Archives &amp; Single-Snapshot Backup</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/03-archive-and-snapshot-backup.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/03-archive-and-snapshot-backup.vtt" srclang="en" label="English" default>
+  </video>
+</details>

@@ -21,3 +21,19 @@ The **FFmpeg Video Driver** connects to an IP camera stream (RTSP/HTTP) or video
 - **Video Frames**: Publishes encoded H.264 video frames used for live MJPEG/WebRTC/HLS viewing and retained 5-frame alarm extraction.
 - **HLS**: Publishes an HTTP Live Streaming playlist when file-backed HLS output is required.
 - Configure stream ID, connection timeout, and automatic reconnection intervals as needed.
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#11, 12.0s): Inspect Live Lane Camera Stream &amp; Gamma/Neutron Waveforms</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/11-live-lane-video-and-charts.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/11-live-lane-video-and-charts.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#13, 19.4s): Review Retained 5-Frame Media, Daily File Output &amp; Adjudicate</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/13-event-details-adjudication-and-daily-file.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/13-event-details-adjudication-and-daily-file.vtt" srclang="en" label="English" default>
+  </video>
+</details>

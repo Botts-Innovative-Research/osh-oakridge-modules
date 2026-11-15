@@ -2,16 +2,16 @@ package com.botts.impl.service.oscar.webid;
 
 import com.botts.api.service.bucket.IBucketStore;
 import com.botts.impl.service.bucket.handler.DefaultObjectHandler;
+import com.botts.impl.service.bucket.util.InvalidRequestException;
 import com.botts.impl.service.bucket.util.MultipartRequestParser;
 import com.botts.impl.service.bucket.util.RequestContext;
-import org.sensorhub.impl.utils.rad.cambio.CambioConverter;
+import com.botts.impl.service.bucket.util.UploadPolicy;
 import com.google.gson.JsonArray;
 import org.sensorhub.api.ISensorHub;
 import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.utils.rad.model.WebIdAnalysis;
 import org.sensorhub.impl.utils.rad.webid.WebIdAnalyzer;
 import org.sensorhub.impl.utils.rad.webid.WebIdClient;
-import org.sensorhub.impl.utils.rad.webid.WebIdRequest;
 import org.sensorhub.impl.utils.rad.webid.WebIdRequestContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,38 +21,42 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 public class WebIdResourceHandler extends DefaultObjectHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(WebIdResourceHandler.class);
-    private static final Set<String> WEB_ID_FILE_EXTENSIONS = new CambioConverter().getSupportedInputFormats();
+    private static final Pattern SPECTROSCOPIC_OBJECT_PATTERN =
+            Pattern.compile("(?i).*\\.(n42|spe|spc|chn|pcf|cnf|tka|mca|xml)");
 
-    private static final String RADDATA_PREFIX = "RADDATA://";
-
-    private final Pattern pattern;
     private final ISensorHub hub;
-
     private final WebIdClient webIdClient;
     private final WebIdAnalyzer webIdAnalyzer;
+
+    private record ExtraAttachment(String fileName, String contentType, byte[] data) {}
+
+    private record ParsedUpload(
+            WebIdRequestContext webIdContext,
+            String foregroundContentType,
+            String backgroundContentType,
+            List<ExtraAttachment> extraAttachments
+    ) {}
 
     public WebIdResourceHandler(IBucketStore bucketStore, ISensorHub hub, WebIdClient webIdClient) {
         super(bucketStore);
         this.hub = hub;
         this.webIdClient = webIdClient;
-        webIdAnalyzer = new WebIdAnalyzer(webIdClient, hub);
-
-        String joinedExtensions = String.join("|", WEB_ID_FILE_EXTENSIONS);
-        String regex = new StringBuilder(".*\\.(")
-                .append(joinedExtensions)
-                .append(")")
-                .toString();
-        pattern = Pattern.compile(regex);
+        this.webIdAnalyzer = new WebIdAnalyzer(webIdClient, hub);
     }
 
-
+    public WebIdClient getWebIdClient() {
+        return webIdClient;
+    }
 
     @Override
     public void doPut(RequestContext ctx) throws IOException, SecurityException {
@@ -61,44 +65,47 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         var sec = ctx.getSecurityHandler();
         sec.checkPermission(sec.getBucketPermission(bucketName).put);
 
-        // Extract query parameters
-        var webIdContext = createWebIdRequestContext(ctx);
+        ParsedUpload parsed = parseUpload(ctx);
+        WebIdRequestContext webIdContext = parsed.webIdContext();
 
-        if (!webIdContext.isWebIdEnabled())
-            return;
-
-        // PUT should only update one resource, so prioritize POST for FG + BG
-        if (webIdContext.getForegroundData() != null && webIdContext.hasForegroundFileName()) {
-            // Update the object in the bucket
-            try {
-                bucketStore.putObject(bucketName, objectKey, new ByteArrayInputStream(webIdContext.getForegroundData()), ctx.getHeaders());
-            } catch (DataStoreException e) {
-                throw new IOException(IBucketStore.FAILED_PUT_OBJECT + bucketName, e);
+        if (webIdContext.getForegroundData() != null) {
+            String targetKey = (objectKey != null && !objectKey.isBlank())
+                    ? objectKey
+                    : webIdContext.getForegroundFileName();
+            if (targetKey != null && !targetKey.isBlank()) {
+                Map<String, String> metadata = buildObjectMetadata(ctx, targetKey, parsed.foregroundContentType());
+                UploadPolicy.validateUpload(targetKey, metadata);
+                try {
+                    boolean existed = bucketStore.objectExists(bucketName, targetKey);
+                    bucketStore.putObject(
+                            bucketName,
+                            targetKey,
+                            new ByteArrayInputStream(webIdContext.getForegroundData()),
+                            metadata
+                    );
+                    ctx.getResponse().setStatus(existed ? HttpServletResponse.SC_OK : HttpServletResponse.SC_CREATED);
+                } catch (DataStoreException e) {
+                    throw new IOException(IBucketStore.FAILED_PUT_OBJECT + bucketName, e);
+                }
+            } else {
+                ctx.getResponse().setStatus(HttpServletResponse.SC_OK);
             }
+        } else {
+            ctx.getResponse().setStatus(HttpServletResponse.SC_OK);
         }
 
-        ctx.getResponse().setStatus(HttpServletResponse.SC_OK);
-
-        var analysis = webIdAnalyzer.processWebIdRequest(webIdContext);
-
-        if (analysis != null) {
-            try {
-                storeAnalysisJson(webIdContext.getBucketName(), analysis);
-            } catch (DataStoreException e) {
-                throw new IOException(IBucketStore.FAILED_PUT_OBJECT + bucketName, e);
+        if (webIdContext.isWebIdEnabled()) {
+            var analysis = webIdAnalyzer.processWebIdRequest(webIdContext);
+            if (analysis != null) {
+                try {
+                    storeAnalysisJson(webIdContext.getBucketName(), analysis);
+                } catch (DataStoreException e) {
+                    throw new IOException(IBucketStore.FAILED_PUT_OBJECT + bucketName, e);
+                }
             }
+        } else {
+            webIdAnalyzer.publishLocalN42Report(webIdContext);
         }
-    }
-
-    private void storeAnalysisJson(String bucketName, WebIdAnalysis analysis) throws DataStoreException {
-        String analysisJson = analysis.toString();
-        Map<String, String> jsonMetadata = new HashMap<>();
-        jsonMetadata.put("Content-Type", "application/json");
-        bucketStore.createObject(bucketName, new ByteArrayInputStream(analysisJson.getBytes()), jsonMetadata);
-    }
-
-    public WebIdClient getWebIdClient() {
-        return webIdClient;
     }
 
     @Override
@@ -107,82 +114,140 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
         var sec = ctx.getSecurityHandler();
         sec.checkPermission(sec.getBucketPermission(bucketName).create);
 
-        // Extract query parameters
-        var webIdContext = createWebIdRequestContext(ctx);
-
-        if (!webIdContext.isWebIdEnabled())
-            return;
-
+        ParsedUpload parsed = parseUpload(ctx);
+        WebIdRequestContext webIdContext = parsed.webIdContext();
         List<String> resourceURIs = new ArrayList<>();
 
-        // Save background data in bucket
-        if (webIdContext.getBackgroundData() != null
-                // ensure we have a filename for put requests
-                && webIdContext.getBackgroundFileName() != null
-                && !webIdContext.getBackgroundFileName().isBlank()) {
-            try {
-                bucketStore.putObject(bucketName, webIdContext.getBackgroundFileName(),
-                        new ByteArrayInputStream(webIdContext.getBackgroundData()), ctx.getHeaders());
-                // add to generated resource URI list
-                resourceURIs.add(bucketStore.getRelativeResourceURI(bucketName, webIdContext.getBackgroundFileName()));
-            } catch (DataStoreException e) {
-                logger.error("Failed to put background data from {} in bucket store", webIdContext.getBackgroundFileName(), e);
-            }
-        }
-
-        // For POST, we can have foreground data with no filename (i.e. QR code)
+        // Store foreground first so returned [fgURI, bgURI] aligns with AdjudicationDetail upload order
         if (webIdContext.getForegroundData() != null) {
             try {
-                // put if foreground + background
                 if (webIdContext.hasForegroundFileName()) {
-                    bucketStore.putObject(bucketName, webIdContext.getForegroundFileName(),
-                            new ByteArrayInputStream(webIdContext.getForegroundData()), ctx.getHeaders());
-                    // add to generated resource URI list
-                    resourceURIs.add(bucketStore.getRelativeResourceURI(bucketName, webIdContext.getForegroundFileName()));
+                    String fgKey = webIdContext.getForegroundFileName();
+                    Map<String, String> fgMeta = buildObjectMetadata(ctx, fgKey, parsed.foregroundContentType());
+                    UploadPolicy.validateUpload(fgKey, fgMeta);
+                    bucketStore.putObject(
+                            bucketName,
+                            fgKey,
+                            new ByteArrayInputStream(webIdContext.getForegroundData()),
+                            fgMeta
+                    );
+                    resourceURIs.add(bucketStore.getRelativeResourceURI(bucketName, fgKey));
                 } else {
-                    // create object with random UUID if just foreground data
-                    String newObjectKey = bucketStore.createObject(bucketName,
-                            new ByteArrayInputStream(webIdContext.getForegroundData()), ctx.getHeaders());
-                    if (newObjectKey == null || newObjectKey.isBlank())
+                    Map<String, String> anonMeta = buildObjectMetadata(ctx, null, parsed.foregroundContentType());
+                    UploadPolicy.validateMetadata(anonMeta);
+                    String newObjectKey = bucketStore.createObject(
+                            bucketName,
+                            new ByteArrayInputStream(webIdContext.getForegroundData()),
+                            anonMeta
+                    );
+                    if (newObjectKey == null || newObjectKey.isBlank()) {
                         throw new IOException(IBucketStore.FAILED_CREATE_OBJECT + bucketName);
-
-                    // set location header for single resource
-                    ctx.getResponse().setHeader("Location", bucketStore.getRelativeResourceURI(bucketName, newObjectKey));
+                    }
+                    String relUri = bucketStore.getRelativeResourceURI(bucketName, newObjectKey);
+                    ctx.getResponse().setHeader("Location", relUri);
+                    resourceURIs.add(relUri);
                 }
                 ctx.getResponse().setStatus(HttpServletResponse.SC_CREATED);
+            } catch (InvalidRequestException e) {
+                throw e;
             } catch (Exception e) {
                 throw new IOException("Failed to put foreground data in bucket store", e);
             }
         }
 
-        if (!resourceURIs.isEmpty()) {
-            JsonArray jsonArray = new JsonArray();
-            for (var resourceURI : resourceURIs)
-                jsonArray.add(resourceURI);
-            ctx.getResponse().getWriter().write(jsonArray.toString());
+        // Store background second when paired foreground + background files are uploaded
+        if (webIdContext.getBackgroundData() != null
+                && webIdContext.getBackgroundFileName() != null
+                && !webIdContext.getBackgroundFileName().isBlank()) {
+            String bgKey = webIdContext.getBackgroundFileName();
+            Map<String, String> bgMeta = buildObjectMetadata(ctx, bgKey, parsed.backgroundContentType());
+            UploadPolicy.validateUpload(bgKey, bgMeta);
+            try {
+                bucketStore.putObject(
+                        bucketName,
+                        bgKey,
+                        new ByteArrayInputStream(webIdContext.getBackgroundData()),
+                        bgMeta
+                );
+                resourceURIs.add(bucketStore.getRelativeResourceURI(bucketName, bgKey));
+                ctx.getResponse().setStatus(HttpServletResponse.SC_CREATED);
+            } catch (DataStoreException e) {
+                logger.error("Failed to put background data from {} in bucket store", bgKey, e);
+            }
         }
 
-        var analysis = webIdAnalyzer.processWebIdRequest(webIdContext);
-
-        if (analysis != null) {
+        // Preserve any extra attachments sent in the same multipart request
+        for (ExtraAttachment extra : parsed.extraAttachments()) {
+            if (extra.data() == null) {
+                continue;
+            }
             try {
-                storeAnalysisJson(webIdContext.getBucketName(), analysis);
+                if (extra.fileName() != null && !extra.fileName().isBlank()) {
+                    Map<String, String> meta = buildObjectMetadata(ctx, extra.fileName(), extra.contentType());
+                    UploadPolicy.validateUpload(extra.fileName(), meta);
+                    bucketStore.putObject(bucketName, extra.fileName(), new ByteArrayInputStream(extra.data()), meta);
+                    resourceURIs.add(bucketStore.getRelativeResourceURI(bucketName, extra.fileName()));
+                } else {
+                    Map<String, String> meta = buildObjectMetadata(ctx, null, extra.contentType());
+                    UploadPolicy.validateMetadata(meta);
+                    String createdKey = bucketStore.createObject(bucketName, new ByteArrayInputStream(extra.data()), meta);
+                    if (createdKey != null && !createdKey.isBlank()) {
+                        resourceURIs.add(bucketStore.getRelativeResourceURI(bucketName, createdKey));
+                    }
+                }
+                ctx.getResponse().setStatus(HttpServletResponse.SC_CREATED);
+            } catch (InvalidRequestException e) {
+                throw e;
             } catch (DataStoreException e) {
                 throw new IOException(IBucketStore.FAILED_CREATE_OBJECT + bucketName, e);
             }
         }
+
+        if (!resourceURIs.isEmpty()) {
+            JsonArray jsonArray = new JsonArray();
+            for (var resourceURI : resourceURIs) {
+                jsonArray.add(resourceURI);
+            }
+            ctx.getResponse().getWriter().write(jsonArray.toString());
+        }
+
+        if (webIdContext.isWebIdEnabled()) {
+            var analysis = webIdAnalyzer.processWebIdRequest(webIdContext);
+            if (analysis != null) {
+                try {
+                    storeAnalysisJson(webIdContext.getBucketName(), analysis);
+                } catch (DataStoreException e) {
+                    throw new IOException(IBucketStore.FAILED_CREATE_OBJECT + bucketName, e);
+                }
+            }
+        } else {
+            webIdAnalyzer.publishLocalN42Report(webIdContext);
+        }
     }
 
-    private void processCambioConversion(WebIdRequestContext webIdContext) {
-        // TODO make sure nothing special required for cambio conversion
+    private void storeAnalysisJson(String bucketName, WebIdAnalysis analysis) throws DataStoreException {
+        String analysisJson = analysis.toString();
+        Map<String, String> jsonMetadata = new HashMap<>();
+        jsonMetadata.put("Content-Type", "application/json");
+        bucketStore.createObject(bucketName, new ByteArrayInputStream(analysisJson.getBytes(StandardCharsets.UTF_8)), jsonMetadata);
     }
 
-    private WebIdRequestContext createWebIdRequestContext(RequestContext ctx) {
+    private static Map<String, String> buildObjectMetadata(RequestContext ctx, String fileName, String contentType) {
+        Map<String, String> metadata = new HashMap<>(ctx.getHeaders());
+        if (contentType != null && !contentType.isBlank()) {
+            metadata.put("Content-Type", contentType);
+        }
+        if (fileName != null && !fileName.isBlank()) {
+            metadata.put("X-Original-Filename", fileName);
+        }
+        return metadata;
+    }
+
+    private ParsedUpload parseUpload(RequestContext ctx) throws InvalidRequestException {
         var webIdRequestBuilder = WebIdRequestContext.builder();
         boolean isMultipartRequest = ctx.isMultipartRequest();
         String bucketName = ctx.getBucketName();
         String objectKey = ctx.getObjectKey();
-        String bucketDir = "";
 
         webIdRequestBuilder.bucketName(bucketName)
                 .objectKey(objectKey)
@@ -191,103 +256,85 @@ public class WebIdResourceHandler extends DefaultObjectHandler {
                 .laneUid(ctx.getRequest().getParameter("laneUid"))
                 .webIdEnabled(Boolean.parseBoolean(ctx.getRequest().getParameter("webIdEnabled")))
                 .drf(ctx.getRequest().getParameter("drf"))
-                .directory(bucketDir)
+                .directory("")
                 .synthesizeBackground(Boolean.parseBoolean(ctx.getRequest().getParameter("synthesizeBackground")));
-        /*
-        objectKey = ctx.getObjectKey();
-        isMultipartRequest = ctx.isMultipartRequest();
-        occupancyObsId = ctx.getRequest().getParameter("occupancyObsId");
-        laneUid = ctx.getRequest().getParameter("laneUid");
-        String webIdEnabledParam = ctx.getRequest().getParameter("webIdEnabled");
-        webIdEnabled = Boolean.parseBoolean(webIdEnabledParam);
-        drf = ctx.getRequest().getParameter("drf");
-        String synthesizeBackgroundParam = ctx.getRequest().getParameter("synthesizeBackground");
-        synthesizeBackground = Boolean.parseBoolean(synthesizeBackgroundParam);
-         */
 
+        String fgContentType = null;
+        String bgContentType = null;
+        boolean hasForeground = false;
+        boolean hasBackground = false;
+        List<ExtraAttachment> extras = new ArrayList<>();
 
         if (isMultipartRequest) {
-            try (var parseResult = MultipartRequestParser.parse(ctx.getRequest())) {
-
+            try (var parseResult = MultipartRequestParser.parse(ctx.getRequest(), UploadPolicy.DEFAULT_MAX_FILE_SIZE_BYTES)) {
                 for (var file : parseResult.files()) {
                     String fileName = file.fileName();
-                    String fieldName = file.fieldName();
+                    if ((fileName == null || fileName.isBlank()) && ctx.hasObjectKey() && !hasForeground) {
+                        fileName = objectKey;
+                    }
+                    String fieldName = file.fieldName() != null ? file.fieldName() : "";
+                    byte[] bytes;
+                    try (var fileStream = file.inputStream()) {
+                        bytes = fileStream.readAllBytes();
+                    }
 
-                    if ("foreground".equals(fieldName)) {
-                        byte[] foregroundData;
-                        try (var fileStream = file.inputStream()) {
-                            foregroundData = fileStream.readAllBytes();
-                        }
-                        webIdRequestBuilder.foregroundFile(fileName, foregroundData);
-                    } else if ("background".equals(fieldName)) {
-                        byte[] backgroundData;
-                        try (var fileStream = file.inputStream()) {
-                            backgroundData = fileStream.readAllBytes();
-                        }
-                        webIdRequestBuilder.backgroundFile(fileName, backgroundData);
+                    if ("background".equalsIgnoreCase(fieldName) && !hasBackground) {
+                        webIdRequestBuilder.backgroundFile(fileName, bytes);
+                        bgContentType = file.contentType();
+                        hasBackground = true;
+                    } else if (!hasForeground && ("foreground".equalsIgnoreCase(fieldName)
+                            || "file".equalsIgnoreCase(fieldName)
+                            || !"background".equalsIgnoreCase(fieldName))) {
+                        webIdRequestBuilder.foregroundFile(fileName, bytes);
+                        fgContentType = file.contentType();
+                        hasForeground = true;
+                    } else {
+                        extras.add(new ExtraAttachment(fileName, file.contentType(), bytes));
                     }
                 }
+            } catch (InvalidRequestException e) {
+                throw e;
             } catch (IOException e) {
                 logger.error("Unable to parse multipart data", e);
             }
         } else {
             try (var contextInputStream = ctx.getRequest().getInputStream()) {
-                String foregroundFileName = "";
-                byte[] foregroundData;
-                foregroundData = contextInputStream.readAllBytes();
-                if (ctx.hasObjectKey())
-                    foregroundFileName = ctx.getObjectKey();
-
+                String foregroundFileName = ctx.hasObjectKey() ? ctx.getObjectKey() : "";
+                byte[] foregroundData = contextInputStream.readAllBytes();
                 webIdRequestBuilder.foregroundFile(foregroundFileName, foregroundData);
+                fgContentType = ctx.getRequest().getContentType();
             } catch (IOException e) {
                 logger.error("Unable to retrieve request context input stream", e);
             }
         }
-        return webIdRequestBuilder.build();
+
+        return new ParsedUpload(webIdRequestBuilder.build(), fgContentType, bgContentType, extras);
     }
 
-
-
-    private WebIdRequest createWebIdRequest(WebIdRequestContext webIdContext) {
-        WebIdRequest.Builder requestBuilder = new WebIdRequest.Builder()
-                .foreground(new ByteArrayInputStream(webIdContext.getForegroundData()));
-
-        // include background but if no background data then we need to synthesize it
-        if (webIdContext.getBackgroundData() != null)
-            requestBuilder.background(new ByteArrayInputStream(webIdContext.getBackgroundData()));
-
-        // client chooses whether to synthesize background data
-        requestBuilder.synthesizeBackground(webIdContext.isSynthesizeBackground());
-
-        if (webIdContext.getDrf() != null && !webIdContext.getDrf().isBlank())
-            requestBuilder.drf(webIdContext.getDrf());
-
-        return requestBuilder.build();
-    }
-
-    /**
-     * Checks if the data is QR code data in RADDATA:// format.
-     */
-    private boolean isRadDataQrCode(byte[] data) {
-        if (data == null || data.length < RADDATA_PREFIX.length()) {
-            return false;
-        }
-        String prefix = new String(data, 0, RADDATA_PREFIX.length(), StandardCharsets.UTF_8);
-        return RADDATA_PREFIX.equals(prefix);
-    }
-
-    /**
-     * Returns true if this handler should handle the request based on the webIdEnabled query parameter.
-     * This allows QR code data to be POSTed directly to the bucket root without specifying a filename.
-     */
     @Override
     public boolean canHandleRequest(HttpServletRequest request) {
-        String webIdEnabledParam = request.getParameter("webIdEnabled");
-        return Boolean.parseBoolean(webIdEnabledParam);
+        if (request == null) {
+            return false;
+        }
+        String method = request.getMethod();
+        if (!"POST".equalsIgnoreCase(method) && !"PUT".equalsIgnoreCase(method)) {
+            return false;
+        }
+        String pathInfo = request.getPathInfo() != null ? request.getPathInfo().toLowerCase(Locale.ROOT) : "";
+        if (pathInfo.contains("alarm-read-state") || pathInfo.contains("vehicle-search")) {
+            return false;
+        }
+        if (Boolean.parseBoolean(request.getParameter("webIdEnabled"))) {
+            return true;
+        }
+        String occupancyObsId = request.getParameter("occupancyObsId");
+        String laneUid = request.getParameter("laneUid");
+        return occupancyObsId != null && !occupancyObsId.isBlank()
+                && laneUid != null && !laneUid.isBlank();
     }
 
     @Override
     public String getObjectPattern() {
-        return this.pattern.pattern();
+        return SPECTROSCOPIC_OBJECT_PATTERN.pattern();
     }
 }

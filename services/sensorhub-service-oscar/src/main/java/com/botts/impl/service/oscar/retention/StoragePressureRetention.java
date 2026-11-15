@@ -16,29 +16,44 @@ import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 
 public class StoragePressureRetention {
     private static final long DEFAULT_STOP_TIMEOUT_MILLIS = 5_000L;
+    private static final Duration OCR_AGE_SWEEP_INTERVAL = Duration.ofHours(1);
+    private static final int MAX_OCR_AGE_DELETES_PER_CYCLE = 1_000;
+
     private final StoragePressureRetentionConfig config;
     private final Logger log;
     private final Path storagePath;
     private final MediaSetStore mediaStore;
+    private final OcrCropRetention ocrCropRetention;
     private final Object lifecycleMonitor = new Object();
     private final Object cleanupMonitor = new Object();
     private ScheduledExecutorService scheduler;
+    private Instant lastOcrAgeSweep;
 
     public StoragePressureRetention(IBucketStore bucketStore, StoragePressureRetentionConfig config, Logger log) {
-        this(bucketStore, createMediaStore(bucketStore), config, log);
+        this(bucketStore, createMediaStore(bucketStore), config, id -> false, log);
     }
 
     public StoragePressureRetention(IBucketStore bucketStore, MediaSetStore mediaStore,
                                     StoragePressureRetentionConfig config, Logger log) {
+        this(bucketStore, mediaStore, config, id -> false, log);
+    }
+
+    public StoragePressureRetention(IBucketStore bucketStore, MediaSetStore mediaStore,
+                                    StoragePressureRetentionConfig config,
+                                    Predicate<String> operatorAdjudicatedPredicate,
+                                    Logger log) {
         if (config.triggerUsagePercent <= config.targetUsagePercent || config.triggerUsagePercent > 100
                 || config.targetUsagePercent < 0)
             throw new IllegalArgumentException("Storage trigger must be greater than target and no more than 100 percent");
         if (config.checkPeriodMinutes <= 0 || config.minimumObjectAgeMinutes < 0
                 || config.maximumMediaSetsPerCycle <= 0)
             throw new IllegalArgumentException("Storage retention intervals must be valid");
+        if (config.ocrCropRetentionDays < 0)
+            throw new IllegalArgumentException("OCR crop retention days must be non-negative");
         if (config.storagePath == null || config.storagePath.isBlank())
             throw new IllegalArgumentException("Storage path is required");
 
@@ -46,6 +61,8 @@ public class StoragePressureRetention {
         this.log = log;
         this.mediaStore = mediaStore;
         this.storagePath = Path.of(config.storagePath).toAbsolutePath().normalize();
+        this.ocrCropRetention = new OcrCropRetention(
+                this.storagePath, this.mediaStore, operatorAdjudicatedPredicate, log);
     }
 
     public void start() {
@@ -122,8 +139,19 @@ public class StoragePressureRetention {
         }
     }
 
+    int pruneExpiredOcrCrops(Instant now) throws IOException {
+        synchronized (cleanupMonitor) {
+            lastOcrAgeSweep = now;
+            return ocrCropRetention.pruneExpiredDatePartitions(
+                    now, config.ocrCropRetentionDays, MAX_OCR_AGE_DELETES_PER_CYCLE).deletedFiles();
+        }
+    }
+
     private void cleanupIfNeededWithinLock() throws IOException, DataStoreException {
         Files.createDirectories(storagePath);
+        Instant now = Instant.now();
+        maybePruneExpiredOcrCrops(now);
+
         FileStore fileStore = Files.getFileStore(storagePath);
         StorageUsage usage = readUsage(fileStore);
         if (usage.percentUsed() < config.triggerUsagePercent)
@@ -133,7 +161,6 @@ public class StoragePressureRetention {
         log.warn("Storage usage is {}%; deleting eligible data until usage reaches {}% ({} bytes required)",
                 usage.percentUsed(), config.targetUsagePercent, bytesToFree);
 
-        Instant now = Instant.now();
         Instant cutoff = now.minus(Duration.ofMinutes(config.minimumObjectAgeMinutes));
         // Freeze the tail so a held or not-yet-old entry deferred to the tail is inspected no more
         // than once in this cycle. Both work and memory therefore remain bounded regardless of the
@@ -192,6 +219,18 @@ public class StoragePressureRetention {
                 mediaStore.deferPressureEntry(queueEntry);
         }
 
+        if (!Thread.currentThread().isInterrupted() && freedBytes < bytesToFree) {
+            int maxOcrDeletes = Math.max(200, config.maximumMediaSetsPerCycle * 6);
+            OcrCropRetention.SweepResult cropSweep = ocrCropRetention.reclaimUnderStoragePressure(
+                    cutoff, Math.max(1L, bytesToFree - freedBytes), maxOcrDeletes);
+            if (cropSweep.deletedFiles() > 0) {
+                freedBytes += cropSweep.freedBytes();
+                deletedObjects += cropSweep.deletedFiles();
+                log.info("Pressure cleanup deleted {} OCR evidence crop(s) ({} bytes)",
+                        cropSweep.deletedFiles(), cropSweep.freedBytes());
+            }
+        }
+
         StorageUsage finalUsage = readUsage(fileStore);
         if (finalUsage.percentUsed() > config.targetUsagePercent) {
             log.error("Storage remains at {}% after inspecting {} and deleting {} media sets "
@@ -201,6 +240,20 @@ public class StoragePressureRetention {
         } else {
             log.info("Storage pressure cleanup completed at {}% after deleting {} objects ({} bytes)",
                     finalUsage.percentUsed(), deletedObjects, freedBytes);
+        }
+    }
+
+    private void maybePruneExpiredOcrCrops(Instant now) {
+        if (config.ocrCropRetentionDays <= 0)
+            return;
+        if (lastOcrAgeSweep != null && Duration.between(lastOcrAgeSweep, now).compareTo(OCR_AGE_SWEEP_INTERVAL) < 0)
+            return;
+        lastOcrAgeSweep = now;
+        try {
+            ocrCropRetention.pruneExpiredDatePartitions(
+                    now, config.ocrCropRetentionDays, MAX_OCR_AGE_DELETES_PER_CYCLE);
+        } catch (Exception e) {
+            log.debug("OCR crop date-partition age sweep skipped: {}", e.getMessage());
         }
     }
 

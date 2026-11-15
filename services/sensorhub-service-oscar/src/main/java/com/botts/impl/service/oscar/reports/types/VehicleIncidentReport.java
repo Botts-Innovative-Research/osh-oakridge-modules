@@ -21,6 +21,7 @@ import com.botts.impl.service.oscar.reports.helpers.ChartGenerator.LineSeries;
 import com.botts.impl.service.oscar.reports.helpers.ChartGenerator.StackedSeries;
 import com.botts.impl.service.oscar.reports.helpers.PdfDocumentBuilder;
 import com.botts.impl.service.oscar.reports.helpers.ReportCmdType;
+import com.botts.impl.service.oscar.reports.helpers.ReportDataAggregator;
 import com.botts.impl.service.oscar.reports.helpers.ReportDataAggregator.AdjudicationDetailRecord;
 import com.botts.impl.service.oscar.reports.helpers.ReportFormat;
 import com.botts.impl.service.oscar.reports.helpers.TableGenerator;
@@ -285,6 +286,22 @@ public class VehicleIncidentReport extends Report {
                         "Peak Neutron Counts",
                         new LineSeries("Peak Neutron Counts", ChartGenerator.COLOR_NEUTRON, peakNeutron)
                 );
+
+                ReportDataAggregator.UpSetCoOccurrenceData vehicleUpSet =
+                        ReportDataAggregator.buildUpSetFromVehiclePasses(passes);
+                if (vehicleUpSet.totalAlarmingOccupancies() >= 5L) {
+                    pdf.drawSectionHeader(
+                            "Multi-Pass Alarm & Category Co-Occurrence",
+                            "UpSet intersection breakdown across alarming transits for this vehicle",
+                            280f
+                    );
+                    chartGenerator.drawUpSetChart(
+                            pdf,
+                            "Alarming Vehicle Transit Co-Occurrence",
+                            vehicleUpSet,
+                            18
+                    );
+                }
             }
 
             // Section 3: Complete Adjudication, OCR & Spectroscopic Chain

@@ -25,3 +25,19 @@ Le **Service de journal durable des fichiers quotidiens OSCAR** enregistre les m
 - **Octets max. par enregistrement** : Taille maximale autorisée pour un message RPM brut en octets UTF-8.
 - **Rétention du journal scellé (jours)** : Nombre de jours de conservation des segments binaires scellés après clôture et publication vérifiée (`0` conserve indéfiniment).
 - **Exiger une sauvegarde avant suppression du journal scellé** : Lorsque cette option est activée, une confirmation de sauvegarde externe vérifiée est requise avant de supprimer une journée scellée expirée.
+
+<details class="oscar-video-guide">
+  <summary>Guide vidéo (#13, 19.4s) : Examiner les 5 images conservées, le fichier quotidien et adjuger</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/13-event-details-adjudication-and-daily-file.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/13-event-details-adjudication-and-daily-file.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Guide vidéo (#03, 11.4s) : Vérifier les archives froides Parquet et la sauvegarde instantanée unique</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/03-archive-and-snapshot-backup.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/03-archive-and-snapshot-backup.vtt" srclang="en" label="English" default>
+  </video>
+</details>

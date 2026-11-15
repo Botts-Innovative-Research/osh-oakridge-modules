@@ -21,35 +21,47 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Persists padded JPEG evidence crops for recognized container/plate detections into the
- * {@code ocr} bucket, ensures dynamic SensorHub HTTP {@code GET} permission registration via
- * {@link IBucketService#ensureBucketRegistered(String)}, and enforces a bounded retention ceiling
- * so evidence crops never grow without bound.
+ * Persists padded JPEG evidence crops for recognized container/plate detections into
+ * date-partitioned {@code ocr/crops/<yyyy-MM-dd>/} paths in the {@code ocr} bucket and ensures
+ * dynamic SensorHub HTTP {@code GET} permission registration via
+ * {@link IBucketService#ensureBucketRegistered(String)}.
+ *
+ * <p>By default ({@link #UNBOUNDED_CROPS}), {@code EvidenceWriter} performs {@code O(1)} direct
+ * object writes with no arbitrary file-count cap or full-bucket listing; long-term date-partitioned
+ * age and storage-pressure lifecycle is governed by {@code StoragePressureRetention} aligned with
+ * retained middle frames ({@code frame-3.jpg}) and adjudicated occupancy protection. An explicit
+ * positive {@code maxRetainedCrops} ceiling may still be supplied for bounded standalone use.</p>
  */
 public class EvidenceWriter {
 
     public static final String OCR_BUCKET = "ocr";
     public static final String CROPS_PREFIX = "crops/";
-    public static final int DEFAULT_MAX_RETAINED_CROPS = 2_000;
+    public static final String OBS_FILENAME_PREFIX = "obs-";
+    public static final int UNBOUNDED_CROPS = 0;
+    public static final int DEFAULT_MAX_RETAINED_CROPS = UNBOUNDED_CROPS;
 
     private static final Logger logger = LoggerFactory.getLogger(EvidenceWriter.class);
     private static final DateTimeFormatter DATE_DIR = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
     private static final double PADDING_FRACTION = 0.25;
     private static final float JPEG_QUALITY = 0.85f;
     private static final int PRUNE_CHECK_INTERVAL = 25;
+    private static final int MAX_ENCODED_OBS_ID_CHARS = 128;
 
     private final IBucketStore bucketStore;
     private final IBucketService bucketService;
@@ -72,7 +84,7 @@ public class EvidenceWriter {
     public EvidenceWriter(IBucketStore bucketStore, IBucketService bucketService, int maxRetainedCrops) {
         this.bucketStore = bucketStore;
         this.bucketService = bucketService;
-        this.maxRetainedCrops = Math.max(10, maxRetainedCrops);
+        this.maxRetainedCrops = maxRetainedCrops <= 0 ? UNBOUNDED_CROPS : Math.max(10, maxRetainedCrops);
     }
 
     /**
@@ -81,6 +93,16 @@ public class EvidenceWriter {
      * resource URI ({@code ocr/crops/...}) or {@code ""} on any error.
      */
     public String writeCrop(BufferedImage frame, Rectangle box, Instant timestamp) {
+        return writeCrop(frame, box, timestamp, null);
+    }
+
+    /**
+     * Crops {@code box} (with 25% contextual padding) from {@code frame}, encodes it as a JPEG,
+     * writes it to {@code ocr/crops/<yyyy-MM-dd>/[obs-<b64url>_]<uuid>.jpg} so retention sweeps
+     * can correlate the crop directly to its owning {@code occupancyObsId} without querying SQL or
+     * Parquet stores, and returns the bucket-relative resource URI ({@code ocr/crops/...}).
+     */
+    public String writeCrop(BufferedImage frame, Rectangle box, Instant timestamp, String occupancyObsId) {
         if (bucketStore == null || frame == null || box == null)
             return "";
 
@@ -98,14 +120,14 @@ public class EvidenceWriter {
             }
 
             Instant ts = timestamp != null ? timestamp : Instant.now();
-            String objectKey = CROPS_PREFIX + DATE_DIR.format(ts) + "/" + UUID.randomUUID() + ".jpg";
+            String objectKey = CROPS_PREFIX + DATE_DIR.format(ts) + "/" + buildCropFileName(occupancyObsId);
             bucketStore.putObject(
                     OCR_BUCKET,
                     objectKey,
                     new ByteArrayInputStream(jpegBytes),
                     Map.of("Content-Type", "image/jpeg"));
 
-            if (writesSincePrune.incrementAndGet() >= PRUNE_CHECK_INTERVAL) {
+            if (maxRetainedCrops > 0 && writesSincePrune.incrementAndGet() >= PRUNE_CHECK_INTERVAL) {
                 writesSincePrune.set(0);
                 pruneOldestIfNeeded();
             }
@@ -118,8 +140,45 @@ public class EvidenceWriter {
         }
     }
 
+    public static String buildCropFileName(String occupancyObsId) {
+        String trimmed = occupancyObsId == null ? "" : occupancyObsId.trim();
+        if (!trimmed.isEmpty() && trimmed.length() <= MAX_ENCODED_OBS_ID_CHARS) {
+            String encodedObs = Base64.getUrlEncoder()
+                    .withoutPadding()
+                    .encodeToString(trimmed.getBytes(StandardCharsets.UTF_8));
+            return OBS_FILENAME_PREFIX + encodedObs + "_" + UUID.randomUUID() + ".jpg";
+        }
+        return UUID.randomUUID() + ".jpg";
+    }
+
+    /**
+     * Extracts the encoded {@code occupancyObsId} from a crop key or filename generated by
+     * {@link #buildCropFileName(String)}, returning {@link Optional#empty()} for legacy UUID-only
+     * crop filenames.
+     */
+    public static Optional<String> extractOccupancyObsId(String keyOrFileName) {
+        if (keyOrFileName == null || keyOrFileName.isBlank())
+            return Optional.empty();
+        String norm = keyOrFileName.replace('\\', '/');
+        int slash = norm.lastIndexOf('/');
+        String fileName = slash >= 0 ? norm.substring(slash + 1) : norm;
+        if (!fileName.startsWith(OBS_FILENAME_PREFIX) || !fileName.endsWith(".jpg"))
+            return Optional.empty();
+        int sep = fileName.lastIndexOf('_');
+        if (sep <= OBS_FILENAME_PREFIX.length())
+            return Optional.empty();
+        String encoded = fileName.substring(OBS_FILENAME_PREFIX.length(), sep);
+        try {
+            byte[] decoded = Base64.getUrlDecoder().decode(encoded);
+            String obsId = new String(decoded, StandardCharsets.UTF_8).trim();
+            return obsId.isEmpty() ? Optional.empty() : Optional.of(obsId);
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
+    }
+
     public void pruneOldestIfNeeded() {
-        if (bucketStore == null)
+        if (bucketStore == null || maxRetainedCrops <= 0)
             return;
         try {
             if (!bucketStore.bucketExists(OCR_BUCKET))
@@ -135,7 +194,7 @@ public class EvidenceWriter {
             if (excess <= 0)
                 return;
 
-            // Keys start with crops/yyyy-MM-dd/<uuid>.jpg so lexicographical sort orders oldest dates first
+            // Keys start with crops/yyyy-MM-dd/...jpg so lexicographical sort orders oldest dates first
             Collections.sort(keys);
             for (int i = 0; i < excess; i++) {
                 try {

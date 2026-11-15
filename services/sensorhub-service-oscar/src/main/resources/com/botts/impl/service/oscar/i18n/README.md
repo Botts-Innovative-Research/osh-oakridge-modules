@@ -59,13 +59,13 @@ Use the release [Quick Start](https://github.com/ORNL/oscar/blob/main/dist/relea
 | **NORM (Naturally Occurring Radioactive Material)** | Benign cargo containing natural radioisotopes (such as potassium-40 in fertilizer, kitty litter, ceramics, or bananas, or thorium/uranium series in granite and tile). |
 | **EML (Enhanced Machine Learning) & Code `9999`** | Algorithm for Rapiscan portals that compares low-, mid-, and high-energy gamma windows to distinguish benign **NORM** cargo from concentrated threat sources. When EML classifies an alarm as non-threat, OSCAR logs an automated adjudication (`Code 9999: EML Non-Threat`). |
 | **Extended Occupancy (`Fault - Extended Occupancy`) & Code `9998`** | When a vehicle occupies a lane for at least its configured **Extended Occupancy Threshold (min)** (`extendedOccupancyThresholdMinutes`, `1`–`1440` min, default `1` min), OSCAR publishes a `Fault - Extended Occupancy` status observation and counts the fault in reports/statistics until the lane clears. If that extended occupancy completes with a **gamma-only alarm** (`gammaAlarm = true`, `neutronAlarm = false`), OSCAR suppresses it from the live Dashboard queue and logs an automated adjudication (`Code 9998: Extended Occupancy Gamma Alarm`). Any extended occupancy that includes a neutron alarm is never auto-adjudicated. |
-| **WebID & DRF (Detector Response Function)** | **WebID** is the Sandia Full Spectrum isotope identification service used to analyze uploaded spectra (`N42`/SPC). A **DRF** tells WebID the physical detector model and geometry used to capture the spectrum. |
+| **WebID & DRF (Detector Response Function)** | **WebID** is the Sandia Full Spectrum isotope identification service used to analyze uploaded handheld RIID and portal spectra (`.n42`, Ortec ASCII `.spe`, Ortec/Canberra binary `.spc`, and `.xml`), with automatic local photopeak nuclide identification fallback when Full Spectrum is offline or air-gapped; gamma energy spectrograms default to logarithmic `Counts (Log)` scale with a 1-click `Linear` toggle. A **DRF** tells WebID the physical detector model and geometry used to capture the spectrum. |
 | **Daily File & Record Codes (`GB`, `GS`, `GA`, `NS`, `GX`, `SG1`–`SG3`, `SN1`–`SN2`)** | The per-lane daily CSV log of raw RPM messages: `GB`/`NB` = gamma/neutron background, `GS` = occupancy start, `GC`/`NC` = gamma/neutron count profile, `GA`/`NA`/`NS` = gamma/neutron alarm, `GX` = occupancy end, `TT`/`TC` = tamper fault/clear, and `SG1`–`SG3`/`SN1`–`SN2` = daily gamma/neutron hardware setup parameters (which automatically update the Rapiscan driver's parameters in memory and coalesce changes into `config.json`). |
 | **Event UUID** | Globally unique identifier (`UUID`) assigned to each occupancy event so operators can search, export QR summaries, and trace the exact event across reports and federated nodes. |
 | **Operational View** | A named filter (`?view=<key>` or `/view/<key>`) that scopes a workstation's Dashboard, Events, Status of Health, and Report Generator to a specific group of lanes (for example, `north-gate`). |
 | **Parquet Cold Tier (`PARQUET_PRIMARY`)** | OSCAR 3.11.0's default storage mode where PostgreSQL holds a 30-minute hot staging window and completed 30-minute partitions are exported to ZSTD-compressed Apache Parquet files (`archive/parquet/`) for fast, compact long-term querying. |
 | **Retained 5-Frame Media** | For every alarm occupancy, OSCAR extracts 5 evenly spaced JPEG snapshots (`frame-01.jpg` to `frame-05.jpg`). After 30 days, secondary frames (`01`, `02`, `04`, `05`) are pruned while the midpoint keyframe (`frame-03.jpg`) is preserved. |
-| **Vehicle OCR (`ocrConfig`)** | Optional per-lane background OCR (`Enable Vehicle OCR = false` by default) that asynchronously reads ISO 6346 shipping container codes (with check-digit verification) and license plates from occupancy camera clips as CPU and heap resources allow (`OcrResourceGovernor`), publishing `vehicleOcr` (`PARQUET_PRIMARY`) candidates, bounded JPEG evidence crops (`/sensorhub/buckets/ocr/crops/`, `2,000`-file FIFO ceiling), and auto-filled **Vehicle ID** for checksum-valid containers or high-confidence (`>= 85%`) plates. When `Alarms Only` is cleared, non-alarm clips are scanned transiently and deleted immediately after OCR while keeping `occupancy.videoPaths` empty (`[]`). |
+| **Vehicle OCR (`ocrConfig`)** | Optional per-lane background OCR (`Enable Vehicle OCR = false` by default) that asynchronously reads ISO 6346 shipping container codes (with check-digit verification) and license plates from occupancy camera clips as CPU and heap resources allow (`OcrResourceGovernor`), publishing `vehicleOcr` (`PARQUET_PRIMARY`) candidates, date-partitioned JPEG evidence crops (`/sensorhub/buckets/ocr/crops/<YYYY-MM-DD>/`, aligned with retained `frame-03.jpg` media and `ocrCropRetentionDays = 365`), and auto-filled **Vehicle ID** for checksum-valid containers or high-confidence (`>= 85%`) plates. When `Alarms Only` is cleared, non-alarm clips are scanned transiently and deleted immediately after OCR while keeping `occupancy.videoPaths` empty (`[]`). |
 | **SAN (Subject Alternative Name)** | The list of hostnames and IP addresses (such as `oscar.local` and `192.0.2.10`) embedded inside an HTTPS certificate that a browser checks before trusting the connection. |
 
 ## 2. Trust the OSCAR certificate
@@ -239,6 +239,22 @@ In the OSCAR Service Module configuration, add entries to **Custom Disposition C
 
 Apply the service configuration before submitting `adjudicationCode: 12`. Lanes use the current service configuration when verifying each submission; unconfigured codes are rejected. Removing a custom code prevents new submissions with that code and leaves existing adjudications unchanged. The service publishes these choices only after system and database registration completes, including after configuration changes. The Viewer reads the `adjudicationCodes` datastream and offers the choices alongside built-in codes in detail, dashboard preview, and bulk adjudication forms. The Viewer subscribes to the disposition output through the shared MQTT client and reads the latest observation once for initial state. Published additions, edits, and removals update open selectors immediately, without polling or a page reload. Subscriptions are disconnected when the component is removed or its target nodes change. Reopening the list retries failed subscriptions or missing streams. Bulk selections spanning multiple nodes offer only custom codes whose numbers and labels agree on every target node.
 
+<details class="oscar-video-guide">
+  <summary>Video guide (#04, 12.3s): Configure OSCAR Service Retention &amp; Custom Disposition Codes</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/04-admin-oscar-service-and-custom-codes.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/04-admin-oscar-service-and-custom-codes.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#07, 11.8s): Upload External EML VM-250 Plugin &amp; Enable Per-Lane EML</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/07-admin-eml-plugin-setup.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/07-admin-eml-plugin-setup.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ## 5. Create and upload a georeferenced site diagram
 
 The site diagram is a north-up rectangular image mapped linearly between two geographic corners. OSCAR displays OSM by default when it is reachable and no diagram is configured. When a valid diagram is configured, the Viewer fits the map to its bounds and renders the diagram as the top raster layer; lane markers render above it.
@@ -301,6 +317,14 @@ Sanity-check the values before upload:
 
 Uploading another valid image replaces the active diagram reference; it does not change lane coordinates. If the upload reports invalid or missing bounds, correct the coordinate ordering and range before retrying.
 
+<details class="oscar-video-guide">
+  <summary>Video guide (#06, 14.9s): Configure a Lane System &amp; Georeferenced Site Diagram</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/06-admin-manual-lane-and-site-diagram.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/06-admin-manual-lane-and-site-diagram.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ## 6. Import or export lanes with `config.csv`
 
 Bulk import is the preferred way to create many lanes. For an existing site, first use **Download** to obtain an exact template generated from the loaded lanes. Treat the file as sensitive because exported camera usernames and passwords are plain text.
@@ -323,6 +347,14 @@ Bulk import is the preferred way to create many lanes. For an existing site, fir
 ![Imported lanes in Sensors](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/17-sensors-overview.png)
 
 An uploaded row is skipped when its `UniqueID` already belongs to a loaded Lane System. Existing lanes are not overwritten. Ensure `UniqueID` is also unique within the upload file; duplicate rows in the same file are not a supported update mechanism. Parsing happens before module loading, but child-module initialization is asynchronous, so a device failure can affect one imported lane without rolling back lanes already accepted.
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#05, 10.6s): Sync Multi-Lane Spreadsheet Configuration (config.csv)</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/05-admin-lane-spreadsheet-sync.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/05-admin-lane-spreadsheet-sync.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ### 6.2 Exact schema
 
@@ -442,7 +474,7 @@ The available list can change with installed bundles. For ordinary lane setup, s
 | Auto Start | Starts the lane automatically when configuration loads. Enable for operational lanes after configuration is verified. |
 | Operational View Keys | Optional list of workstation view keys allowed to display this lane. Add each key separately; use 1–63 lowercase ASCII letters (`a`–`z`), numbers, or hyphens, with no leading or trailing hyphen. Leave empty when the lane should have no scoped-view assignment. |
 | Extended Occupancy Threshold (min) | Duration in minutes (`1`–`1440`, default `1`) before an active occupancy publishes a `Fault - Extended Occupancy` status observation and increments the lane's `Ext-Occ` fault count. When an extended occupancy completes with a gamma-only alarm (no neutron alarm), OSCAR suppresses it from the live Dashboard queue and automatically adjudicates it as **Code 9998: Extended Occupancy Gamma Alarm**. |
-| Vehicle OCR | Optional per-lane OCR settings (`Enable Vehicle OCR`, `Alarms Only`, `Model Directory`, `Read Container Numbers`, `Read License Plates`, `Camera UIDs`, `Frames Per Clip`, `Container Min Confidence`, `Plate Min Confidence`, `Ignore Top Band Fraction`, `Ignore Bottom Band Fraction`, default `enabled = false`). When enabled on a lane, OSCAR runs PP-OCRv3 ONNX recognition asynchronously on a low-priority resource-governed worker, publishes `vehicleOcr` (`PARQUET_PRIMARY`) candidates and bounded crop thumbnails (`2,000`-crop FIFO ceiling), discards temporary non-alarm clips immediately when `Alarms Only = false`, and auto-fills **Vehicle ID** during adjudication; disabled lanes register no active OCR worker subscription and incur zero runtime overhead. |
+| Vehicle OCR | Optional per-lane OCR settings (`Enable Vehicle OCR`, `Alarms Only`, `Model Directory`, `Read Container Numbers`, `Read License Plates`, `Camera UIDs`, `Frames Per Clip`, `Container Min Confidence`, `Plate Min Confidence`, `Ignore Top Band Fraction`, `Ignore Bottom Band Fraction`, default `enabled = false`). When enabled on a lane, OSCAR runs PP-OCRv3 ONNX recognition asynchronously on a low-priority resource-governed worker, publishes `vehicleOcr` (`PARQUET_PRIMARY`) candidates and date-partitioned crop thumbnails (`ocrCropRetentionDays = 365`, preserved alongside `frame-03.jpg`, media holds, and operator adjudications), discards temporary non-alarm clips immediately when `Alarms Only = false`, and auto-fills **Vehicle ID** during adjudication; disabled lanes register no active OCR worker subscription and incur zero runtime overhead. |
 | Delete Data on Lane Removal | Defaults enabled. If selected, removing the lane deletes its database records. Clear it when decommissioning must preserve historical data. |
 | Data Source Info | Optional inherited metadata shown by some builds; use only when the site's SensorML/data-source model requires it. |
 
@@ -509,7 +541,7 @@ The generated FFmpeg children use TCP, request 24 frames per second, enable HLS 
 
 ![Configured RPM and camera options](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/25-lane-options-filled.png)
 
-**Optional per-lane Vehicle OCR:** Open the **Vehicle OCR** tab on a lane only when asynchronous container or license-plate recognition is required on that lane (**Enable Vehicle OCR** is off by default, consuming zero ONNX memory or datastreams on disabled lanes). Configure **Alarms Only** (recommended `true`; when cleared, non-alarm occupancy clips are deleted immediately after OCR sampling), **Frames Per Clip** (default `6`), **Container Min Confidence** (`0.5`), and **Plate Min Confidence** (`0.6`). Published `vehicleOcr` candidates tier to `PARQUET_PRIMARY`, while `/sensorhub/buckets/ocr/crops/` enforces a `2,000`-file FIFO cap (`< 100 MiB`).
+**Optional per-lane Vehicle OCR:** Open the **Vehicle OCR** tab on a lane only when asynchronous container or license-plate recognition is required on that lane (**Enable Vehicle OCR** is off by default, consuming zero ONNX memory or datastreams on disabled lanes). Configure **Alarms Only** (recommended `true`; when cleared, non-alarm occupancy clips are deleted immediately after OCR sampling), **Frames Per Clip** (default `6`), **Container Min Confidence** (`0.5`), and **Plate Min Confidence** (`0.6`). Published `vehicleOcr` candidates tier to `PARQUET_PRIMARY`, while `/sensorhub/buckets/ocr/crops/<YYYY-MM-DD>/` retains date-partitioned JPEG crops alongside `frame-03.jpg` (`ocrCropRetentionDays = 365`, preserving held and operator-adjudicated occupancies and reclaiming oldest eligible crops under storage pressure).
 
 ![Optional per-lane Vehicle OCR configuration](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/33-lane-vehicle-ocr.png)
 
@@ -523,6 +555,14 @@ The generated FFmpeg children use TCP, request 24 frames per second, enable HLS 
 6. Select global **Save**.
 
 For driver-specific details, see the [Rapiscan](https://github.com/ORNL/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-rapiscan), [Aspect](https://github.com/ORNL/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-aspect), [RS-350](https://github.com/ORNL/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-rs350), and [FFmpeg](https://github.com/ORNL/osh-oakridge-modules/tree/main/sensors/sensorhub-driver-ffmpeg) module documentation.
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#17, 32.4s): Configure Vehicle OCR, Compare Multi-Pass Transits &amp; Adjudicate</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/17-vehicle-ocr-and-adjudication.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/17-vehicle-ocr-and-adjudication.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ## 8. Operate the OSCAR Viewer
 
@@ -542,6 +582,14 @@ Open `https://<oscar-host>/`. The dashboard should show lane status, the event t
    Select a row once to open its preview; select it again to close the preview. The selected status cell is color-coded for Gamma, Neutron, or Gamma & Neutron. Unread Dashboard alarms render in bold with an indicator dot, while read alarms render in normal weight (shared per lane across workstations via `/sensorhub/buckets/adjudication/dashboard-read-state`, strictly on the Dashboard without altering **Events**). Operators can toggle the ephemeral **Unread only** filter (from either the banner or the table toolbar) or narrow the active alarm window using the toolbar presets (`15m`, `1h`, `24h`, `15d` default). Opening an alarm preview or details, adjudicating, or using **Acknowledge Selected** / **Acknowledge All** (scoped strictly to the active Operational View, time window, and table filters) marks those alarms as read; in **Settings**, operators can optionally enable **Unread alarm banner** (reporting the full watermark-scoped unread count across pages, capped at `100+` only when `> 150` post-watermark alarms combine with individual read keys) and/or **Latching alarm audio** (continuous alarm audio that loops while unread Dashboard alarms exist in scope and silences immediately on acknowledgement).
 6. In the preview, review the CPS/NSIGMA chart tabs, the interactive 5-frame retained-media JPEG filmstrip (`FIRST`, `QUARTER`, `MIDDLE`, `THREE_QUARTERS`, `LAST`), and each available recorded-camera item. Arrow controls move between media items.
 7. Use the expand action to open the full Event Details page. A double-click on a table row also opens Event Details.
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#09, 12.9s): Monitor Live 50-Lane Dashboard &amp; Inspect Alarm Rows</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/09-dashboard-monitoring-and-quick-adjudication.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/09-dashboard-monitoring-and-quick-adjudication.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ### 8.2 Quick adjudication on the dashboard
 
@@ -574,6 +622,14 @@ The **Events** page is the historical list across configured local and federated
 - Select a row for the preview. Double-click it, or choose the row's **Details** action, to open Event Details.
 - If a federated node or lane is unavailable, its rows/count may be incomplete; correct node connectivity and refresh rather than assuming that zero means no events.
 
+<details class="oscar-video-guide">
+  <summary>Video guide (#12, 18.9s): Filter Event Log by Vehicle ID, Adjudication Code &amp; Event UUID</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/12-event-log-filtering-and-adjudication-codes.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/12-event-log-filtering-and-adjudication-codes.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ### 8.4 Event Details
 
 ![Event Details summary, charts, and video](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/28-event-details-summary.png)
@@ -595,6 +651,14 @@ Use **Back** to return to the originating list. **CPS** and **NSIGMA** select th
 
 Available data depends on detector type, camera health, retention, event age, user permissions, and WebID connectivity. A missing panel is not proof that the event had no data; verify the lane, stream, camera, and retention status.
 
+<details class="oscar-video-guide">
+  <summary>Video guide (#13, 19.4s): Review Retained 5-Frame Media, Daily File Output &amp; Adjudicate</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/13-event-details-adjudication-and-daily-file.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/13-event-details-adjudication-and-daily-file.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ### 8.5 Complete adjudication and evidence workflow
 
 ![Event Details evidence and adjudication](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/29-event-details-adjudication.png)
@@ -610,7 +674,7 @@ The lower half of Event Details contains three related areas:
 1. Select **Upload Files** to add one or more files. OSCAR does not impose a browser file-type filter here; follow site policy and never upload unrelated or untrusted material.
 2. For a spectrum that should be analyzed, enable **WebID**, select a DRF supplied by the Sandia Full Spectrum service, choose **Foreground** or **Background**, and—only for a foreground—optionally enable **Synthesize Background**. A foreground/background pair is submitted together when both are supplied.
 3. Select **QR Scanner** to capture spectroscopic text with the device camera. Grant camera permission, scan one or more codes, review/delete captures, configure the same WebID/DRF/spectrum options, then select **Done**. QR captures become text evidence files when submitted.
-4. Select **Upload to WebID** to process configured, not-yet-uploaded WebID evidence before the final adjudication. The button stays disabled when nothing eligible is selected. Network access to the configured bucket endpoint and Full Spectrum service is required.
+4. Select **Upload to WebID** to process configured, not-yet-uploaded WebID evidence (`.n42`, `.spe`, `.spc`, or `.xml`) before the final adjudication. The button stays disabled when nothing eligible is selected. Network access to the configured bucket endpoint is required; if the remote Sandia Full Spectrum service is unreachable or offline, OSCAR automatically falls back to local photopeak nuclide identification.
 5. Review returned rows. In the form, **WebID Evidence** can select one or more results; **Use Selected Result** applies their isotope findings. The operator remains responsible for the final decision.
 
 Deleting an item before submission removes it only from the pending form. After upload, use the recorded evidence path and the site's evidence-retention procedure; do not assume browser removal deletes server evidence.
@@ -662,6 +726,14 @@ To receive:
 
 > **Security boundary.** The package is compressed and integrity-checked, but it is neither encrypted nor digitally signed. The digest detects corruption; it does not identify the sender because a person who changes the content can compute a new digest. Treat imported data as a portable preview, independently confirm its source before operational use, and transfer it only through media and devices approved by site policy.
 
+<details class="oscar-video-guide">
+  <summary>Video guide (#14, 25.2s): Export Signed Alarm QR &amp; Verify Offline on Air-Gapped Transfer</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/14-airgapped-alarm-qr-transfer.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/14-airgapped-alarm-qr-transfer.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ### 8.7 Monitor Status of Health
 
 Open **Status of Health** with the heart-monitor icon in the Viewer navigation or go directly to `/health`. The page displays one row for every lane visible in the current scope; `/health?view=<key>` limits it to the assigned operational view.
@@ -677,11 +749,27 @@ Rapiscan tamper messages report transitions rather than a periodically repeated 
 
 After upgrading, confirm that each Lane System publishes `occupancyStatus` and each RPM and FFmpeg camera publishes connection status. Stop and restart an approved test camera and verify Offline then Online. Confirm unavailable fault telemetry remains Unknown, then exercise gamma, neutron, tamper, and long-occupancy tests only under the site's approved hardware procedures.
 
+<details class="oscar-video-guide">
+  <summary>Video guide (#15, 10.2s): Monitor RPM/Camera Status of Health &amp; Georeferenced Site Map</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/15-status-of-health-and-site-map.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/15-status-of-health-and-site-map.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ### 8.8 Use an operational-view workstation
 
 Open `https://<oscar-host>/?view=<key>` or `https://<oscar-host>/view/<key>`. OSCAR preserves the key while navigating and limits lane discovery, events, maps, notifications, reports, alarm transfer, and Status of Health to assigned lanes. The unscoped root URL loads all lanes. Invalid keys and valid keys with no assigned lanes fail closed and load no lane data.
 
 Operational views separate workstation presentation; they are not an authorization boundary. Use OSCAR authentication and network controls when access itself must be restricted.
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#10, 11.4s): Scope Workstation Lanes with Fail-Closed Operational Views</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/10-operational-views-scoping.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/10-operational-views-scoping.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ### 8.9 View live lane video
 
@@ -692,6 +780,14 @@ The camera must provide H.264 with a closed GOP and an IDR/keyframe every one to
 Alarm recording uses the same keyframe requirement. An `OPEN` command remains pending for no more than five seconds, until the current recording generation has successfully muxed its first keyframe; packets from the middle of a GOP are discarded. A `CLOSE` for a very short occupancy waits behind that `OPEN` and, when needed, for OSCAR's bounded alarm/save decision. The per-camera command watchdog starts only after both waits finish and the camera operation is actually submitted; neither waiting period is treated as a camera failure. If the keyframe does not arrive, or the recorder stops or fails, OSCAR cancels that generation and removes its hidden partial file instead of attaching an empty or undecodable MP4 to the event. Check for an H.264 keyframe interval of five seconds or less when an alarm has no video.
 
 If bounded automatic recovery is exhausted, the panel shows **Live video could not be played.** Check that the camera and network are reachable, then select **Retry**. Retry stops the previous stream attempt and starts a fresh one; it does not require resetting or restarting OSCAR, re-importing lanes, or deleting application state or Docker volumes.
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#11, 12.0s): Inspect Live Lane Camera Stream &amp; Gamma/Neutron Waveforms</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/11-live-lane-video-and-charts.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/11-live-lane-video-and-charts.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ## 9. National statistics
 
@@ -733,6 +829,14 @@ The **Report Generator** asks the selected node's OSCAR Service to generate a fr
 
 Every report request generates a fresh file and overwrites any earlier file with the same node, type, format, and time window so newly logged occupancies or adjudications are always included immediately. Reports reflect retained data only; missing or expired source data cannot be reconstructed by the report generator.
 
+<details class="oscar-video-guide">
+  <summary>Video guide (#16, 19.6s): Analyze National View Statistics &amp; Generate Multi-Format Reports</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/16-national-statistics-and-reports.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/16-national-statistics-and-reports.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ## 11. Node federation
 
 ![Node federation](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/32-node-federation.png)
@@ -762,6 +866,14 @@ Duplicate names and duplicate address/port pairs are rejected. **Edit** changes 
 3. Open National and refresh statistics; each reachable configured node should have a row.
 4. Generate a node-specific report and open an event from that node to validate Connected Systems, control, bucket, and media access—not merely login.
 5. After a reload, confirm session-capable nodes reconnect. Re-enter credentials for any Basic-only node.
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#08, 16.9s): Sign In to OSCAR Viewer, Switch Language &amp; Manage Nodes</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/08-viewer-signin-language-and-nodes.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/08-viewer-signin-language-and-nodes.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ## 12. Data retention and storage behavior
 
@@ -838,6 +950,30 @@ signals can remove the database while OSCAR is still completing queued writes an
 Before changing retention, database selection, storage paths, backup mode, or
 **Delete Data on Lane Removal**, confirm the site's evidence, privacy, legal-hold, recovery, and
 records-destruction requirements.
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#01, 11.2s): Initialize OSCAR Deployment, Admin Credentials &amp; TLS</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/01-deployment-init-and-credentials.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/01-deployment-init-and-credentials.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#02, 12.8s): Upgrade OSCAR in a Clean Release Directory</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/02-clean-directory-upgrade.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/02-clean-directory-upgrade.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#03, 11.4s): Verify Parquet Cold-Tier Archives &amp; Single-Snapshot Backup</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/03-archive-and-snapshot-backup.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/03-archive-and-snapshot-backup.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ## 13. Validation checklist
 
@@ -922,6 +1058,14 @@ When collecting support data, export a redacted troubleshooting support bundle (
 - **From the host server CLI (when OSCAR is degraded or not booting):** Run `sudo bash oscar.sh support-bundle` on Ubuntu or `.\oscar.bat support-bundle` on Windows (optional `--tail`/`-Tail` and `--output`/`-Destination`) to collect host/Docker state, container logs, TLS certificate metadata, and read-only `oscar_oscar_state` logs/configuration into `oscar-host-support-<UTC>.zip`. Passwords, tokens, session cookies, email addresses, `secrets/*`, and TLS private keys (`tls/server.key`) are automatically redacted or excluded; review site policy before sharing any bundle externally.
 
 ![Operator Quick Guide and redacted support bundle export](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/34-viewer-help-support-bundle.png)
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#18, 10.9s): Use Operator Quick Guide (?) &amp; Export Redacted Support Bundle</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/18-operator-help-and-support-bundle.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/18-operator-help-and-support-bundle.vtt" srclang="en" label="English" default>
+  </video>
+</details>
 
 ## 15. Related documentation
 

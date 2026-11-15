@@ -25,3 +25,19 @@
 - **Μέγιστα byte εγγραφής**: Μέγιστο επιτρεπόμενο μέγεθος ενός μηνύματος RPM σε byte UTF-8.
 - **Διατήρηση σφραγισμένου ημερολογίου (ημέρες)**: Ημέρες διατήρησης των σφραγισμένων τμημάτων μετά το κλείσιμο και την επαλήθευση της ημέρας (`0` για επ' αόριστον διατήρηση).
 - **Απαίτηση αντιγράφου ασφαλείας πριν από τη διαγραφή**: Απαιτεί επιβεβαίωση εξωτερικού αντιγράφου ασφαλείας πριν από τη διαγραφή ληγμένων σφραγισμένων ημερών.
+
+<details class="oscar-video-guide">
+  <summary>Βιντεοοδηγός (#13, 19.4s): Έλεγχος διατηρούμενων 5 καρέ, ημερήσιου αρχείου &amp; υποβολή αξιολόγησης</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/13-event-details-adjudication-and-daily-file.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/13-event-details-adjudication-and-daily-file.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Βιντεοοδηγός (#03, 11.4s): Επαλήθευση ψυχρών αρχείων Parquet &amp; αντιγράφου ασφαλείας στιγμιοτύπου</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/03-archive-and-snapshot-backup.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/03-archive-and-snapshot-backup.vtt" srclang="en" label="English" default>
+  </video>
+</details>

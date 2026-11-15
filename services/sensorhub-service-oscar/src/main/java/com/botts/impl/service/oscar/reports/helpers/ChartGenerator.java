@@ -740,23 +740,335 @@ public class ChartGenerator {
         }
         double mag = Math.pow(10.0, Math.floor(Math.log10(rawStep)));
         double norm = rawStep / mag;
-        long niceMult;
-        if (norm <= 1.0) niceMult = 1L;
-        else if (norm <= 2.0) niceMult = 2L;
-        else if (norm <= 2.5 && mag >= 10.0) niceMult = 25L; // handled below
-        else if (norm <= 5.0) niceMult = 5L;
-        else niceMult = 10L;
-
         long step;
-        if (niceMult == 25L) {
+        if (norm <= 1.0) {
+            step = Math.max(1L, Math.round(mag));
+        } else if (norm <= 1.5 && mag >= 10.0) {
+            step = Math.max(1L, Math.round((mag / 10.0) * 15.0));
+        } else if (norm <= 2.0) {
+            step = Math.max(1L, Math.round(mag * 2.0));
+        } else if (norm <= 2.5 && mag >= 10.0) {
             step = Math.max(1L, Math.round((mag / 10.0) * 25.0));
+        } else if (norm <= 3.0 && mag >= 10.0) {
+            step = Math.max(1L, Math.round(mag * 3.0));
+        } else if (norm <= 5.0) {
+            step = Math.max(1L, Math.round(mag * 5.0));
         } else {
-            step = Math.max(1L, Math.round(mag * niceMult));
+            step = Math.max(1L, Math.round(mag * 10.0));
         }
         if (leaveTopLabelHeadroom && step * safeIntervals <= effectiveMax) {
             step = computeNiceIntegerStep(effectiveMax + step, safeIntervals, false);
         }
         return step;
+    }
+
+    /**
+     * Renders a pure vector UpSet co-occurrence intersection plot modeled after Lex et al. / Python upsetplot:
+     * - Top-right vertical intersection cardinality bars sorted descending with exact count callouts
+     * - Bottom-left horizontal per-set occupancy bars growing right-to-left with exact count callouts
+     * - Bottom-right connected dot matrix with alternating horizontal row bands
+     * - SNM-present subsets highlighted in crimson (#DC2626) with a non-color outer halo ring
+     */
+    public void drawUpSetChart(
+            PdfDocumentBuilder pdf,
+            String title,
+            ReportDataAggregator.UpSetCoOccurrenceData data,
+            int maxIntersections
+    ) throws IOException {
+        if (data == null || data.intersections() == null || data.intersections().isEmpty()) {
+            pdf.drawCalloutBox("No alarming occupancy co-occurrence combinations recorded for the selected window.");
+            return;
+        }
+
+        List<ReportDataAggregator.UpSetSetTotal> sets = data.sets();
+        int rowCount = sets.size();
+        // Order rows bottom-up so the largest set (e.g. Gamma) sits directly above the horizontal Occupancies axis,
+        // matching standard Lex et al. / Python upsetplot visual layout.
+        List<ReportDataAggregator.UpSetSetTotal> displaySets = new ArrayList<>(rowCount);
+        for (int i = rowCount - 1; i >= 0; i--) {
+            displaySets.add(sets.get(i));
+        }
+        int cap = Math.max(1, maxIntersections);
+        int shownCols = Math.min(cap, data.intersections().size());
+        List<ReportDataAggregator.UpSetIntersection> cols = data.intersections().subList(0, shownCols);
+
+        float rowH = 14.5f;
+        float matrixH = rowCount * rowH;
+        float interPlotH = 108f;
+        float headerH = 24f;
+        float bottomAxisH = 26f;
+        float cardH = headerH + interPlotH + 10f + matrixH + bottomAxisH;
+
+        pdf.ensureSpace(cardH + 12f);
+
+        PDPageContentStream cs = pdf.getContentStream();
+        PDType0Font regular = pdf.getRegularFont();
+        PDType0Font bold = pdf.getBoldFont();
+        NumberFormat intFmt = NumberFormat.getIntegerInstance(Locale.US);
+
+        float cardX = PdfDocumentBuilder.MARGIN_X;
+        float cardW = pdf.getContentWidth();
+        float topY = pdf.getCursorY();
+        float bottomY = topY - cardH;
+
+        Color inkDark = new Color(17, 24, 39);         // #111827
+        Color snmCrimson = COLOR_GAMMA;                // #DC2626
+        Color inactiveDot = new Color(203, 213, 225);  // #CBD5E1
+        Color rowBandFill = PdfDocumentBuilder.SLATE_100;
+
+        // Card container
+        cs.setNonStrokingColor(Color.WHITE);
+        cs.setStrokingColor(PdfDocumentBuilder.SLATE_200);
+        cs.setLineWidth(0.75f);
+        cs.addRect(cardX, bottomY, cardW, cardH);
+        cs.fillAndStroke();
+
+        // Title & SNM highlight legend in header
+        float titleY = topY - 16f;
+        String effectiveTitle = (title != null && !title.isBlank())
+                ? title
+                : "Alarm & Source Category Co-Occurrence";
+        pdf.drawText(bold, 9.0f, PdfDocumentBuilder.SLATE_900, cardX + 12f, titleY, effectiveTitle);
+
+        String snmLegend = "SNM Present";
+        String stdLegend = "Standard Combination";
+        float snmLegW = pdf.measureTextWidth(bold, 7.4f, snmLegend);
+        float stdLegW = pdf.measureTextWidth(regular, 7.4f, stdLegend);
+        float rightLegendX = cardX + cardW - 14f - snmLegW;
+        pdf.drawFilledCircle(rightLegendX - 7f, titleY + 2.6f, 3.2f, snmCrimson, null, 0f);
+        pdf.drawFilledCircle(rightLegendX - 7f, titleY + 2.6f, 5.0f, null, snmCrimson, 0.85f);
+        pdf.drawText(bold, 7.4f, snmCrimson, rightLegendX, titleY, snmLegend);
+
+        float stdLegendX = rightLegendX - 22f - stdLegW;
+        pdf.drawFilledCircle(stdLegendX - 7f, titleY + 2.6f, 3.2f, inkDark, null, 0f);
+        pdf.drawText(regular, 7.4f, PdfDocumentBuilder.SLATE_700, stdLegendX, titleY, stdLegend);
+
+        // Horizontal coordinate zones
+        float leftCountPad = 36f;
+        float totalsBarLeftX = cardX + leftCountPad;
+        float totalsBarW = Math.min(112f, Math.max(76f, cardW * 0.20f));
+        float totalsZeroX = totalsBarLeftX + totalsBarW;
+        float labelZoneW = 54f;
+        float matrixLeftX = totalsZeroX + labelZoneW + 34f; // +34f reserves generous clearance for Y-axis ticks & label
+        float matrixRightX = cardX + cardW - 14f;
+        float matrixW = Math.max(120f, matrixRightX - matrixLeftX);
+
+        // Vertical coordinate zones
+        float interTopY = topY - headerH - 12f;
+        float interBaseY = interTopY - interPlotH + 12f;
+        float matrixTopY = interBaseY - 8f;
+        float matrixBottomY = matrixTopY - matrixH;
+
+        // Compute Y scale for vertical intersection bars (grid disabled per reference style)
+        long maxInterCount = 1L;
+        for (ReportDataAggregator.UpSetIntersection col : cols) {
+            maxInterCount = Math.max(maxInterCount, col.count());
+        }
+        int yIntervals = 4;
+        long yStep = computeNiceIntegerStep(maxInterCount, yIntervals, true);
+        long yAxisMax = Math.max(1L, yStep * yIntervals);
+        float barPlotDrawH = interTopY - interBaseY;
+
+        // Vertical Y axis line + integer ticks + rotated "Occupancies" label
+        cs.setStrokingColor(PdfDocumentBuilder.SLATE_600);
+        cs.setLineWidth(0.75f);
+        cs.moveTo(matrixLeftX, interBaseY);
+        cs.lineTo(matrixLeftX, interTopY);
+        cs.stroke();
+
+        // Intersection baseline
+        cs.moveTo(matrixLeftX, interBaseY);
+        cs.lineTo(matrixRightX, interBaseY);
+        cs.stroke();
+
+        for (int t = 0; t <= yIntervals; t++) {
+            long tickVal = t * yStep;
+            float ty = interBaseY + (barPlotDrawH * ((float) tickVal / (float) yAxisMax));
+            cs.setStrokingColor(PdfDocumentBuilder.SLATE_600);
+            cs.setLineWidth(0.65f);
+            cs.moveTo(matrixLeftX - 3.2f, ty);
+            cs.lineTo(matrixLeftX, ty);
+            cs.stroke();
+
+            String tickText = intFmt.format(tickVal);
+            float tw = pdf.measureTextWidth(regular, 6.8f, tickText);
+            pdf.drawText(regular, 6.8f, PdfDocumentBuilder.SLATE_700, matrixLeftX - 5.2f - tw, ty - 2.3f, tickText);
+        }
+
+        String yLabel = "Occupancies";
+        float yLabelW = pdf.measureTextWidth(regular, 7.6f, yLabel);
+        float yMid = interBaseY + (barPlotDrawH / 2f) - (yLabelW / 2f);
+        pdf.drawRotatedText(regular, 7.6f, PdfDocumentBuilder.SLATE_700, matrixLeftX - 33f, yMid, Math.PI / 2.0, yLabel);
+
+        // Alternating horizontal zebra bands + set labels + horizontal set-size bars
+        long maxSetTotal = 1L;
+        for (ReportDataAggregator.UpSetSetTotal s : displaySets) {
+            maxSetTotal = Math.max(maxSetTotal, s.count());
+        }
+        long xStep = computeNiceIntegerStep(maxSetTotal, 2, true);
+        long xAxisMax = Math.max(1L, xStep * 2);
+
+        for (int r = 0; r < rowCount; r++) {
+            ReportDataAggregator.UpSetSetTotal setInfo = displaySets.get(r);
+            float rowTop = matrixTopY - r * rowH;
+            float rowBottom = rowTop - rowH;
+            float rowCenterY = rowBottom + rowH / 2f;
+
+            if (r % 2 == 0) {
+                cs.setNonStrokingColor(rowBandFill);
+                cs.addRect(totalsZeroX + 3f, rowBottom, matrixRightX - (totalsZeroX + 3f), rowH);
+                cs.fill();
+            }
+
+            // Set name label right-aligned before matrix
+            PDType0Font setFont = setInfo.snm() ? bold : regular;
+            Color setColor = setInfo.snm() ? snmCrimson : inkDark;
+            String setName = setInfo.name();
+            float nameW = pdf.measureTextWidth(setFont, 7.6f, setName);
+            pdf.drawText(setFont, 7.6f, setColor, totalsZeroX + labelZoneW - 4f - nameW, rowCenterY - 2.6f, setName);
+
+            // Horizontal bar growing right-to-left from totalsZeroX
+            float barFrac = Math.min(1f, (float) setInfo.count() / (float) xAxisMax);
+            float hBarW = setInfo.count() > 0L ? Math.max(1.8f, barFrac * totalsBarW) : 0f;
+            float hBarH = rowH * 0.54f;
+            if (hBarW > 0f) {
+                cs.setNonStrokingColor(setInfo.snm() ? snmCrimson : inkDark);
+                cs.addRect(totalsZeroX - hBarW, rowCenterY - hBarH / 2f, hBarW, hBarH);
+                cs.fill();
+            }
+
+            // Exact set count label to the left of bar
+            String setCountStr = intFmt.format(setInfo.count());
+            float scW = pdf.measureTextWidth(regular, 6.7f, setCountStr);
+            float countX = Math.max(cardX + 4f, totalsZeroX - hBarW - 3.5f - scW);
+            pdf.drawText(
+                    setInfo.snm() ? bold : regular,
+                    6.7f,
+                    setInfo.snm() ? snmCrimson : PdfDocumentBuilder.SLATE_700,
+                    countX,
+                    rowCenterY - 2.4f,
+                    setCountStr
+            );
+        }
+
+        // Bottom-left horizontal totals axis ("Occupancies")
+        cs.setStrokingColor(PdfDocumentBuilder.SLATE_600);
+        cs.setLineWidth(0.7f);
+        cs.moveTo(totalsBarLeftX, matrixBottomY);
+        cs.lineTo(totalsZeroX, matrixBottomY);
+        cs.moveTo(totalsZeroX, matrixBottomY);
+        cs.lineTo(totalsZeroX, matrixTopY);
+        cs.stroke();
+
+        for (int tx = 0; tx <= 2; tx++) {
+            long val = tx * xStep;
+            float px = totalsZeroX - totalsBarW * ((float) val / (float) xAxisMax);
+            cs.moveTo(px, matrixBottomY);
+            cs.lineTo(px, matrixBottomY - 3f);
+            cs.stroke();
+            String lbl = intFmt.format(val);
+            float lw = pdf.measureTextWidth(regular, 6.5f, lbl);
+            pdf.drawText(regular, 6.5f, PdfDocumentBuilder.SLATE_700, px - lw / 2f, matrixBottomY - 10.5f, lbl);
+        }
+        String xAxisTitle = "Occupancies";
+        float xTitleW = pdf.measureTextWidth(regular, 7.4f, xAxisTitle);
+        pdf.drawText(
+                regular,
+                7.4f,
+                PdfDocumentBuilder.SLATE_700,
+                totalsBarLeftX + (totalsBarW - xTitleW) / 2f,
+                matrixBottomY - 20.5f,
+                xAxisTitle
+        );
+
+        // Columns: vertical intersection bars + connected dot matrix
+        float slotW = matrixW / Math.max(1, shownCols);
+        float vBarW = Math.min(18f, Math.max(4.5f, slotW * 0.56f));
+        float dotRadius = Math.min(3.7f, Math.max(2.3f, slotW * 0.22f));
+        float inactiveRadius = Math.max(1.9f, dotRadius * 0.78f);
+        float countFontSize = shownCols > 14 ? 6.3f : 7.0f;
+
+        for (int c = 0; c < shownCols; c++) {
+            ReportDataAggregator.UpSetIntersection inter = cols.get(c);
+            float colCenterX = matrixLeftX + (c + 0.5f) * slotW;
+            Color activeColor = inter.snmPresent() ? snmCrimson : inkDark;
+
+            // 1. Vertical intersection bar
+            float vFrac = Math.min(1f, (float) inter.count() / (float) yAxisMax);
+            float vBarH = inter.count() > 0L ? Math.max(1.8f, vFrac * barPlotDrawH) : 0f;
+            if (vBarH > 0f) {
+                cs.setNonStrokingColor(activeColor);
+                cs.addRect(colCenterX - vBarW / 2f, interBaseY, vBarW, vBarH);
+                cs.fill();
+            }
+
+            // Count label above bar
+            String cText = intFmt.format(inter.count());
+            PDType0Font cFont = inter.snmPresent() ? bold : regular;
+            float cw = pdf.measureTextWidth(cFont, countFontSize, cText);
+            pdf.drawText(cFont, countFontSize, activeColor, colCenterX - cw / 2f, interBaseY + vBarH + 2.8f, cText);
+
+            // 2. Inactive matrix dots + locate active rows
+            int firstActiveRow = -1;
+            int lastActiveRow = -1;
+            boolean[] rowActive = new boolean[rowCount];
+            for (int r = 0; r < rowCount; r++) {
+                String setName = displaySets.get(r).name();
+                boolean isActive = inter.activeSets().contains(setName);
+                rowActive[r] = isActive;
+                if (isActive) {
+                    if (firstActiveRow < 0) {
+                        firstActiveRow = r;
+                    }
+                    lastActiveRow = r;
+                } else {
+                    float ry = (matrixTopY - r * rowH) - rowH / 2f;
+                    pdf.drawFilledCircle(colCenterX, ry, inactiveRadius, inactiveDot, null, 0f);
+                }
+            }
+
+            // 3. Connecting vertical line between top and bottom active set dots
+            if (firstActiveRow >= 0 && lastActiveRow > firstActiveRow) {
+                float yStart = (matrixTopY - firstActiveRow * rowH) - rowH / 2f;
+                float yEnd = (matrixTopY - lastActiveRow * rowH) - rowH / 2f;
+                cs.setStrokingColor(activeColor);
+                cs.setLineWidth(1.75f);
+                cs.moveTo(colCenterX, yStart);
+                cs.lineTo(colCenterX, yEnd);
+                cs.stroke();
+            }
+
+            // 4. Active filled dots (+ non-color double-ring halo when SNM is present)
+            for (int r = 0; r < rowCount; r++) {
+                if (!rowActive[r]) {
+                    continue;
+                }
+                float ry = (matrixTopY - r * rowH) - rowH / 2f;
+                pdf.drawFilledCircle(colCenterX, ry, dotRadius, activeColor, Color.WHITE, 0.55f);
+                if (inter.snmPresent()) {
+                    pdf.drawFilledCircle(colCenterX, ry, dotRadius + 1.6f, null, snmCrimson, 0.85f);
+                }
+            }
+        }
+
+        // Subtle footer caption inside bottom-right of matrix when intersections were capped
+        String matrixNote = data.intersections().size() > shownCols
+                ? String.format(Locale.US, "Showing top %d of %d alarm combinations (%s total alarming occupancies)",
+                        shownCols, data.intersections().size(), intFmt.format(data.totalAlarmingOccupancies()))
+                : String.format(Locale.US, "%d distinct alarm %s across %s alarming occupancies",
+                        shownCols, shownCols == 1 ? "combination" : "combinations",
+                        intFmt.format(data.totalAlarmingOccupancies()));
+        float noteW = pdf.measureTextWidth(regular, 6.8f, matrixNote);
+        pdf.drawText(
+                regular,
+                6.8f,
+                PdfDocumentBuilder.SLATE_600,
+                Math.max(matrixLeftX, matrixRightX - noteW),
+                matrixBottomY - 18f,
+                matrixNote
+        );
+
+        pdf.setCursorY(bottomY - 10f);
     }
 
     public OSCARServiceModule getModule() {

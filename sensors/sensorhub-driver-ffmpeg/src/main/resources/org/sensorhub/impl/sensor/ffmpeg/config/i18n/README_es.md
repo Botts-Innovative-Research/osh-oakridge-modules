@@ -21,3 +21,19 @@ El **Controlador de vídeo FFmpeg** se conecta a una transmisión de cámara IP 
 - **Fotogramas de vídeo (`Video Frames`)**: Publica fotogramas H.264 para visualización en vivo y extracción de los 5 fotogramas de evidencia en alarmas.
 - **HLS**: Publica una salida HLS cuando se requiere reproducción basada en segmentos.
 - Configure el ID de flujo, el tiempo de espera de conexión y el comportamiento de reconexión según sea necesario.
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#11, 12.0s): Inspeccionar vídeo en vivo del carril y curvas gamma/neutrones</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/11-live-lane-video-and-charts.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/11-live-lane-video-and-charts.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#13, 19.4s): Revisar los 5 fotogramas retenidos, el archivo diario y adjudicar</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/13-event-details-adjudication-and-daily-file.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/13-event-details-adjudication-and-daily-file.vtt" srclang="en" label="English" default>
+  </video>
+</details>

@@ -88,12 +88,24 @@ public class EventReport extends Report {
             totals.add(m);
         }
 
+        boolean includeUpSet = (eventType == EventReportType.ALARMS || eventType == EventReportType.ALARMS_OCCUPANCIES)
+                && format != ReportFormat.CSV;
+        ReportDataAggregator.UpSetCoOccurrenceData upSetData = includeUpSet
+                ? ReportDataAggregator.aggregateUpSetCoOccurrence(
+                        module,
+                        java.util.Arrays.asList(Utils.parseLaneUIDs(laneUIDs)),
+                        start,
+                        end,
+                        null
+                )
+                : ReportDataAggregator.UpSetCoOccurrenceData.empty();
+
         try {
             switch (format) {
                 case CSV -> writeCsv(dailyMetrics);
-                case JSON -> writeJson(nodeId, scopeLine, dailyMetrics, totals);
-                case XLSX -> writeXlsx(nodeId, scopeLine, dailyMetrics, totals);
-                case PDF -> writePdf(nodeId, scopeLine, dailyMetrics, totals);
+                case JSON -> writeJson(nodeId, scopeLine, dailyMetrics, totals, upSetData);
+                case XLSX -> writeXlsx(nodeId, scopeLine, dailyMetrics, totals, upSetData);
+                case PDF -> writePdf(nodeId, scopeLine, dailyMetrics, totals, upSetData);
             }
         } catch (IOException e) {
             throw new DataStoreException("Failed to generate Event Report (" + format + ")", e);
@@ -104,7 +116,8 @@ public class EventReport extends Report {
             String nodeId,
             String scopeLine,
             Map<String, ReportDataAggregator.ObservationMetrics> dailyMetrics,
-            ReportDataAggregator.ObservationMetrics totals
+            ReportDataAggregator.ObservationMetrics totals,
+            ReportDataAggregator.UpSetCoOccurrenceData upSetData
     ) throws IOException {
         NumberFormat intFmt = NumberFormat.getIntegerInstance(Locale.US);
 
@@ -119,9 +132,9 @@ public class EventReport extends Report {
             ));
 
             if (eventType == EventReportType.ALARMS_OCCUPANCIES) {
-                renderAlarmsAndOccupancies(pdf, dailyMetrics, totals, intFmt);
+                renderAlarmsAndOccupancies(pdf, dailyMetrics, totals, upSetData, intFmt);
             } else if (eventType == EventReportType.ALARMS) {
-                renderAlarmsOnly(pdf, dailyMetrics, totals, intFmt);
+                renderAlarmsOnly(pdf, dailyMetrics, totals, upSetData, intFmt);
             } else if (eventType == EventReportType.SOH) {
                 renderSoh(pdf, dailyMetrics, totals, intFmt);
             } else {
@@ -248,7 +261,8 @@ public class EventReport extends Report {
             String nodeId,
             String scopeLine,
             Map<String, ReportDataAggregator.ObservationMetrics> dailyMetrics,
-            ReportDataAggregator.ObservationMetrics totals
+            ReportDataAggregator.ObservationMetrics totals,
+            ReportDataAggregator.UpSetCoOccurrenceData upSetData
     ) throws IOException {
         try (JsonWriter jw = new JsonWriter(new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8)))) {
             jw.setIndent("  ");
@@ -281,6 +295,10 @@ public class EventReport extends Report {
             jw.name("extendedOccupancyFault").value(totals.extendedOccupancyFault);
             jw.name("tamper").value(totals.tamper);
             jw.endObject();
+
+            if (eventType == EventReportType.ALARMS || eventType == EventReportType.ALARMS_OCCUPANCIES) {
+                ReportDataAggregator.writeUpSetJson(jw, upSetData);
+            }
 
             jw.name("records").beginArray();
             for (Map.Entry<String, ReportDataAggregator.ObservationMetrics> entry : dailyMetrics.entrySet()) {
@@ -324,7 +342,8 @@ public class EventReport extends Report {
             String nodeId,
             String scopeLine,
             Map<String, ReportDataAggregator.ObservationMetrics> dailyMetrics,
-            ReportDataAggregator.ObservationMetrics totals
+            ReportDataAggregator.ObservationMetrics totals,
+            ReportDataAggregator.UpSetCoOccurrenceData upSetData
     ) throws IOException {
         List<String> headers = eventColumnHeaders();
         List<Double> widths = new ArrayList<>(headers.size());
@@ -353,10 +372,13 @@ public class EventReport extends Report {
                 List.of(CellValue.text("Total SOH Events"), CellValue.integer(totals.totalFaultsAndTamper()))
         );
 
-        XlsxWorkbookWriter.writeWorkbook(out, List.of(
-                new XlsxWorkbookWriter.SheetSpec("Daily Event Breakdown", headers, widths, rows, true),
-                new XlsxWorkbookWriter.SheetSpec("Summary", List.of("Metric", "Value"), List.of(28.0, 46.0), summaryRows, false)
-        ));
+        List<XlsxWorkbookWriter.SheetSpec> sheets = new ArrayList<>(3);
+        sheets.add(new XlsxWorkbookWriter.SheetSpec("Daily Event Breakdown", headers, widths, rows, true));
+        if (eventType == EventReportType.ALARMS || eventType == EventReportType.ALARMS_OCCUPANCIES) {
+            sheets.add(ReportDataAggregator.buildUpSetXlsxSheet(upSetData));
+        }
+        sheets.add(new XlsxWorkbookWriter.SheetSpec("Summary", List.of("Metric", "Value"), List.of(28.0, 46.0), summaryRows, false));
+        XlsxWorkbookWriter.writeWorkbook(out, sheets);
     }
 
     private List<CellValue> buildXlsxRow(String date, ReportDataAggregator.ObservationMetrics m) {
@@ -417,6 +439,7 @@ public class EventReport extends Report {
             PdfDocumentBuilder pdf,
             Map<String, ReportDataAggregator.ObservationMetrics> dailyMetrics,
             ReportDataAggregator.ObservationMetrics totals,
+            ReportDataAggregator.UpSetCoOccurrenceData upSetData,
             NumberFormat intFmt
     ) throws IOException {
         pdf.drawKpiCards(List.of(
@@ -498,6 +521,20 @@ public class EventReport extends Report {
                 occLine
         );
 
+        if (upSetData != null && upSetData.totalAlarmingOccupancies() > 0L) {
+            pdf.drawSectionHeader(
+                    "Alarm & Source Category Co-Occurrence (UpSet)",
+                    "Intersection cardinality across Gamma, Neutron, NORM, Industrial, Medical, SNM, and Unknown occupancies",
+                    280f
+            );
+            chartGenerator.drawUpSetChart(
+                    pdf,
+                    "Alarm & Source Category Co-Occurrence (Occupancies)",
+                    upSetData,
+                    18
+            );
+        }
+
         if (dailyMetrics.size() > 1) {
             pdf.drawSectionHeader("Daily Breakdown Table", "Exact daily alarm, EML suppression, and occupancy counts (UTC)", 70f);
             tableGenerator.drawTableByDate(pdf, tableByDate, false);
@@ -508,6 +545,7 @@ public class EventReport extends Report {
             PdfDocumentBuilder pdf,
             Map<String, ReportDataAggregator.ObservationMetrics> dailyMetrics,
             ReportDataAggregator.ObservationMetrics totals,
+            ReportDataAggregator.UpSetCoOccurrenceData upSetData,
             NumberFormat intFmt
     ) throws IOException {
         pdf.drawKpiCards(List.of(
@@ -573,6 +611,20 @@ public class EventReport extends Report {
                         new ChartGenerator.StackedSeries("EML-Suppressed", ChartGenerator.COLOR_EML_SUPPRESSED, emlVals)
                 )
         );
+
+        if (upSetData != null && upSetData.totalAlarmingOccupancies() > 0L) {
+            pdf.drawSectionHeader(
+                    "Alarm & Source Category Co-Occurrence (UpSet)",
+                    "Intersection cardinality across Gamma, Neutron, NORM, Industrial, Medical, SNM, and Unknown occupancies",
+                    280f
+            );
+            chartGenerator.drawUpSetChart(
+                    pdf,
+                    "Alarm & Source Category Co-Occurrence (Occupancies)",
+                    upSetData,
+                    18
+            );
+        }
 
         if (dailyMetrics.size() > 1) {
             pdf.drawSectionHeader("Daily Alarm Breakdown", "Exact daily counts across alarm categories (UTC)", 70f);

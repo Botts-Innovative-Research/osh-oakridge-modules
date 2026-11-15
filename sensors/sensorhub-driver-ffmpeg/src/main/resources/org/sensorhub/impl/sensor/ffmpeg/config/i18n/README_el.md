@@ -21,3 +21,19 @@
 - **Καρέ βίντεο (`Video Frames`)**: Δημοσιεύει καρέ βίντεο H.264 για ζωντανή προβολή και εξαγωγή των 5 καρέ τεκμηρίωσης συναγερμών.
 - **HLS**: Δημοσιεύει έξοδο HLS όταν απαιτείται.
 - Ρυθμίστε το αναγνωριστικό ροής, το χρονικό όριο σύνδεσης και τη συμπεριφορά επανασύνδεσης όπως απαιτείται.
+
+<details class="oscar-video-guide">
+  <summary>Βιντεοοδηγός (#11, 12.0s): Επιθεώρηση ζωντανού βίντεο λωρίδας &amp; καμπυλών γάμμα/νετρονίων</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/11-live-lane-video-and-charts.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/11-live-lane-video-and-charts.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Βιντεοοδηγός (#13, 19.4s): Έλεγχος διατηρούμενων 5 καρέ, ημερήσιου αρχείου &amp; υποβολή αξιολόγησης</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/13-event-details-adjudication-and-daily-file.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/13-event-details-adjudication-and-daily-file.vtt" srclang="en" label="English" default>
+  </video>
+</details>

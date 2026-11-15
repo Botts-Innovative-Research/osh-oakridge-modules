@@ -36,18 +36,33 @@ import com.botts.impl.service.oscar.media.MediaSetStore;
 import org.sensorhub.impl.utils.rad.interfaces.IWebIdProvider;
 import org.sensorhub.impl.utils.rad.interfaces.IAdjudicationCodeProvider;
 import org.sensorhub.impl.utils.rad.dailyfile.IDailyFileJournalService;
+import org.sensorhub.impl.utils.rad.RADHelper;
+import org.sensorhub.impl.utils.rad.model.Adjudication;
+import org.sensorhub.impl.utils.rad.model.Occupancy;
+import org.sensorhub.impl.utils.rad.model.OccupancyExtended;
 import org.sensorhub.impl.utils.rad.webid.WebIdClient;
 import com.botts.impl.service.oscar.webid.WebIdResourceHandler;
+import org.eclipse.jetty.http.MimeTypes;
+import org.eclipse.jetty.server.Handler;
+import org.eclipse.jetty.server.handler.ContextHandler;
+import org.eclipse.jetty.server.handler.ResourceHandler;
+import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.data.IObsData;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.obs.DataStreamFilter;
+import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.module.AbstractModule;
+import org.sensorhub.impl.module.ModuleRegistry;
+import org.sensorhub.impl.service.HttpServer;
+import net.opengis.swe.v20.DataComponent;
 
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -79,6 +94,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
     SupportBundleHandler supportBundleHandler;
     MediaSetStore retainedMediaStore;
     ApplicationReadiness applicationReadiness;
+    volatile Flow.Subscription staticGuideMimeSubscription;
+    volatile boolean staticGuideMimeStopped;
 
     @Override
     protected void doInit() throws SensorHubException {
@@ -151,7 +168,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
 
         if (getConfiguration().storagePressureRetentionConfig != null) {
             storagePressureRetention = new StoragePressureRetention(bucketStore,
-                    retainedMediaStore, getConfiguration().storagePressureRetentionConfig, getLogger());
+                    retainedMediaStore, getConfiguration().storagePressureRetentionConfig,
+                    this::isOperatorAdjudicatedOccupancy, getLogger());
         } else {
             storagePressureRetention = null;
             logger.info("No storage pressure retention config set.");
@@ -221,8 +239,10 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
             adjudicationCodeBackfill.start();
         }
 
-        WebIdClient webIdClient = (config.webIdApiRoot != null && !config.webIdApiRoot.isBlank())
-                ? new WebIdClient(config.webIdApiRoot) : null;
+        String effectiveWebIdApiRoot = (config.webIdApiRoot != null && !config.webIdApiRoot.isBlank())
+                ? config.webIdApiRoot.trim()
+                : OSCARServiceConfig.DEFAULT_WEBID_API_ROOT;
+        WebIdClient webIdClient = new WebIdClient(effectiveWebIdApiRoot);
         webIdResourceHandler = new WebIdResourceHandler(bucketStore, getParentHub(), webIdClient);
         bucketService.registerObjectHandler(webIdResourceHandler);
         mediaResourceHandler = new MediaResourceHandler(retainedMediaStore);
@@ -272,6 +292,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
         if (storagePressureRetention != null)
             storagePressureRetention.start();
 
+        startStaticGuideMimeRegistration();
         startApplicationReadiness();
     }
 
@@ -324,6 +345,8 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
                 this::unregisterVehicleSearchHandler);
         failure = runStopStep(failure, "support bundle object handler",
                 this::unregisterSupportBundleHandler);
+        failure = runStopStep(failure, "static guide MIME registration",
+                this::stopStaticGuideMimeRegistration);
         failure = runStopStep(failure, "OSCAR system registration", this::unregisterSystem);
         if (failure != null)
             throw failure;
@@ -552,6 +575,46 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
                 ? getParentHub().getDatabaseRegistry().getFederatedDatabase() : null;
     }
 
+    private boolean isOperatorAdjudicatedOccupancy(String encodedObsId) {
+        if (encodedObsId == null || encodedObsId.isBlank() || getParentHub() == null)
+            return false;
+        try {
+            var encoders = getParentHub().getIdEncoders();
+            if (encoders == null || encoders.getObsIdEncoder() == null)
+                return false;
+            BigId obsBigId = encoders.getObsIdEncoder().decodeID(encodedObsId);
+            IObsSystemDatabase db = resolveSliceDatabase();
+            if (obsBigId == null || db == null || db.getObservationStore() == null)
+                return false;
+            IObsData obs = db.getObservationStore().get(obsBigId);
+            if (obs == null || obs.getResult() == null)
+                return false;
+            var ds = db.getObservationStore().getDataStreams().get(new DataStreamKey(obs.getDataStreamID()));
+            if (ds == null)
+                return false;
+            DataComponent struct = ds.getRecordStructure();
+            if (struct == null || !java.util.Objects.equals(RADHelper.getRadUri("Occupancy"), struct.getDefinition()))
+                return false;
+            Occupancy occ = OccupancyExtended.readOccupancy(struct, obs.getResult());
+            if (occ == null || occ.getAdjudicatedIds() == null || occ.getAdjudicatedIds().isEmpty())
+                return false;
+            for (String marker : occ.getAdjudicatedIds()) {
+                if (marker == null || marker.isBlank())
+                    continue;
+                if (Adjudication.EML_NON_THREAT_MARKER.equals(marker)
+                        || "code:9999".equals(marker)
+                        || Adjudication.EXTENDED_OCCUPANCY_GAMMA_MARKER.equals(marker)
+                        || "code:9998".equals(marker)) {
+                    continue;
+                }
+                return true;
+            }
+            return false;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     @FunctionalInterface
     private interface StopAction {
         void run() throws Exception;
@@ -618,6 +681,71 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
 
     @Override
     public WebIdClient getWebIdClient() { return webIdResourceHandler.getWebIdClient(); }
+
+    static void registerStaticGuideMimeMappings(MimeTypes mimeTypes) {
+        if (mimeTypes == null)
+            return;
+        mimeTypes.addMimeMapping("vtt", "text/vtt;charset=utf-8");
+        mimeTypes.addMimeMapping("srt", "text/plain;charset=utf-8");
+        mimeTypes.addMimeMapping("mp4", "video/mp4");
+    }
+
+    private void startStaticGuideMimeRegistration() {
+        staticGuideMimeStopped = false;
+        ensureStaticGuideMimeTypes();
+        if (staticGuideMimeSubscription == null && getParentHub() != null && getParentHub().getEventBus() != null) {
+            getParentHub().getEventBus().newSubscription(ModuleEvent.class)
+                    .withTopicID(ModuleRegistry.EVENT_GROUP_ID)
+                    .subscribe(moduleEvent -> {
+                        if (moduleEvent.getType() == ModuleEvent.Type.STATE_CHANGED
+                                && moduleEvent.getNewState() == ModuleEvent.ModuleState.STARTED) {
+                            ensureStaticGuideMimeTypes();
+                        }
+                    })
+                    .thenAccept(sub -> {
+                        if (staticGuideMimeStopped) {
+                            sub.cancel();
+                        } else {
+                            staticGuideMimeSubscription = sub;
+                            sub.request(Long.MAX_VALUE);
+                            ensureStaticGuideMimeTypes();
+                        }
+                    });
+        }
+    }
+
+    private void stopStaticGuideMimeRegistration() {
+        staticGuideMimeStopped = true;
+        Flow.Subscription sub = staticGuideMimeSubscription;
+        staticGuideMimeSubscription = null;
+        if (sub != null) {
+            sub.cancel();
+        }
+    }
+
+    private void ensureStaticGuideMimeTypes() {
+        if (getParentHub() == null || getParentHub().getModuleRegistry() == null)
+            return;
+        HttpServer httpServer = getParentHub().getModuleRegistry().getModuleByType(HttpServer.class);
+        if (httpServer == null || httpServer.getJettyServer() == null)
+            return;
+        Handler[] contextHandlers = httpServer.getJettyServer().getChildHandlersByClass(ContextHandler.class);
+        if (contextHandlers != null) {
+            for (Handler handler : contextHandlers) {
+                if (handler instanceof ContextHandler contextHandler) {
+                    registerStaticGuideMimeMappings(contextHandler.getMimeTypes());
+                }
+            }
+        }
+        Handler[] resourceHandlers = httpServer.getJettyServer().getChildHandlersByClass(ResourceHandler.class);
+        if (resourceHandlers != null) {
+            for (Handler handler : resourceHandlers) {
+                if (handler instanceof ResourceHandler resourceHandler && resourceHandler.getMimeTypes() != null) {
+                    registerStaticGuideMimeMappings(resourceHandler.getMimeTypes());
+                }
+            }
+        }
+    }
 
     @Override
     public boolean isCustomAdjudicationCode(int code) {

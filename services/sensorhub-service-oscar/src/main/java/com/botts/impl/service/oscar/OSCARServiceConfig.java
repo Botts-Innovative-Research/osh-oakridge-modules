@@ -95,11 +95,13 @@ public class OSCARServiceConfig extends ServiceConfig {
             desc = "Hours to retain connectionStatus observations in the database before hourly cleanup")
     public int connectionStatusRetentionHours = 1;
 
+    public static final String DEFAULT_WEBID_API_ROOT = "https://full-spectrum.sandia.gov/api/v1";
+
     @DisplayInfo(label = "WebID API Root", desc = "Base URL of the Sandia Full Spectrum Web ID API")
     public String webIdApiRoot;
 
     public OSCARServiceConfig() {
-        this.webIdApiRoot = "https://full-spectrum.sandia.gov/api/v1";
+        this.webIdApiRoot = DEFAULT_WEBID_API_ROOT;
     }
 
 }

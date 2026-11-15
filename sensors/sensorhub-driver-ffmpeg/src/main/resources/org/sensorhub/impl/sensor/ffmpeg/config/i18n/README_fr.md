@@ -21,3 +21,19 @@ Le **Pilote vidéo FFmpeg** se connecte au flux d'une caméra IP (RTSP/HTTP) ou 
 - **Images vidéo (`Video Frames`)** : Publie les images vidéo H.264 utilisées pour le direct et l'extraction des 5 images d'alarme.
 - **HLS** : Publie une sortie HLS lorsque nécessaire.
 - Configurez l'identifiant du flux, le délai de connexion et le comportement de reconnexion selon les besoins.
+
+<details class="oscar-video-guide">
+  <summary>Guide vidéo (#11, 12.0s) : Inspecter le flux caméra en direct et les courbes gamma/neutrons</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/11-live-lane-video-and-charts.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/11-live-lane-video-and-charts.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Guide vidéo (#13, 19.4s) : Examiner les 5 images conservées, le fichier quotidien et adjuger</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/13-event-details-adjudication-and-daily-file.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/13-event-details-adjudication-and-daily-file.vtt" srclang="en" label="English" default>
+  </video>
+</details>

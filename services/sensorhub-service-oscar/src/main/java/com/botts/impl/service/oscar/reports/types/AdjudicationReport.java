@@ -120,6 +120,9 @@ public class AdjudicationReport extends Report {
 
         String scopeLine = ReportDataAggregator.buildBannerScopeSummary(module, laneUIDs);
         ReportDataAggregator.AdjudicationLaneSummary allLanesSummary = buildAllLanesSummary(targetLanes, summariesByLane);
+        ReportDataAggregator.UpSetCoOccurrenceData upSetData = (format == ReportFormat.CSV)
+                ? ReportDataAggregator.UpSetCoOccurrenceData.empty()
+                : ReportDataAggregator.aggregateUpSetCoOccurrence(module, targetLanes, start, end, summariesByLane);
 
         try {
             switch (format) {
@@ -135,7 +138,8 @@ public class AdjudicationReport extends Report {
                         activeIsotopesAcrossScope,
                         allLanesSummary,
                         summariesByLane,
-                        laneFriendlyNames
+                        laneFriendlyNames,
+                        upSetData
                 );
                 case XLSX -> writeXlsx(
                         nodeId,
@@ -148,7 +152,8 @@ public class AdjudicationReport extends Report {
                         activeIsotopesAcrossScope,
                         allLanesSummary,
                         summariesByLane,
-                        laneFriendlyNames
+                        laneFriendlyNames,
+                        upSetData
                 );
                 case PDF -> writePdf(
                         nodeId,
@@ -161,7 +166,8 @@ public class AdjudicationReport extends Report {
                         activeIsotopesAcrossScope,
                         allLanesSummary,
                         summariesByLane,
-                        inlineLaneLabels
+                        inlineLaneLabels,
+                        upSetData
                 );
             }
         } catch (IOException e) {
@@ -180,7 +186,8 @@ public class AdjudicationReport extends Report {
             Set<String> activeIsotopesAcrossScope,
             ReportDataAggregator.AdjudicationLaneSummary allLanesSummary,
             Map<String, ReportDataAggregator.AdjudicationLaneSummary> summariesByLane,
-            Map<String, String> inlineLaneLabels
+            Map<String, String> inlineLaneLabels,
+            ReportDataAggregator.UpSetCoOccurrenceData upSetData
     ) throws IOException {
         NumberFormat intFmt = NumberFormat.getIntegerInstance(Locale.US);
 
@@ -232,6 +239,19 @@ public class AdjudicationReport extends Report {
             } else {
                 String allLanesLabel = "All Selected Lanes (" + targetLanes.size()
                         + (targetLanes.size() == 1 ? " Lane)" : " Lanes)");
+                if (upSetData != null && upSetData.totalAlarmingOccupancies() > 0L) {
+                    pdf.drawSectionHeader(
+                            "Alarm & Source Category Co-Occurrence - " + allLanesLabel,
+                            "UpSet intersection breakdown across Gamma, Neutron, NORM, Industrial, Medical, SNM, and Unknown occupancies",
+                            280f
+                    );
+                    chartGenerator.drawUpSetChart(
+                            pdf,
+                            "Alarm & Source Category Co-Occurrence (Occupancies)",
+                            upSetData,
+                            18
+                    );
+                }
                 renderLaneDispositionSection(pdf, allLanesLabel, allLanesSummary, intFmt);
                 if (allLanesSummary != null && allLanesSummary.totalRecords() > 0L) {
                     renderLaneIsotopeSection(pdf, allLanesLabel, allLanesSummary, intFmt);
@@ -341,7 +361,8 @@ public class AdjudicationReport extends Report {
             Set<String> activeIsotopesAcrossScope,
             ReportDataAggregator.AdjudicationLaneSummary allLanesSummary,
             Map<String, ReportDataAggregator.AdjudicationLaneSummary> summariesByLane,
-            Map<String, String> laneFriendlyNames
+            Map<String, String> laneFriendlyNames,
+            ReportDataAggregator.UpSetCoOccurrenceData upSetData
     ) throws IOException {
         try (JsonWriter jw = new JsonWriter(new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8)))) {
             jw.setIndent("  ");
@@ -367,6 +388,8 @@ public class AdjudicationReport extends Report {
             }
             jw.endArray();
             jw.endObject();
+
+            ReportDataAggregator.writeUpSetJson(jw, upSetData);
 
             jw.name("records").beginArray();
             if (!targetLanes.isEmpty() && allLanesSummary != null) {
@@ -444,7 +467,8 @@ public class AdjudicationReport extends Report {
             Set<String> activeIsotopesAcrossScope,
             ReportDataAggregator.AdjudicationLaneSummary allLanesSummary,
             Map<String, ReportDataAggregator.AdjudicationLaneSummary> summariesByLane,
-            Map<String, String> laneFriendlyNames
+            Map<String, String> laneFriendlyNames,
+            ReportDataAggregator.UpSetCoOccurrenceData upSetData
     ) throws IOException {
         List<List<CellValue>> dispRows = new ArrayList<>();
         List<List<CellValue>> isoRows = new ArrayList<>();
@@ -496,6 +520,7 @@ public class AdjudicationReport extends Report {
                         isoRows,
                         true
                 ),
+                ReportDataAggregator.buildUpSetXlsxSheet(upSetData),
                 new XlsxWorkbookWriter.SheetSpec(
                         "Summary",
                         List.of("Metric", "Value"),

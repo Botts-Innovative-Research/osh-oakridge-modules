@@ -50,14 +50,42 @@ public class RADHelper extends GeoPosHelper {
     }
 
     ///////// UNMARSHALLER ///////////////
+    private static volatile JAXBContext N42_JAXB_CONTEXT;
+
+    private static JAXBContext getN42JaxbContext() throws JAXBException {
+        JAXBContext ctx = N42_JAXB_CONTEXT;
+        if (ctx == null) {
+            synchronized (RADHelper.class) {
+                ctx = N42_JAXB_CONTEXT;
+                if (ctx == null) {
+                    ctx = JAXBContext.newInstance(RadInstrumentDataType.class);
+                    N42_JAXB_CONTEXT = ctx;
+                }
+            }
+        }
+        return ctx;
+    }
+
     public RadInstrumentDataType getRadInstrumentData (String xmlString) {
         RadInstrumentDataType radInstrumentData = new RadInstrumentDataType();
+        if (xmlString == null || xmlString.isBlank()) {
+            return radInstrumentData;
+        }
+        String cleaned = xmlString;
+        if (cleaned.charAt(0) == '\uFEFF') {
+            cleaned = cleaned.substring(1);
+        }
+        cleaned = cleaned.trim();
+        if (!cleaned.isEmpty() && cleaned.charAt(0) == '\uFEFF') {
+            cleaned = cleaned.substring(1).trim();
+        }
         try {
-            JAXBContext jaxbContext = JAXBContext.newInstance(RadInstrumentDataType.class);
-            Unmarshaller jaxbUnmarshaller = jaxbContext.createUnmarshaller();
-            JAXBElement<RadInstrumentDataType> root = (JAXBElement<RadInstrumentDataType>) jaxbUnmarshaller.unmarshal(new StringReader(xmlString));
-            radInstrumentData = root.getValue();
-//            radInstrumentData = (RadInstrumentDataType) jaxbUnmarshaller.unmarshal(new StringReader(xmlString));
+            Unmarshaller jaxbUnmarshaller = getN42JaxbContext().createUnmarshaller();
+            @SuppressWarnings("unchecked")
+            JAXBElement<RadInstrumentDataType> root = (JAXBElement<RadInstrumentDataType>) jaxbUnmarshaller.unmarshal(new StringReader(cleaned));
+            if (root != null && root.getValue() != null) {
+                radInstrumentData = root.getValue();
+            }
         } catch (JAXBException e) {
             e.printStackTrace();
         }

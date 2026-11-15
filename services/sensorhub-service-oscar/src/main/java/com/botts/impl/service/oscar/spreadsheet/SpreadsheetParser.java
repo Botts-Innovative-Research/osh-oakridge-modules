@@ -37,6 +37,7 @@ public class SpreadsheetParser {
         public int storagePressureMinimumObjectAgeMinutes = 10;
         public int storagePressureMaximumMediaSetsPerCycle = 200;
         public String storagePressureStoragePath = "files";
+        public int storagePressureOcrCropRetentionDays = 365;
 
         public boolean delegateObservationLifecycleToDatabase = true;
         public int dailyFilePurgeWorkLimit = 50;
@@ -121,6 +122,8 @@ public class SpreadsheetParser {
                         storagePressureMaximumMediaSetsPerCycle = Integer.parseInt(value);
                 case SchemaV1.STORAGE_PRESSURE_STORAGE_PATH, "storagePath" ->
                         storagePressureStoragePath = value;
+                case "ocrCropRetentionDays" ->
+                        storagePressureOcrCropRetentionDays = Integer.parseInt(value);
                 case SchemaV1.DELEGATE_OBSERVATION_LIFECYCLE_TO_DATABASE, "delegateObservationLifecycleToDatabase" ->
                         delegateObservationLifecycleToDatabase = Boolean.parseBoolean(value);
                 case SchemaV1.DAILY_FILE_PURGE_WORK_LIMIT, "dailyFilePurgeWorkLimit" ->
@@ -200,6 +203,7 @@ public class SpreadsheetParser {
             oscarConfig.storagePressureRetentionConfig.minimumObjectAgeMinutes = storagePressureMinimumObjectAgeMinutes;
             oscarConfig.storagePressureRetentionConfig.maximumMediaSetsPerCycle = storagePressureMaximumMediaSetsPerCycle;
             oscarConfig.storagePressureRetentionConfig.storagePath = storagePressureStoragePath;
+            oscarConfig.storagePressureRetentionConfig.ocrCropRetentionDays = storagePressureOcrCropRetentionDays;
 
             oscarConfig.delegateObservationLifecycleToDatabase = delegateObservationLifecycleToDatabase;
             oscarConfig.dailyFilePurgeWorkLimit = dailyFilePurgeWorkLimit;
@@ -238,6 +242,7 @@ public class SpreadsheetParser {
                 storagePressureMaximumMediaSetsPerCycle = s.maximumMediaSetsPerCycle;
                 if (s.storagePath != null && !s.storagePath.isBlank())
                     storagePressureStoragePath = s.storagePath;
+                storagePressureOcrCropRetentionDays = s.ocrCropRetentionDays;
             }
             delegateObservationLifecycleToDatabase = oscarConfig.delegateObservationLifecycleToDatabase;
             dailyFilePurgeWorkLimit = oscarConfig.dailyFilePurgeWorkLimit;

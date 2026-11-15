@@ -22,4 +22,7 @@ public class StoragePressureRetentionConfig {
     @DisplayInfo(label = "Storage path", desc = "Path whose filesystem usage controls pressure cleanup.")
     public String storagePath = "files";
 
+    @DisplayInfo(label = "OCR Crop Retention (days)", desc = "Days to retain date-partitioned OCR evidence crops (ocr/crops/yyyy-MM-dd/) after an occupancy's retained camera media has been removed. Set to 0 to retain until storage-pressure cleanup triggers.")
+    public int ocrCropRetentionDays = 365;
+
 }
