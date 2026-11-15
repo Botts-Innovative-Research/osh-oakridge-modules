@@ -297,7 +297,9 @@ public class PdfDocumentBuilder implements Closeable {
         // Metadata lines
         float lineY = dividerY - 12f;
         for (String line : metaLines) {
-            boolean isEventType = line.startsWith("Event Type:") || line.startsWith("Site ID:");
+            boolean isEventType = line.startsWith("Event Type:")
+                    || line.startsWith("Site ID:")
+                    || line.startsWith("Vehicle ID:");
             PDType0Font lineFont = isEventType ? boldFont : regularFont;
             Color lineColor = isEventType ? Color.WHITE : SLATE_300;
             drawText(lineFont, 8.5f, lineColor, MARGIN_X + 14f, lineY, line);

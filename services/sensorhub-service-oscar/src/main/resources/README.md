@@ -47,9 +47,9 @@ pre-3.11.0 backup.
 
 ### Systems/DataStreams/ControlStreams
 - OSCAR client config (urn:ornl:oscar:client:config)
-- Adjudication records (urn:ornl:oscar:adjudication:xxx) under each lane
+- Adjudication records (urn:ornl:oscar:adjudication:xxx) under each lane and normalized vehicle-pass correlation (`GET /buckets/adjudication/vehicle-search`)
 - Report generation retrieval command (urn:ornl:oscar:reports)
-  - POST (api/controlstreams/{id}/commands) `{"parameters": {"startTime": "xxx", "endTime": "xxx", "reportType": "RDS_SITE|LANE|EVENT|ADJUDICATION|ADJUDICATION_DETAILS", "reportFormat": "PDF|CSV|JSON|XLSX", "eventType": "ALL", "laneUids": "...", "viewKey": "..."}}`
+  - POST (api/controlstreams/{id}/commands) `{"parameters": {"startTime": "xxx", "endTime": "xxx", "reportType": "RDS_SITE|LANE|EVENT|ADJUDICATION|ADJUDICATION_DETAILS|VEHICLE_INCIDENT", "reportFormat": "PDF|CSV|JSON|XLSX", "eventType": "ALL", "laneUids": "...", "viewKey": "..."}}`
 - DataStream/Observation for site diagram image path and bounding box
 
 **System diagram**

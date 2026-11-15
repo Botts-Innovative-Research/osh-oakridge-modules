@@ -27,6 +27,8 @@ import com.botts.impl.service.oscar.reports.types.EventReport;
 import com.botts.impl.service.oscar.reports.types.LaneReport;
 import com.botts.impl.service.oscar.reports.types.RDSReport;
 import com.botts.impl.service.oscar.reports.types.Report;
+import com.botts.impl.service.oscar.reports.types.VehicleIncidentReport;
+import com.botts.impl.service.oscar.vehicle.VehicleIncidentAggregator;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataRecord;
@@ -172,7 +174,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
         try {
             filePath = buildPath(type, start, end, laneUIDs, eventType, format);
             reportHandler = getReportHandler(type, start, end, laneUIDs, eventType, format);
-        } catch (DataStoreException e) {
+        } catch (DataStoreException | RuntimeException e) {
             module.getLogger().error("Failed to build report {}", type, e);
         }
 
@@ -248,6 +250,8 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             return out -> new AdjudicationReport(out, start, end, laneUIDs, format, module);
         } else if (type == ReportCmdType.ADJUDICATION_DETAILS) {
             return out -> new AdjudicationDetailsReport(out, start, end, laneUIDs, format, module);
+        } else if (type == ReportCmdType.VEHICLE_INCIDENT) {
+            return out -> new VehicleIncidentReport(out, start, end, laneUIDs, format, module);
         } else if (type == ReportCmdType.RDS_SITE) {
             return out -> new RDSReport(out, start, end, laneUIDs, format, module);
         }
@@ -286,7 +290,9 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
         ReportCmdType normalizedType = type.baseType();
         String startTime = DateTimeFormatter.ISO_INSTANT.format(start).replace(":", "-");
         String endTime = DateTimeFormatter.ISO_INSTANT.format(end).replace(":", "-");
-        String scope = buildScopeToken(laneUIDs);
+        String scope = normalizedType == ReportCmdType.VEHICLE_INCIDENT
+                ? buildVehicleIncidentScopeToken(laneUIDs)
+                : buildScopeToken(laneUIDs);
         ReportFormat effectiveFormat = (format != null ? format : type.defaultFormat()).effectiveFor(normalizedType);
 
         String typeToken = (normalizedType == ReportCmdType.EVENT && eventType != null && eventType != EventReportType.NONE)
@@ -303,6 +309,22 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                 endTime,
                 effectiveFormat.extension()
         ).toLowerCase(Locale.ROOT);
+    }
+
+    private String buildVehicleIncidentScopeToken(String rawSpec) {
+        VehicleIncidentAggregator.VehicleIncidentSpec parsed = VehicleIncidentAggregator.parseRequestSpec(rawSpec);
+        String normVeh = parsed.normalizedVehicleId();
+        String vehToken = normVeh.isEmpty()
+                ? "all"
+                : normVeh.substring(0, Math.min(16, normVeh.length())).toLowerCase(Locale.ROOT);
+        String canonicalInput = rawSpec == null ? "" : rawSpec.trim();
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(canonicalInput.getBytes(StandardCharsets.UTF_8));
+            return "veh-" + vehToken + "-" + HexFormat.of().formatHex(digest, 0, 6);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
     }
 
     private String buildScopeToken(String laneUIDs) {

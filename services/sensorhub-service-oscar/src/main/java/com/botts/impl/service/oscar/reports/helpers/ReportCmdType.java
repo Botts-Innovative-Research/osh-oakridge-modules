@@ -25,10 +25,19 @@ public enum ReportCmdType {
     ADJUDICATION_DETAILS_PDF,
     ADJUDICATION_DETAILS_CSV,
     ADJUDICATION_DETAILS_JSON,
-    ADJUDICATION_DETAILS_XLSX;
+    ADJUDICATION_DETAILS_XLSX,
+    VEHICLE_INCIDENT,
+    VEHICLE_INCIDENT_PDF,
+    VEHICLE_INCIDENT_CSV,
+    VEHICLE_INCIDENT_JSON,
+    VEHICLE_INCIDENT_XLSX;
 
     public boolean isAdjudicationDetails() {
         return baseType() == ADJUDICATION_DETAILS;
+    }
+
+    public boolean isVehicleIncident() {
+        return baseType() == VEHICLE_INCIDENT;
     }
 
     public ReportCmdType baseType() {
@@ -42,6 +51,11 @@ public enum ReportCmdType {
                  ADJUDICATION_DETAILS_CSV,
                  ADJUDICATION_DETAILS_JSON,
                  ADJUDICATION_DETAILS_XLSX -> ADJUDICATION_DETAILS;
+            case VEHICLE_INCIDENT,
+                 VEHICLE_INCIDENT_PDF,
+                 VEHICLE_INCIDENT_CSV,
+                 VEHICLE_INCIDENT_JSON,
+                 VEHICLE_INCIDENT_XLSX -> VEHICLE_INCIDENT;
         };
     }
 
