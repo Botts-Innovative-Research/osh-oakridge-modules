@@ -129,17 +129,83 @@ public class ChartGenerator {
     ) throws IOException {
         int numCats = categories != null ? categories.size() : 0;
         boolean rotateXLabels = numCats > 6;
-        float cardHeight = rotateXLabels ? 250f : 232f;
+        final float rotatedFontSize = 6.8f;
+        final double rotatedAngleRad = Math.toRadians(35.0);
+        final float maxRotatedLabelWidth = 76f;
+
+        PDType0Font regular = pdf.getRegularFont();
+        PDType0Font bold = pdf.getBoldFont();
+
+        // Legend items (computed upfront so multi-row legends and rotated X labels size the card accurately)
+        List<LegendItem> legendItems = new ArrayList<>();
+        if (barSeries != null) {
+            for (StackedSeries s : barSeries) {
+                legendItems.add(new LegendItem(s.name(), s.color(), false));
+            }
+        }
+        if (lineSeries != null) {
+            legendItems.add(new LegendItem(lineSeries.name(), lineSeries.color(), true));
+        }
+
+        float cardW = pdf.getContentWidth();
+        int legendRows = Math.max(1, estimateLegendRows(pdf, legendItems, cardW - 24f));
+
+        int maxLabels = rotateXLabels ? 14 : 6;
+        int stride = numCats > 0 ? Math.max(1, (int) Math.ceil(numCats / (double) maxLabels)) : 1;
+        boolean[] labelMask = new boolean[numCats];
+        float maxPreClippedRotatedW = 0f;
+        if (numCats > 0) {
+            float estPlotW = Math.max(120f, cardW - 76f);
+            float estSlotW = estPlotW / numCats;
+            int minGapSlots;
+            if (stride <= 1 && (!rotateXLabels || estSlotW * Math.sin(rotatedAngleRad) >= rotatedFontSize * 1.6f)) {
+                minGapSlots = 1;
+            } else if (rotateXLabels) {
+                int perpMinSlots = (int) Math.ceil((rotatedFontSize * 1.75f)
+                        / Math.max(1f, estSlotW * (float) Math.sin(rotatedAngleRad)));
+                minGapSlots = Math.max(2, Math.max((stride + 1) / 2, perpMinSlots));
+            } else {
+                minGapSlots = Math.max(2, (stride + 1) / 2);
+            }
+            int prevLabeledIdx = -minGapSlots;
+            for (int i = 0; i < numCats; i++) {
+                boolean isFirst = (i == 0);
+                boolean isLast = (i == numCats - 1);
+                boolean shouldLabel = isFirst || (i % stride == 0 && (numCats - 1 - i) >= minGapSlots) || isLast;
+                if (!shouldLabel || (i - prevLabeledIdx < minGapSlots && !isLast)) {
+                    continue;
+                }
+                prevLabeledIdx = i;
+                labelMask[i] = true;
+                if (rotateXLabels) {
+                    String rawCat = categories.get(i) != null ? categories.get(i) : "";
+                    String preClipped = pdf.truncateToWidth(regular, rotatedFontSize, rawCat, maxRotatedLabelWidth);
+                    float w = pdf.measureTextWidth(regular, rotatedFontSize, preClipped);
+                    if (w > maxPreClippedRotatedW) {
+                        maxPreClippedRotatedW = w;
+                    }
+                }
+            }
+        }
+
+        boolean hasXAxisTitle = xAxisLabel != null && !xAxisLabel.isBlank();
+        float bottomMargin;
+        if (numCats > 0 && rotateXLabels) {
+            float xTitleReserve = hasXAxisTitle ? 19f : 7f;
+            bottomMargin = Math.max(46f,
+                    (float) Math.ceil(maxPreClippedRotatedW * Math.sin(rotatedAngleRad)) + 11f + xTitleReserve);
+        } else {
+            bottomMargin = hasXAxisTitle ? 32f : 20f;
+        }
+
+        float cardHeight = 200f + bottomMargin + (legendRows - 1) * 12f;
         pdf.ensureSpace(cardHeight + 10f);
 
         float cardX = PdfDocumentBuilder.MARGIN_X;
-        float cardW = pdf.getContentWidth();
         float cardTopY = pdf.getCursorY();
         float cardBottomY = cardTopY - cardHeight;
 
         PDPageContentStream cs = pdf.getContentStream();
-        PDType0Font regular = pdf.getRegularFont();
-        PDType0Font bold = pdf.getBoldFont();
 
         // Card container
         cs.setNonStrokingColor(Color.WHITE);
@@ -151,16 +217,6 @@ public class ChartGenerator {
         // Chart title
         pdf.drawText(bold, 10f, PdfDocumentBuilder.SLATE_900, cardX + 12f, cardTopY - 16f, title);
 
-        // Legend items
-        List<LegendItem> legendItems = new ArrayList<>();
-        if (barSeries != null) {
-            for (StackedSeries s : barSeries) {
-                legendItems.add(new LegendItem(s.name(), s.color(), false));
-            }
-        }
-        if (lineSeries != null) {
-            legendItems.add(new LegendItem(lineSeries.name(), lineSeries.color(), true));
-        }
         float legendBottomY = drawLegendRow(pdf, legendItems, cardX + 12f, cardTopY - 29f, cardW - 24f);
 
         if (numCats == 0) {
@@ -214,12 +270,15 @@ public class ChartGenerator {
         boolean hasTopAxisTitles = (leftYAxisLabel != null && !leftYAxisLabel.isBlank())
                 || (hasRightAxis && rightYAxisLabel != null && !rightYAxisLabel.isBlank());
 
-        float plotLeft = cardX + Math.max(32f, 18f + maxLeftTickW);
+        float basePlotLeft = cardX + Math.max(32f, 18f + maxLeftTickW);
+        float plotLeft = (rotateXLabels && maxPreClippedRotatedW > 44f)
+                ? Math.max(basePlotLeft, cardX + 48f)
+                : basePlotLeft;
         float plotRight = hasRightAxis
                 ? (cardX + cardW - Math.max(34f, 18f + maxRightTickW))
                 : (cardX + cardW - 16f);
         float plotTop = legendBottomY - (hasTopAxisTitles ? 18f : 10f);
-        float plotBottom = cardBottomY + (rotateXLabels ? 50f : 32f);
+        float plotBottom = cardBottomY + bottomMargin;
         float plotW = Math.max(40f, plotRight - plotLeft);
         float plotH = Math.max(40f, plotTop - plotBottom);
 
@@ -378,18 +437,10 @@ public class ChartGenerator {
         }
 
         // X-axis category ticks and auto-thinned labels
-        int maxLabels = rotateXLabels ? 14 : 6;
-        int stride = Math.max(1, (int) Math.ceil(numCats / (double) maxLabels));
-        int prevLabeledIdx = -stride;
-
         for (int i = 0; i < numCats; i++) {
-            boolean isFirst = (i == 0);
-            boolean isLast = (i == numCats - 1);
-            boolean shouldLabel = isFirst || (i % stride == 0 && (numCats - 1 - i) >= Math.max(1, stride / 2)) || isLast;
-            if (!shouldLabel || (i - prevLabeledIdx < Math.max(1, stride / 2) && !isLast)) {
+            if (!labelMask[i]) {
                 continue;
             }
-            prevLabeledIdx = i;
 
             float cx = plotLeft + (i + 0.5f) * slotW;
             cs.setStrokingColor(PdfDocumentBuilder.SLATE_400);
@@ -400,14 +451,21 @@ public class ChartGenerator {
 
             String cat = categories.get(i) != null ? categories.get(i) : "";
             if (!rotateXLabels) {
-                float cw = pdf.measureTextWidth(regular, 7.5f, cat);
-                pdf.drawText(regular, 7.5f, PdfDocumentBuilder.SLATE_600, cx - cw * 0.5f, plotBottom - 12f, cat);
+                String fittedCat = pdf.truncateToWidth(regular, 7.5f, cat, Math.max(36f, slotW - 4f));
+                float cw = pdf.measureTextWidth(regular, 7.5f, fittedCat);
+                float lx = Math.max(cardX + 6f, Math.min(cardX + cardW - 6f - cw, cx - cw * 0.5f));
+                pdf.drawText(regular, 7.5f, PdfDocumentBuilder.SLATE_600, lx, plotBottom - 12f, fittedCat);
             } else {
-                double angle = -Math.toRadians(38.0);
-                float cw = pdf.measureTextWidth(regular, 7.1f, cat);
-                float tx = cx - (float) (cw * Math.cos(Math.toRadians(38.0))) + 4f;
-                float ty = plotBottom - 6f - (float) (cw * Math.sin(Math.toRadians(38.0)));
-                pdf.drawRotatedText(regular, 7.1f, PdfDocumentBuilder.SLATE_600, tx, ty, angle, cat);
+                // Positive counter-clockwise rotation (+35 deg) in PDFBox (+Y up) slopes from
+                // bottom-left (tx, ty) up-right to terminate directly under the tick at (cx + 2, plotBottom - 8.5).
+                float capSin = rotatedFontSize * 0.75f * (float) Math.sin(rotatedAngleRad);
+                float maxAvailCosW = (float) (((cx + 2f) - (cardX + 5f) - capSin) / Math.cos(rotatedAngleRad));
+                float allowedW = Math.max(24f, Math.min(maxRotatedLabelWidth, maxAvailCosW));
+                String fittedCat = pdf.truncateToWidth(regular, rotatedFontSize, cat, allowedW);
+                float cw = pdf.measureTextWidth(regular, rotatedFontSize, fittedCat);
+                float tx = cx + 2f - (float) (cw * Math.cos(rotatedAngleRad));
+                float ty = plotBottom - 8.5f - (float) (cw * Math.sin(rotatedAngleRad));
+                pdf.drawRotatedText(regular, rotatedFontSize, PdfDocumentBuilder.SLATE_600, tx, ty, rotatedAngleRad, fittedCat);
             }
         }
 

@@ -20,6 +20,7 @@ import net.opengis.swe.v20.DataComponent;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.text.TextPosition;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -573,6 +574,164 @@ public class VehicleIncidentSearchAndReportTest {
             assertTrue(entries.get("xl/workbook.xml").contains("Incident Summary"));
             assertTrue(entries.get("xl/worksheets/sheet1.xml").contains("federated-exit-node"));
         }
+    }
+
+    @Test
+    public void denseMultiPassChartLabelsStayInsideCardAndResolveMemberSensorLanesAndNoisyOcr() throws Exception {
+        var sml = new SMLHelper();
+        RADHelper rad = new RADHelper();
+
+        // Register parent LaneSystem (Lane 41) and child Rapiscan sensor (urn:osh:sensor:rapiscan:lane-41)
+        String parentLaneUid = "urn:osh:system:lane:lane-41";
+        BigId parentLaneSysId = db.getSystemDescStore().add(new SystemWrapper(
+                sml.createPhysicalSystem().uniqueID(parentLaneUid).name("Lane 41").build())).getInternalID();
+
+        String childRapiscanUid = "urn:osh:sensor:rapiscan:lane-41";
+        BigId childRapiscanSysId = db.getSystemDescStore().add(parentLaneSysId, new SystemWrapper(
+                sml.createPhysicalSystem().uniqueID(childRapiscanUid).name("Rapiscan RPM 41").build())).getInternalID();
+
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        DataComponent grossOccStruct = new OccupancyOutput(new SensorSystem()).getRecordDescription();
+        BigId rapiscanOccDs = db.getObservationStore().getDataStreams().add(new DataStreamInfo.Builder()
+                .withSystem(new FeatureId(childRapiscanSysId, childRapiscanUid))
+                .withName("occupancy")
+                .withRecordDescription(grossOccStruct)
+                .withRecordEncoding(new TextEncodingImpl())
+                .build()).getInternalID();
+
+        DataComponent ocrStruct = rad.createVehicleOcrRecord();
+        BigId laneOcrDs = db.getObservationStore().getDataStreams().add(new DataStreamInfo.Builder()
+                .withSystem(new FeatureId(parentLaneSysId, parentLaneUid))
+                .withName("vehicleOcr")
+                .withRecordDescription(ocrStruct)
+                .withRecordEncoding(new TextEncodingImpl())
+                .build()).getInternalID();
+
+        Instant baseTime = Instant.parse("2026-11-14T18:00:00Z");
+        for (int i = 0; i < 31; i++) {
+            Instant pStart = baseTime.plusSeconds(i * 120L);
+            Instant pEnd = pStart.plusSeconds(8L);
+            Occupancy occ = new Occupancy.Builder()
+                    .samplingTime(pEnd.getEpochSecond())
+                    .occupancyCount(880 + i)
+                    .startTime(pStart.getEpochSecond())
+                    .endTime(pEnd.getEpochSecond())
+                    .gammaAlarm(i != 1)
+                    .neutronAlarm(i % 7 == 3)
+                    .maxGammaCount(i == 1 ? 120 : 860 + (i % 6) * 10)
+                    .maxNeutronCount(i % 7 == 3 ? 58 + i : 4)
+                    .build();
+            BigId occBigId = db.getObservationStore().add(new ObsData.Builder()
+                    .withDataStream(rapiscanOccDs)
+                    .withPhenomenonTime(pStart)
+                    .withResultTime(pEnd)
+                    .withResult(Occupancy.fromOccupancy(occ))
+                    .build());
+            String occObsId = hub.getIdEncoders().getObsIdEncoder().encodeID(occBigId);
+
+            // Include noisy shipping-line logo text ("tex TGBU355853") on Pass #3
+            String rawOcrText = (i == 2) ? "tex TGBU355853" : "TGBU 355853-7";
+            VehicleOcrResult ocr = new VehicleOcrResult.Builder()
+                    .sampleTime(pEnd)
+                    .occupancyObsId(occObsId)
+                    .idType(VehicleOcrResult.ID_TYPE_CONTAINER)
+                    .value(rawOcrText)
+                    .normalizedValue("TGBU3558537")
+                    .checksumValid(true)
+                    .confidence(0.95f)
+                    .readCount(2)
+                    .cameraUid("urn:osh:sensor:ffmpeg:lane:lane-41:0")
+                    .frameTime(pStart.plusSeconds(2))
+                    .build();
+            db.getObservationStore().add(new ObsData.Builder()
+                    .withDataStream(laneOcrDs)
+                    .withPhenomenonTime(pEnd)
+                    .withResultTime(pEnd)
+                    .withResult(VehicleOcrResult.createDataBlock(ocrStruct, ocr))
+                    .build());
+        }
+
+        // Scoped query by parent LaneSystem UID must resolve all 31 child-sensor occupancies
+        String specJson = """
+                {
+                  "vehicleId": "TGBU3558537",
+                  "matchMode": "equals",
+                  "laneUID": "urn:osh:system:lane:lane-41"
+                }
+                """;
+        DataComponent cmdDesc = reportControl.getCommandDescription().copy();
+        String pdfPath = submitReport(
+                cmdDesc, 501, ReportCmdType.VEHICLE_INCIDENT_PDF, baseTime.minusSeconds(60), baseTime.plusSeconds(7200), specJson);
+
+        record PositionedSpan(int page, String text, float minX, float minY, float maxY) {}
+        List<PositionedSpan> spans = new ArrayList<>();
+
+        try (InputStream in = readReportObject(pdfPath);
+             PDDocument doc = Loader.loadPDF(in.readAllBytes())) {
+            String fullText = new PDFTextStripper().getText(doc);
+            assertTrue(fullText.contains("Lane 41"));
+            assertTrue(fullText.contains("TGBU 355853-7"));
+            assertTrue(fullText.contains("Camera 0 (lane-41)"));
+            assertFalse("Raw child Rapiscan URN should resolve to Lane 41", fullText.contains("urn:osh:sensor:rapiscan:lane-41"));
+            assertFalse("Raw FFmpeg camera URN should be formatted cleanly", fullText.contains("urn:osh:sensor:ffmpeg:lane:lane-41:0"));
+            assertFalse("Extraneous shipping-line OCR prefix 'tex ' should be stripped", fullText.contains("tex TGBU"));
+
+            for (int p = 1; p <= doc.getNumberOfPages(); p++) {
+                final int pageNum = p;
+                PDFTextStripper posStripper = new PDFTextStripper() {
+                    @Override
+                    protected void writeString(String text, List<TextPosition> textPositions) throws IOException {
+                        if (text != null && !text.isBlank() && textPositions != null && !textPositions.isEmpty()) {
+                            float minX = Float.MAX_VALUE;
+                            float minY = Float.MAX_VALUE;
+                            float maxY = -Float.MAX_VALUE;
+                            for (TextPosition tp : textPositions) {
+                                float x = tp.getTextMatrix().getTranslateX();
+                                float y = tp.getTextMatrix().getTranslateY();
+                                minX = Math.min(minX, x);
+                                minY = Math.min(minY, y);
+                                maxY = Math.max(maxY, y);
+                            }
+                            spans.add(new PositionedSpan(pageNum, text.trim(), minX, minY, maxY));
+                        }
+                        super.writeString(text, textPositions);
+                    }
+                };
+                posStripper.setStartPage(p);
+                posStripper.setEndPage(p);
+                posStripper.getText(doc);
+            }
+        }
+
+        PositionedSpan xAxisTitle = spans.stream()
+                .filter(s -> s.text().contains("Chronological Vehicle Pass"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Missing 'Chronological Vehicle Pass' axis title"));
+
+        List<PositionedSpan> rotatedPassTicks = spans.stream()
+                .filter(s -> s.page() == xAxisTitle.page() && s.text().startsWith("Pass #") && s.text().contains("("))
+                .toList();
+        assertFalse("Expected rotated Pass # category ticks on chart page", rotatedPassTicks.isEmpty());
+
+        for (PositionedSpan tick : rotatedPassTicks) {
+            assertTrue("Rotated tick '" + tick.text() + "' crossed left card margin: minX=" + tick.minX(),
+                    tick.minX() >= 38f);
+            assertTrue("Rotated tick '" + tick.text() + "' overlapped X-axis title: tick.minY="
+                            + tick.minY() + " vs xAxisTitle.maxY=" + xAxisTitle.maxY(),
+                    tick.minY() >= xAxisTitle.maxY() + 6f);
+            assertTrue("Rotated tick '" + tick.text() + "' sloped downward instead of upward-right: minY="
+                            + tick.minY() + ", maxY=" + tick.maxY(),
+                    tick.maxY() > tick.minY() + 8f);
+        }
+
+        spans.stream()
+                .filter(s -> s.page() == xAxisTitle.page()
+                        && s.text().contains("Adjudication, Camera OCR & Spectroscopic Chain"))
+                .findFirst()
+                .ifPresent(nextHeader -> assertTrue(
+                        "Section 3 header overlapped chart card: nextHeader.maxY="
+                                + nextHeader.maxY() + " vs xAxisTitle.minY=" + xAxisTitle.minY(),
+                        nextHeader.maxY() <= xAxisTitle.minY() - 14f));
     }
 
     private void recordCompletedAdjudication(

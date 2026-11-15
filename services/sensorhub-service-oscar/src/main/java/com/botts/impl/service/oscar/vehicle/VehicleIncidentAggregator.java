@@ -47,6 +47,7 @@ import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.api.datastore.obs.IObsStore;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.module.IModule;
+import org.sensorhub.api.system.ISystemDriver;
 import org.sensorhub.impl.utils.rad.RADHelper;
 import org.sensorhub.impl.utils.rad.model.Adjudication;
 import org.sensorhub.impl.utils.rad.model.IsotopeAnalysis;
@@ -92,11 +93,13 @@ public final class VehicleIncidentAggregator {
     public static final int MAX_SEARCH_LIMIT = 1_000;
     public static final int MAX_FEDERATED_PASSES = 500;
     public static final int MAX_PROFILE_SAMPLES_PER_PASS = 240;
+    public static final int MAX_PROFILED_PASSES = 16;
 
     public static final String SYSTEM_TYPE_GROSS = "Gross-Counting";
     public static final String SYSTEM_TYPE_SPECTROSCOPIC = "RS350 Spectroscopic";
 
     private static final Pattern ISO_6346_NORMALIZED = Pattern.compile("^[A-Z]{3}[UJZ][0-9]{7}$");
+    private static final Pattern ISO_6346_PREFIX_10 = Pattern.compile("^[A-Z]{3}[UJZ][0-9]{6}$");
     private static final String VEHICLE_OCR_OUTPUT_NAME = "vehicleOcr";
     private static final String DEF_VEHICLE_OCR = RADHelper.getRadUri("VehicleOCR");
     private static final String DEF_VEHICLE_ID = RADHelper.getRadUri("VehicleID");
@@ -312,19 +315,28 @@ public final class VehicleIncidentAggregator {
     }
 
     public static String formatVehicleIdDisplay(String raw, String normalized) {
-        String norm = normalized != null ? normalized : normalizeVehicleId(raw);
+        String norm = normalized != null ? normalizeVehicleId(normalized) : normalizeVehicleId(raw);
         String trimmed = raw == null ? "" : raw.trim();
         if ("-".equals(trimmed)) {
             trimmed = "";
         }
+        String rawNorm = normalizeVehicleId(trimmed);
+        boolean rawHasExtraneousTokens = !trimmed.isEmpty() && !norm.isEmpty() && !rawNorm.equals(norm);
         if (ISO_6346_NORMALIZED.matcher(norm).matches()
-                && (trimmed.isEmpty() || trimmed.equalsIgnoreCase(norm))) {
+                && (trimmed.isEmpty() || trimmed.equalsIgnoreCase(norm) || rawHasExtraneousTokens)) {
             return norm.substring(0, 4) + " " + norm.substring(4, 10) + "-" + norm.substring(10);
         }
-        if (!trimmed.isEmpty()) {
+        if (ISO_6346_PREFIX_10.matcher(norm).matches()
+                && (trimmed.isEmpty() || trimmed.equalsIgnoreCase(norm) || rawHasExtraneousTokens)) {
+            return norm.substring(0, 4) + " " + norm.substring(4);
+        }
+        if (!trimmed.isEmpty() && !rawHasExtraneousTokens) {
             return trimmed;
         }
-        return norm;
+        if (!norm.isEmpty()) {
+            return norm;
+        }
+        return trimmed;
     }
 
     /**
@@ -571,8 +583,9 @@ public final class VehicleIncidentAggregator {
                 ? new LinkedHashSet<>(List.of(explicitLanes))
                 : null;
 
-        // 1. Discover lane names and occupancy datastream metadata across loaded modules + datastore
-        Map<String, String> laneNamesByUid = discoverLaneNames(module, db);
+        // 1. Discover lane names, member-sensor hierarchy, and occupancy datastream metadata across loaded modules + datastore
+        LaneTopology laneTopology = discoverLaneTopology(module, db);
+        Map<String, String> laneNamesByUid = laneTopology.laneNamesByUid();
         Map<String, LaneStreamMetadata> occStreamByDsKey = new LinkedHashMap<>();
         Map<String, LaneStreamMetadata> occStreamByLaneUid = new LinkedHashMap<>();
 
@@ -588,7 +601,7 @@ public final class VehicleIncidentAggregator {
                 if (dsBigId == null || info == null || info.getSystemID() == null) {
                     return;
                 }
-                String laneUid = resolveOwningLaneUid(info.getSystemID().getUniqueID(), laneNamesByUid.keySet());
+                String laneUid = resolveOwningLaneUid(info.getSystemID().getUniqueID(), laneTopology);
                 if (allowedLaneFilter != null && !allowedLaneFilter.contains(laneUid)
                         && !allowedLaneFilter.contains(info.getSystemID().getUniqueID())) {
                     return;
@@ -655,7 +668,7 @@ public final class VehicleIncidentAggregator {
                 obsStore,
                 explicitLanes,
                 allowedLaneFilter,
-                laneNamesByUid.keySet(),
+                laneTopology,
                 start,
                 end,
                 spec,
@@ -714,7 +727,7 @@ public final class VehicleIncidentAggregator {
         // If any occupancy matched via adjudication, also fetch its OCR record (even if OCR read a slightly different string!)
         // so the operator can see OCR vs operator-entered ID side-by-side!
         enrichMissingOcrForMatchedOccupancies(
-                db, obsStore, explicitLanes, start, end, targetObsIds, ocrByObsId);
+                db, obsStore, explicitLanes, laneTopology, start, end, targetObsIds, ocrByObsId);
 
         // 4. Batch-load matched Occupancy observations via exact multi-ID catalog pruning
         // scoped to occupancy datastreams so cold Parquet lookups run in a single DuckDB query
@@ -753,7 +766,7 @@ public final class VehicleIncidentAggregator {
             String dsKey = bigIdLookupKey(obs.getDataStreamID());
             LaneStreamMetadata dsMeta = occStreamByDsKey.computeIfAbsent(
                     dsKey,
-                    ignored -> resolveAdHocStreamMetadata(db, dsIdEncoder, obs.getDataStreamID(), laneNamesByUid));
+                    ignored -> resolveAdHocStreamMetadata(db, dsIdEncoder, obs.getDataStreamID(), laneTopology));
             try {
                 Occupancy occ = OccupancyExtended.readOccupancy(
                         dsMeta != null ? dsMeta.occRecordStructure() : null,
@@ -956,10 +969,6 @@ public final class VehicleIncidentAggregator {
                     }
                 }
 
-                List<ProfileSample> profile = (spec.includeProfiles() && startInst != null && endInst != null && !laneUid.isBlank())
-                        ? loadRadiationProfileSamples(db, obsStore, laneUid, startInst, endInst, gammaStreamsByLane, neutronStreamsByLane)
-                        : List.of();
-
                 results.add(new VehiclePassRecord(
                         localNodeId,
                         localNodeId,
@@ -995,7 +1004,7 @@ public final class VehicleIncidentAggregator {
                         List.copyOf(passWebIds),
                         List.copyOf(confirmedIsotopes),
                         occ.getVideoPaths() != null ? List.copyOf(occ.getVideoPaths()) : List.of(),
-                        profile
+                        List.of()
                 ));
             } else {
                 // Fallback record when occupancy observation aged past retention or uses a synthetic test ID
@@ -1063,6 +1072,69 @@ public final class VehicleIncidentAggregator {
                         List.of(),
                         List.of()
                 ));
+            }
+        }
+
+        if (spec.includeProfiles() && !results.isEmpty()) {
+            results.sort(Comparator.comparing(VehiclePassRecord::sortInstant)
+                    .thenComparing(p -> nonNull(p.laneUid()))
+                    .thenComparingInt(VehiclePassRecord::occupancyCount));
+            int firstProfileIdx = Math.max(0, results.size() - MAX_PROFILED_PASSES);
+            for (int i = firstProfileIdx; i < results.size(); i++) {
+                VehiclePassRecord rec = results.get(i);
+                if (rec.laneUid() == null || rec.laneUid().isBlank()
+                        || rec.startTimeIso().isBlank() || rec.endTimeIso().isBlank()) {
+                    continue;
+                }
+                Instant pStart;
+                Instant pEnd;
+                try {
+                    pStart = Instant.parse(rec.startTimeIso());
+                    pEnd = Instant.parse(rec.endTimeIso());
+                } catch (Exception ignored) {
+                    continue;
+                }
+                List<ProfileSample> profile = loadRadiationProfileSamples(
+                        db, obsStore, rec.laneUid(), pStart, pEnd, gammaStreamsByLane, neutronStreamsByLane);
+                if (!profile.isEmpty()) {
+                    results.set(i, new VehiclePassRecord(
+                            rec.nodeId(),
+                            rec.nodeName(),
+                            rec.federatedRemote(),
+                            rec.laneUid(),
+                            rec.laneName(),
+                            rec.datastreamId(),
+                            rec.occupancyObsId(),
+                            rec.occupancyCount(),
+                            rec.systemType(),
+                            rec.startTimeIso(),
+                            rec.endTimeIso(),
+                            rec.samplingTimeIso(),
+                            rec.durationSeconds(),
+                            rec.gammaAlarm(),
+                            rec.neutronAlarm(),
+                            rec.alarmCategoryCode(),
+                            rec.alarmStatusLabel(),
+                            rec.emlAutoReleased(),
+                            rec.maxGammaCount(),
+                            rec.maxNeutronCount(),
+                            rec.neutronBackground(),
+                            rec.vehicleId(),
+                            rec.normalizedVehicleId(),
+                            rec.vehicleIdSource(),
+                            rec.ocr(),
+                            rec.adjudications(),
+                            rec.latestAdjudication(),
+                            rec.emlDecision(),
+                            rec.emlSourceType(),
+                            rec.emlNormProbPct(),
+                            rec.emlThreatProbPct(),
+                            rec.webIdAnalyses(),
+                            rec.confirmedIsotopes(),
+                            rec.videoPaths(),
+                            profile
+                    ));
+                }
             }
         }
 
@@ -1347,7 +1419,7 @@ public final class VehicleIncidentAggregator {
             IObsStore obsStore,
             String[] explicitLanes,
             Set<String> allowedLaneFilter,
-            Set<String> knownLaneUids,
+            LaneTopology laneTopology,
             Instant start,
             Instant end,
             VehicleIncidentSpec spec,
@@ -1355,7 +1427,7 @@ public final class VehicleIncidentAggregator {
             Map<String, String> ocrLaneByObsId,
             Set<String> ocrMatchedObsIds
     ) {
-        Map<BigId, String> ocrStreamToLane = findVehicleOcrStreams(db, explicitLanes, allowedLaneFilter, knownLaneUids);
+        Map<BigId, String> ocrStreamToLane = findVehicleOcrStreams(db, explicitLanes, allowedLaneFilter, laneTopology);
         if (ocrStreamToLane.isEmpty()) {
             return;
         }
@@ -1422,6 +1494,7 @@ public final class VehicleIncidentAggregator {
             IObsSystemDatabase db,
             IObsStore obsStore,
             String[] explicitLanes,
+            LaneTopology laneTopology,
             Instant start,
             Instant end,
             Set<String> targetObsIds,
@@ -1432,7 +1505,7 @@ public final class VehicleIncidentAggregator {
         if (missingOcrObsIds.isEmpty() || missingOcrObsIds.size() > 64) {
             return;
         }
-        Map<BigId, String> ocrStreamToLane = findVehicleOcrStreams(db, explicitLanes, null, Set.of());
+        Map<BigId, String> ocrStreamToLane = findVehicleOcrStreams(db, explicitLanes, null, laneTopology);
         if (ocrStreamToLane.isEmpty()) {
             return;
         }
@@ -1484,7 +1557,7 @@ public final class VehicleIncidentAggregator {
             IObsSystemDatabase db,
             String[] explicitLanes,
             Set<String> allowedLaneFilter,
-            Set<String> knownLaneUids
+            LaneTopology laneTopology
     ) {
         Map<BigId, String> ocrStreamToLane = new LinkedHashMap<>();
         if (db.getDataStreamStore() == null) {
@@ -1501,7 +1574,7 @@ public final class VehicleIncidentAggregator {
                         return;
                     }
                     String sysUid = info.getSystemID().getUniqueID();
-                    String laneUid = resolveOwningLaneUid(sysUid, knownLaneUids);
+                    String laneUid = resolveOwningLaneUid(sysUid, laneTopology);
                     if (allowedLaneFilter != null && !allowedLaneFilter.contains(laneUid)
                             && !allowedLaneFilter.contains(sysUid)) {
                         return;
@@ -2045,59 +2118,140 @@ public final class VehicleIncidentAggregator {
         return List.copyOf(parsed);
     }
 
-    private static Map<String, String> discoverLaneNames(OSCARServiceModule module, IObsSystemDatabase db) {
+    private record LaneTopology(
+            Map<String, String> laneNamesByUid,
+            Map<String, String> memberToLaneUid
+    ) {}
+
+    private static LaneTopology discoverLaneTopology(OSCARServiceModule module, IObsSystemDatabase db) {
         Map<String, String> names = new LinkedHashMap<>();
+        Map<String, String> memberToLane = new LinkedHashMap<>();
         if (module != null && module.getParentHub() != null && module.getParentHub().getModuleRegistry() != null) {
             for (IModule<?> mod : module.getParentHub().getModuleRegistry().getLoadedModules()) {
                 if (mod instanceof LaneSystem lane && lane.getUniqueIdentifier() != null && !lane.getUniqueIdentifier().isBlank()) {
                     String uid = lane.getUniqueIdentifier().trim();
                     String name = (lane.getName() != null && !lane.getName().isBlank()) ? lane.getName().trim() : uid;
                     names.put(uid, name);
+                    try {
+                        for (ISystemDriver member : lane.getMembers().values()) {
+                            if (member != null && member.getUniqueIdentifier() != null && !member.getUniqueIdentifier().isBlank()) {
+                                memberToLane.put(member.getUniqueIdentifier().trim(), uid);
+                            }
+                        }
+                    } catch (Exception ignored) {
+                    }
                 }
             }
         }
         if (db != null && db.getSystemDescStore() != null) {
-            try (var sysStream = db.getSystemDescStore().select(
+            Map<String, String> uidByBigIdKey = new LinkedHashMap<>();
+            Map<String, BigId> idByUid = new LinkedHashMap<>();
+            try (var sysStream = db.getSystemDescStore().selectEntries(
                     new org.sensorhub.api.datastore.system.SystemFilter.Builder().build())) {
-                sysStream.forEach(sys -> {
+                sysStream.forEach(entry -> {
+                    var sys = entry.getValue();
                     if (sys == null || sys.getUniqueIdentifier() == null || sys.getUniqueIdentifier().isBlank()) {
                         return;
                     }
                     String uid = sys.getUniqueIdentifier().trim();
-                    if (uid.contains(":lane:") || uid.startsWith("urn:oscar:lane:")) {
+                    BigId sysId = entry.getKey() != null ? entry.getKey().getInternalID() : null;
+                    if (sysId != null) {
+                        uidByBigIdKey.put(bigIdLookupKey(sysId), uid);
+                        idByUid.putIfAbsent(uid, sysId);
+                    }
+                    BigId parentId = sysId != null ? safeGetParentSystemId(db, sysId) : null;
+                    boolean looksLikeLaneSystem = parentId == null
+                            && !uid.contains(":sensor:")
+                            && !uid.contains(":process:")
+                            && (uid.contains(":lane:") || uid.startsWith("urn:oscar:lane:") || uid.contains(":system:lane"));
+                    if (looksLikeLaneSystem) {
                         String name = (sys.getName() != null && !sys.getName().isBlank()) ? sys.getName().trim() : uid;
                         names.putIfAbsent(uid, name);
                     }
                 });
             } catch (Exception ignored) {
             }
+
+            // Walk parent links so member sensors (e.g. urn:osh:sensor:rapiscan:lane-41) map to parent LaneSystem
+            for (Map.Entry<String, BigId> entry : idByUid.entrySet()) {
+                String childUid = entry.getKey();
+                if (names.containsKey(childUid) || memberToLane.containsKey(childUid)) {
+                    continue;
+                }
+                BigId cur = safeGetParentSystemId(db, entry.getValue());
+                int hops = 0;
+                while (cur != null && hops++ < 4) {
+                    String parentUid = uidByBigIdKey.get(bigIdLookupKey(cur));
+                    if (parentUid != null && names.containsKey(parentUid)) {
+                        memberToLane.put(childUid, parentUid);
+                        break;
+                    }
+                    cur = safeGetParentSystemId(db, cur);
+                }
+            }
         }
-        return names;
+        return new LaneTopology(names, memberToLane);
     }
 
-    private static String resolveOwningLaneUid(String systemUid, Collection<String> knownLaneUids) {
+    private static BigId safeGetParentSystemId(IObsSystemDatabase db, BigId systemId) {
+        if (db == null || db.getSystemDescStore() == null || systemId == null) {
+            return null;
+        }
+        try {
+            return db.getSystemDescStore().getParent(systemId);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String resolveOwningLaneUid(String systemUid, LaneTopology topology) {
         if (systemUid == null || systemUid.isBlank()) {
             return "";
         }
         String trimmed = systemUid.trim();
-        if (knownLaneUids != null) {
-            if (knownLaneUids.contains(trimmed)) {
-                return trimmed;
-            }
-            for (String laneUid : knownLaneUids) {
-                if (trimmed.startsWith(laneUid + ":")) {
-                    return laneUid;
-                }
+        if (topology == null) {
+            return trimmed;
+        }
+        Map<String, String> laneNames = topology.laneNamesByUid();
+        if (laneNames.containsKey(trimmed)) {
+            return trimmed;
+        }
+        String mappedParent = topology.memberToLaneUid().get(trimmed);
+        if (mappedParent != null && !mappedParent.isBlank()) {
+            return mappedParent;
+        }
+        for (String laneUid : laneNames.keySet()) {
+            if (trimmed.startsWith(laneUid + ":")) {
+                return laneUid;
             }
         }
-        return trimmed;
+        // Deterministic trailing lane-slug fallback (e.g. urn:osh:sensor:rapiscan:lane-41 -> urn:osh:system:lane:lane-41)
+        String uniqueSlugMatch = null;
+        for (String laneUid : laneNames.keySet()) {
+            int lastColon = laneUid.lastIndexOf(':');
+            if (lastColon < 0 || lastColon + 1 >= laneUid.length()) {
+                continue;
+            }
+            String slug = laneUid.substring(lastColon + 1);
+            if (slug.length() < 3) {
+                continue;
+            }
+            if (trimmed.endsWith(":" + slug) || trimmed.contains(":" + slug + ":")) {
+                if (uniqueSlugMatch != null && !uniqueSlugMatch.equals(laneUid)) {
+                    uniqueSlugMatch = null;
+                    break;
+                }
+                uniqueSlugMatch = laneUid;
+            }
+        }
+        return uniqueSlugMatch != null ? uniqueSlugMatch : trimmed;
     }
 
     private static LaneStreamMetadata resolveAdHocStreamMetadata(
             IObsSystemDatabase db,
             IdEncoder dsIdEncoder,
             BigId dsId,
-            Map<String, String> laneNamesByUid
+            LaneTopology topology
     ) {
         if (db == null || dsId == null || db.getDataStreamStore() == null) {
             return null;
@@ -2107,8 +2261,8 @@ public final class VehicleIncidentAggregator {
             return null;
         }
         String sysUid = info.getSystemID() != null ? nonNull(info.getSystemID().getUniqueID()) : "";
-        String laneUid = resolveOwningLaneUid(sysUid, laneNamesByUid.keySet());
-        String laneName = laneNamesByUid.getOrDefault(laneUid, laneUid);
+        String laneUid = resolveOwningLaneUid(sysUid, topology);
+        String laneName = topology != null ? topology.laneNamesByUid().getOrDefault(laneUid, laneUid) : laneUid;
         DataComponent struct = info.getRecordStructure();
         return new LaneStreamMetadata(
                 laneUid,

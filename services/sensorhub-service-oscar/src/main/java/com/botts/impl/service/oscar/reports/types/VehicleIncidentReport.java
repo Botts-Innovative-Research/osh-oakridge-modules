@@ -92,6 +92,16 @@ public class VehicleIncidentReport extends Report {
         } catch (RuntimeException e) {
             throw new DataStoreException("Invalid Vehicle Incident report specification", e);
         }
+        if (format != ReportFormat.JSON && spec.includeProfiles()) {
+            spec = new VehicleIncidentSpec(
+                    spec.rawVehicleId(),
+                    spec.normalizedVehicleId(),
+                    spec.matchMode(),
+                    spec.laneUIDs(),
+                    false,
+                    spec.federatedPasses()
+            );
+        }
 
         VehicleIncidentData data = VehicleIncidentAggregator.queryVehicleIncident(
                 module,
@@ -228,7 +238,7 @@ public class VehicleIncidentReport extends Report {
                 pdf.drawSectionHeader(
                         "Per-Pass Peak Radiation Comparison",
                         "Peak gamma gross counts (bars by alarm outcome) and peak neutron counts (right axis) across passes",
-                        245f
+                        285f
                 );
 
                 List<String> categories = new ArrayList<>(passes.size());
@@ -239,7 +249,7 @@ public class VehicleIncidentReport extends Report {
 
                 for (int i = 0; i < passes.size(); i++) {
                     VehiclePassRecord p = passes.get(i);
-                    String shortLane = p.laneName().isBlank() ? p.laneUid() : p.laneName();
+                    String shortLane = humanizeLaneDisplay(p.laneName(), p.laneUid());
                     if (shortLane.length() > 16) {
                         shortLane = shortLane.substring(0, 15) + ".";
                     }
@@ -522,13 +532,15 @@ public class VehicleIncidentReport extends Report {
                 String isoFlag = "container".equalsIgnoreCase(ocr.idType())
                         ? (ocr.checksumValid() ? "ISO 6346 valid" : "ISO checksum unverified")
                         : "Plate / Fleet ID";
+                String formattedOcrValue = VehicleIncidentAggregator.formatVehicleIdDisplay(
+                        ocr.value(), ocr.normalizedValue());
                 rows.add(List.of(
                         passTag,
                         nodeLane,
                         formatShortIso(ocr.frameTimeIso()),
                         "Camera OCR",
-                        ocr.cameraUid().isEmpty() ? "PP-OCRv3" : ocr.cameraUid(),
-                        ocr.value() + " (" + ocr.idType() + ")",
+                        formatCameraSource(ocr.cameraUid()),
+                        formattedOcrValue + " (" + ocr.idType() + ")",
                         "Confidence: " + conf + " | " + isoFlag + " | Reads: " + ocr.readCount()
                 ));
             }
@@ -594,11 +606,50 @@ public class VehicleIncidentReport extends Report {
     }
 
     private static String formatNodeAndLane(VehiclePassRecord pass, boolean showNode) {
-        String lane = pass.laneName().isEmpty() ? pass.laneUid() : pass.laneName();
+        String lane = humanizeLaneDisplay(pass.laneName(), pass.laneUid());
         if (showNode && !pass.nodeId().isEmpty()) {
             return pass.nodeId() + " / " + lane + (pass.occupancyCount() > 0 ? ("\nOcc #" + pass.occupancyCount()) : "");
         }
         return lane + (pass.occupancyCount() > 0 ? ("\nOcc #" + pass.occupancyCount()) : "");
+    }
+
+    private static String humanizeLaneDisplay(String laneName, String laneUid) {
+        String candidate = (laneName != null && !laneName.isBlank())
+                ? laneName.trim()
+                : (laneUid != null ? laneUid.trim() : "");
+        if (candidate.isEmpty()) {
+            return "Unknown Lane";
+        }
+        if (!candidate.startsWith("urn:")) {
+            return candidate;
+        }
+        int lastColon = candidate.lastIndexOf(':');
+        if (lastColon >= 0 && lastColon + 1 < candidate.length()) {
+            return candidate.substring(lastColon + 1);
+        }
+        return candidate;
+    }
+
+    private static String formatCameraSource(String cameraUid) {
+        if (cameraUid == null || cameraUid.isBlank()) {
+            return "PP-OCRv3";
+        }
+        String trimmed = cameraUid.trim();
+        if (!trimmed.startsWith("urn:")) {
+            return trimmed;
+        }
+        String[] parts = trimmed.split(":");
+        if (parts.length >= 2) {
+            String tail = parts[parts.length - 1];
+            String prev = parts[parts.length - 2];
+            if (tail.matches("^[0-9]+$") && !prev.isBlank() && !"lane".equalsIgnoreCase(prev) && !"sensor".equalsIgnoreCase(prev)) {
+                return "Camera " + tail + " (" + prev + ")";
+            }
+            if (!tail.isBlank()) {
+                return "Camera " + tail;
+            }
+        }
+        return trimmed;
     }
 
     private static String formatTransitWindowAndElapsed(VehiclePassRecord pass, Instant firstPassInstant) {
