@@ -734,6 +734,105 @@ public class VehicleIncidentSearchAndReportTest {
                         nextHeader.maxY() <= xAxisTitle.minY() - 14f));
     }
 
+    @Test
+    public void grossCountingCompletedSecondaryWithUploadedSpectrumCountsAsSpectroscopicSecondary() throws Exception {
+        var sml = new SMLHelper();
+        String laneUid = "urn:osh:system:lane:gross-sec-lane";
+        BigId laneSysId = db.getSystemDescStore().add(new SystemWrapper(
+                sml.createPhysicalSystem().uniqueID(laneUid).name("Gross Secondary Lane").build())).getInternalID();
+
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        DataComponent grossOccStruct = new OccupancyOutput(new SensorSystem()).getRecordDescription();
+        BigId occDs = db.getObservationStore().getDataStreams().add(new DataStreamInfo.Builder()
+                .withSystem(new FeatureId(laneSysId, laneUid))
+                .withName("occupancy")
+                .withRecordDescription(grossOccStruct)
+                .withRecordEncoding(new TextEncodingImpl())
+                .build()).getInternalID();
+
+        LaneSystem dummyLane = new LaneSystem();
+        dummyLane.setParentHub(hub);
+        AdjudicationControl adjControl = new AdjudicationControl(dummyLane) {};
+        Method createResultMethod = AdjudicationControl.class.getDeclaredMethod(
+                "createResultData", Adjudication.class, String.class);
+        createResultMethod.setAccessible(true);
+
+        BigId cmdStream = db.getCommandStore().getCommandStreams().add(new CommandStreamInfo.Builder()
+                .withSystem(new FeatureId(laneSysId, laneUid))
+                .withName(AdjudicationControl.NAME)
+                .withRecordDescription(adjControl.getCommandDescription())
+                .withRecordEncoding(new TextEncodingImpl())
+                .withResultDescription(adjControl.getResultDescription())
+                .withResultEncoding(new TextEncodingImpl())
+                .build()).getInternalID();
+
+        Instant baseTime = Instant.parse("2026-11-15T10:00:00Z");
+        Instant occStart = baseTime.plusSeconds(30);
+        Instant occEnd = occStart.plusSeconds(6);
+        Occupancy occ = new Occupancy.Builder()
+                .samplingTime(occEnd.getEpochSecond())
+                .occupancyCount(301)
+                .startTime(occStart.getEpochSecond())
+                .endTime(occEnd.getEpochSecond())
+                .gammaAlarm(true)
+                .neutronAlarm(false)
+                .maxGammaCount(2940)
+                .maxNeutronCount(11)
+                .adjudicatedIds(List.of("code:3"))
+                .build();
+        BigId occBigId = db.getObservationStore().add(new ObsData.Builder()
+                .withDataStream(occDs)
+                .withPhenomenonTime(occStart)
+                .withResultTime(occEnd)
+                .withResult(Occupancy.fromOccupancy(occ))
+                .build());
+        String occObsId = hub.getIdEncoders().getObsIdEncoder().encodeID(occBigId);
+
+        // Completed secondary inspection with uploaded .spe + .n42 attachments (no webIdObsIds on Occupancy)
+        Adjudication adj = new Adjudication.Builder()
+                .feedback("Handheld RIID secondary inspection confirmed I-131 patient")
+                .adjudicationCode(3)
+                .isotopes(List.of("Iodine131"))
+                .secondaryInspectionStatus(Adjudication.SecondaryInspectionStatus.COMPLETED)
+                .filePaths(List.of(
+                        "/buckets/adjudication/nimo-evidence.txt",
+                        "/buckets/adjudication/secondary-scan-i131.spe"
+                ))
+                .occupancyObsId(occObsId)
+                .vehicleId("MED-VAN-404")
+                .build();
+        recordCompletedAdjudication(cmdStream, adjControl, createResultMethod, adj, "sec-op", occEnd.plusSeconds(20));
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<String> searchResp = client.send(HttpRequest.newBuilder()
+                .uri(URI.create(bucketEndpoint + "/adjudication/vehicle-search?vehicleId=MED-VAN-404&matchMode=equals"))
+                .header("Authorization", basicAuth())
+                .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, searchResp.statusCode());
+
+        JsonObject searchJson = JsonParser.parseString(searchResp.body()).getAsJsonObject();
+        JsonObject summary = searchJson.getAsJsonObject("summary");
+        assertEquals(1, summary.get("totalPasses").getAsInt());
+        assertEquals(1, summary.get("alarmingPasses").getAsInt());
+        assertEquals(1, summary.get("spectroscopicPasses").getAsInt());
+
+        DataComponent cmdDesc = reportControl.getCommandDescription().copy();
+        String adjJsonPath = submitReport(
+                cmdDesc,
+                405,
+                ReportCmdType.ADJUDICATION_JSON,
+                baseTime,
+                baseTime.plusSeconds(600),
+                laneUid
+        );
+        try (InputStream in = readReportObject(adjJsonPath)) {
+            JsonObject adjReportJson = JsonParser.parseString(new String(in.readAllBytes(), StandardCharsets.UTF_8)).getAsJsonObject();
+            JsonObject adjSummary = adjReportJson.getAsJsonObject("summary");
+            assertEquals(1L, adjSummary.get("secondaryInspectionsCompleted").getAsLong());
+            assertEquals(1L, adjSummary.get("spectroscopicSecondaries").getAsLong());
+        }
+    }
+
     private void recordCompletedAdjudication(
             BigId cmdStreamId,
             AdjudicationControl adjControl,

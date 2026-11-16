@@ -103,6 +103,19 @@ public final class VehicleIncidentAggregator {
     private static final String VEHICLE_OCR_OUTPUT_NAME = "vehicleOcr";
     private static final String DEF_VEHICLE_OCR = RADHelper.getRadUri("VehicleOCR");
     private static final String DEF_VEHICLE_ID = RADHelper.getRadUri("VehicleID");
+    private static final String WEBID_OUTPUT_NAME = "webIdAnalysis";
+    private static final String DEF_WEBID_ANALYSIS = RADHelper.getRadUri("WebIDAnalysis");
+    private static final int PROFILE_LOAD_PARALLELISM = 4;
+    private static final java.util.concurrent.atomic.AtomicInteger PROFILE_WORKER_SEQ =
+            new java.util.concurrent.atomic.AtomicInteger();
+    private static final java.util.concurrent.ExecutorService PROFILE_LOAD_EXECUTOR =
+            java.util.concurrent.Executors.newFixedThreadPool(PROFILE_LOAD_PARALLELISM, runnable -> {
+                Thread t = new Thread(
+                        runnable,
+                        "oscar-vehicle-profile-" + PROFILE_WORKER_SEQ.incrementAndGet());
+                t.setDaemon(true);
+                return t;
+            });
 
     private VehicleIncidentAggregator() {}
 
@@ -488,7 +501,7 @@ public final class VehicleIncidentAggregator {
             if (pass.emlAutoReleased()) {
                 emlAutoCount++;
             }
-            if (SYSTEM_TYPE_SPECTROSCOPIC.equalsIgnoreCase(pass.systemType()) || !pass.webIdAnalyses().isEmpty()) {
+            if (isSpectroscopicOrSecondaryPass(pass)) {
                 specCount++;
             }
             distinctLanes.add(nonNull(pass.nodeId()) + "|" + nonNull(pass.laneUid()));
@@ -788,8 +801,11 @@ public final class VehicleIncidentAggregator {
             }
         }
 
+        Set<BigId> webIdDataStreamIds = decodedWebIdByEncodedId.isEmpty()
+                ? Set.of()
+                : findWebIdStreams(db, explicitLanes);
         Map<String, IObsData> loadedWebIds = batchLoadObservations(
-                obsStore, decodedWebIdByEncodedId, Set.of());
+                obsStore, decodedWebIdByEncodedId, webIdDataStreamIds);
         Map<String, WebIdSummary> webIdByEncodedId = new HashMap<>();
         for (Map.Entry<String, BigId> wEntry : decodedWebIdByEncodedId.entrySet()) {
             String wEncoded = wEntry.getKey();
@@ -844,8 +860,8 @@ public final class VehicleIncidentAggregator {
                 fallbackLaneByObsId
         );
 
-        Map<String, Set<BigId>> gammaStreamsByLane = new HashMap<>();
-        Map<String, Set<BigId>> neutronStreamsByLane = new HashMap<>();
+        Map<String, Set<BigId>> gammaStreamsByLane = new java.util.concurrent.ConcurrentHashMap<>();
+        Map<String, Set<BigId>> neutronStreamsByLane = new java.util.concurrent.ConcurrentHashMap<>();
 
         // 6. Assemble VehiclePassRecord for every matched occupancy (or fallback adjudication/OCR record)
         List<VehiclePassRecord> results = new ArrayList<>(targetObsIds.size());
@@ -1080,6 +1096,8 @@ public final class VehicleIncidentAggregator {
                     .thenComparing(p -> nonNull(p.laneUid()))
                     .thenComparingInt(VehiclePassRecord::occupancyCount));
             int firstProfileIdx = Math.max(0, results.size() - MAX_PROFILED_PASSES);
+            record ProfileTaskSpec(int index, VehiclePassRecord rec, Instant pStart, Instant pEnd) {}
+            List<ProfileTaskSpec> tasks = new ArrayList<>();
             for (int i = firstProfileIdx; i < results.size(); i++) {
                 VehiclePassRecord rec = results.get(i);
                 if (rec.laneUid() == null || rec.laneUid().isBlank()
@@ -1094,46 +1112,38 @@ public final class VehicleIncidentAggregator {
                 } catch (Exception ignored) {
                     continue;
                 }
+                gammaStreamsByLane.computeIfAbsent(
+                        rec.laneUid(), k -> resolveObservedPropertyStreams(db, k, RADHelper.DEF_GAMMA));
+                neutronStreamsByLane.computeIfAbsent(
+                        rec.laneUid(), k -> resolveObservedPropertyStreams(db, k, RADHelper.DEF_NEUTRON));
+                tasks.add(new ProfileTaskSpec(i, rec, pStart, pEnd));
+            }
+            if (tasks.size() == 1) {
+                ProfileTaskSpec task = tasks.get(0);
                 List<ProfileSample> profile = loadRadiationProfileSamples(
-                        db, obsStore, rec.laneUid(), pStart, pEnd, gammaStreamsByLane, neutronStreamsByLane);
+                        db, obsStore, task.rec().laneUid(), task.pStart(), task.pEnd(),
+                        gammaStreamsByLane, neutronStreamsByLane);
                 if (!profile.isEmpty()) {
-                    results.set(i, new VehiclePassRecord(
-                            rec.nodeId(),
-                            rec.nodeName(),
-                            rec.federatedRemote(),
-                            rec.laneUid(),
-                            rec.laneName(),
-                            rec.datastreamId(),
-                            rec.occupancyObsId(),
-                            rec.occupancyCount(),
-                            rec.systemType(),
-                            rec.startTimeIso(),
-                            rec.endTimeIso(),
-                            rec.samplingTimeIso(),
-                            rec.durationSeconds(),
-                            rec.gammaAlarm(),
-                            rec.neutronAlarm(),
-                            rec.alarmCategoryCode(),
-                            rec.alarmStatusLabel(),
-                            rec.emlAutoReleased(),
-                            rec.maxGammaCount(),
-                            rec.maxNeutronCount(),
-                            rec.neutronBackground(),
-                            rec.vehicleId(),
-                            rec.normalizedVehicleId(),
-                            rec.vehicleIdSource(),
-                            rec.ocr(),
-                            rec.adjudications(),
-                            rec.latestAdjudication(),
-                            rec.emlDecision(),
-                            rec.emlSourceType(),
-                            rec.emlNormProbPct(),
-                            rec.emlThreatProbPct(),
-                            rec.webIdAnalyses(),
-                            rec.confirmedIsotopes(),
-                            rec.videoPaths(),
-                            profile
-                    ));
+                    results.set(task.index(), withRadiationProfile(task.rec(), profile));
+                }
+            } else if (tasks.size() > 1) {
+                List<java.util.concurrent.CompletableFuture<List<ProfileSample>>> futures = new ArrayList<>(tasks.size());
+                for (ProfileTaskSpec task : tasks) {
+                    futures.add(java.util.concurrent.CompletableFuture.supplyAsync(
+                            () -> loadRadiationProfileSamples(
+                                    db, obsStore, task.rec().laneUid(), task.pStart(), task.pEnd(),
+                                    gammaStreamsByLane, neutronStreamsByLane),
+                            PROFILE_LOAD_EXECUTOR));
+                }
+                for (int t = 0; t < tasks.size(); t++) {
+                    try {
+                        List<ProfileSample> profile = futures.get(t).get(15, java.util.concurrent.TimeUnit.SECONDS);
+                        if (profile != null && !profile.isEmpty()) {
+                            ProfileTaskSpec task = tasks.get(t);
+                            results.set(task.index(), withRadiationProfile(task.rec(), profile));
+                        }
+                    } catch (Exception ignored) {
+                    }
                 }
             }
         }
@@ -1598,6 +1608,73 @@ public final class VehicleIncidentAggregator {
             b.withSystems().withUniqueIDs(explicitLanes).includeMembers(true).done();
         }
         return b.build();
+    }
+
+    private static Set<BigId> findWebIdStreams(IObsSystemDatabase db, String[] explicitLanes) {
+        if (db == null || db.getDataStreamStore() == null) {
+            return Set.of();
+        }
+        Set<BigId> ids = new LinkedHashSet<>();
+        for (boolean byOutputName : List.of(true, false)) {
+            DataStreamFilter.Builder b = new DataStreamFilter.Builder();
+            if (byOutputName) {
+                b.withOutputNames(WEBID_OUTPUT_NAME);
+            } else {
+                b.withObservedProperties(DEF_WEBID_ANALYSIS);
+            }
+            if (explicitLanes != null && explicitLanes.length > 0) {
+                b.withSystems().withUniqueIDs(explicitLanes).includeMembers(true).done();
+            }
+            try (var stream = db.getDataStreamStore().selectKeys(b.build())) {
+                stream.forEach(key -> {
+                    if (key != null && key.getInternalID() != null) {
+                        ids.add(key.getInternalID());
+                    }
+                });
+            } catch (Exception ignored) {
+            }
+        }
+        return Set.copyOf(ids);
+    }
+
+    private static VehiclePassRecord withRadiationProfile(VehiclePassRecord rec, List<ProfileSample> profile) {
+        return new VehiclePassRecord(
+                rec.nodeId(),
+                rec.nodeName(),
+                rec.federatedRemote(),
+                rec.laneUid(),
+                rec.laneName(),
+                rec.datastreamId(),
+                rec.occupancyObsId(),
+                rec.occupancyCount(),
+                rec.systemType(),
+                rec.startTimeIso(),
+                rec.endTimeIso(),
+                rec.samplingTimeIso(),
+                rec.durationSeconds(),
+                rec.gammaAlarm(),
+                rec.neutronAlarm(),
+                rec.alarmCategoryCode(),
+                rec.alarmStatusLabel(),
+                rec.emlAutoReleased(),
+                rec.maxGammaCount(),
+                rec.maxNeutronCount(),
+                rec.neutronBackground(),
+                rec.vehicleId(),
+                rec.normalizedVehicleId(),
+                rec.vehicleIdSource(),
+                rec.ocr(),
+                rec.adjudications(),
+                rec.latestAdjudication(),
+                rec.emlDecision(),
+                rec.emlSourceType(),
+                rec.emlNormProbPct(),
+                rec.emlThreatProbPct(),
+                rec.webIdAnalyses(),
+                rec.confirmedIsotopes(),
+                rec.videoPaths(),
+                profile
+        );
     }
 
     private static OcrMatchSummary toOcrSummary(VehicleOcrResult ocr, String candNorm) {
@@ -2662,6 +2739,24 @@ public final class VehicleIncidentAggregator {
             });
         } catch (Exception ignored) {
         }
+    }
+
+    public static boolean isSpectroscopicOrSecondaryPass(VehiclePassRecord pass) {
+        if (pass == null) {
+            return false;
+        }
+        if (SYSTEM_TYPE_SPECTROSCOPIC.equalsIgnoreCase(pass.systemType()) || !pass.webIdAnalyses().isEmpty()) {
+            return true;
+        }
+        if (pass.adjudications() != null) {
+            for (AdjudicationDetailRecord adj : pass.adjudications()) {
+                if (ReportDataAggregator.isSpectroscopicSecondaryRecord(adj)
+                        || ReportDataAggregator.hasSpectroscopicAttachment(adj)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static String defaultIfBlank(String s, String fallback) {

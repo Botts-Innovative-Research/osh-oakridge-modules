@@ -1823,6 +1823,69 @@ public final class ReportDataAggregator {
         );
     }
 
+    private static final String[] SPECTROSCOPIC_FILE_SUFFIXES = {
+            ".spe", ".n42", ".n42.xml", ".xml", ".spc", ".chn",
+            ".pcf", ".cnf", ".tka", ".mca", ".phd", ".lzs", ".mps", ".aram"
+    };
+
+    public static boolean isSpectroscopicFilePath(String path) {
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        int end = path.length();
+        int qIdx = path.indexOf('?');
+        if (qIdx >= 0 && qIdx < end) {
+            end = qIdx;
+        }
+        int hIdx = path.indexOf('#');
+        if (hIdx >= 0 && hIdx < end) {
+            end = hIdx;
+        }
+        while (end > 0 && Character.isWhitespace(path.charAt(end - 1))) {
+            end--;
+        }
+        int start = 0;
+        while (start < end && Character.isWhitespace(path.charAt(start))) {
+            start++;
+        }
+        int len = end - start;
+        if (len < 4) {
+            return false;
+        }
+        for (String suffix : SPECTROSCOPIC_FILE_SUFFIXES) {
+            int sLen = suffix.length();
+            if (len > sLen && path.regionMatches(true, end - sLen, suffix, 0, sLen)) {
+                return true;
+            }
+        }
+        if (len > 15 && path.regionMatches(true, end - 4, ".txt", 0, 4)) {
+            int slashIdx = Math.max(path.lastIndexOf('/', end - 1), path.lastIndexOf('\\', end - 1));
+            int nameStart = slashIdx >= start ? slashIdx + 1 : start;
+            return (end - nameStart) > 15 && path.regionMatches(true, nameStart, "foreground-", 0, 11);
+        }
+        return false;
+    }
+
+    public static boolean hasSpectroscopicAttachment(AdjudicationDetailRecord rec) {
+        if (rec == null || rec.filePaths() == null || rec.filePaths().isEmpty()) {
+            return false;
+        }
+        for (String fp : rec.filePaths()) {
+            if (isSpectroscopicFilePath(fp)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean isSpectroscopicSecondaryRecord(AdjudicationDetailRecord rec) {
+        if (rec == null) {
+            return false;
+        }
+        return "COMPLETED".equalsIgnoreCase(rec.secondaryInspectionStatus())
+                && hasSpectroscopicAttachment(rec);
+    }
+
     private static String nonNull(String s) {
         return s == null ? "" : s;
     }

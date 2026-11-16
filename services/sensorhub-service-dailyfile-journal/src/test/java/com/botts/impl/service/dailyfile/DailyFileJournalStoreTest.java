@@ -1996,6 +1996,55 @@ public class DailyFileJournalStoreTest {
         }
     }
 
+    @Test
+    public void interruptedRolloverDoesNotLatchTerminalLaneFailureAndBufferedPublishPreservesLargeDay()
+            throws Exception {
+        String laneId = "urn:osh:system:lane:lane-17";
+        Instant day1Start = clock.instant();
+        LocalDate day1 = LocalDate.ofInstant(day1Start, NEW_YORK);
+        Instant day2Start = day1.plusDays(1).atStartOfDay(NEW_YORK).toInstant().plusSeconds(1);
+        LocalDate day2 = LocalDate.ofInstant(day2Start, NEW_YORK);
+
+        try (DailyFileJournalStore store = newStore()) {
+            try (DailyFileWriterHandle writer = store.openWriter(laneId)) {
+                for (int i = 0; i < 3000; i++) {
+                    writer.append(new DailyFileRecord(
+                            day1Start.plusMillis(i),
+                            "GB,000188,000206,000262,000243," + i));
+                }
+
+                // Simulate Rapiscan heartbeat timeout interrupting the reader thread right as
+                // midnight rollover enters FileChannel I/O.
+                Thread.currentThread().interrupt();
+                try {
+                    assertThrows(IOException.class,
+                            () -> writer.append(new DailyFileRecord(day2Start, "GB,000190,000200,000250,000240,rollover")));
+                } finally {
+                    Thread.interrupted();
+                }
+            }
+
+            // Reconnected writer must not fail with "Daily-file journal lane is failed".
+            clock.set(day2Start.plusSeconds(2));
+            try (DailyFileWriterHandle reconnected = store.openWriter(laneId)) {
+                reconnected.append(new DailyFileRecord(day2Start.plusSeconds(1), "GB,000191,000201,000251,000241,reconnected"));
+            }
+
+            store.maintainBoundedLifecycle(clock.instant());
+            clock.set(day2.plusDays(1).atStartOfDay(NEW_YORK).toInstant().plusSeconds(1));
+            store.sealCompletedDays(clock.instant());
+
+            List<String> day1Lines = Files.readAllLines(publishedFile(laneId, day1), StandardCharsets.UTF_8);
+            assertEquals(3000, day1Lines.size());
+            assertTrue(day1Lines.get(0).startsWith("GB,000188,000206,000262,000243,0,"));
+            assertTrue(day1Lines.get(2999).startsWith("GB,000188,000206,000262,000243,2999,"));
+
+            List<String> day2Lines = Files.readAllLines(publishedFile(laneId, day2), StandardCharsets.UTF_8);
+            assertEquals(1, day2Lines.size());
+            assertTrue(day2Lines.get(0).startsWith("GB,000191,000201,000251,000241,reconnected,"));
+        }
+    }
+
     private static final class MutableClock extends Clock {
         private volatile Instant instant;
 

@@ -89,6 +89,8 @@ public class AdjudicationReport extends Report {
         long realAlarmCount = 0L;
         long innocentOrAutoCount = 0L;
         long falseAlarmCount = 0L;
+        long secondaryCompletedCount = 0L;
+        long spectroscopicSecondaryCount = 0L;
         Set<String> activeIsotopesAcrossScope = new LinkedHashSet<>();
 
         for (String laneUid : targetLanes) {
@@ -96,6 +98,15 @@ public class AdjudicationReport extends Report {
                     ReportDataAggregator.aggregateAdjudicationsForLane(module, laneUid, start, end);
             summariesByLane.put(laneUid, summary);
             grandTotalRecords += summary.totalRecords();
+
+            for (ReportDataAggregator.AdjudicationDetailRecord rec : summary.structuredRecords()) {
+                if ("COMPLETED".equalsIgnoreCase(rec.secondaryInspectionStatus())) {
+                    secondaryCompletedCount++;
+                }
+                if (ReportDataAggregator.isSpectroscopicSecondaryRecord(rec)) {
+                    spectroscopicSecondaryCount++;
+                }
+            }
 
             for (ReportDataAggregator.DispositionCodeSpec spec : summary.dispositionSpecs()) {
                 long c = summary.countsByCode().getOrDefault(spec.code(), 0L);
@@ -135,6 +146,8 @@ public class AdjudicationReport extends Report {
                         realAlarmCount,
                         innocentOrAutoCount,
                         falseAlarmCount,
+                        secondaryCompletedCount,
+                        spectroscopicSecondaryCount,
                         activeIsotopesAcrossScope,
                         allLanesSummary,
                         summariesByLane,
@@ -149,6 +162,8 @@ public class AdjudicationReport extends Report {
                         realAlarmCount,
                         innocentOrAutoCount,
                         falseAlarmCount,
+                        secondaryCompletedCount,
+                        spectroscopicSecondaryCount,
                         activeIsotopesAcrossScope,
                         allLanesSummary,
                         summariesByLane,
@@ -163,6 +178,7 @@ public class AdjudicationReport extends Report {
                         realAlarmCount,
                         innocentOrAutoCount,
                         falseAlarmCount,
+                        spectroscopicSecondaryCount,
                         activeIsotopesAcrossScope,
                         allLanesSummary,
                         summariesByLane,
@@ -183,6 +199,7 @@ public class AdjudicationReport extends Report {
             long realAlarmCount,
             long innocentOrAutoCount,
             long falseAlarmCount,
+            long spectroscopicSecondaryCount,
             Set<String> activeIsotopesAcrossScope,
             ReportDataAggregator.AdjudicationLaneSummary allLanesSummary,
             Map<String, ReportDataAggregator.AdjudicationLaneSummary> summariesByLane,
@@ -190,6 +207,8 @@ public class AdjudicationReport extends Report {
             ReportDataAggregator.UpSetCoOccurrenceData upSetData
     ) throws IOException {
         NumberFormat intFmt = NumberFormat.getIntegerInstance(Locale.US);
+        String laneSubtitle = targetLanes.size() + (targetLanes.size() == 1 ? " lane" : " lanes")
+                + (spectroscopicSecondaryCount > 0L ? " · " + intFmt.format(spectroscopicSecondaryCount) + " spec. sec." : "");
 
         try (PdfDocumentBuilder pdf = new PdfDocumentBuilder("Adjudication Report", nodeId)) {
             pdf.drawReportBanner(new PdfDocumentBuilder.HeaderMetadata(
@@ -205,7 +224,7 @@ public class AdjudicationReport extends Report {
                     new PdfDocumentBuilder.KpiCard(
                             "Total Adjudications",
                             intFmt.format(grandTotalRecords),
-                            targetLanes.size() + (targetLanes.size() == 1 ? " lane" : " lanes"),
+                            laneSubtitle,
                             PdfDocumentBuilder.ACCENT_BLUE
                     ),
                     new PdfDocumentBuilder.KpiCard(
@@ -358,6 +377,8 @@ public class AdjudicationReport extends Report {
             long realAlarmCount,
             long innocentOrAutoCount,
             long falseAlarmCount,
+            long secondaryCompletedCount,
+            long spectroscopicSecondaryCount,
             Set<String> activeIsotopesAcrossScope,
             ReportDataAggregator.AdjudicationLaneSummary allLanesSummary,
             Map<String, ReportDataAggregator.AdjudicationLaneSummary> summariesByLane,
@@ -382,6 +403,8 @@ public class AdjudicationReport extends Report {
             jw.name("realAlarms").value(realAlarmCount);
             jw.name("innocentAndAutomated").value(innocentOrAutoCount);
             jw.name("falseAlarms").value(falseAlarmCount);
+            jw.name("secondaryInspectionsCompleted").value(secondaryCompletedCount);
+            jw.name("spectroscopicSecondaries").value(spectroscopicSecondaryCount);
             jw.name("identifiedIsotopes").beginArray();
             for (String iso : activeIsotopesAcrossScope) {
                 jw.value(iso);
@@ -464,6 +487,8 @@ public class AdjudicationReport extends Report {
             long realAlarmCount,
             long innocentOrAutoCount,
             long falseAlarmCount,
+            long secondaryCompletedCount,
+            long spectroscopicSecondaryCount,
             Set<String> activeIsotopesAcrossScope,
             ReportDataAggregator.AdjudicationLaneSummary allLanesSummary,
             Map<String, ReportDataAggregator.AdjudicationLaneSummary> summariesByLane,
@@ -502,6 +527,8 @@ public class AdjudicationReport extends Report {
                 List.of(CellValue.text("Real Alarms (Codes 1-2)"), CellValue.integer(realAlarmCount)),
                 List.of(CellValue.text("Innocent & EML Automated"), CellValue.integer(innocentOrAutoCount)),
                 List.of(CellValue.text("False Alarms (Codes 6-8)"), CellValue.integer(falseAlarmCount)),
+                List.of(CellValue.text("Secondary Inspections Completed"), CellValue.integer(secondaryCompletedCount)),
+                List.of(CellValue.text("Spectroscopic Secondaries"), CellValue.integer(spectroscopicSecondaryCount)),
                 List.of(CellValue.text("Identified Isotopes"), CellValue.text(activeIsotopesAcrossScope.isEmpty() ? "None" : String.join(", ", activeIsotopesAcrossScope)))
         );
 

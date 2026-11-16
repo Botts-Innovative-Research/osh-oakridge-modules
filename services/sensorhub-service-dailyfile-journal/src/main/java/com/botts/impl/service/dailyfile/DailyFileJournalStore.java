@@ -13,7 +13,9 @@ import org.slf4j.Logger;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.ClosedByInterruptException;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
@@ -1961,6 +1963,7 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
         long recordCount = 0;
         try (FileChannel out = FileChannel.open(csvPartial, StandardOpenOption.CREATE_NEW,
                 StandardOpenOption.WRITE)) {
+            ByteBuffer writeBuffer = ByteBuffer.allocate(64 * 1024);
             for (Path segment : segments) {
                 recordCount += scanRecords(segment, record -> {
                     if (record.timestamp().isBefore(window.startInclusive)
@@ -1970,8 +1973,27 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
                     }
                     byte[] line = renderLegacyLine(record);
                     digest.update(line);
-                    writeFully(out, ByteBuffer.wrap(line));
+                    if (line.length > writeBuffer.capacity()) {
+                        if (writeBuffer.position() > 0) {
+                            writeBuffer.flip();
+                            writeFully(out, writeBuffer);
+                            writeBuffer.clear();
+                        }
+                        writeFully(out, ByteBuffer.wrap(line));
+                    } else {
+                        if (writeBuffer.remaining() < line.length) {
+                            writeBuffer.flip();
+                            writeFully(out, writeBuffer);
+                            writeBuffer.clear();
+                        }
+                        writeBuffer.put(line);
+                    }
                 });
+            }
+            if (writeBuffer.position() > 0) {
+                writeBuffer.flip();
+                writeFully(out, writeBuffer);
+                writeBuffer.clear();
             }
             out.force(true);
         } catch (Exception e) {
@@ -2055,24 +2077,34 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
             validateHeader(channel, segment);
             channel.position(SEGMENT_HEADER_BYTES);
             long recordCount = 0;
-            ByteBuffer frameHeader = ByteBuffer.allocate(FRAME_HEADER_BYTES);
-            while (channel.position() < segmentSize) {
-                long frameStart = channel.position();
+            long logicalOffset = SEGMENT_HEADER_BYTES;
+            ByteBuffer readBuffer = ByteBuffer.allocate(64 * 1024);
+            readBuffer.flip();
+            while (logicalOffset < segmentSize) {
+                long frameStart = logicalOffset;
                 if (segmentSize - frameStart < FRAME_HEADER_BYTES)
                     throw new IOException("Journal segment has a truncated frame header: "
                             + segment + " at offset " + frameStart);
-                frameHeader.clear();
-                readFully(channel, frameHeader);
-                frameHeader.flip();
-                int length = frameHeader.getInt();
-                int expectedCrc = frameHeader.getInt();
+                ensureBuffered(channel, readBuffer, FRAME_HEADER_BYTES, segmentSize - logicalOffset);
+                int length = readBuffer.getInt();
+                int expectedCrc = readBuffer.getInt();
+                logicalOffset += FRAME_HEADER_BYTES;
                 validatePayloadLength(length, segment, frameStart);
-                if (segmentSize - channel.position() < length)
+                if (segmentSize - logicalOffset < length)
                     throw new IOException("Journal segment has a truncated frame payload: "
                             + segment + " at offset " + frameStart);
-                ByteBuffer payload = ByteBuffer.allocate(length);
-                readFully(channel, payload);
-                byte[] bytes = payload.array();
+                byte[] bytes = new byte[length];
+                if (length <= readBuffer.capacity()) {
+                    ensureBuffered(channel, readBuffer, length, segmentSize - logicalOffset);
+                    readBuffer.get(bytes);
+                } else {
+                    int buffered = readBuffer.remaining();
+                    if (buffered > 0) {
+                        readBuffer.get(bytes, 0, buffered);
+                    }
+                    readFully(channel, ByteBuffer.wrap(bytes, buffered, length - buffered));
+                }
+                logicalOffset += length;
                 if (crc32c(bytes) != expectedCrc)
                     throw new IOException("CRC mismatch in " + segment + " at offset " + frameStart);
                 visitor.visit(decodeRecord(bytes));
@@ -2082,6 +2114,22 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
                 throw new IOException("Journal segment changed while it was being scanned: " + segment);
             return recordCount;
         }
+    }
+
+    private static void ensureBuffered(FileChannel channel, ByteBuffer buffer, int needed,
+                                       long maxRemainingInSegment) throws IOException {
+        if (buffer.remaining() >= needed)
+            return;
+        buffer.compact();
+        long maxToRead = Math.min(buffer.remaining(), maxRemainingInSegment - buffer.position());
+        if (maxToRead < buffer.remaining()) {
+            buffer.limit(buffer.position() + (int) Math.max(0L, maxToRead));
+        }
+        while (buffer.position() < needed) {
+            if (channel.read(buffer) < 0)
+                throw new EOFException("Unexpected end of journal segment");
+        }
+        buffer.flip();
     }
 
     @FunctionalInterface
@@ -2489,6 +2537,16 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
                 .startsWith("windows");
     }
 
+    private static boolean isThreadInterruption(Throwable error) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            if (current instanceof ClosedByInterruptException
+                    || current instanceof InterruptedIOException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static void writeFully(FileChannel channel, ByteBuffer buffer) throws IOException {
         while (buffer.hasRemaining()) {
             if (channel.write(buffer) < 0)
@@ -2708,7 +2766,7 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
                     try {
                         openDay(recordDay, record.timestamp());
                     } catch (IOException e) {
-                        terminalFailure = e;
+                        handleRecoverableInterruptionOrLatchFailure(e);
                         throw e;
                     }
                 } else if (!recordDay.equals(activeDay)) {
@@ -2720,7 +2778,7 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
                         sealActiveDay();
                         openDay(recordDay, record.timestamp());
                     } catch (IOException e) {
-                        terminalFailure = e;
+                        handleRecoverableInterruptionOrLatchFailure(e);
                         throw e;
                     }
                 }
@@ -2745,7 +2803,7 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
                     if (unforcedRecords >= maxUnforcedRecords || unforcedBytes >= maxUnforcedBytes)
                         force();
                 } catch (IOException e) {
-                    terminalFailure = e;
+                    handleRecoverableInterruptionOrLatchFailure(e);
                     throw e;
                 }
             } finally {
@@ -2766,11 +2824,34 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
                     if (activeDay != null && activeDay.isBefore(currentDay))
                         sealActiveDay();
                 } catch (IOException e) {
-                    terminalFailure = e;
+                    handleRecoverableInterruptionOrLatchFailure(e);
                     throw e;
                 }
             } finally {
                 lock.unlock();
+            }
+        }
+
+        private void handleRecoverableInterruptionOrLatchFailure(IOException failure) {
+            if (isThreadInterruption(failure)) {
+                if (channel != null) {
+                    try {
+                        channel.close();
+                    } catch (IOException suppressed) {
+                        failure.addSuppressed(suppressed);
+                    }
+                    channel = null;
+                }
+                openSegment = null;
+                activeDay = null;
+                dayDirectory = null;
+                segmentRecords = 0;
+                unforcedRecords = 0;
+                unforcedBytes = 0;
+                dayRecords = 0;
+                Thread.currentThread().interrupt();
+            } else {
+                terminalFailure = failure;
             }
         }
 
@@ -2897,7 +2978,6 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
                 channel = null;
                 sealSegmentFile(openSegment);
             }
-            publishDay(laneId, day, completedDayDirectory);
             openSegment = null;
             activeDay = null;
             dayDirectory = null;
@@ -2905,6 +2985,7 @@ public final class DailyFileJournalStore implements IDailyFileJournalService, Au
             unforcedRecords = 0;
             unforcedBytes = 0;
             dayRecords = 0;
+            publishDay(laneId, day, completedDayDirectory);
         }
 
         private long countRecords(List<Path> segments) throws IOException {
