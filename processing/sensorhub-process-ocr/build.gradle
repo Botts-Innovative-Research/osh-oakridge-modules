@@ -18,6 +18,13 @@ test {
     useJUnitPlatform()
 }
 
+tasks.register('runBatchBench', JavaExec) {
+    group = 'verification'
+    description = 'Runs OcrBatchBenchRunner against an ISO 6346 container video JSONL manifest'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.botts.impl.process.ocr.cli.OcrBatchBenchRunner'
+}
+
 ext.pom >>= {
     developers {
         developer {

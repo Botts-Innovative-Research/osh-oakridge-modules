@@ -30,8 +30,10 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.stream.JsonWriter;
+import net.opengis.swe.v20.DataArray;
 import net.opengis.swe.v20.DataBlock;
 import net.opengis.swe.v20.DataComponent;
+import net.opengis.swe.v20.SimpleComponent;
 import org.sensorhub.api.command.ICommandData;
 import org.sensorhub.api.command.ICommandStatus;
 import org.sensorhub.api.common.BigId;
@@ -274,8 +276,20 @@ public final class VehicleIncidentAggregator {
             MatchMode matchMode,
             String laneUIDs,
             boolean includeProfiles,
-            List<VehiclePassRecord> federatedPasses
-    ) {}
+            List<VehiclePassRecord> federatedPasses,
+            List<String> profileOnlyObsIds
+    ) {
+        public VehicleIncidentSpec(
+                String rawVehicleId,
+                String normalizedVehicleId,
+                MatchMode matchMode,
+                String laneUIDs,
+                boolean includeProfiles,
+                List<VehiclePassRecord> federatedPasses
+        ) {
+            this(rawVehicleId, normalizedVehicleId, matchMode, laneUIDs, includeProfiles, federatedPasses, List.of());
+        }
+    }
 
     public record VehicleIncidentData(
             String nodeId,
@@ -631,116 +645,126 @@ public final class VehicleIncidentAggregator {
             });
         }
 
-        // Determine candidate lanes for CommandStatusStore scan
-        Set<String> candidateLanes = new LinkedHashSet<>();
-        if (explicitLanes.length > 0) {
-            candidateLanes.addAll(List.of(explicitLanes));
-        } else {
-            candidateLanes.addAll(laneNamesByUid.keySet());
-            candidateLanes.addAll(occStreamByLaneUid.keySet());
-            if (db.getCommandStore() != null && db.getCommandStore().getCommandStreams() != null) {
-                try (var csStream = db.getCommandStore().getCommandStreams().select(
-                        new CommandStreamFilter.Builder().build())) {
-                    csStream.forEach(cs -> {
-                        if (isAdjudicationCommandStream(cs)
-                                && cs.getSystemID() != null
-                                && cs.getSystemID().getUniqueID() != null) {
-                            candidateLanes.add(cs.getSystemID().getUniqueID());
-                        }
-                    });
-                } catch (Exception ignored) {
-                }
-            }
-        }
+        boolean profileOnlyFastPath = spec.profileOnlyObsIds() != null && !spec.profileOnlyObsIds().isEmpty();
 
-        // 2. Scan completed Adjudications across candidate lanes in a single CommandStatusStore pass
-        // without issuing per-row CommandStore SQL queries or JSON parses on non-matching rows
-        Map<Integer, DispositionCodeSpec> dispSpecs = buildDispositionSpecs(module);
+        Map<Integer, DispositionCodeSpec> dispSpecs = profileOnlyFastPath ? Map.of() : buildDispositionSpecs(module);
         Map<String, List<RawAdjudicationEntry>> rawAdjudicationsByObsId = new LinkedHashMap<>();
         Map<String, String> cmdStreamToLaneByKey = new HashMap<>();
         Set<String> adjMatchedObsIds = new LinkedHashSet<>();
-
-        scanAdjudicationsSinglePass(
-                db,
-                candidateLanes,
-                start,
-                end,
-                spec,
-                rawAdjudicationsByObsId,
-                cmdStreamToLaneByKey,
-                adjMatchedObsIds
-        );
-
-        // 3. Scan vehicleOcr observations across candidate lanes (with CQL2 normalizedValue pushdown!)
         Map<String, OcrMatchSummary> ocrByObsId = new LinkedHashMap<>();
         Map<String, String> ocrLaneByObsId = new HashMap<>();
         Set<String> ocrMatchedObsIds = new LinkedHashSet<>();
-
-        scanVehicleOcrObservations(
-                db,
-                obsStore,
-                explicitLanes,
-                allowedLaneFilter,
-                laneTopology,
-                start,
-                end,
-                spec,
-                ocrByObsId,
-                ocrLaneByObsId,
-                ocrMatchedObsIds
-        );
-
-        // Union matched occupancy observation IDs according to MatchMode
         Set<String> targetObsIds = new LinkedHashSet<>();
-        if (spec.matchMode() == MatchMode.IS_EMPTY) {
-            // IS_EMPTY on search endpoint returns empty unless caller inspects event table locally
-            return LocalPassSelection.EMPTY;
-        } else if (spec.matchMode() == MatchMode.NOT_EQUALS) {
-            targetObsIds.addAll(adjMatchedObsIds);
-            targetObsIds.addAll(ocrMatchedObsIds);
-            // Exclude any occupancy whose authoritative adjudication matches queryNormalized
-            targetObsIds.removeIf(obsId -> {
-                List<RawAdjudicationEntry> adjs = rawAdjudicationsByObsId.get(obsId);
-                if (adjs != null) {
-                    for (RawAdjudicationEntry a : adjs) {
-                        String norm = normalizeVehicleId(a.vehicleId());
-                        if (!norm.isEmpty() && norm.equals(spec.normalizedVehicleId())) {
-                            return true;
-                        }
+        int preTruncatedCount = 0;
+
+        if (profileOnlyFastPath) {
+            for (String obsId : spec.profileOnlyObsIds()) {
+                if (obsId != null && !obsId.isBlank() && !"-".equals(obsId)) {
+                    targetObsIds.add(obsId.trim());
+                    if (targetObsIds.size() >= MAX_PROFILED_PASSES) {
+                        break;
                     }
                 }
-                OcrMatchSummary ocr = ocrByObsId.get(obsId);
-                return ocr != null && ocr.normalizedValue().equals(spec.normalizedVehicleId());
-            });
+            }
+            if (targetObsIds.isEmpty()) {
+                return LocalPassSelection.EMPTY;
+            }
         } else {
-            targetObsIds.addAll(adjMatchedObsIds);
-            targetObsIds.addAll(ocrMatchedObsIds);
-        }
+            // Determine candidate lanes for CommandStatusStore scan
+            Set<String> candidateLanes = new LinkedHashSet<>();
+            if (explicitLanes.length > 0) {
+                candidateLanes.addAll(List.of(explicitLanes));
+            } else {
+                candidateLanes.addAll(laneNamesByUid.keySet());
+                candidateLanes.addAll(occStreamByLaneUid.keySet());
+                if (db.getCommandStore() != null && db.getCommandStore().getCommandStreams() != null) {
+                    try (var csStream = db.getCommandStore().getCommandStreams().select(
+                            new CommandStreamFilter.Builder().build())) {
+                        csStream.forEach(cs -> {
+                            if (isAdjudicationCommandStream(cs)
+                                    && cs.getSystemID() != null
+                                    && cs.getSystemID().getUniqueID() != null) {
+                                candidateLanes.add(cs.getSystemID().getUniqueID());
+                            }
+                        });
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
 
-        if (targetObsIds.isEmpty()) {
-            return LocalPassSelection.EMPTY;
-        }
+            // 2. Scan completed Adjudications across candidate lanes in a single CommandStatusStore pass
+            // without issuing per-row CommandStore SQL queries or JSON parses on non-matching rows
+            scanAdjudicationsSinglePass(
+                    db,
+                    candidateLanes,
+                    start,
+                    end,
+                    spec,
+                    rawAdjudicationsByObsId,
+                    cmdStreamToLaneByKey,
+                    adjMatchedObsIds
+            );
 
-        // Bound matched occupancy IDs to the most recent cappedLimit records before issuing
-        // per-occupancy observation point-loads across multi-day Parquet archives.
-        int preTruncatedCount = 0;
-        if (cappedLimit > 0 && targetObsIds.size() > cappedLimit) {
-            List<String> rankedObsIds = new ArrayList<>(targetObsIds);
-            rankedObsIds.sort(Comparator
-                    .<String, Instant>comparing(
-                            obsId -> estimateObsRecencyInstant(obsId, rawAdjudicationsByObsId, ocrByObsId),
-                            Comparator.reverseOrder())
-                    .thenComparing(
-                            Comparator.comparingLong((String obsId) -> safeDecodedObsIdLong(obsIdEncoder, obsId))
-                                    .reversed()));
-            preTruncatedCount = rankedObsIds.size() - cappedLimit;
-            targetObsIds = new LinkedHashSet<>(rankedObsIds.subList(0, cappedLimit));
-        }
+            // 3. Scan vehicleOcr observations across candidate lanes (with CQL2 normalizedValue pushdown!)
+            scanVehicleOcrObservations(
+                    db,
+                    obsStore,
+                    explicitLanes,
+                    allowedLaneFilter,
+                    laneTopology,
+                    start,
+                    end,
+                    spec,
+                    ocrByObsId,
+                    ocrLaneByObsId,
+                    ocrMatchedObsIds
+            );
 
-        // If any occupancy matched via adjudication, also fetch its OCR record (even if OCR read a slightly different string!)
-        // so the operator can see OCR vs operator-entered ID side-by-side!
-        enrichMissingOcrForMatchedOccupancies(
-                db, obsStore, explicitLanes, laneTopology, start, end, targetObsIds, ocrByObsId);
+            // Union matched occupancy observation IDs according to MatchMode
+            if (spec.matchMode() == MatchMode.IS_EMPTY) {
+                // IS_EMPTY on search endpoint returns empty unless caller inspects event table locally
+                return LocalPassSelection.EMPTY;
+            } else if (spec.matchMode() == MatchMode.NOT_EQUALS) {
+                targetObsIds.addAll(adjMatchedObsIds);
+                targetObsIds.addAll(ocrMatchedObsIds);
+                // Exclude any occupancy whose authoritative adjudication matches queryNormalized
+                targetObsIds.removeIf(obsId -> {
+                    List<RawAdjudicationEntry> adjs = rawAdjudicationsByObsId.get(obsId);
+                    if (adjs != null) {
+                        for (RawAdjudicationEntry a : adjs) {
+                            String norm = normalizeVehicleId(a.vehicleId());
+                            if (!norm.isEmpty() && norm.equals(spec.normalizedVehicleId())) {
+                                return true;
+                            }
+                        }
+                    }
+                    OcrMatchSummary ocr = ocrByObsId.get(obsId);
+                    return ocr != null && ocr.normalizedValue().equals(spec.normalizedVehicleId());
+                });
+            } else {
+                targetObsIds.addAll(adjMatchedObsIds);
+                targetObsIds.addAll(ocrMatchedObsIds);
+            }
+
+            if (targetObsIds.isEmpty()) {
+                return LocalPassSelection.EMPTY;
+            }
+
+            // Bound matched occupancy IDs to the most recent cappedLimit records before issuing
+            // per-occupancy observation point-loads across multi-day Parquet archives.
+            if (cappedLimit > 0 && targetObsIds.size() > cappedLimit) {
+                List<String> rankedObsIds = new ArrayList<>(targetObsIds);
+                rankedObsIds.sort(Comparator
+                        .<String, Instant>comparing(
+                                obsId -> estimateObsRecencyInstant(obsId, rawAdjudicationsByObsId, ocrByObsId),
+                                Comparator.reverseOrder())
+                        .thenComparing(
+                                Comparator.comparingLong((String obsId) -> safeDecodedObsIdLong(obsIdEncoder, obsId))
+                                        .reversed()));
+                preTruncatedCount = rankedObsIds.size() - cappedLimit;
+                targetObsIds = new LinkedHashSet<>(rankedObsIds.subList(0, cappedLimit));
+            }
+        }
 
         // 4. Batch-load matched Occupancy observations via exact multi-ID catalog pruning
         // scoped to occupancy datastreams so cold Parquet lookups run in a single DuckDB query
@@ -785,27 +809,48 @@ public final class VehicleIncidentAggregator {
                         dsMeta != null ? dsMeta.occRecordStructure() : null,
                         obs.getResult());
                 parsedOccupancies.put(entry.getKey(), occ);
-                for (String webIdObsId : occ.getWebIdObsIds()) {
-                    if (webIdObsId == null || webIdObsId.isBlank()) {
-                        continue;
-                    }
-                    try {
-                        BigId wBig = obsIdEncoder.decodeID(webIdObsId);
-                        if (wBig != null) {
-                            decodedWebIdByEncodedId.putIfAbsent(webIdObsId, wBig);
+                if (!profileOnlyFastPath) {
+                    for (String webIdObsId : occ.getWebIdObsIds()) {
+                        if (webIdObsId == null || webIdObsId.isBlank()) {
+                            continue;
                         }
-                    } catch (Exception ignored) {
+                        try {
+                            BigId wBig = obsIdEncoder.decodeID(webIdObsId);
+                            if (wBig != null) {
+                                decodedWebIdByEncodedId.putIfAbsent(webIdObsId, wBig);
+                            }
+                        } catch (Exception ignored) {
+                        }
                     }
                 }
             } catch (Exception ignored) {
             }
         }
 
-        Set<BigId> webIdDataStreamIds = decodedWebIdByEncodedId.isEmpty()
+        // Enrich missing OCR records strictly across the lanes + narrow occupancy time span of
+        // adjudicated passes that lacked an OCR hit during step 3.
+        if (!profileOnlyFastPath) {
+            enrichMissingOcrForMatchedOccupancies(
+                    db,
+                    obsStore,
+                    explicitLanes,
+                    laneTopology,
+                    start,
+                    end,
+                    targetObsIds,
+                    loadedOccupancies,
+                    parsedOccupancies,
+                    occStreamByDsKey,
+                    ocrByObsId
+            );
+        }
+
+        Set<BigId> webIdDataStreamIds = (profileOnlyFastPath || decodedWebIdByEncodedId.isEmpty())
                 ? Set.of()
                 : findWebIdStreams(db, explicitLanes);
-        Map<String, IObsData> loadedWebIds = batchLoadObservations(
-                obsStore, decodedWebIdByEncodedId, webIdDataStreamIds);
+        Map<String, IObsData> loadedWebIds = profileOnlyFastPath
+                ? Map.of()
+                : batchLoadObservations(obsStore, decodedWebIdByEncodedId, webIdDataStreamIds);
         Map<String, WebIdSummary> webIdByEncodedId = new HashMap<>();
         for (Map.Entry<String, BigId> wEntry : decodedWebIdByEncodedId.entrySet()) {
             String wEncoded = wEntry.getKey();
@@ -847,21 +892,23 @@ public final class VehicleIncidentAggregator {
         // 5b. Materialize AdjudicationDetailRecord entries ONLY for matched targetObsIds (avoiding N+1 CommandStore queries)
         Map<String, List<AdjudicationDetailRecord>> adjudicationsByObsId = new LinkedHashMap<>();
         Map<String, String> fallbackLaneByObsId = new HashMap<>();
-        materializeMatchedAdjudications(
-                db,
-                targetObsIds,
-                rawAdjudicationsByObsId,
-                loadedOccupancies,
-                occStreamByDsKey,
-                ocrLaneByObsId,
-                cmdStreamToLaneByKey,
-                dispSpecs,
-                adjudicationsByObsId,
-                fallbackLaneByObsId
-        );
+        if (!profileOnlyFastPath) {
+            materializeMatchedAdjudications(
+                    db,
+                    targetObsIds,
+                    rawAdjudicationsByObsId,
+                    loadedOccupancies,
+                    occStreamByDsKey,
+                    ocrLaneByObsId,
+                    cmdStreamToLaneByKey,
+                    dispSpecs,
+                    adjudicationsByObsId,
+                    fallbackLaneByObsId
+            );
+        }
 
-        Map<String, Set<BigId>> gammaStreamsByLane = new java.util.concurrent.ConcurrentHashMap<>();
-        Map<String, Set<BigId>> neutronStreamsByLane = new java.util.concurrent.ConcurrentHashMap<>();
+        Map<String, Map<String, DetectorStreamSpec>> detectorStreamsByLane =
+                new java.util.concurrent.ConcurrentHashMap<>();
 
         // 6. Assemble VehiclePassRecord for every matched occupancy (or fallback adjudication/OCR record)
         List<VehiclePassRecord> results = new ArrayList<>(targetObsIds.size());
@@ -892,6 +939,10 @@ public final class VehicleIncidentAggregator {
                 effectiveRaw = formatVehicleIdDisplay(ocrVehicleRaw, ocrVehicleNorm);
                 effectiveNorm = ocrVehicleNorm;
                 vehicleSource = "ocr";
+            } else if (profileOnlyFastPath && !spec.normalizedVehicleId().isEmpty()) {
+                effectiveRaw = formatVehicleIdDisplay(spec.rawVehicleId(), spec.normalizedVehicleId());
+                effectiveNorm = spec.normalizedVehicleId();
+                vehicleSource = "none";
             } else {
                 effectiveRaw = "";
                 effectiveNorm = "";
@@ -899,7 +950,8 @@ public final class VehicleIncidentAggregator {
             }
 
             // Verify effective match (in case an earlier adjudication had a typo that was later corrected, check both chain & effective)
-            if (!matchesAnyVehicleEvidence(spec.matchMode(), spec.normalizedVehicleId(), effectiveNorm, adjs, ocr)) {
+            if (!profileOnlyFastPath
+                    && !matchesAnyVehicleEvidence(spec.matchMode(), spec.normalizedVehicleId(), effectiveNorm, adjs, ocr)) {
                 continue;
             }
 
@@ -1022,7 +1074,7 @@ public final class VehicleIncidentAggregator {
                         occ.getVideoPaths() != null ? List.copyOf(occ.getVideoPaths()) : List.of(),
                         List.of()
                 ));
-            } else {
+            } else if (!profileOnlyFastPath) {
                 // Fallback record when occupancy observation aged past retention or uses a synthetic test ID
                 String laneUid = fallbackLaneByObsId.getOrDefault(obsId, ocrLaneByObsId.getOrDefault(obsId, ""));
                 if (allowedLaneFilter != null && !laneUid.isBlank() && !allowedLaneFilter.contains(laneUid)) {
@@ -1112,17 +1164,15 @@ public final class VehicleIncidentAggregator {
                 } catch (Exception ignored) {
                     continue;
                 }
-                gammaStreamsByLane.computeIfAbsent(
-                        rec.laneUid(), k -> resolveObservedPropertyStreams(db, k, RADHelper.DEF_GAMMA));
-                neutronStreamsByLane.computeIfAbsent(
-                        rec.laneUid(), k -> resolveObservedPropertyStreams(db, k, RADHelper.DEF_NEUTRON));
+                detectorStreamsByLane.computeIfAbsent(
+                        rec.laneUid(), k -> resolveDetectorStreamsForLane(db, k));
                 tasks.add(new ProfileTaskSpec(i, rec, pStart, pEnd));
             }
             if (tasks.size() == 1) {
                 ProfileTaskSpec task = tasks.get(0);
                 List<ProfileSample> profile = loadRadiationProfileSamples(
                         db, obsStore, task.rec().laneUid(), task.pStart(), task.pEnd(),
-                        gammaStreamsByLane, neutronStreamsByLane);
+                        detectorStreamsByLane);
                 if (!profile.isEmpty()) {
                     results.set(task.index(), withRadiationProfile(task.rec(), profile));
                 }
@@ -1132,7 +1182,7 @@ public final class VehicleIncidentAggregator {
                     futures.add(java.util.concurrent.CompletableFuture.supplyAsync(
                             () -> loadRadiationProfileSamples(
                                     db, obsStore, task.rec().laneUid(), task.pStart(), task.pEnd(),
-                                    gammaStreamsByLane, neutronStreamsByLane),
+                                    detectorStreamsByLane),
                             PROFILE_LOAD_EXECUTOR));
                 }
                 for (int t = 0; t < tasks.size(); t++) {
@@ -1508,14 +1558,54 @@ public final class VehicleIncidentAggregator {
             Instant start,
             Instant end,
             Set<String> targetObsIds,
+            Map<String, IObsData> loadedOccupancies,
+            Map<String, Occupancy> parsedOccupancies,
+            Map<String, LaneStreamMetadata> occStreamByDsKey,
             Map<String, OcrMatchSummary> ocrByObsId
     ) {
         Set<String> missingOcrObsIds = new LinkedHashSet<>(targetObsIds);
         missingOcrObsIds.removeAll(ocrByObsId.keySet());
-        if (missingOcrObsIds.isEmpty() || missingOcrObsIds.size() > 64) {
+        if (missingOcrObsIds.isEmpty() || missingOcrObsIds.size() > MAX_PROFILED_PASSES) {
             return;
         }
-        Map<BigId, String> ocrStreamToLane = findVehicleOcrStreams(db, explicitLanes, null, laneTopology);
+
+        Set<String> scopedLanes = new LinkedHashSet<>();
+        Instant minOccStart = null;
+        Instant maxOccEnd = null;
+        boolean hasUnloadedObsId = false;
+
+        for (String obsId : missingOcrObsIds) {
+            IObsData occObs = loadedOccupancies.get(obsId);
+            Occupancy occ = parsedOccupancies.get(obsId);
+            if (occObs == null) {
+                hasUnloadedObsId = true;
+                continue;
+            }
+            LaneStreamMetadata meta = occStreamByDsKey.get(bigIdLookupKey(occObs.getDataStreamID()));
+            if (meta != null && meta.laneUid() != null && !meta.laneUid().isBlank()) {
+                scopedLanes.add(meta.laneUid());
+            } else {
+                hasUnloadedObsId = true;
+            }
+            Instant occStart = occ != null
+                    ? epochSecondsToInstant(occ.getStartTime(), occObs.getPhenomenonTime())
+                    : occObs.getPhenomenonTime();
+            Instant occEnd = occ != null
+                    ? epochSecondsToInstant(occ.getEndTime(), occObs.getResultTime())
+                    : occObs.getResultTime();
+            if (occStart != null && (minOccStart == null || occStart.isBefore(minOccStart))) {
+                minOccStart = occStart;
+            }
+            if (occEnd != null && (maxOccEnd == null || occEnd.isAfter(maxOccEnd))) {
+                maxOccEnd = occEnd;
+            }
+        }
+
+        String[] effectiveLanes = (!hasUnloadedObsId && !scopedLanes.isEmpty())
+                ? scopedLanes.toArray(String[]::new)
+                : explicitLanes;
+        Set<String> allowedLanes = (!hasUnloadedObsId && !scopedLanes.isEmpty()) ? scopedLanes : null;
+        Map<BigId, String> ocrStreamToLane = findVehicleOcrStreams(db, effectiveLanes, allowedLanes, laneTopology);
         if (ocrStreamToLane.isEmpty()) {
             return;
         }
@@ -1531,11 +1621,13 @@ public final class VehicleIncidentAggregator {
         ObsFilter.Builder fb = new ObsFilter.Builder()
                 .withDataStreams(ocrStreamToLane.keySet())
                 .withCQLFilter(String.join(" OR ", safeClauses));
-        if (start != null && end != null) {
-            Instant widenedStart = start.isBefore(Instant.MIN.plusSeconds(3_600L)) ? start : start.minusSeconds(3_600L);
-            Instant widenedEnd = end.isAfter(Instant.MAX.minusSeconds(300L)) ? end : end.plusSeconds(300L);
+        Instant effStart = (!hasUnloadedObsId && minOccStart != null) ? minOccStart : start;
+        Instant effEnd = (!hasUnloadedObsId && maxOccEnd != null) ? maxOccEnd : end;
+        if (effStart != null && effEnd != null) {
+            Instant widenedStart = effStart.isBefore(Instant.MIN.plusSeconds(60L)) ? effStart : effStart.minusSeconds(60L);
+            Instant widenedEnd = effEnd.isAfter(Instant.MAX.minusSeconds(300L)) ? effEnd : effEnd.plusSeconds(300L);
             fb.withPhenomenonTimeDuring(widenedStart, widenedEnd);
-            fb.withResultTimeDuring(start, widenedEnd);
+            fb.withResultTimeDuring(widenedStart, widenedEnd);
         }
         try (var stream = obsStore.select(fb.build())) {
             stream.forEach(obs -> {
@@ -1692,14 +1784,90 @@ public final class VehicleIncidentAggregator {
         );
     }
 
+    private record DetectorStreamSpec(
+            BigId streamId,
+            int fixedGammaAtomIdx,
+            int fixedNeutronAtomIdx,
+            int[] fallbackGammaPillarIdxs,
+            int[] fallbackGammaIntervalIdxs,
+            int[] fallbackNeutronPillarIdxs,
+            int trailingGammaOffsetFromEnd,
+            int trailingNeutronOffsetFromEnd
+    ) {
+        int extractGamma(DataBlock block) {
+            if (block == null) {
+                return 0;
+            }
+            int atomCount = block.getAtomCount();
+            if (fixedGammaAtomIdx >= 0 && fixedGammaAtomIdx < atomCount) {
+                int gross = safeNonNegativeCount(block, fixedGammaAtomIdx);
+                if (gross > 0) {
+                    return gross;
+                }
+                if (fallbackGammaPillarIdxs.length > 0) {
+                    int pillarSum = sumAtoms(block, fallbackGammaPillarIdxs, atomCount);
+                    if (pillarSum > 0) {
+                        return pillarSum;
+                    }
+                }
+                if (fallbackGammaIntervalIdxs.length > 0) {
+                    return sumAtoms(block, fallbackGammaIntervalIdxs, atomCount);
+                }
+                return 0;
+            }
+            if (trailingGammaOffsetFromEnd > 0 && atomCount > trailingGammaOffsetFromEnd) {
+                return safeNonNegativeCount(block, atomCount - trailingGammaOffsetFromEnd);
+            }
+            return 0;
+        }
+
+        int extractNeutron(DataBlock block) {
+            if (block == null) {
+                return 0;
+            }
+            int atomCount = block.getAtomCount();
+            if (fixedNeutronAtomIdx >= 0 && fixedNeutronAtomIdx < atomCount) {
+                int gross = safeNonNegativeCount(block, fixedNeutronAtomIdx);
+                if (gross > 0 || fallbackNeutronPillarIdxs.length == 0) {
+                    return gross;
+                }
+                return sumAtoms(block, fallbackNeutronPillarIdxs, atomCount);
+            }
+            if (trailingNeutronOffsetFromEnd > 0 && atomCount > trailingNeutronOffsetFromEnd) {
+                return safeNonNegativeCount(block, atomCount - trailingNeutronOffsetFromEnd);
+            }
+            return 0;
+        }
+    }
+
+    private static int safeNonNegativeCount(DataBlock block, int atomIdx) {
+        try {
+            double v = block.getDoubleValue(atomIdx);
+            if (Double.isFinite(v) && v >= 0.0 && v < 100_000_000.0) {
+                return (int) Math.round(v);
+            }
+        } catch (Exception ignored) {
+        }
+        return 0;
+    }
+
+    private static int sumAtoms(DataBlock block, int[] indices, int atomCount) {
+        int sum = 0;
+        for (int idx : indices) {
+            if (idx >= 0 && idx < atomCount) {
+                sum += safeNonNegativeCount(block, idx);
+            }
+        }
+        return sum;
+    }
+
     private static List<ProfileSample> loadRadiationProfileSamples(
             IObsSystemDatabase db,
             IObsStore obsStore,
             String laneUid,
             Instant startInst,
             Instant endInst,
-            Map<String, Set<BigId>> gammaStreamsByLane,
-            Map<String, Set<BigId>> neutronStreamsByLane
+            Map<String, Map<String, DetectorStreamSpec>> detectorStreamsByLane
     ) {
         Instant qStart = startInst.minusMillis(1_000L);
         Instant qEnd = endInst.plusMillis(2_000L);
@@ -1707,50 +1875,45 @@ public final class VehicleIncidentAggregator {
             qEnd = qStart.plusSeconds(600L);
         }
         Instant rEnd = qEnd.isAfter(Instant.MAX.minusSeconds(60L)) ? qEnd : qEnd.plusSeconds(60L);
-        Set<BigId> gammaStreams = gammaStreamsByLane.computeIfAbsent(
-                laneUid, k -> resolveObservedPropertyStreams(db, k, RADHelper.DEF_GAMMA));
-        Set<BigId> neutronStreams = neutronStreamsByLane.computeIfAbsent(
-                laneUid, k -> resolveObservedPropertyStreams(db, k, RADHelper.DEF_NEUTRON));
-
-        Map<Long, int[]> countsByBucketMs = new LinkedHashMap<>();
-        if (!gammaStreams.isEmpty()) {
-            try (var gStream = obsStore.select(new ObsFilter.Builder()
-                    .withDataStreams(gammaStreams)
-                    .withPhenomenonTimeDuring(qStart, qEnd)
-                    .withResultTimeDuring(qStart, rEnd)
-                    .withLimit(MAX_PROFILE_SAMPLES_PER_PASS)
-                    .build())) {
-                gStream.forEach(obs -> {
-                    if (obs == null || obs.getPhenomenonTime() == null || obs.getResult() == null) {
-                        return;
-                    }
-                    long ts = obs.getPhenomenonTime().toEpochMilli();
-                    int sum = extractDetectorCountSum(obs.getResult());
-                    countsByBucketMs.computeIfAbsent(ts, k -> new int[]{0, 0})[0] = Math.max(
-                            countsByBucketMs.get(ts)[0], sum);
-                });
-            } catch (Exception ignored) {
-            }
+        Map<String, DetectorStreamSpec> specsByDsKey = detectorStreamsByLane.computeIfAbsent(
+                laneUid, k -> resolveDetectorStreamsForLane(db, k));
+        if (specsByDsKey.isEmpty()) {
+            return List.of();
         }
 
-        if (!neutronStreams.isEmpty()) {
-            try (var nStream = obsStore.select(new ObsFilter.Builder()
-                    .withDataStreams(neutronStreams)
-                    .withPhenomenonTimeDuring(qStart, qEnd)
-                    .withResultTimeDuring(qStart, rEnd)
-                    .withLimit(MAX_PROFILE_SAMPLES_PER_PASS)
-                    .build())) {
-                nStream.forEach(obs -> {
-                    if (obs == null || obs.getPhenomenonTime() == null || obs.getResult() == null) {
-                        return;
-                    }
-                    long ts = obs.getPhenomenonTime().toEpochMilli();
-                    int sum = extractDetectorCountSum(obs.getResult());
-                    countsByBucketMs.computeIfAbsent(ts, k -> new int[]{0, 0})[1] = Math.max(
-                            countsByBucketMs.get(ts)[1], sum);
-                });
-            } catch (Exception ignored) {
-            }
+        Set<BigId> streamIds = new LinkedHashSet<>(specsByDsKey.size());
+        for (DetectorStreamSpec spec : specsByDsKey.values()) {
+            streamIds.add(spec.streamId());
+        }
+
+        Map<Long, int[]> countsByBucketMs = new LinkedHashMap<>();
+        int combinedLimit = MAX_PROFILE_SAMPLES_PER_PASS * Math.max(1, streamIds.size());
+        try (var obsStream = obsStore.select(new ObsFilter.Builder()
+                .withDataStreams(streamIds)
+                .withPhenomenonTimeDuring(qStart, qEnd)
+                .withResultTimeDuring(qStart, rEnd)
+                .withLimit(combinedLimit)
+                .build())) {
+            obsStream.forEach(obs -> {
+                if (obs == null || obs.getPhenomenonTime() == null || obs.getResult() == null) {
+                    return;
+                }
+                DetectorStreamSpec spec = specsByDsKey.get(bigIdLookupKey(obs.getDataStreamID()));
+                if (spec == null) {
+                    return;
+                }
+                long ts = obs.getPhenomenonTime().toEpochMilli();
+                int[] bucket = countsByBucketMs.computeIfAbsent(ts, k -> new int[]{0, 0});
+                int g = spec.extractGamma(obs.getResult());
+                if (g > bucket[0]) {
+                    bucket[0] = g;
+                }
+                int n = spec.extractNeutron(obs.getResult());
+                if (n > bucket[1]) {
+                    bucket[1] = n;
+                }
+            });
+        } catch (Exception ignored) {
         }
 
         if (countsByBucketMs.isEmpty()) {
@@ -1769,50 +1932,146 @@ public final class VehicleIncidentAggregator {
         return List.copyOf(samples);
     }
 
-    private static Set<BigId> resolveObservedPropertyStreams(
+    private static Map<String, DetectorStreamSpec> resolveDetectorStreamsForLane(
             IObsSystemDatabase db,
-            String laneUid,
-            String observedProperty
+            String laneUid
     ) {
         if (db == null || db.getDataStreamStore() == null || laneUid == null || laneUid.isBlank()) {
-            return Set.of();
+            return Map.of();
         }
-        Set<BigId> out = new LinkedHashSet<>();
-        try (var stream = db.getDataStreamStore().selectKeys(new DataStreamFilter.Builder()
+        Map<String, DetectorStreamSpec> out = new LinkedHashMap<>();
+        try (var stream = db.getDataStreamStore().selectEntries(new DataStreamFilter.Builder()
                 .withSystems().withUniqueIDs(laneUid).includeMembers(true).done()
-                .withObservedProperties(observedProperty)
+                .withObservedProperties(RADHelper.DEF_GAMMA, RADHelper.DEF_NEUTRON)
                 .build())) {
-            stream.forEach(key -> {
-                if (key != null && key.getInternalID() != null) {
-                    out.add(key.getInternalID());
+            stream.forEach(entry -> {
+                if (entry == null || entry.getKey() == null || entry.getKey().getInternalID() == null) {
+                    return;
+                }
+                BigId dsId = entry.getKey().getInternalID();
+                DetectorStreamSpec spec = inspectDetectorStream(dsId, entry.getValue());
+                if (spec != null) {
+                    out.put(bigIdLookupKey(dsId), spec);
                 }
             });
         } catch (Exception ignored) {
         }
-        return Set.copyOf(out);
+        return Map.copyOf(out);
     }
 
-    private static int extractDetectorCountSum(DataBlock block) {
-        if (block == null || block.getAtomCount() <= 1) {
-            return 0;
+    private static DetectorStreamSpec inspectDetectorStream(BigId streamId, IDataStreamInfo info) {
+        if (streamId == null || info == null) {
+            return null;
         }
-        // Atom 0 is samplingTime; remaining integer/numeric count atoms hold pillar or gross counts
-        // Avoid double-counting if atom 1 is gross sum and remaining are pillars: take atom 1 when scalar gross count
-        try {
-            if (block.getAtomCount() == 2) {
-                return Math.max(0, block.getIntValue(1));
+        String outputName = nonNull(info.getOutputName()).trim().toLowerCase(Locale.ROOT);
+        if (outputName.contains("background")
+                || outputName.contains("n42")
+                || outputName.contains("setup")
+                || outputName.contains("occupancy")
+                || outputName.contains("alarm")
+                || outputName.contains("tamper")) {
+            return null;
+        }
+        DataComponent struct = info.getRecordStructure();
+        if (struct == null || struct.getComponentCount() <= 1) {
+            return null;
+        }
+        String structDef = nonNull(struct.getDefinition()).trim();
+        if (structDef.toLowerCase(Locale.ROOT).contains("background")
+                || structDef.toLowerCase(Locale.ROOT).contains("n42")
+                || structDef.toLowerCase(Locale.ROOT).contains("setup")) {
+            return null;
+        }
+
+        int count = struct.getComponentCount();
+        boolean hasVariableArray = false;
+        for (int i = 0; i < count; i++) {
+            DataComponent child = struct.getComponent(i);
+            if (child instanceof DataArray || !(child instanceof SimpleComponent)) {
+                hasVariableArray = true;
+                break;
             }
-            int sum = 0;
-            for (int i = 1; i < block.getAtomCount(); i++) {
-                double v = block.getDoubleValue(i);
-                if (Double.isFinite(v) && v >= 0 && v < 10_000_000) {
-                    sum += (int) Math.round(v);
+        }
+
+        if (!hasVariableArray) {
+            int fixedGammaIdx = -1;
+            int fixedNeutronIdx = -1;
+            List<Integer> gammaPillars = new ArrayList<>(4);
+            List<Integer> gammaIntervals = new ArrayList<>(4);
+            List<Integer> neutronPillars = new ArrayList<>(4);
+
+            for (int i = 0; i < count; i++) {
+                DataComponent child = struct.getComponent(i);
+                if (child == null) {
+                    continue;
+                }
+                String def = nonNull(child.getDefinition()).trim();
+                String name = nonNull(child.getName()).trim().toLowerCase(Locale.ROOT);
+                if (RADHelper.DEF_GAMMA.equals(def) || "gammagrosscount".equals(name)) {
+                    fixedGammaIdx = i;
+                } else if (RADHelper.DEF_NEUTRON.equals(def) || "neutrongrosscount".equals(name)) {
+                    fixedNeutronIdx = i;
+                } else if (name.startsWith("gammacountperinterval")) {
+                    gammaIntervals.add(i);
+                } else if (name.startsWith("gammacount") && name.length() <= "gammacount4".length()) {
+                    gammaPillars.add(i);
+                } else if (name.startsWith("neutroncount") && name.length() <= "neutroncount4".length()) {
+                    neutronPillars.add(i);
                 }
             }
-            return sum;
-        } catch (Exception e) {
-            return 0;
+
+            if (fixedGammaIdx < 0 && fixedNeutronIdx < 0 && count == 2) {
+                if (outputName.contains("gamma") || RADHelper.DEF_GAMMA.equals(structDef)) {
+                    fixedGammaIdx = 1;
+                } else if (outputName.contains("neutron") || RADHelper.DEF_NEUTRON.equals(structDef)) {
+                    fixedNeutronIdx = 1;
+                }
+            }
+            if (fixedGammaIdx < 0 && fixedNeutronIdx < 0) {
+                return null;
+            }
+            return new DetectorStreamSpec(
+                    streamId,
+                    fixedGammaIdx,
+                    fixedNeutronIdx,
+                    gammaPillars.stream().mapToInt(Integer::intValue).toArray(),
+                    gammaIntervals.stream().mapToInt(Integer::intValue).toArray(),
+                    neutronPillars.stream().mapToInt(Integer::intValue).toArray(),
+                    -1,
+                    -1
+            );
         }
+
+        // Variable-length DataRecord with trailing scalar summary fields (e.g., RS350 ForegroundOutput)
+        int trailingGammaOffset = -1;
+        int trailingNeutronOffset = -1;
+        for (int i = count - 1; i >= 0; i--) {
+            DataComponent child = struct.getComponent(i);
+            if (!(child instanceof SimpleComponent) || child instanceof DataArray) {
+                break;
+            }
+            int offsetFromEnd = count - i;
+            String def = nonNull(child.getDefinition()).trim();
+            String name = nonNull(child.getName()).trim().toLowerCase(Locale.ROOT);
+            if (RADHelper.DEF_GAMMA.equals(def) || "gammagrosscount".equals(name)) {
+                trailingGammaOffset = offsetFromEnd;
+            } else if (RADHelper.DEF_NEUTRON.equals(def) || "neutrongrosscount".equals(name)) {
+                trailingNeutronOffset = offsetFromEnd;
+            }
+        }
+        if (trailingGammaOffset < 0 && trailingNeutronOffset < 0) {
+            return null;
+        }
+        return new DetectorStreamSpec(
+                streamId,
+                -1,
+                -1,
+                new int[0],
+                new int[0],
+                new int[0],
+                trailingGammaOffset,
+                trailingNeutronOffset
+        );
     }
 
     public static void writeJsonPayload(JsonWriter jw, VehicleIncidentData data, boolean isReport) throws IOException {
@@ -2200,7 +2459,30 @@ public final class VehicleIncidentAggregator {
             Map<String, String> memberToLaneUid
     ) {}
 
+    private record CachedTopology(
+            long createdAtNano,
+            int loadedModuleCount,
+            LaneTopology topology
+    ) {}
+
+    private static final long TOPOLOGY_CACHE_TTL_NS = 30_000_000_000L;
+    private static final java.util.concurrent.ConcurrentHashMap<Integer, CachedTopology> TOPOLOGY_CACHE_BY_DB =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     private static LaneTopology discoverLaneTopology(OSCARServiceModule module, IObsSystemDatabase db) {
+        int loadedModuleCount = (module != null && module.getParentHub() != null
+                && module.getParentHub().getModuleRegistry() != null)
+                ? module.getParentHub().getModuleRegistry().getLoadedModules().size()
+                : -1;
+        int cacheKey = System.identityHashCode(db);
+        long nowNano = System.nanoTime();
+        CachedTopology cached = db != null ? TOPOLOGY_CACHE_BY_DB.get(cacheKey) : null;
+        if (cached != null
+                && cached.loadedModuleCount() == loadedModuleCount
+                && nowNano - cached.createdAtNano() < TOPOLOGY_CACHE_TTL_NS) {
+            return cached.topology();
+        }
+
         Map<String, String> names = new LinkedHashMap<>();
         Map<String, String> memberToLane = new LinkedHashMap<>();
         if (module != null && module.getParentHub() != null && module.getParentHub().getModuleRegistry() != null) {
@@ -2267,7 +2549,11 @@ public final class VehicleIncidentAggregator {
                 }
             }
         }
-        return new LaneTopology(names, memberToLane);
+        LaneTopology topology = new LaneTopology(Map.copyOf(names), Map.copyOf(memberToLane));
+        if (db != null && !names.isEmpty()) {
+            TOPOLOGY_CACHE_BY_DB.put(cacheKey, new CachedTopology(nowNano, loadedModuleCount, topology));
+        }
+        return topology;
     }
 
     private static BigId safeGetParentSystemId(IObsSystemDatabase db, BigId systemId) {

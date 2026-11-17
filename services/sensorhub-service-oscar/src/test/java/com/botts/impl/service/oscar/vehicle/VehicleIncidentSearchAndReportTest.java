@@ -833,6 +833,338 @@ public class VehicleIncidentSearchAndReportTest {
         }
     }
 
+    @Test
+    public void extractsSchemaAwareRadiationProfilesAcrossRapiscanAspectAndRs350AndSupportsProfileOnlyFastPath() throws Exception {
+        var sml = new SMLHelper();
+        RADHelper rad = new RADHelper();
+
+        // 1. Rapiscan lane (11-atom GammaOutput + 7-atom NeutronOutput with String alarmState at atom 1)
+        String rapLaneUid = "urn:osh:system:lane:rapiscan-prof-lane";
+        BigId rapLaneSysId = db.getSystemDescStore().add(new SystemWrapper(
+                sml.createPhysicalSystem().uniqueID(rapLaneUid).name("Rapiscan Profile Lane").build())).getInternalID();
+        String rapChildUid = "urn:osh:sensor:rapiscan:rapiscan-prof-lane";
+        BigId rapChildSysId = db.getSystemDescStore().add(rapLaneSysId, new SystemWrapper(
+                sml.createPhysicalSystem().uniqueID(rapChildUid).name("Rapiscan Sensor").build())).getInternalID();
+
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        DataComponent grossOccStruct = new OccupancyOutput(new SensorSystem()).getRecordDescription();
+        BigId rapOccDs = db.getObservationStore().getDataStreams().add(new DataStreamInfo.Builder()
+                .withSystem(new FeatureId(rapChildSysId, rapChildUid))
+                .withName("occupancy")
+                .withRecordDescription(grossOccStruct)
+                .withRecordEncoding(new TextEncodingImpl())
+                .build()).getInternalID();
+
+        DataComponent rapGammaStruct = rad.createRecord()
+                .name("gammaCounts")
+                .definition(RADHelper.getRadUri("Gamma"))
+                .addField("samplingTime", rad.createPrecisionTimeStamp())
+                .addField("alarmState", rad.createGammaAlarmState())
+                .addField("gammaGrossCount", rad.createGammaGrossCount())
+                .addField("gammaCount1", rad.createGammaCount(1))
+                .addField("gammaCount2", rad.createGammaCount(2))
+                .addField("gammaCount3", rad.createGammaCount(3))
+                .addField("gammaCount4", rad.createGammaCount(4))
+                .addField("gammaCountPerInterval1", rad.createGammaCountPerInterval(1))
+                .addField("gammaCountPerInterval2", rad.createGammaCountPerInterval(2))
+                .addField("gammaCountPerInterval3", rad.createGammaCountPerInterval(3))
+                .addField("gammaCountPerInterval4", rad.createGammaCountPerInterval(4))
+                .build();
+        BigId rapGammaDs = db.getObservationStore().getDataStreams().add(new DataStreamInfo.Builder()
+                .withSystem(new FeatureId(rapChildSysId, rapChildUid))
+                .withName("gammaCounts")
+                .withRecordDescription(rapGammaStruct)
+                .withRecordEncoding(new TextEncodingImpl())
+                .build()).getInternalID();
+
+        DataComponent rapNeutronStruct = rad.createRecord()
+                .name("neutronCounts")
+                .definition(RADHelper.getRadUri("neutron-counts"))
+                .addField("samplingTime", rad.createPrecisionTimeStamp())
+                .addField("alarmState", rad.createNeutronAlarmState())
+                .addField("neutronGrossCount", rad.createNeutronGrossCount())
+                .addField("neutronCount1", rad.createNeutronCount(1))
+                .addField("neutronCount2", rad.createNeutronCount(2))
+                .addField("neutronCount3", rad.createNeutronCount(3))
+                .addField("neutronCount4", rad.createNeutronCount(4))
+                .build();
+        BigId rapNeutronDs = db.getObservationStore().getDataStreams().add(new DataStreamInfo.Builder()
+                .withSystem(new FeatureId(rapChildSysId, rapChildUid))
+                .withName("neutronCounts")
+                .withRecordDescription(rapNeutronStruct)
+                .withRecordEncoding(new TextEncodingImpl())
+                .build()).getInternalID();
+
+        // 2. Aspect lane (5-atom GammaOutput with String alarmState at atom 1 and background/variance at atoms 3..4)
+        String aspLaneUid = "urn:osh:system:lane:aspect-prof-lane";
+        BigId aspLaneSysId = db.getSystemDescStore().add(new SystemWrapper(
+                sml.createPhysicalSystem().uniqueID(aspLaneUid).name("Aspect Profile Lane").build())).getInternalID();
+        BigId aspOccDs = db.getObservationStore().getDataStreams().add(new DataStreamInfo.Builder()
+                .withSystem(new FeatureId(aspLaneSysId, aspLaneUid))
+                .withName("occupancy")
+                .withRecordDescription(grossOccStruct.copy())
+                .withRecordEncoding(new TextEncodingImpl())
+                .build()).getInternalID();
+
+        DataComponent aspGammaStruct = rad.createRecord()
+                .name("gammaCounts")
+                .definition(RADHelper.getRadUri("Gamma"))
+                .addField("samplingTime", rad.createPrecisionTimeStamp())
+                .addField("alarmState", rad.createGammaAlarmState())
+                .addField("gammaGrossCount", rad.createGammaGrossCount())
+                .addField("gammaBackground", rad.createGammaBackground())
+                .addField("gammaVariance", rad.createGammaVariance())
+                .build();
+        BigId aspGammaDs = db.getObservationStore().getDataStreams().add(new DataStreamInfo.Builder()
+                .withSystem(new FeatureId(aspLaneSysId, aspLaneUid))
+                .withName("gammaCounts")
+                .withRecordDescription(aspGammaStruct)
+                .withRecordEncoding(new TextEncodingImpl())
+                .build()).getInternalID();
+
+        // 3. RS350 lane (variable-length ForegroundOutput + BackgroundOutput that must be excluded)
+        String rsLaneUid = "urn:osh:system:lane:rs350-prof-lane";
+        BigId rsLaneSysId = db.getSystemDescStore().add(new SystemWrapper(
+                sml.createPhysicalSystem().uniqueID(rsLaneUid).name("RS350 Profile Lane").build())).getInternalID();
+        BigId rsOccDs = db.getObservationStore().getDataStreams().add(new DataStreamInfo.Builder()
+                .withSystem(new FeatureId(rsLaneSysId, rsLaneUid))
+                .withName("occupancy")
+                .withRecordDescription(OccupancyExtended.createExtendedRecordStructure())
+                .withRecordEncoding(new TextEncodingImpl())
+                .build()).getInternalID();
+
+        DataComponent rsFgStruct = rad.createRecord()
+                .name("foregroundReport")
+                .definition(RADHelper.getRadUri("ForegroundReport"))
+                .addField("samplingTime", rad.createPrecisionTimeStamp())
+                .addField("duration", rad.createDuration())
+                .addField("linearSpectrumCount", rad.createArraySize("linearSpectrumCount", "linearSpectrumCount", "Linear Spectrum Count"))
+                .addField("linearSpectrum", rad.createLinearSpectrum())
+                .addField("compressedSpectrumCount", rad.createArraySize("compressedSpectrumCount", "compressedSpectrumCount", "Compressed Spectrum Count"))
+                .addField("compressedSpectrum", rad.createCompressedSpectrum())
+                .addField("gammaGrossCount", rad.createGammaGrossCount())
+                .addField("neutronGrossCount", rad.createNeutronGrossCount())
+                .addField("doseRate", rad.createDoseUSVh())
+                .build();
+        BigId rsFgDs = db.getObservationStore().getDataStreams().add(new DataStreamInfo.Builder()
+                .withSystem(new FeatureId(rsLaneSysId, rsLaneUid))
+                .withName("foregroundReport")
+                .withRecordDescription(rsFgStruct)
+                .withRecordEncoding(new TextEncodingImpl())
+                .build()).getInternalID();
+
+        DataComponent rsBgStruct = rsFgStruct.copy();
+        rsBgStruct.setName("backgroundReport");
+        rsBgStruct.setDefinition(RADHelper.getRadUri("BackgroundReport"));
+        BigId rsBgDs = db.getObservationStore().getDataStreams().add(new DataStreamInfo.Builder()
+                .withSystem(new FeatureId(rsLaneSysId, rsLaneUid))
+                .withName("backgroundReport")
+                .withRecordDescription(rsBgStruct)
+                .withRecordEncoding(new TextEncodingImpl())
+                .build()).getInternalID();
+
+        Instant t0 = Instant.parse("2026-11-16T18:00:00Z");
+
+        // Rapiscan Occupancy + 2 detector samples (sample 0: interval-only GS tick; sample 1: full Alarm 884 G / 19 N)
+        Occupancy rapOcc = new Occupancy.Builder()
+                .samplingTime(t0.plusSeconds(4).getEpochSecond())
+                .occupancyCount(501)
+                .startTime(t0.getEpochSecond())
+                .endTime(t0.plusSeconds(4).getEpochSecond())
+                .gammaAlarm(true)
+                .neutronAlarm(true)
+                .maxGammaCount(884)
+                .maxNeutronCount(19)
+                .build();
+        String rapObsId = hub.getIdEncoders().getObsIdEncoder().encodeID(
+                db.getObservationStore().add(new ObsData.Builder()
+                        .withDataStream(rapOccDs)
+                        .withPhenomenonTime(t0)
+                        .withResultTime(t0.plusSeconds(4))
+                        .withResult(Occupancy.fromOccupancy(rapOcc))
+                        .build()));
+
+        DataBlock rapG0 = rapGammaStruct.createDataBlock();
+        rapG0.setTimeStamp(0, t0.plusSeconds(1));
+        rapG0.setStringValue(1, "Scan");
+        rapG0.setIntValue(2, 0);
+        rapG0.setIntValue(7, 50);
+        rapG0.setIntValue(8, 52);
+        rapG0.setIntValue(9, 48);
+        rapG0.setIntValue(10, 50);
+        db.getObservationStore().add(new ObsData.Builder()
+                .withDataStream(rapGammaDs)
+                .withPhenomenonTime(t0.plusSeconds(1))
+                .withResultTime(t0.plusSeconds(1))
+                .withResult(rapG0)
+                .build());
+
+        DataBlock rapG1 = rapGammaStruct.createDataBlock();
+        rapG1.setTimeStamp(0, t0.plusSeconds(2));
+        rapG1.setStringValue(1, "Alarm");
+        rapG1.setIntValue(2, 884);
+        rapG1.setIntValue(3, 220);
+        rapG1.setIntValue(4, 222);
+        rapG1.setIntValue(5, 221);
+        rapG1.setIntValue(6, 221);
+        rapG1.setIntValue(7, 55);
+        rapG1.setIntValue(8, 56);
+        rapG1.setIntValue(9, 55);
+        rapG1.setIntValue(10, 55);
+        db.getObservationStore().add(new ObsData.Builder()
+                .withDataStream(rapGammaDs)
+                .withPhenomenonTime(t0.plusSeconds(2))
+                .withResultTime(t0.plusSeconds(2))
+                .withResult(rapG1)
+                .build());
+
+        DataBlock rapN1 = rapNeutronStruct.createDataBlock();
+        rapN1.setLongValue(0, t0.plusSeconds(2).getEpochSecond());
+        rapN1.setStringValue(1, "Alarm");
+        rapN1.setIntValue(2, 19);
+        rapN1.setIntValue(3, 5);
+        rapN1.setIntValue(4, 5);
+        rapN1.setIntValue(5, 5);
+        rapN1.setIntValue(6, 4);
+        db.getObservationStore().add(new ObsData.Builder()
+                .withDataStream(rapNeutronDs)
+                .withPhenomenonTime(t0.plusSeconds(2))
+                .withResultTime(t0.plusSeconds(2))
+                .withResult(rapN1)
+                .build());
+
+        // Aspect Occupancy + sample (640 gross count; background=180.5 & variance=12.4 must NOT be summed)
+        Instant t1 = t0.plusSeconds(60);
+        Occupancy aspOcc = new Occupancy.Builder()
+                .samplingTime(t1.plusSeconds(4).getEpochSecond())
+                .occupancyCount(601)
+                .startTime(t1.getEpochSecond())
+                .endTime(t1.plusSeconds(4).getEpochSecond())
+                .gammaAlarm(true)
+                .maxGammaCount(640)
+                .build();
+        String aspObsId = hub.getIdEncoders().getObsIdEncoder().encodeID(
+                db.getObservationStore().add(new ObsData.Builder()
+                        .withDataStream(aspOccDs)
+                        .withPhenomenonTime(t1)
+                        .withResultTime(t1.plusSeconds(4))
+                        .withResult(Occupancy.fromOccupancy(aspOcc))
+                        .build()));
+
+        DataBlock aspG = aspGammaStruct.createDataBlock();
+        aspG.setDoubleValue(0, t1.plusSeconds(2).getEpochSecond());
+        aspG.setStringValue(1, "Alarm");
+        aspG.setIntValue(2, 640);
+        aspG.setDoubleValue(3, 180.5);
+        aspG.setDoubleValue(4, 12.4);
+        db.getObservationStore().add(new ObsData.Builder()
+                .withDataStream(aspGammaDs)
+                .withPhenomenonTime(t1.plusSeconds(2))
+                .withResultTime(t1.plusSeconds(2))
+                .withResult(aspG)
+                .build());
+
+        // RS350 Occupancy + variable-length ForegroundOutput (3190 G / 17 N) + BackgroundOutput (99999 must be ignored)
+        Instant t2 = t0.plusSeconds(120);
+        OccupancyExtended rsOcc = (OccupancyExtended) new OccupancyExtended.Builder()
+                .alarmCategory("Gamma-Isotope")
+                .samplingTime(t2.plusSeconds(6).getEpochSecond())
+                .occupancyCount(701)
+                .startTime(t2.getEpochSecond())
+                .endTime(t2.plusSeconds(6).getEpochSecond())
+                .gammaAlarm(true)
+                .neutronAlarm(true)
+                .maxGammaCount(3190)
+                .maxNeutronCount(17)
+                .build();
+        String rsObsId = hub.getIdEncoders().getObsIdEncoder().encodeID(
+                db.getObservationStore().add(new ObsData.Builder()
+                        .withDataStream(rsOccDs)
+                        .withPhenomenonTime(t2)
+                        .withResultTime(t2.plusSeconds(6))
+                        .withResult(OccupancyExtended.fromOccupancy(rsOcc))
+                        .build()));
+
+        DataBlock rsFgBlock = buildRs350SpectrumBlock(rsFgStruct, t2.plusSeconds(3), 8, 4, 3190.0, 17.0, 0.42);
+        db.getObservationStore().add(new ObsData.Builder()
+                .withDataStream(rsFgDs)
+                .withPhenomenonTime(t2.plusSeconds(3))
+                .withResultTime(t2.plusSeconds(3))
+                .withResult(rsFgBlock)
+                .build());
+
+        DataBlock rsBgBlock = buildRs350SpectrumBlock(rsBgStruct, t2.plusSeconds(3), 8, 4, 99999.0, 999.0, 9.9);
+        db.getObservationStore().add(new ObsData.Builder()
+                .withDataStream(rsBgDs)
+                .withPhenomenonTime(t2.plusSeconds(3))
+                .withResultTime(t2.plusSeconds(3))
+                .withResult(rsBgBlock)
+                .build());
+
+        // Exercise profileOnlyObsIds fast-path with empty vehicleId
+        HttpClient client = HttpClient.newHttpClient();
+        String joinedObsIds = String.join(",", rapObsId, aspObsId, rsObsId);
+        HttpResponse<String> fastResp = client.send(HttpRequest.newBuilder()
+                .uri(URI.create(bucketEndpoint + "/adjudication/vehicle-search?profileOnlyObsIds="
+                        + URLEncoder.encode(joinedObsIds, StandardCharsets.UTF_8)))
+                .header("Authorization", basicAuth())
+                .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, fastResp.statusCode());
+
+        JsonObject fastJson = JsonParser.parseString(fastResp.body()).getAsJsonObject();
+        JsonArray fastPasses = fastJson.getAsJsonArray("passes");
+        assertEquals(3, fastPasses.size());
+
+        JsonArray rapProfile = fastPasses.get(0).getAsJsonObject().getAsJsonArray("radiationProfile");
+        assertEquals(2, rapProfile.size());
+        assertEquals(200, rapProfile.get(0).getAsJsonObject().get("gammaCounts").getAsInt());
+        assertEquals(884, rapProfile.get(1).getAsJsonObject().get("gammaCounts").getAsInt());
+        assertEquals(19, rapProfile.get(1).getAsJsonObject().get("neutronCounts").getAsInt());
+
+        JsonArray aspProfile = fastPasses.get(1).getAsJsonObject().getAsJsonArray("radiationProfile");
+        assertEquals(1, aspProfile.size());
+        assertEquals(640, aspProfile.get(0).getAsJsonObject().get("gammaCounts").getAsInt());
+
+        JsonArray rsProfile = fastPasses.get(2).getAsJsonObject().getAsJsonArray("radiationProfile");
+        assertEquals(1, rsProfile.size());
+        assertEquals(3190, rsProfile.get(0).getAsJsonObject().get("gammaCounts").getAsInt());
+        assertEquals(17, rsProfile.get(0).getAsJsonObject().get("neutronCounts").getAsInt());
+    }
+
+    private static DataBlock buildRs350SpectrumBlock(
+            DataComponent struct,
+            Instant ts,
+            int linLen,
+            int cmpLen,
+            double gammaGross,
+            double neutronGross,
+            double doseRate
+    ) {
+        DataComponent copy = struct.copy();
+        DataBlock block = copy.createDataBlock();
+        block.updateAtomCount();
+        copy.setData(block);
+        int idx = 0;
+        block.setLongValue(idx++, ts.getEpochSecond());
+        block.setDoubleValue(idx++, 1.0);
+        block.setIntValue(idx++, linLen);
+        ((org.vast.data.DataArrayImpl) copy.getComponent("linearSpectrum")).updateSize();
+        block.updateAtomCount();
+        for (int i = 0; i < linLen; i++) {
+            block.setDoubleValue(idx++, 10.0 + i);
+        }
+        block.setIntValue(idx++, cmpLen);
+        ((org.vast.data.DataArrayImpl) copy.getComponent("compressedSpectrum")).updateSize();
+        block.updateAtomCount();
+        for (int i = 0; i < cmpLen; i++) {
+            block.setDoubleValue(idx++, 5.0 + i);
+        }
+        block.setDoubleValue(idx++, gammaGross);
+        block.setDoubleValue(idx++, neutronGross);
+        block.setDoubleValue(idx, doseRate);
+        return block;
+    }
+
     private void recordCompletedAdjudication(
             BigId cmdStreamId,
             AdjudicationControl adjControl,

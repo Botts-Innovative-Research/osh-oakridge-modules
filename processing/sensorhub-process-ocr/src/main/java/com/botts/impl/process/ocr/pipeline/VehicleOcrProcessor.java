@@ -440,38 +440,34 @@ public class VehicleOcrProcessor implements AutoCloseable {
                                         List<LoadedFrame> loadedFrames,
                                         boolean ecoMode) throws InterruptedException {
         CandidateAggregator aggregator = new CandidateAggregator(state.job.settings());
-        List<CandidateAggregator.FrameInput> frameInputs = new ArrayList<>(loadedFrames.size());
-
-        for (int i = 0; i < loadedFrames.size(); i++) {
-            if (closed.get() || !state.isActive())
-                return;
-            if (governor.isCriticalHeapPressure()) {
-                logger.warn("Stopping remaining OCR frame scans early on lane {} due to critical heap pressure",
-                        state.job.laneUid());
-                break;
-            }
-
-            LoadedFrame lf = loadedFrames.get(i);
-            List<OcrRead> reads = state.engine.recognize(lf.image);
-            frameInputs.add(new CandidateAggregator.FrameInput(
-                    i, lf.image.getWidth(), lf.image.getHeight(), reads));
-
-            // Under elevated CPU/heap load, stop scanning further frames as soon as a high-confidence
-            // checksum-verified ISO 6346 container ID is locked in.
-            if (i < loadedFrames.size() - 1 && (ecoMode || governor.isElevatedLoad())) {
-                List<CandidateAggregator.AggregatedCandidate> interim = aggregator.aggregate(frameInputs);
-                boolean lockedValidIso = interim.stream().anyMatch(c ->
-                        VehicleOcrResult.ID_TYPE_CONTAINER.equals(c.idType())
-                                && c.checksumValid()
-                                && c.confidence() >= 0.85);
-                if (lockedValidIso) {
-                    break;
-                }
-                if (ecoMode) {
-                    Thread.sleep(25L);
-                }
-            }
+        List<BufferedImage> images = new ArrayList<>(loadedFrames.size());
+        for (LoadedFrame lf : loadedFrames) {
+            images.add(lf.image);
         }
+
+        AtomicBoolean criticalHeapLogged = new AtomicBoolean(false);
+        List<CandidateAggregator.FrameInput> frameInputs = TwoTierFrameScanner.scanFrames(
+                state.engine,
+                images,
+                aggregator,
+                () -> {
+                    if (closed.get() || !state.isActive())
+                        return true;
+                    if (governor.isCriticalHeapPressure()) {
+                        if (criticalHeapLogged.compareAndSet(false, true)) {
+                            logger.warn("Stopping remaining OCR frame scans early on lane {} due to critical heap pressure",
+                                    state.job.laneUid());
+                        }
+                        return true;
+                    }
+                    return false;
+                },
+                () -> ecoMode || governor.isElevatedLoad(),
+                () -> !ecoMode
+                        && state.job.settings().readContainerIds()
+                        && !governor.isElevatedLoad()
+                        && (workQueue == null || workQueue.size() < 4),
+                ecoMode);
 
         if (closed.get() || !state.isActive() || frameInputs.isEmpty())
             return;

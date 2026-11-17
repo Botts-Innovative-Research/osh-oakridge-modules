@@ -6,9 +6,9 @@ package com.botts.impl.process.ocr.cli;
 
 import com.botts.impl.process.ocr.domain.CandidateAggregator;
 import com.botts.impl.process.ocr.engine.OcrEngine;
-import com.botts.impl.process.ocr.engine.OcrRead;
 import com.botts.impl.process.ocr.engine.OnnxOcrEngine;
 import com.botts.impl.process.ocr.pipeline.FrameSampler;
+import com.botts.impl.process.ocr.pipeline.TwoTierFrameScanner;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -42,33 +42,32 @@ public final class OcrCli {
         }
 
         try (OcrEngine engine = OnnxOcrEngine.acquireShared(modelDir)) {
-            List<CandidateAggregator.FrameInput> frames = new ArrayList<>();
+            CandidateAggregator aggregator = new CandidateAggregator(0.45);
+            List<BufferedImage> images = new ArrayList<>();
+            List<CandidateAggregator.FrameInput> frames;
             String lower = input.getFileName().toString().toLowerCase(Locale.ROOT);
-            if (lower.endsWith(".mp4") || lower.endsWith(".mkv") || lower.endsWith(".mov")
-                    || lower.endsWith(".ts") || lower.endsWith(".avi") || lower.endsWith(".webm")) {
-                FrameSampler sampler = new FrameSampler();
-                for (FrameSampler.SampledFrame sf : sampler.sampleFrames(input, maxFrames)) {
-                    try {
-                        List<OcrRead> reads = engine.recognize(sf.image());
-                        frames.add(new CandidateAggregator.FrameInput(
-                                sf.index(), sf.image().getWidth(), sf.image().getHeight(), reads));
-                    } finally {
-                        sf.image().flush();
+            try {
+                if (lower.endsWith(".mp4") || lower.endsWith(".mkv") || lower.endsWith(".mov")
+                        || lower.endsWith(".ts") || lower.endsWith(".avi") || lower.endsWith(".webm")) {
+                    FrameSampler sampler = new FrameSampler();
+                    for (FrameSampler.SampledFrame sf : sampler.sampleFrames(input, maxFrames)) {
+                        if (sf.image() != null) {
+                            images.add(sf.image());
+                        }
+                    }
+                } else {
+                    BufferedImage img = ImageIO.read(input.toFile());
+                    if (img != null) {
+                        images.add(img);
                     }
                 }
-            } else {
-                BufferedImage img = ImageIO.read(input.toFile());
-                if (img != null) {
-                    try {
-                        List<OcrRead> reads = engine.recognize(img);
-                        frames.add(new CandidateAggregator.FrameInput(0, img.getWidth(), img.getHeight(), reads));
-                    } finally {
-                        img.flush();
-                    }
+                frames = TwoTierFrameScanner.scanFrames(engine, images, aggregator);
+            } finally {
+                for (BufferedImage img : images) {
+                    img.flush();
                 }
             }
 
-            CandidateAggregator aggregator = new CandidateAggregator(0.45);
             for (CandidateAggregator.AggregatedCandidate c : aggregator.aggregate(frames)) {
                 System.out.printf(Locale.ROOT,
                         "%s\t%s\tconf=%.3f\tchecksum=%s\thits=%d\traw=\"%s\"%n",

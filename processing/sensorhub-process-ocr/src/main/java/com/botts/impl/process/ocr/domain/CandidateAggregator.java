@@ -28,6 +28,7 @@ import java.util.Set;
 public final class CandidateAggregator {
 
     public static final int MAX_CANDIDATES_PER_TYPE = 3;
+    public static final double SINGLE_FRAME_REPAIRED_MIN_CONFIDENCE = 0.82;
     private static final double STATIC_EDGE_BAND_FRACTION = 0.18;
 
     public record FrameInput(int frameIndex, int frameWidth, int frameHeight, List<OcrRead> reads) {
@@ -134,6 +135,14 @@ public final class CandidateAggregator {
                     ? containerMinConfidence
                     : plateMinConfidence;
             if (!c.checksumValid() && c.confidence() < floor)
+                continue;
+            // Gate single-frame check-digit-repaired candidates (where the 11th Modulo-11 check digit
+            // was synthesized from a 10-character prefix rather than optically verified) behind a
+            // stricter confidence floor so 1-digit serial misreads do not masquerade as valid containers.
+            if (VehicleOcrResult.ID_TYPE_CONTAINER.equals(c.idType())
+                    && c.checkDigitRepaired()
+                    && c.readCount() == 1
+                    && c.confidence() < Math.max(floor, SINGLE_FRAME_REPAIRED_MIN_CONFIDENCE))
                 continue;
             all.add(c);
         }
@@ -446,10 +455,15 @@ public final class CandidateAggregator {
             int hits = framesSeen.size();
             double bonus = 0.0;
             if (VehicleOcrResult.ID_TYPE_CONTAINER.equals(idType)) {
-                // Weighted checksum bonus (+0.22 for direct valid, +0.18 for repaired check digit)
-                // so a high-confidence real stencil outranks a low-confidence 1-in-11 chance hit.
+                // Weighted checksum bonus (+0.22 for direct Modulo-11 valid, +0.18 for multi-frame
+                // repaired check digit, +0.08 for single-frame repaired check digit) so optically
+                // checksum-verified stencils outrank synthesized single-frame prefixes.
                 if (checksumValid) {
-                    bonus += checkDigitRepaired ? 0.18 : 0.22;
+                    if (!checkDigitRepaired) {
+                        bonus += 0.22;
+                    } else {
+                        bonus += (hits >= 2) ? 0.18 : 0.08;
+                    }
                 } else {
                     bonus -= 0.10;
                 }

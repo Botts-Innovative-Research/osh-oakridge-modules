@@ -36,8 +36,11 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -59,6 +62,7 @@ public final class VehicleSearchHandler implements IObjectHandler {
     private static final int MAX_CONCURRENT_SEARCHES = 8;
     private static final long PERMIT_TIMEOUT_SECONDS = 5L;
     private static final Pattern OBJECT_PATTERN = Pattern.compile("vehicle-search(?:/.*)?");
+    private static final Pattern SAFE_OBS_ID_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
 
     private final OSCARServiceModule module;
     private final Semaphore searchPermits = new Semaphore(MAX_CONCURRENT_SEARCHES, true);
@@ -98,6 +102,9 @@ public final class VehicleSearchHandler implements IObjectHandler {
         requireTargetResource(ctx);
 
         HttpServletRequest req = ctx.getRequest();
+        List<String> profileOnlyObsIds = parseProfileOnlyObsIds(
+                firstNonNull(req.getParameter("profileOnlyObsIds"), req.getParameter("obsIds"), "")
+        );
         String rawVehicleId = firstNonNull(req.getParameter("vehicleId"), req.getParameter("q"), "");
         if (rawVehicleId.length() > MAX_VEHICLE_QUERY_LENGTH) {
             throw ServiceErrors.badRequest("vehicleId exceeds maximum length of " + MAX_VEHICLE_QUERY_LENGTH + " characters");
@@ -106,7 +113,8 @@ public final class VehicleSearchHandler implements IObjectHandler {
 
         MatchMode defaultMode = normVehicleId.isEmpty() ? MatchMode.IS_NOT_EMPTY : MatchMode.CONTAINS;
         MatchMode matchMode = MatchMode.parse(req.getParameter("matchMode"), defaultMode);
-        if ((matchMode == MatchMode.EQUALS || matchMode == MatchMode.CONTAINS || matchMode == MatchMode.STARTS_WITH)
+        if (profileOnlyObsIds.isEmpty()
+                && (matchMode == MatchMode.EQUALS || matchMode == MatchMode.CONTAINS || matchMode == MatchMode.STARTS_WITH)
                 && normVehicleId.isEmpty()) {
             throw ServiceErrors.badRequest("vehicleId must contain at least one alphanumeric character for matchMode=" + matchMode.wireName());
         }
@@ -126,7 +134,8 @@ public final class VehicleSearchHandler implements IObjectHandler {
         }
 
         String laneUIDs = firstNonNull(req.getParameter("laneUID"), req.getParameter("laneUIDs"), "");
-        boolean includeProfiles = Boolean.parseBoolean(req.getParameter("includeProfiles"));
+        boolean includeProfiles = !profileOnlyObsIds.isEmpty()
+                || Boolean.parseBoolean(req.getParameter("includeProfiles"));
         int limit = parseBoundedLimit(req.getParameter("limit"));
 
         boolean acquired;
@@ -154,7 +163,8 @@ public final class VehicleSearchHandler implements IObjectHandler {
                     matchMode,
                     laneUIDs,
                     includeProfiles,
-                    List.of()
+                    List.of(),
+                    profileOnlyObsIds
             );
             VehicleIncidentData data = VehicleIncidentAggregator.queryVehicleIncident(module, spec, start, end, limit);
 
@@ -235,6 +245,27 @@ public final class VehicleSearchHandler implements IObjectHandler {
         } catch (NumberFormatException e) {
             throw ServiceErrors.badRequest("Invalid integer limit: " + rawLimit);
         }
+    }
+
+    private static List<String> parseProfileOnlyObsIds(String raw) throws InvalidRequestException {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        Set<String> deduped = new LinkedHashSet<>();
+        for (String token : raw.split(",")) {
+            String trimmed = token == null ? "" : token.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (!SAFE_OBS_ID_PATTERN.matcher(trimmed).matches()) {
+                throw ServiceErrors.badRequest("Invalid occupancy observation ID in profileOnlyObsIds: " + trimmed);
+            }
+            deduped.add(trimmed);
+            if (deduped.size() >= VehicleIncidentAggregator.MAX_PROFILED_PASSES) {
+                break;
+            }
+        }
+        return deduped.isEmpty() ? List.of() : List.copyOf(new ArrayList<>(deduped));
     }
 
     private static String firstNonNull(String a, String b, String fallback) {

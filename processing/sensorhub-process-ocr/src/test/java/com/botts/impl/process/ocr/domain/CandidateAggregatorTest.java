@@ -90,4 +90,40 @@ class CandidateAggregatorTest {
         assertEquals(VehicleOcrResult.ID_TYPE_PLATE, results.get(1).idType());
         assertEquals("SRG195", results.get(1).normalizedValue());
     }
+
+    @Test
+    void gatesLowConfidenceSingleFrameRepairedCheckDigitWhilePreservingHighConfidenceAndMultiFrameRepairs() {
+        CandidateAggregator aggregator = new CandidateAggregator(0.45);
+
+        // Single-frame 10-char read with confidence 0.74 (< 0.82 gate) must be rejected
+        var lowSingle = aggregator.aggregate(List.of(
+                new CandidateAggregator.FrameInput(0, 1280, 720, List.of(
+                        new OcrRead("FANU 135754", 0.74, new Rectangle(200, 180, 180, 32))
+                ))
+        ));
+        assertTrue(lowSingle.isEmpty(), "Expected single-frame checkDigitRepaired candidate below 0.82 to be filtered");
+
+        // Single-frame 10-char read at confidence 0.86 (>= 0.82) is retained
+        var highSingle = aggregator.aggregate(List.of(
+                new CandidateAggregator.FrameInput(0, 1280, 720, List.of(
+                        new OcrRead("FANU 135754", 0.86, new Rectangle(200, 180, 180, 32))
+                ))
+        ));
+        assertEquals(1, highSingle.size());
+        assertEquals("FANU1357540", highSingle.get(0).normalizedValue());
+        assertTrue(highSingle.get(0).checkDigitRepaired());
+
+        // Multi-frame 10-char read (readCount == 2) at confidence 0.74 is retained
+        var multiFrame = aggregator.aggregate(List.of(
+                new CandidateAggregator.FrameInput(0, 1280, 720, List.of(
+                        new OcrRead("FANU 135754", 0.74, new Rectangle(200, 180, 180, 32))
+                )),
+                new CandidateAggregator.FrameInput(1, 1280, 720, List.of(
+                        new OcrRead("FANU 135754", 0.73, new Rectangle(215, 182, 180, 32))
+                ))
+        ));
+        assertEquals(1, multiFrame.size());
+        assertEquals("FANU1357540", multiFrame.get(0).normalizedValue());
+        assertEquals(2, multiFrame.get(0).readCount());
+    }
 }

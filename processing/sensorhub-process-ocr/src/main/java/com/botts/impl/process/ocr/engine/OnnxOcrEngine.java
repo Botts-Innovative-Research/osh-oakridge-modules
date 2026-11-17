@@ -51,7 +51,9 @@ public class OnnxOcrEngine implements OcrEngine {
     private static final Path CONTAINER_MODEL_FALLBACK = Paths.get("/opt/oscar/models/ocr");
     private static final Path DEV_MODEL_FALLBACK = Paths.get("dist/models/ocr");
 
-    static final int DET_MAX_SIDE = 960;
+    static final int DET_MAX_SIDE = OcrEngine.DEFAULT_DET_MAX_SIDE;
+    static final int MIN_DET_MAX_SIDE = 320;
+    static final int MAX_DET_MAX_SIDE = 2560;
     static final long MAX_FRAME_PIXELS = 4096L * 4096L;
     static final int MAX_BOXES_PER_FRAME = 64;
     static final float[] DET_MEAN = {0.485f, 0.456f, 0.406f};
@@ -183,6 +185,11 @@ public class OnnxOcrEngine implements OcrEngine {
         }
 
         @Override
+        public List<OcrRead> recognize(BufferedImage frame, int detMaxSide) {
+            return delegate.recognize(frame, detMaxSide);
+        }
+
+        @Override
         public synchronized void close() {
             if (released)
                 return;
@@ -254,6 +261,11 @@ public class OnnxOcrEngine implements OcrEngine {
 
     @Override
     public List<OcrRead> recognize(BufferedImage image) {
+        return recognize(image, DET_MAX_SIDE);
+    }
+
+    @Override
+    public List<OcrRead> recognize(BufferedImage image, int detMaxSide) {
         if (image == null)
             return List.of();
         int w = image.getWidth();
@@ -261,16 +273,18 @@ public class OnnxOcrEngine implements OcrEngine {
         if (w <= 1 || h <= 1 || (long) w * h > MAX_FRAME_PIXELS)
             throw new OcrEngineException("Invalid frame dimensions for OCR: " + w + "x" + h);
 
+        int effectiveMaxSide = Math.max(MIN_DET_MAX_SIDE, Math.min(MAX_DET_MAX_SIDE, detMaxSide));
+
         synchronized (inferenceLock) {
             if (closed || detSession == null || recSession == null)
                 throw new OcrEngineException("OCR engine is not initialized or already closed");
 
-            List<Rectangle> boxes = detect(image);
+            List<Rectangle> boxes = detect(image, effectiveMaxSide);
             if (boxes.isEmpty())
                 return List.of();
 
             int limit = Math.min(boxes.size(), MAX_BOXES_PER_FRAME);
-            List<OcrRead> reads = new ArrayList<>(limit);
+            List<OcrRead> reads = new ArrayList<>(limit + 4);
             for (int i = 0; i < limit; i++) {
                 Rectangle box = boxes.get(i);
                 if (box.width <= 1 || box.height <= 1)
@@ -279,16 +293,38 @@ public class OnnxOcrEngine implements OcrEngine {
                 CtcGreedyDecoder.Decoded decoded = recognizeCrop(crop);
                 if (decoded.text() != null && !decoded.text().isBlank()) {
                     reads.add(new OcrRead(decoded.text(), decoded.confidence(), box));
+                    // When a horizontal container box splits at a vertical door locking bar right after
+                    // the 10-character owner+category+serial prefix, run a lightweight rightward strip
+                    // re-read (+38% width) to optically capture the boxed 11th Modulo-11 check digit.
+                    if (box.width > box.height * 2 && box.x + box.width < w - 4) {
+                        var match = com.botts.impl.process.ocr.domain.Iso6346.extractBest(decoded.text());
+                        if (match.isPresent() && match.get().checkDigitRepaired()) {
+                            int extW = Math.min(w - box.x, Math.max(box.width + 8, (int) Math.round(box.width * 1.38)));
+                            if (extW > box.width + 4) {
+                                Rectangle extBox = new Rectangle(box.x, box.y, extW, box.height);
+                                BufferedImage extCrop = image.getSubimage(extBox.x, extBox.y, extBox.width, extBox.height);
+                                CtcGreedyDecoder.Decoded extDecoded = recognizeCrop(extCrop);
+                                if (extDecoded.text() != null && !extDecoded.text().isBlank()) {
+                                    var extMatch = com.botts.impl.process.ocr.domain.Iso6346.extractBest(extDecoded.text());
+                                    if (extMatch.isPresent()
+                                            && extMatch.get().checksumValid()
+                                            && !extMatch.get().checkDigitRepaired()) {
+                                        reads.add(new OcrRead(extDecoded.text(), extDecoded.confidence(), extBox));
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             return reads;
         }
     }
 
-    private List<Rectangle> detect(BufferedImage image) {
+    private List<Rectangle> detect(BufferedImage image, int detMaxSide) {
         int ow = image.getWidth();
         int oh = image.getHeight();
-        double ratio = Math.min(1.0, DET_MAX_SIDE / (double) Math.max(ow, oh));
+        double ratio = Math.min(1.0, detMaxSide / (double) Math.max(ow, oh));
         int rw = roundToMultipleOf32(ow * ratio);
         int rh = roundToMultipleOf32(oh * ratio);
 
