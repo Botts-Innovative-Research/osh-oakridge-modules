@@ -125,7 +125,7 @@ public class OSCARServiceModule extends AbstractModule<OSCARServiceConfig> imple
         if (config.spreadsheetConfigPath != null && !config.spreadsheetConfigPath.isEmpty())
             spreadsheetHandler.handleFile(config.spreadsheetConfigPath);
 
-        system = new OSCARSystem(config.nodeId);
+        system = new OSCARSystem(config.nodeId, config.nodeName);
 
         createOutputs();
         createControls();

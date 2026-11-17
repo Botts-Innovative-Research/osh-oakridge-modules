@@ -75,6 +75,9 @@ public class OSCARServiceConfig extends ServiceConfig {
     @DisplayInfo(label = "Node ID", desc = "Unique identifier of this OSCAR node")
     public String nodeId;
 
+    @DisplayInfo(label = "Node Name", desc = "Human-readable site or node name shown in National View, Servers, and multi-node vehicle searches")
+    public String nodeName;
+
     @DisplayInfo.ModuleType(IObsSystemDatabaseModule.class)
     @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.MODULE_ID)
     @DisplayInfo(desc = "Database connected to this OSCAR service")

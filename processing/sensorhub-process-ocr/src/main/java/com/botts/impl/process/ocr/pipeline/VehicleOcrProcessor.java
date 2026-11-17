@@ -508,13 +508,19 @@ public class VehicleOcrProcessor implements AutoCloseable {
             Instant frameTime = Instant.ofEpochMilli(
                     (long) ((occStartSec + Math.max(0.0, bestFrame.timestampSeconds)) * 1000.0));
 
+            // Only mark checksumValid=true for auto-fill when the 11th Modulo-11 check digit was
+            // optically verified, or when a 10-character prefix was confirmed across >= 2 frames.
+            // Single-frame check-digit-repaired candidates stay idType=container, checksumValid=false
+            // so OSCAR Viewer surfaces them as clickable suggestion chips without auto-filling.
+            boolean verifiedChecksum = c.checksumValid() && (!c.checkDigitRepaired() || c.readCount() >= 2);
+
             VehicleOcrResult result = new VehicleOcrResult.Builder()
                     .sampleTime(sampleTime)
                     .occupancyObsId(state.resolvedObsId)
                     .idType(c.idType())
                     .value(c.rawText())
                     .normalizedValue(c.normalizedValue())
-                    .checksumValid(c.checksumValid())
+                    .checksumValid(verifiedChecksum)
                     .confidence((float) c.confidence())
                     .readCount(c.readCount())
                     .cameraUid(bestFrame.cameraUid)

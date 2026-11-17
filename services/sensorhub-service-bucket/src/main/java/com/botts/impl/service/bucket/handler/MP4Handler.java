@@ -48,40 +48,68 @@ public class MP4Handler extends DefaultObjectHandler {
         try {
             long size = bucketStore.getObjectSize(bucketName, objectKey);
             String rangeHeader = request.getHeader("Range");
+            response.setHeader("Accept-Ranges", "bytes");
 
-            if (rangeHeader == null) {
+            if (rangeHeader == null || !rangeHeader.startsWith("bytes=")) {
                 response.setStatus(HttpServletResponse.SC_OK);
                 response.setHeader("Content-Length", String.valueOf(size));
 
                 try (InputStream in = bucketStore.getObject(bucketName, objectKey);
                      OutputStream out = response.getOutputStream()) {
-                    in.transferTo(out);
+                    byte[] buffer = new byte[262_144];
+                    int bytesRead;
+                    while ((bytesRead = in.read(buffer)) != -1) {
+                        out.write(buffer, 0, bytesRead);
+                    }
                 }
                 return;
             }
 
-            response.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
-            response.setHeader("Accept-Ranges", "bytes");
-
             long start = 0;
             long end = size - 1;
-            String[] ranges = rangeHeader.replace("bytes=", "").split("-");
-            if (!ranges[0].isEmpty()) start = Long.parseLong(ranges[0]);
-            if (ranges.length > 1 && !ranges[1].isEmpty()) end = Long.parseLong(ranges[1]);
+            String rangeSpec = rangeHeader.substring("bytes=".length()).trim();
+            int commaIdx = rangeSpec.indexOf(',');
+            if (commaIdx >= 0) {
+                rangeSpec = rangeSpec.substring(0, commaIdx).trim();
+            }
+            String[] ranges = rangeSpec.split("-", -1);
+            try {
+                if (ranges[0].isEmpty()) {
+                    long suffixLength = ranges.length > 1 && !ranges[1].isEmpty()
+                            ? Long.parseLong(ranges[1]) : 0L;
+                    start = Math.max(0L, size - Math.max(1L, suffixLength));
+                } else {
+                    start = Long.parseLong(ranges[0]);
+                    if (ranges.length > 1 && !ranges[1].isEmpty()) {
+                        end = Long.parseLong(ranges[1]);
+                    }
+                }
+            } catch (NumberFormatException badRange) {
+                response.setStatus(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
+                response.setHeader("Content-Range", "bytes */" + size);
+                return;
+            }
+
+            if (size == 0 || start < 0 || start >= size || end < start) {
+                response.setStatus(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
+                response.setHeader("Content-Range", "bytes */" + size);
+                return;
+            }
             if (end >= size) end = size - 1;
             long contentLength = end - start + 1;
 
+            response.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
             response.setHeader("Content-Range", "bytes " + start + "-" + end + "/" + size);
             response.setHeader("Content-Length", String.valueOf(contentLength));
 
             try (InputStream in = bucketStore.getObject(bucketName, objectKey);
                  OutputStream out = response.getOutputStream()) {
 
-                in.skip(start); // skip to start of range
-                byte[] buffer = new byte[8192];
+                in.skipNBytes(start);
+                byte[] buffer = new byte[262_144];
                 long remaining = contentLength;
                 int bytesRead;
-                while ((bytesRead = in.read(buffer, 0, (int) Math.min(buffer.length, remaining))) != -1 && remaining > 0) {
+                while (remaining > 0 && (bytesRead = in.read(buffer, 0, (int) Math.min(buffer.length, remaining))) != -1) {
                     out.write(buffer, 0, bytesRead);
                     remaining -= bytesRead;
                 }

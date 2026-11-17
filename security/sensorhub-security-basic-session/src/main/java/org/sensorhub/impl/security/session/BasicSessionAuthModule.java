@@ -15,6 +15,7 @@
 
 package org.sensorhub.impl.security.session;
 
+import java.nio.file.Path;
 import org.eclipse.jetty.security.Authenticator;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.module.AbstractModule;
@@ -27,10 +28,14 @@ public class BasicSessionAuthModule extends AbstractModule<BasicSessionConfig>
     @Override
     protected void doStart() throws SensorHubException
     {
+        Path stateDir = Path.of(System.getProperty("oscar.state.dir", ".")).toAbsolutePath().normalize();
+        Path identityStoreFile = stateDir.resolve(".moduledata").resolve("oscar-identity.json");
 
         authenticator = new BasicSessionAuthenticator(
                 config,
+                getParentHub(),
                 getParentHub().getSecurityManager(),
+                identityStoreFile,
                 getLogger()
         );
 

@@ -64,6 +64,7 @@ import org.vast.sensorML.SMLFactory;
 
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Extended functionality of the SensorSystem class unique for Open Source Central Alarm (OSCAR)
@@ -94,6 +95,7 @@ public class LaneSystem extends SensorSystem implements IAutoStartDispatchStatus
     private long subscriptionGeneration = 0;
     private ExecutorService threadPool = null;
     private volatile boolean autoStartDispatchComplete;
+    private final AtomicBoolean syncingEndpoints = new AtomicBoolean(false);
     Map<String, FFMPEGConfig> ffmpegConfigs = null;
     OccupancyWrapper occupancyWrapper;
     OccupancyStatusOutput occupancyStatusOutput;
@@ -137,6 +139,8 @@ public class LaneSystem extends SensorSystem implements IAutoStartDispatchStatus
         threadPool = Executors.newSingleThreadExecutor();
         ffmpegConfigs = new HashMap<>();
         occupancyWrapper = null;
+        existingRPMModule = null;
+        occupancyProducer = null;
 
         // generate unique ID
         if (config.uniqueID != null && !config.uniqueID.equals(AUTO_ID)) {
@@ -170,30 +174,8 @@ public class LaneSystem extends SensorSystem implements IAutoStartDispatchStatus
             }
         }
 
-        // Lane database and process setup
-        if (getConfiguration().laneOptionsConfig != null) {
-            // Initial RPM config
-            var rpmConfig = getConfiguration().laneOptionsConfig.rpmConfig;
-            if (rpmConfig != null && existingRPMModule == null) {
-                // Create Rapiscan or Aspect config, then add as submodule
-                var config = createRPMConfig(rpmConfig);
-                existingRPMModule = (AbstractSensorModule<?>) registerSubmodule(config);
-
-
-            }
-
-            // Initial FFmpeg config
-            var ffmpegConfigList = getConfiguration().laneOptionsConfig.ffmpegConfig;
-            if (ffmpegConfigList != null) {
-                for (var simpleConfig : ffmpegConfigList) {
-                    FFMPEGConfig config = createFFmpegConfig(simpleConfig, ffmpegConfigList.indexOf(simpleConfig));
-                    var ffmpegModule = createFFmpegModule(config);
-                    if (occupancyWrapper != null) {
-                        //occupancyWrapper.addFFmpegSensor(ffmpegModule);
-                    }
-                }
-            }
-        }
+        // Bidirectional synchronization between LaneOptionsConfig and child sensor ModuleConfigs
+        reconcileLaneEndpoints();
 
         webIdOutput = new WebIdOutput(this);
         addOutput(webIdOutput, false);
@@ -658,42 +640,40 @@ public class LaneSystem extends SensorSystem implements IAutoStartDispatchStatus
                         occupancyWrapper.setExtendedOccupancyThresholdMinutes(thresholdMinutes);
                     }
                     updateSensorDescription();
+                    if (isStarted() && !syncingEndpoints.get() && threadPool != null && !threadPool.isShutdown()) {
+                        threadPool.execute(() -> {
+                            try {
+                                reconcileLaneEndpoints();
+                            } catch (SensorHubException ex) {
+                                getLogger().error("Failed to synchronize lane endpoints after configuration change", ex);
+                            }
+                        });
+                    }
                 }
 
-                // FFmpeg config changed events
+                // Child FFmpeg camera config changed in Admin UI or API -> sync back to LaneOptionsConfig
                 if (event.getModule() instanceof FFMPEGSensor ffmpegDriver) {
-                    // Let's only handle our own ffmpeg children
                     if (ffmpegDriver.getParentSystem() == null || !ffmpegDriver.getParentSystem().equals(this))
                         return;
 
-                    var oldConfig = ffmpegConfigs.get(ffmpegDriver.getLocalID());
-
-                    if (oldConfig == null) {
-                        ffmpegConfigs.put(ffmpegDriver.getLocalID(), ffmpegDriver.getConfiguration());
-                        return;
-                    }
-
                     var newConfig = ffmpegDriver.getConfiguration();
+                    ffmpegConfigs.put(ffmpegDriver.getLocalID(), newConfig);
+                    syncSubsystemConfigReference(ffmpegDriver);
 
-                    // If important parts of configuration are updated, remove data from old driver
-                    if (newConfig.connection.useTCP != oldConfig.connection.useTCP
-                    || !Objects.equals(newConfig.connection.connectionString, oldConfig.connection.connectionString)
-                    || !Objects.equals(newConfig.connection.transportStreamPath, oldConfig.connection.transportStreamPath)) {
-                        if (ffmpegDriver.getUniqueIdentifier() != null && getParentHub().getSystemDriverRegistry().getDatabase(getUniqueIdentifier()) != null) {
+                    if (!syncingEndpoints.get()) {
+                        syncChildCameraToLaneOptions(ffmpegDriver, newConfig);
+                    }
+                }
 
-                            try {
-                                ffmpegDriver.stop();
-                                ffmpegDriver.waitForState(ModuleEvent.ModuleState.INITIALIZED, 5000);
-                                deleteSystemsFromDatabase(List.of(ffmpegDriver.getUniqueIdentifier()));
-                                getParentHub().getSystemDriverRegistry().register(ffmpegDriver);
-                                if (ffmpegDriver.getConfiguration().autoStart)
-                                    ffmpegDriver.start();
-                            } catch (SensorHubException ex) {
-                                getLogger().error("Failed to delete FFmpeg driver from database. Please delete old FFmpeg system in database to avoid further issues" + ex.getMessage());
-                            }
-                        }
-                        ffmpegConfigs.put(ffmpegDriver.getLocalID(), ffmpegDriver.getConfiguration());
-
+                // Child RPM config changed in Admin UI or API -> sync back to LaneOptionsConfig
+                if ((event.getModule() instanceof RapiscanSensor
+                        || event.getModule() instanceof AspectSensor
+                        || event.getModule() instanceof RS350Sensor)
+                        && getMembers().containsValue(event.getModule())) {
+                    var rpmModule = (AbstractSensorModule<?>) event.getModule();
+                    syncSubsystemConfigReference(rpmModule);
+                    if (!syncingEndpoints.get()) {
+                        syncChildRpmToLaneOptions(rpmModule);
                     }
                 }
             }
@@ -878,6 +858,214 @@ public class LaneSystem extends SensorSystem implements IAutoStartDispatchStatus
             index++;
         }
         return "/" + candidate.substring(index);
+    }
+
+    private void reconcileLaneEndpoints() throws SensorHubException {
+        if (getConfiguration() == null) {
+            return;
+        }
+        if (getConfiguration().laneOptionsConfig == null) {
+            getConfiguration().laneOptionsConfig = new LaneOptionsConfig();
+        }
+        boolean configDirty = false;
+        syncingEndpoints.set(true);
+        try {
+            var opts = getConfiguration().laneOptionsConfig;
+
+            // 1. Reconcile RPM configuration bidirectionally
+            SensorConfig existingRpmCfg = existingRPMModule != null
+                    ? (SensorConfig) existingRPMModule.getConfiguration()
+                    : null;
+            var rpmResult = LaneEndpointSync.reconcileRpm(getConfiguration(), opts.rpmConfig, existingRpmCfg);
+            configDirty |= rpmResult.metadataUpdated();
+            if (rpmResult.action() == LaneEndpointSync.SyncAction.REGISTER_NEW_CHILD) {
+                existingRPMModule = (AbstractSensorModule<?>) registerSubmodule(rpmResult.childConfig());
+                if (existingRPMModule instanceof RapiscanSensor || existingRPMModule instanceof AspectSensor) {
+                    occupancyProducer = (IDataProducerModule<?>) existingRPMModule;
+                }
+                configDirty = true;
+            } else if (rpmResult.action() == LaneEndpointSync.SyncAction.UPDATE_CHILD && existingRPMModule != null) {
+                SensorConfig updatedChild = rpmResult.childConfig();
+                updatedChild.id = existingRPMModule.getLocalID();
+                if (!existingRPMModule.getClass().getCanonicalName().equals(updatedChild.moduleClass)) {
+                    removeSubSystem(existingRPMModule.getLocalID());
+                    existingRPMModule = (AbstractSensorModule<?>) registerSubmodule(updatedChild);
+                } else {
+                    @SuppressWarnings({"unchecked", "rawtypes"})
+                    AbstractSensorModule rawRpm = existingRPMModule;
+                    rawRpm.updateConfig(updatedChild);
+                    syncSubsystemConfigReference(existingRPMModule);
+                }
+                if (existingRPMModule instanceof RapiscanSensor || existingRPMModule instanceof AspectSensor) {
+                    occupancyProducer = (IDataProducerModule<?>) existingRPMModule;
+                }
+                configDirty = true;
+            } else if (rpmResult.action() == LaneEndpointSync.SyncAction.UPDATE_PARENT) {
+                opts.rpmConfig = rpmResult.simpleConfig();
+                configDirty = true;
+            }
+
+            // 2. Backfill any orphan child FFMPEGSensors into LaneOptionsConfig.ffmpegConfig
+            if (opts.ffmpegConfig == null) {
+                opts.ffmpegConfig = new ArrayList<>();
+            }
+            for (var member : getMembers().values()) {
+                if (member instanceof FFMPEGSensor camSensor) {
+                    int camIdx = LaneEndpointSync.parseCameraIndexFromSerial(camSensor.getConfiguration().serialNumber);
+                    if (camIdx >= opts.ffmpegConfig.size() && camIdx >= 0) {
+                        while (opts.ffmpegConfig.size() <= camIdx) {
+                            opts.ffmpegConfig.add(null);
+                        }
+                        opts.ffmpegConfig.set(
+                                camIdx,
+                                LaneEndpointSync.applyChildToSimpleCameraConfig(camSensor.getConfiguration(), null));
+                        configDirty = true;
+                    }
+                }
+            }
+
+            // 3. Reconcile every camera slot bidirectionally
+            for (int i = 0; i < opts.ffmpegConfig.size(); i++) {
+                FFMpegConfig simpleCam = opts.ffmpegConfig.get(i);
+                if (simpleCam == null) {
+                    continue;
+                }
+                FFMPEGSensor existingCam = findFFmpegMemberForIndex(i);
+                var camResult = LaneEndpointSync.reconcileCamera(
+                        getConfiguration(),
+                        i,
+                        simpleCam,
+                        existingCam != null ? existingCam.getConfiguration() : null);
+                configDirty |= camResult.metadataUpdated();
+
+                if (camResult.action() == LaneEndpointSync.SyncAction.REGISTER_NEW_CHILD) {
+                    var createdCam = (FFMPEGSensor) registerSubmodule(camResult.childConfig());
+                    ffmpegConfigs.put(createdCam.getLocalID(), createdCam.getConfiguration());
+                    configDirty = true;
+                } else if (camResult.action() == LaneEndpointSync.SyncAction.UPDATE_CHILD && existingCam != null) {
+                    FFMPEGConfig updatedChild = camResult.childConfig();
+                    updatedChild.id = existingCam.getLocalID();
+                    existingCam.updateConfig(updatedChild);
+                    syncSubsystemConfigReference(existingCam);
+                    ffmpegConfigs.put(existingCam.getLocalID(), existingCam.getConfiguration());
+                    configDirty = true;
+                } else if (camResult.action() == LaneEndpointSync.SyncAction.UPDATE_PARENT) {
+                    opts.ffmpegConfig.set(i, camResult.simpleConfig());
+                    configDirty = true;
+                }
+            }
+        } finally {
+            syncingEndpoints.set(false);
+        }
+
+        if (configDirty) {
+            persistLaneConfigurationSafely();
+        }
+    }
+
+    private void syncChildCameraToLaneOptions(FFMPEGSensor ffmpegDriver, FFMPEGConfig childConfig) {
+        if (getConfiguration() == null || childConfig == null) {
+            return;
+        }
+        syncingEndpoints.set(true);
+        try {
+            if (getConfiguration().laneOptionsConfig == null) {
+                getConfiguration().laneOptionsConfig = new LaneOptionsConfig();
+            }
+            if (getConfiguration().laneOptionsConfig.ffmpegConfig == null) {
+                getConfiguration().laneOptionsConfig.ffmpegConfig = new ArrayList<>();
+            }
+            var camList = getConfiguration().laneOptionsConfig.ffmpegConfig;
+            int idx = LaneEndpointSync.parseCameraIndexFromSerial(childConfig.serialNumber);
+            if (idx < 0) {
+                idx = findMemberCameraOrdinal(ffmpegDriver);
+            }
+            if (idx < 0) {
+                idx = 0;
+            }
+            while (camList.size() <= idx) {
+                camList.add(null);
+            }
+            FFMpegConfig updatedSimple = LaneEndpointSync.applyChildToSimpleCameraConfig(childConfig, camList.get(idx));
+            camList.set(idx, updatedSimple);
+            persistLaneConfigurationSafely();
+        } finally {
+            syncingEndpoints.set(false);
+        }
+    }
+
+    private void syncChildRpmToLaneOptions(AbstractSensorModule<?> rpmModule) {
+        if (getConfiguration() == null || rpmModule == null) {
+            return;
+        }
+        syncingEndpoints.set(true);
+        try {
+            if (getConfiguration().laneOptionsConfig == null) {
+                getConfiguration().laneOptionsConfig = new LaneOptionsConfig();
+            }
+            var existingSimple = getConfiguration().laneOptionsConfig.rpmConfig;
+            getConfiguration().laneOptionsConfig.rpmConfig = LaneEndpointSync.extractSimpleRpmConfig(
+                    (SensorConfig) rpmModule.getConfiguration(),
+                    existingSimple);
+            persistLaneConfigurationSafely();
+        } finally {
+            syncingEndpoints.set(false);
+        }
+    }
+
+    private FFMPEGSensor findFFmpegMemberForIndex(int videoIndex) {
+        String expectedSerial = LaneEndpointSync.cameraSerialNumber(getConfiguration().uniqueID, videoIndex);
+        String rawExpectedSerial = "lane:" + getConfiguration().uniqueID + ":" + videoIndex;
+        for (var member : getMembers().values()) {
+            if (member instanceof FFMPEGSensor cam && cam.getConfiguration() != null) {
+                String serial = cam.getConfiguration().serialNumber;
+                if (Objects.equals(serial, expectedSerial) || Objects.equals(serial, rawExpectedSerial)) {
+                    return cam;
+                }
+            }
+        }
+        return null;
+    }
+
+    private int findMemberCameraOrdinal(FFMPEGSensor target) {
+        int ordinal = 0;
+        for (var member : getMembers().values()) {
+            if (member instanceof FFMPEGSensor cam) {
+                if (cam == target || Objects.equals(cam.getLocalID(), target.getLocalID())) {
+                    return ordinal;
+                }
+                ordinal++;
+            }
+        }
+        return -1;
+    }
+
+    private void syncSubsystemConfigReference(AbstractModule<?> childModule) {
+        if (getConfiguration() == null || getConfiguration().subsystems == null || childModule == null) {
+            return;
+        }
+        String localId = childModule.getLocalID();
+        for (var sub : getConfiguration().subsystems) {
+            if (sub != null && sub.config != null && Objects.equals(sub.config.id, localId)) {
+                sub.config = childModule.getConfiguration();
+                return;
+            }
+        }
+    }
+
+    private void persistLaneConfigurationSafely() {
+        try {
+            if (getParentHub() == null || getConfiguration() == null || getConfiguration().id == null) {
+                return;
+            }
+            var registry = getParentHub().getModuleRegistry();
+            if (registry != null && registry.getLoadedModuleById(getConfiguration().id) != null) {
+                registry.saveConfiguration(getConfiguration());
+            }
+        } catch (Exception e) {
+            getLogger().debug("Skipping immediate config repository commit for lane {}: {}",
+                    getLocalID(), e.getMessage());
+        }
     }
 
     @Override

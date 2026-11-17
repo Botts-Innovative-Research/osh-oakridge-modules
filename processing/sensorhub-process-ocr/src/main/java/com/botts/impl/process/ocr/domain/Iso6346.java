@@ -4,8 +4,11 @@
  *******************************************************************************/
 package com.botts.impl.process.ocr.domain;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -26,14 +29,53 @@ public final class Iso6346 {
     private static final Pattern NON_ALNUM = Pattern.compile("[^A-Z0-9]");
 
     /**
-     * Burned-in camera OSD timestamps (ISO dates, slash/dot dates, 24h clocks) stripped prior to
-     * scanning 11-character windows so digits from timestamps never fuse with adjacent camera
-     * labels into bogus container codes (e.g. {@code CAM 2026-03-28} -> {@code CAMZ0260328}).
+     * Burned-in camera OSD timestamps, phone/web markings, door weight labels, and standalone ISO
+     * size/type codes stripped prior to scanning 11-character windows so non-ID tokens never fuse
+     * with adjacent text into bogus container codes (e.g. {@code CAM 2026-03-28}, {@code MAX.GROSS},
+     * {@code Tel:+31(0)10-8200700}, or trailing {@code 45G1}).
      */
-    private static final Pattern TIMESTAMP = Pattern.compile(
-            "\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}"
+    private static final Pattern NON_ID_STENCILS = Pattern.compile(
+            "(?i)(?:TEL|FAX|PHONE)\\s*[:.]?\\s*\\+?[0-9()\\s.\\-]{6,}"
+                    + "|WWW\\.[A-Z0-9.\\-]+"
+                    + "|\\+\\d{1,3}\\s*\\(?\\d+\\)?[\\s.\\-]*\\d[\\d\\s.\\-]{4,}"
+                    + "|MAX[.\\s]*(?:GROSS|CROSS|G\\.?\\s*W\\.?)"
+                    + "|\\b(?:TARE|PAYLOAD|NET\\s*WT|CU\\.?\\s*CAP)\\b"
+                    + "|\\b(?:12|20|22|25|40|42|45|L2|L5)[CGHPRUTVBSK06][0-91I]\\b"
+                    + "|\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}"
                     + "|\\d{1,2}[-/.]\\d{1,2}[-/.]\\d{4}"
                     + "|\\b\\d{1,2}:\\d{2}(?::\\d{2})?\\b");
+
+    private static final Set<String> KNOWN_BIC_PREFIXES = Set.of(
+            "ABEU", "ACLU", "AGMU", "AGNU", "AMFU", "AMHU", "ANBU", "APDU", "APHU", "APRU",
+            "APXU", "APZU", "AXIU", "BEAU", "BGBU", "BGFU", "BHCU", "BHOU", "BIDU", "BMOU",
+            "BOLU", "BRTU", "BSIU", "BTEU", "BTLU", "CAAU", "CAIU", "CANU", "CARU", "CAXU",
+            "CBHU", "CCLU", "CDAU", "CEXU", "CFOU", "CGMU", "CHAU", "CICU", "CIMU", "CIQU",
+            "CLDU", "CLHU", "CMAU", "CNEU", "CNRU", "CNSU", "COCU", "COLU", "COSU", "CPPU",
+            "CPVU", "CRIU", "CRXU", "CSFU", "CSLU", "CSNU", "CSQU", "CTDU", "CXDU", "CXRU",
+            "CXSU", "CXTU", "DAYU", "DFOU", "DFSU", "DHAU", "DHDU", "DHIU", "DILU", "DJDU",
+            "DOCU", "DOLU", "DRYU", "DYPU", "ECBU", "ECHU", "ECMU", "ECSU", "EGHU", "EGSU",
+            "EISU", "EITU", "EKCU", "ELTU", "EMCU", "EMHU", "EMOU", "ENHU", "EUCU", "EURU",
+            "EUVU", "EXFU", "EXPU", "EXSU", "FANU", "FBIU", "FBLU", "FCIU", "FDXU", "FFAU",
+            "FICU", "FOTU", "FSCU", "FTAU", "FWRU", "GAOU", "GATU", "GCAU", "GCNU", "GCXU",
+            "GESU", "GILU", "GLDU", "GSTU", "GVCU", "GYCU", "HAMU", "HAPU", "HARU", "HASU",
+            "HDMU", "HGIU", "HGTU", "HHHU", "HIBU", "HLBU", "HLXU", "HMCU", "HMMU", "HOYU",
+            "HUKU", "IAMU", "IBRU", "ICKU", "ICLU", "IDEU", "ILBU", "IMAU", "IMTU", "ITNU",
+            "JBHU", "JBNU", "JZPU", "KKFU", "KKTU", "KMTU", "KOCU", "LTIU", "LYGU", "LYSU",
+            "MAGU", "MATU", "MBSU", "MCLU", "MEBU", "MEDU", "MEKU", "MEMU", "MERU", "MMAU",
+            "MNBU", "MOAU", "MOCU", "MOIU", "MORU", "MOTU", "MRKU", "MRSU", "MSAU", "MSBU",
+            "MSCU", "MSDU", "MSGU", "MSKU", "MSMU", "MSNU", "MSWU", "MWCU", "MXMU", "NESU",
+            "NEWU", "NFWU", "NIDU", "NPOU", "NRSU", "NYKU", "OCVU", "OERU", "ONAU", "ONEU",
+            "ONRU", "OOCU", "OOLU", "OPTU", "ORYU", "OULU", "PCVU", "PFAU", "PGHU", "PGRU",
+            "PONU", "POTU", "PSSU", "PVDU", "RANU", "RATU", "RCLU", "RLTU", "RROU", "RRSU",
+            "RSTU", "SAIU", "SANU", "SBKU", "SEGU", "SEKU", "SELU", "SENU", "SESU", "SEZU",
+            "SIMU", "SITU", "SKLU", "SKYU", "SLLU", "SLZU", "SNEU", "SNLU", "SNTU", "SPTU",
+            "STBU", "SUDU", "SWRU", "SZLU", "TANU", "TCIU", "TCKU", "TCLU", "TCNU", "TCVU",
+            "TDTU", "TEGU", "TEMU", "TENU", "TEXU", "TFAU", "TGBU", "TGHU", "TIFU", "TIIU",
+            "TKRU", "TLLU", "TRHU", "TRIU", "TRLU", "TSLU", "TTNU", "TXGU", "UACU", "UAEU",
+            "UASU", "UBHU", "UETU", "UMEU", "UMXU", "UNIU", "UNXU", "UPSU", "UTCU", "VENU",
+            "VODU", "VTGU", "WABU", "WEDU", "WHLU", "WHSU", "WILU", "XGRU", "XINU", "XPCU",
+            "XPOU", "XXLU", "XYLU", "YDHU", "YMLU", "YMMU", "ZCSU", "ZIMU", "ZMOU"
+    );
 
     // ISO 6346 letter values count up from A=10 skipping multiples of 11 (11, 22, 33 unused)
     private static final int[] LETTER_VALUES = {
@@ -47,7 +89,7 @@ public final class Iso6346 {
     public static String stripTimestamps(String raw) {
         if (raw == null)
             return "";
-        return TIMESTAMP.matcher(raw).replaceAll(" ");
+        return NON_ID_STENCILS.matcher(raw).replaceAll(" ");
     }
 
     public static String normalize(String raw) {
@@ -126,7 +168,24 @@ public final class Iso6346 {
             if (validVariant != null) {
                 return Optional.of(new Match(validVariant, format(validVariant), true, false));
             }
-            if (repaired == null && prefixReadCleanly(source)) {
+            // Rear-door vertical locking bar right after the 4-letter prefix is occasionally read
+            // as an extra '1'/'I'/'L' before the 7-digit serial+check (e.g. 'ECBU 1457135 7' -> 'ECBU4571357').
+            if (i + CODE_LENGTH + 1 <= normalized.length()) {
+                char barGlyph = normalized.charAt(i + 4);
+                if (barGlyph == '1' || barGlyph == 'I' || barGlyph == 'L') {
+                    String withoutBar = normalized.substring(i, i + 4) + normalized.substring(i + 5, i + CODE_LENGTH + 1);
+                    String withoutBarCoerced = coerceByPosition(withoutBar);
+                    String barVariant = findChecksumValidVariant(withoutBar, withoutBarCoerced);
+                    if (barVariant != null) {
+                        return Optional.of(new Match(barVariant, format(barVariant), true, false));
+                    }
+                }
+            }
+            // Never overwrite an optically read 11th digit: if a 7th digit was read immediately
+            // after the 6 serial digits and failed Modulo-11 (even after 1-char BIC prefix repair),
+            // an earlier serial/prefix character was misread, so synthesizing a new check digit
+            // would mask the optical error.
+            if (repaired == null && prefixReadCleanly(source) && !Character.isDigit(source.charAt(10))) {
                 String fixed = repairCheckDigit(source.substring(0, 10));
                 repaired = new Match(fixed, format(fixed), true, true);
             }
@@ -140,7 +199,9 @@ public final class Iso6346 {
         if (repaired == null) {
             for (int i = 0; i + CODE_LENGTH - 1 <= normalized.length(); i++) {
                 String source = normalized.substring(i, i + CODE_LENGTH - 1);
-                if (prefixReadCleanly(source)) {
+                boolean hasEleventhDigit = (i + CODE_LENGTH - 1 < normalized.length())
+                        && Character.isDigit(normalized.charAt(i + CODE_LENGTH - 1));
+                if (!hasEleventhDigit && prefixReadCleanly(source)) {
                     String fixed = repairCheckDigit(source);
                     repaired = new Match(fixed, format(fixed), true, true);
                     break;
@@ -183,11 +244,19 @@ public final class Iso6346 {
     }
 
     /**
-     * Evaluates primary positional coercion first, then checks ambiguous {@code 0}/{@code O} ->
-     * {@code O}/{@code Q}/{@code D} owner letters (indices 0..2) and {@code 0} -> {@code U}
-     * category letter (index 3) strictly when the modulo-11 check digit validates.
+     * Evaluates primary positional coercion first (resolving {@code WSKU -> MSKU} Modulo-11 weight
+     * collisions where {@code W=35} and {@code M=24} differ by {@code 11}), then checks ambiguous
+     * {@code 0}/{@code O} -> {@code O}/{@code Q}/{@code D} owner letters, and finally checks a
+     * unique single-letter corrugated-wall optical confusion into {@link #KNOWN_BIC_PREFIXES}
+     * strictly when the optically read 11th Modulo-11 check digit validates.
      */
     private static String findChecksumValidVariant(String source, String coerced) {
+        if (coerced.startsWith("WSKU")) {
+            String msku = "MSKU" + coerced.substring(4);
+            if (matchesPattern(msku) && isValid(msku)) {
+                return msku;
+            }
+        }
         if (matchesPattern(coerced) && isValid(coerced))
             return coerced;
 
@@ -232,7 +301,49 @@ public final class Iso6346 {
                 }
             }
         }
+
+        // Single-character BIC owner-prefix optical confusion validated against an optically read 11th check digit
+        if (isCategory(c3) && Character.isDigit(source.charAt(10))) {
+            List<String> bicMatches = new ArrayList<>(2);
+            for (int pos = 0; pos < 3; pos++) {
+                char orig = coerced.charAt(pos);
+                for (char nb : ownerGlyphNeighbors(orig)) {
+                    String prefix4 = coerced.substring(0, pos) + nb + coerced.substring(pos + 1, 4);
+                    if (KNOWN_BIC_PREFIXES.contains(prefix4)) {
+                        String candidate = prefix4 + serialAndCheck;
+                        if (isValid(candidate) && !bicMatches.contains(candidate)) {
+                            bicMatches.add(candidate);
+                        }
+                    }
+                }
+            }
+            if (bicMatches.size() == 1) {
+                return bicMatches.get(0);
+            }
+        }
         return null;
+    }
+
+    private static char[] ownerGlyphNeighbors(char c) {
+        return switch (c) {
+            case 'C' -> new char[]{'G', 'D'};
+            case 'G' -> new char[]{'C', 'O', 'Q'};
+            case 'D' -> new char[]{'O', 'C', 'B', 'Q'};
+            case 'O' -> new char[]{'D', 'Q', 'G', 'C'};
+            case 'Q' -> new char[]{'O', 'G', 'D'};
+            case 'A' -> new char[]{'R', 'H', 'M'};
+            case 'R' -> new char[]{'A', 'P', 'K', 'B'};
+            case 'M' -> new char[]{'N', 'W', 'H'};
+            case 'N' -> new char[]{'M', 'H', 'W'};
+            case 'W' -> new char[]{'M', 'N'};
+            case 'E' -> new char[]{'G', 'F', 'C', 'B'};
+            case 'I' -> new char[]{'L', 'T', 'U', 'J'};
+            case 'L' -> new char[]{'T', 'I', 'U', 'J'};
+            case 'H' -> new char[]{'N', 'M', 'K'};
+            case 'B' -> new char[]{'D', 'P', 'R', 'G'};
+            case 'P' -> new char[]{'R', 'B', 'F'};
+            default -> new char[0];
+        };
     }
 
     private static char digitToLetter(char c) {

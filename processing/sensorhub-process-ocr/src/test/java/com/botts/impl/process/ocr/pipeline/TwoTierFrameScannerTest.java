@@ -83,4 +83,43 @@ class TwoTierFrameScannerTest {
         assertEquals("YMMU6154850", candidates.get(0).normalizedValue());
         assertEquals(2, candidates.get(0).bestFrameIndex());
     }
+
+    @Test
+    void runs1600FallbackWhen960OnlyFindsSingleFrameCheckDigitRepairedPrefix() throws Exception {
+        List<String> calls = new ArrayList<>();
+        OcrEngine engine = new OcrEngine() {
+            @Override
+            public List<OcrRead> recognize(BufferedImage frame) {
+                return recognize(frame, DEFAULT_DET_MAX_SIDE);
+            }
+
+            @Override
+            public List<OcrRead> recognize(BufferedImage frame, int detMaxSide) {
+                int idx = frame.getWidth() - 300;
+                calls.add(detMaxSide + ":" + idx);
+                if (detMaxSide == DEFAULT_DET_MAX_SIDE && idx == 2) {
+                    // 10-char prefix only (checkDigitRepaired == true, readCount == 1)
+                    return List.of(new OcrRead("CSQU 305438", 0.90, new Rectangle(50, 40, 150, 28)));
+                }
+                if (detMaxSide == HIGH_RES_DET_MAX_SIDE && idx == 2) {
+                    // 1600px reads full 11-char code including boxed check digit '3'
+                    return List.of(new OcrRead("CSQU 305438 3", 0.95, new Rectangle(50, 40, 175, 28)));
+                }
+                return List.of();
+            }
+        };
+
+        List<BufferedImage> frames = new ArrayList<>();
+        for (int i = 0; i < 6; i++) {
+            frames.add(new BufferedImage(300 + i, 120, BufferedImage.TYPE_3BYTE_BGR));
+        }
+
+        CandidateAggregator agg = new CandidateAggregator(0.45);
+        var inputs = TwoTierFrameScanner.scanFrames(engine, frames, agg);
+        var candidates = agg.aggregate(inputs);
+
+        assertTrue(calls.contains("1600:2"), "Expected 1600px fallback when 960px only had a single-frame repaired prefix");
+        assertEquals("CSQU3054383", candidates.get(0).normalizedValue());
+        assertFalse(candidates.get(0).checkDigitRepaired());
+    }
 }

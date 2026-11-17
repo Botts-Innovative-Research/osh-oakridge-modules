@@ -286,7 +286,8 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
                 if ((outputContext.oformat().flags() & AVFMT_NOFILE) == 0) { // IMPORTANT! HLS does not have a pb!
                     AVIOContext avioContext = new AVIOContext(null);
-                    int openRet = avio_open(avioContext, this.fileName, AVIO_FLAG_WRITE);
+                    int ioFlags = this.fileName.endsWith(".mp4") ? AVIO_FLAG_READ_WRITE : AVIO_FLAG_WRITE;
+                    int openRet = avio_open(avioContext, this.fileName, ioFlags);
                     if (openRet < 0) {
                         throw ffmpegIOException("Could not open file for writing: " + this.fileName, openRet);
                     }
@@ -295,6 +296,8 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
 
                 if (this.fileName.endsWith(".m3u8")) {
                     options = hlsOptions();
+                } else if (this.fileName.endsWith(".mp4")) {
+                    options = mp4Options();
                 }
 
                 int ret;
@@ -610,6 +613,12 @@ public class FileOutput<FFMPEGConfigType extends FFMPEGConfig> extends AbstractS
                 throw new IOException("Video timestamp overflow while rebasing the output timeline", e);
             }
         }
+    }
+
+    private static AVDictionary mp4Options() {
+        AVDictionary options = new AVDictionary();
+        av_dict_set(options, "movflags", "faststart", 0);
+        return options;
     }
 
     private static AVDictionary hlsOptions() {

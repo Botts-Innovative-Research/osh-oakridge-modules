@@ -28,12 +28,17 @@ public final class PlateHeuristics {
     private static final Pattern OSD_TOKEN = Pattern.compile(
             "^(?:CAM|CAMERA|CH|CHANNEL|LANE|GATE|PORTAL|RPM|FPS|KBPS|MBPS|NVR|DVR|IPC|RTSP|UTC|GMT|REC)\\d*$");
 
-    /** 6 digits + 1 check character: almost certainly the right half of a split ISO 6346 stencil. */
-    private static final Pattern CONTAINER_SERIAL_FRAGMENT = Pattern.compile("^\\d{6}[A-Z0-9]$");
+    /** Clipped right-hand container serial fragments (e.g. 6 digits + check char, or 1 trailing prefix letter + 6 serial digits like K514097). */
+    private static final Pattern CONTAINER_SERIAL_FRAGMENT = Pattern.compile(
+            "^\\d{5,7}[A-Z0-9]$|^[A-Z]\\d{6}$");
 
-    /** ISO 6346 size/type stencil (e.g. 22G1, 45G1, 45R1) plus an optional trailing border artifact (e.g. 45C1P). */
+    /** ISO 6346 size/type stencil (e.g. 22G1, 45G1, 45R1) plus optional trailing border/corrugation artifacts (e.g. 45C1P, 45G181). */
     private static final Pattern ISO_SIZE_TYPE_STENCIL = Pattern.compile(
-            "^(?:20|22|25|40|42|45|L2|L5)[CGHPRUTVBSK][0-9][A-Z0-9]?$");
+            "^(?:20|22|25|40|42|45|L2|L5)[CGHPRUTVBSK][0-9][A-Z0-9]{0,2}$");
+
+    /** Roadside highway and terminal gate signage substrings (e.g. S101 Ring, Terminal 10, Danger) that are not vehicle plates. */
+    private static final Pattern SIGNAGE_TOKEN = Pattern.compile(
+            "(?:RING|TERMIN|ERMIN|RMINA|ERMUL|MINA\\d|DANGER|EURO|GROSS|CROSS|PAYLOAD)|^\\d{1,3}ING$");
 
     private PlateHeuristics() {
     }
@@ -75,6 +80,8 @@ public final class PlateHeuristics {
         if (CONTAINER_SERIAL_FRAGMENT.matcher(compact).matches())
             return Optional.empty();
         if (ISO_SIZE_TYPE_STENCIL.matcher(compact).matches())
+            return Optional.empty();
+        if (SIGNAGE_TOKEN.matcher(compact).find())
             return Optional.empty();
 
         // Reject 4-letter ISO 6346 owner+category prefix fragments (e.g. MSCU1)

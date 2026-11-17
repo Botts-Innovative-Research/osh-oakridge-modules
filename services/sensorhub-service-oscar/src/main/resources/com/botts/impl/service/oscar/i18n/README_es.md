@@ -67,6 +67,8 @@ Consulte la [Guía de inicio rápido](https://github.com/ORNL/oscar/blob/main/di
 | **Medios retenidos de 5 fotogramas** | En cada ocupación con alarma, OSCAR extrae 5 instantáneas JPEG (`frame-01.jpg` a `frame-05.jpg`). Tras 30 días, se depuran los fotogramas secundarios (`01`, `02`, `04`, `05`) y se conserva el fotograma central (`frame-03.jpg`). |
 | **OCR de vehículos (`ocrConfig`)** | Reconocimiento óptico opcional por carril (`Activar OCR de vehículos = false` de forma predeterminada) que lee de forma asíncrona códigos de contenedor ISO 6346 (con dígito de control) y matrículas según lo permitan los recursos de CPU y memoria (`OcrResourceGovernor`), publicando candidatos `vehicleOcr` (`PARQUET_PRIMARY`), recortes JPEG particionados por fecha (`/sensorhub/buckets/ocr/crops/<YYYY-MM-DD>/`, alineados con `frame-03.jpg` y `ocrCropRetentionDays = 365`) y autocompletado de **ID del vehículo** para contenedores ISO válidos o matrículas con confianza `>= 85%`. Si se desmarca `Solo alarmas`, los clips sin alarma se analizan de forma transitoria y se eliminan tras el OCR manteniendo `occupancy.videoPaths` vacío (`[]`). |
 | **SAN (Nombre alternativo del sujeto)** | Lista de nombres de host y direcciones IP (como `oscar.local` y `192.0.2.10`) incluidos dentro de un certificado HTTPS que el navegador comprueba antes de confiar en la conexión. |
+| **Llaves de acceso (WebAuthn / FIDO2) y sesiones persistentes** | Inicio de sesión con clave pública (`ES256` / `RS256`) resistente al phishing mediante Windows Hello, Touch ID, Face ID o llaves físicas USB/NFC (como YubiKey), verificado localmente en el servidor OSCAR sin depender de internet. Las estaciones dedicadas permanecen conectadas tras reinicios del navegador, del servidor y `oscar upgrade` hasta pulsar **Cerrar sesión** o revocación administrativa; los sitios sin teléfonos pueden usar contraseñas locales PBKDF2 individuales. |
+| **Tokens de servicio de federación (`oscar_fed_...`)** | Credenciales revocables con alcance limitado (`Visor` de solo lectura u `Operador`) emitidas en **Usuarios y acceso (`/users`)** para federar flujos HTTP y MQTT sin compartir contraseñas de administrador. |
 
 ## 2. Confiar en el certificado de OSCAR
 
@@ -130,6 +132,20 @@ Use el selector de idioma de la parte superior de la administración o de OSCAR 
 - **Guardar** en el encabezado abre un diálogo de confirmación. Seleccione **Sí** y espere **Configuración de SensorHub guardada**; solo entonces se escribe la configuración completa para conservarla después de reiniciar.
 
 Después de configurar, use **Aplicar cambios** cuando esté disponible y luego **Guardar**. El mensaje de carga correcta demuestra que el archivo fue aceptado, no que todos los dispositivos se conectaron ni que todo quedó persistido.
+
+### 3.3 Usuarios y acceso (`/users`), Passkeys sin conexión, sesiones persistentes y alta masiva por QR
+
+Abra **Usuarios y acceso** (`/users`) desde el menú lateral de OSCAR Viewer (o pulse su nombre de usuario en la barra superior) para gestionar cuentas sin consola de comandos:
+
+![Usuarios, llaves de acceso y control de acceso en OSCAR](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/36-users-and-passkeys.png)
+
+- **Mantener la sesión iniciada hasta cerrar sesión:** De forma predeterminada (`idleTimeoutSeconds = 0`, `absoluteTimeoutSeconds = 0`), la opción **Mantener la sesión iniciada hasta cerrar sesión** en `/login` guarda un resumen SHA-256 en `/var/lib/oscar/.moduledata/oscar-identity.json` para que las estaciones dedicadas sigan conectadas tras reinicios del navegador, del servidor y `oscar upgrade` hasta pulsar **Cerrar sesión**.
+- **Passkeys sin internet, nombres de host LAN y contraseñas sin teléfono (`Mi cuenta y Passkeys`):** Cada usuario puede registrar Windows Hello, Touch ID, Face ID o una llave YubiKey USB/NFC, o actualizar su contraseña local PBKDF2 (`>= 12` caracteres). Mientras que la contraseña funciona tanto por dominio como por IP LAN, los navegadores exigen dos pasos únicos para usar Passkeys en red local: **(1)** abrir OSCAR mediante un nombre de dominio (`https://oscar.local`, o nombres distintos por nodo como `https://oscar.ubuntu` y `https://oscar.win`, resueltos en el DNS local del router o en el archivo `hosts` del cliente) y **(2)** confiar una vez en `tls/server.crt` (o en una CA local con certificados de `<= 825` días para macOS/iOS; consulte `DEPLOYMENT.md`). Las Passkeys están vinculadas al dominio (`rpId`), por lo que si también accede mediante un túnel público Zero-Trust puede añadir una Passkey adicional en esa URL bajo la misma cuenta.
+- **Alta individual o masiva (`Alta masiva CSV / Pegar`) con mensaje de inicio y código QR:** Los administradores asignan roles (`Administrador`, `Operador` o `Visor` de solo lectura), limitan opcionalmente `Operador`/`Visor` a **Vistas operativas** concretas y pueden subir o pegar una lista CSV/Excel (`username, role, display_name, views`). OSCAR crea cada cuenta y genera automáticamente un mensaje de texto listo para enviar, tarjetas imprimibles, un código QR único (`/login/enroll?token=oscar_inv_...`) para activar Passkey o contraseña en un toque, y un código temporal legible para estaciones sin teléfono.
+
+![Alta masiva de usuarios e invitaciones QR](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/37-bulk-enroll-qr-invites.png)
+
+![Activación en un toque con Passkey o contraseña](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/38-login-enroll-passkey.png)
 
 ## 4. Configurar el módulo de servicio OSCAR
 
@@ -826,7 +842,7 @@ Cada solicitud genera un archivo nuevo y sobrescribe cualquier informe previo co
 2. Indique **Puerto** (inicial `8282`) y **Endpoint de Connected Systems API** (predeterminado `/api`, añadido a `/sensorhub`).
 3. Escriba usuario/contraseña de lectura.
 4. Active **Conexión segura** para HTTPS/WSS/MQTTS y certificado/nombre válidos.
-5. Deje **Nodo solo Basic** desactivado para modo de sesión: las credenciales crean una cookie HttpOnly opaca y la contraseña se descarta. Actívelo solo sin endpoint de sesión: las credenciales viven únicamente en memoria hasta recargar/cerrar.
+5. Seleccione el **Método de autenticación**: **Sesión interactiva del navegador** (predeterminado, crea una cookie `HttpOnly` opaca), **Token de servicio de federación (`oscar_fed_...`)** (emitido en **Usuarios y acceso -> Tokens de federación** del nodo remoto para autenticar HTTP `Bearer` y MQTT `svc-fed-<shortId>` sin compartir contraseñas humanas) o **Nodo solo Basic** (solo en memoria hasta recargar/cerrar).
 6. Pulse **Añadir nodo** o **Guardar**. Primero se prueba el endpoint completo; un nodo inaccesible/no autorizado no se guarda. **Cancelar** abandona cambios.
 
 Se guardan nombre, red, TLS/modo y mapa, nunca usuario ni contraseña; entradas antiguas también se limpian al cargarse. Nombres duplicados y pares dirección/puerto duplicados se rechazan. **Eliminar** solo quita el remoto de este navegador, no borra su servidor ni datos.

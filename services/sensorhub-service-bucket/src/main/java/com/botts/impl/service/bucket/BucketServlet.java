@@ -66,9 +66,13 @@ public class BucketServlet extends HttpServlet {
                 } catch (Exception e) {
                     if (e.getCause() instanceof InvalidRequestException) {
                         handleInvalidRequestException(req, resp, (InvalidRequestException) e.getCause());
+                    } else if (isClientDisconnect(e)) {
+                        log.debug("Client closed stream early on {} {}", req.getMethod(), req.getRequestURI());
                     } else {
                         logError(req, e);
-                        sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+                        if (!resp.isCommitted()) {
+                            sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+                        }
                     }
                 } finally {
                     clearCurrentUser();
@@ -99,9 +103,13 @@ public class BucketServlet extends HttpServlet {
                 } catch (Exception e) {
                     if (e.getCause() instanceof InvalidRequestException) {
                         handleInvalidRequestException(req, resp, (InvalidRequestException) e.getCause());
+                    } else if (isClientDisconnect(e)) {
+                        log.debug("Client closed stream early on {} {}", req.getMethod(), req.getRequestURI());
                     } else {
                         logError(req, e);
-                        sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+                        if (!resp.isCommitted()) {
+                            sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+                        }
                     }
                 } finally {
                     clearCurrentUser();
@@ -132,9 +140,13 @@ public class BucketServlet extends HttpServlet {
                 } catch (Exception e) {
                     if (e.getCause() instanceof InvalidRequestException) {
                         handleInvalidRequestException(req, resp, (InvalidRequestException) e.getCause());
+                    } else if (isClientDisconnect(e)) {
+                        log.debug("Client closed stream early on {} {}", req.getMethod(), req.getRequestURI());
                     } else {
                         logError(req, e);
-                        sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+                        if (!resp.isCommitted()) {
+                            sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+                        }
                     }
                 } finally {
                     clearCurrentUser();
@@ -166,9 +178,13 @@ public class BucketServlet extends HttpServlet {
                 } catch (Exception e) {
                     if (e.getCause() instanceof InvalidRequestException) {
                         handleInvalidRequestException(req, resp, (InvalidRequestException) e.getCause());
+                    } else if (isClientDisconnect(e)) {
+                        log.debug("Client closed stream early on {} {}", req.getMethod(), req.getRequestURI());
                     } else {
                         logError(req, e);
-                        sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+                        if (!resp.isCommitted()) {
+                            sendError(SC_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG, req, resp);
+                        }
                     }
                 } finally {
                     clearCurrentUser();
@@ -243,6 +259,26 @@ public class BucketServlet extends HttpServlet {
         if (req.getRemoteUser() != null)
             userID = req.getRemoteUser();
         securityHandler.setCurrentUser(userID);
+    }
+
+    private static boolean isClientDisconnect(Throwable error) {
+        for (Throwable cur = error; cur != null; cur = cur.getCause()) {
+            if (cur instanceof java.io.EOFException) {
+                return true;
+            }
+            String className = cur.getClass().getSimpleName();
+            if ("EofException".equals(className)) {
+                return true;
+            }
+            String msg = cur.getMessage();
+            if (msg != null) {
+                String lower = msg.toLowerCase(java.util.Locale.ROOT);
+                if (lower.contains("broken pipe") || lower.contains("connection reset")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void clearCurrentUser() {

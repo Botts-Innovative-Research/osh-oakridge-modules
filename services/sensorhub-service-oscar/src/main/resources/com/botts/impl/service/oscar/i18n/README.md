@@ -67,6 +67,8 @@ Use the release [Quick Start](https://github.com/ORNL/oscar/blob/main/dist/relea
 | **Retained 5-Frame Media** | For every alarm occupancy, OSCAR extracts 5 evenly spaced JPEG snapshots (`frame-01.jpg` to `frame-05.jpg`). After 30 days, secondary frames (`01`, `02`, `04`, `05`) are pruned while the midpoint keyframe (`frame-03.jpg`) is preserved. |
 | **Vehicle OCR (`ocrConfig`)** | Optional per-lane background OCR (`Enable Vehicle OCR = false` by default) that asynchronously reads ISO 6346 shipping container codes (with check-digit verification) and license plates from occupancy camera clips as CPU and heap resources allow (`OcrResourceGovernor`), publishing `vehicleOcr` (`PARQUET_PRIMARY`) candidates, date-partitioned JPEG evidence crops (`/sensorhub/buckets/ocr/crops/<YYYY-MM-DD>/`, aligned with retained `frame-03.jpg` media and `ocrCropRetentionDays = 365`), and auto-filled **Vehicle ID** for checksum-valid containers or high-confidence (`>= 85%`) plates. When `Alarms Only` is cleared, non-alarm clips are scanned transiently and deleted immediately after OCR while keeping `occupancy.videoPaths` empty (`[]`). |
 | **SAN (Subject Alternative Name)** | The list of hostnames and IP addresses (such as `oscar.local` and `192.0.2.10`) embedded inside an HTTPS certificate that a browser checks before trusting the connection. |
+| **Passkeys (WebAuthn / FIDO2) & Persistent Sessions** | Phishing-resistant public-key sign-in (`ES256` / `RS256`) using Windows Hello, Touch ID, Face ID, or USB/NFC hardware security keys (such as YubiKey) verified 100% locally on the OSCAR server without internet access. Dedicated workstations stay signed in across browser restarts, host reboots, and `oscar upgrade` until explicit **Log Out** or administrator revocation; phone-free facilities can use individual PBKDF2 local passwords. |
+| **Federation Service Tokens (`oscar_fed_...`)** | Scoped, revocable credentials (`Viewer` read-only or `Operator`) minted in **Users & Access (`/users`)** so remote OSCAR nodes can federate HTTP and MQTT streams without sharing administrator passwords. |
 
 ## 2. Trust the OSCAR certificate
 
@@ -130,6 +132,20 @@ Use the language selector at the top of the administration interface or OSCAR Vi
 - **Save** in the administration header opens a confirmation dialog. Select **Yes** and wait for **SensorHub Configuration Saved**; only then has the complete module configuration been written so it survives a restart.
 
 After any successful setup, use **Apply Changes** where available and then **Save**. An upload-success message proves that the file was accepted; it does not by itself prove that every device can connect or that all changes have been persisted.
+
+### 3.3 Non-IT Users & Access (`/users`), Offline Passkeys, Persistent Sessions & Bulk QR Enrollment
+
+Open **Users & Access** (`/users`) from the OSCAR Viewer navigation drawer (or select your signed-in username in the top bar) to manage accounts without editing files or using the command line:
+
+![OSCAR Users, Passkeys & Access Control](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/36-users-and-passkeys.png)
+
+- **Stay Signed In Until Log Out:** By default (`idleTimeoutSeconds = 0`, `absoluteTimeoutSeconds = 0`), selecting **Keep me signed in until I log out** on `/login` persists a SHA-256 session digest in `/var/lib/oscar/.moduledata/oscar-identity.json` so dedicated gatehouse workstations remain signed in across browser restarts, host reboots, and `oscar upgrade` until explicit **Log Out** or administrator revocation. Shared kiosks can switch to the `30m` idle / `8h` max preset under **Sign-In & SSO Policy**.
+- **Offline Passkeys, LAN Hostnames & Phone-Free Passwords (`My Account & Passkeys`):** Any signed-in user can register Windows Hello, Touch ID, Face ID, or a USB/NFC YubiKey for 1-tap offline sign-in, or update their local PBKDF2 password (`>= 12` characters) for phone-free facilities. While password sign-in works on both domains and raw LAN IPs, browsers require two one-time setup steps for Passkeys on local/LAN workstations: **(1)** open OSCAR via a domain name (`https://oscar.local`, or distinct per-node names such as `https://oscar.ubuntu` and `https://oscar.win` on multi-server LANs, mapped in router Local DNS or client `hosts` files; `oscar init` maps `127.0.0.1` on the server itself automatically), and **(2)** trust `tls/server.crt` (or a site Root CA with `<= 825`-day leaf certificates for macOS/iOS) in the client trust store (`certutil -addstore -f Root` on Windows, `update-ca-certificates` plus NSS `certutil` on Linux, or Keychain `trustRoot` on macOS — see `DEPLOYMENT.md`). Passkeys are domain-scoped (`rpId`), so if you also connect via a public Zero-Trust tunnel URL, register an additional Passkey once on that URL under the same account.
+- **Individual & Bulk Roster Enrollment with 1-Tap QR Startup Invites (`Users & Roles`):** Administrators assign `Administrator`, `Operator`, or read-only `Viewer` roles, optionally restrict `Operator`/`Viewer` accounts to specific **Operational Views** (such as `north-gate`), and can select **Bulk Enroll (CSV / Paste)** to import a CSV or Excel-pasted list (`username, role, display_name, views`). OSCAR creates every account and opens the **Startup Messages & 1-Tap Setup QR Codes** pack containing a ready-to-send text message, printable handout card, single-use `/login/enroll?token=oscar_inv_...` QR code (enabling 1-tap Passkey or password setup directly into the user's assigned gate view), and a readable fallback code for phone-free workstations.
+
+![Bulk User Enrollment & 1-Tap QR Startup Invites](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/37-bulk-enroll-qr-invites.png)
+
+![1-Tap Passkey & Password Account Activation Page](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/38-login-enroll-passkey.png)
 
 ## 4. Configure the OSCAR Service Module
 
@@ -851,8 +867,9 @@ The **Nodes** page lets one Viewer query multiple OSCAR/OpenSensorHub nodes. The
 4. Enter **Username** and **Password** authorized to read the remote node.
 5. Enable **Use a secure connection** for HTTPS/WSS/MQTTS. Use it whenever the remote endpoint supports TLS; the address/certificate name must match.
 6. Authentication mode:
-   - Leave **Basic-only node** clear for the preferred session-capable mode. The credentials establish an opaque HttpOnly session cookie and the password is discarded immediately after authentication.
-   - Enable **Basic-only node** only when the remote node has no session-login endpoint. Credentials remain in memory for requests until this page/app is reloaded or closed.
+   - **Interactive Browser Session (Cookie / Passkey / SSO)** (default): establishes an opaque `HttpOnly` session cookie and discards any entered password immediately after authentication.
+   - **Federation Service Token (`oscar_fed_...`)** (recommended for unattended National View & Multi-Pass Vehicle Search federation): mint a revocable `Viewer` or `Operator` token on the remote node under **Users & Access -> Federation Tokens** and paste it here; authenticates both HTTP `Bearer` requests and HiveMQ WebSocket MQTT (`svc-fed-<shortId>`) without sharing human passwords.
+   - **Basic-only node**: use only when connecting to a legacy OpenSensorHub server without session or token endpoints; credentials remain in memory until reload.
 7. Select **Add Node** or **Save**. OSCAR first tests the complete Connected Systems endpoint. An unreachable or unauthorized node is not saved. **Cancel** abandons edits.
 
 Saved node configuration includes the name, network endpoints, TLS/authentication mode, and map metadata. Usernames and passwords are deliberately excluded from browser storage, including when older saved entries are reloaded. A session cookie is managed by the remote server; Basic-only credentials must be re-entered after reload.

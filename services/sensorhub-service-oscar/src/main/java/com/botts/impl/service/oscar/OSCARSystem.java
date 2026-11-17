@@ -33,13 +33,26 @@ public class OSCARSystem extends AbstractSensorDriver {
     public static String UID = "urn:ornl:oscar:system:";
 
     String nodeId;
+    String nodeName;
 
     protected OSCARSystem(String nodeId) {
-        super(UID + nodeId, NAME);
+        this(nodeId, null);
+    }
+
+    protected OSCARSystem(String nodeId, String nodeName) {
+        super(UID + nodeId, resolveDisplayName(nodeName));
         this.nodeId = nodeId;
+        this.nodeName = (nodeName != null && !nodeName.isBlank()) ? nodeName.trim() : null;
 
         removeAllOutputs();
         removeAllControlInputs();
+    }
+
+    public static String resolveDisplayName(String configuredNodeName) {
+        if (configuredNodeName != null && !configuredNodeName.isBlank()) {
+            return configuredNodeName.trim();
+        }
+        return NAME;
     }
 
     protected void updateSensorDescription() {
@@ -56,8 +69,7 @@ public class OSCARSystem extends AbstractSensorDriver {
 
         // name & description
         smlDescription.setDefinition(SWEConstants.DEF_SYSTEM);
-        if (smlDescription.getName() == null)
-            smlDescription.setName(NAME);
+        smlDescription.setName(resolveDisplayName(nodeName));
         if (smlDescription.getDescription() == null)
             smlDescription.setDescription(DESCRIPTION);
 

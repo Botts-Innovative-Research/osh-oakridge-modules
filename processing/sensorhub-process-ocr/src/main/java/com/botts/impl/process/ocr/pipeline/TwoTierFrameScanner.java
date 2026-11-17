@@ -96,6 +96,7 @@ public final class TwoTierFrameScanner {
                             ? interim.stream().anyMatch(c ->
                                     VehicleOcrResult.ID_TYPE_CONTAINER.equals(c.idType())
                                             && c.checksumValid()
+                                            && (!c.checkDigitRepaired() || c.readCount() >= 2)
                                             && c.confidence() >= ELEVATED_LOAD_LOCK_IN_CONFIDENCE)
                             : interim.stream().anyMatch(c ->
                                     VehicleOcrResult.ID_TYPE_CONTAINER.equals(c.idType())
@@ -118,8 +119,12 @@ public final class TwoTierFrameScanner {
         }
 
         List<CandidateAggregator.AggregatedCandidate> after960 = aggregator.aggregate(frameInputs);
+        // Only skip 1600px fallback when 960px already verified an optical Modulo-11 check digit
+        // or confirmed a repaired 10-character container prefix across >= 2 independent frames.
         boolean hasValidContainer = after960.stream().anyMatch(c ->
-                VehicleOcrResult.ID_TYPE_CONTAINER.equals(c.idType()) && c.checksumValid());
+                VehicleOcrResult.ID_TYPE_CONTAINER.equals(c.idType())
+                        && c.checksumValid()
+                        && (!c.checkDigitRepaired() || c.readCount() >= 2));
         if (hasValidContainer) {
             return frameInputs;
         }

@@ -797,7 +797,9 @@ public final class SupportBundleHandler implements IObjectHandler {
                 "secrets/*",
                 "tls/*.key",
                 ".keystore/*",
-                "hivemq-data/*"
+                "hivemq-data/*",
+                ".moduledata/oscar-identity.json",
+                "remote-access/*"
         ));
         Map<String, Object> counts = new LinkedHashMap<>();
         counts.put("jsonFieldsRedacted", stats.jsonFieldsRedacted());
