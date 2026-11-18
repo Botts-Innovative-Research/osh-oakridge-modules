@@ -370,4 +370,123 @@ public class SpectroscopicAndUpSetReportTest {
             Files.write(outPath, pdfBytes);
         }
     }
+
+    @Test
+    public void testUpSetPopulatedCategoriesFirstAndOtherSnmRollupExactSum() throws Exception {
+        int g = ReportDataAggregator.UPSET_BIT_GAMMA;
+        int norm = ReportDataAggregator.UPSET_BIT_NORM;
+        int unk = ReportDataAggregator.UPSET_BIT_UNKNOWN;
+        int ind = ReportDataAggregator.UPSET_BIT_INDUSTRIAL;
+        int med = ReportDataAggregator.UPSET_BIT_MEDICAL;
+        int snm = ReportDataAggregator.UPSET_BIT_SNM;
+        int neut = ReportDataAggregator.UPSET_BIT_NEUTRON;
+
+        // 1. Verify populated categories always come before zero-count categories
+        long[] sparseMasks = new long[128];
+        sparseMasks[g] = 12;
+        sparseMasks[snm | neut] = 3;
+        ReportDataAggregator.UpSetCoOccurrenceData sparseUpSet =
+                ReportDataAggregator.finalizeUpSetData(sparseMasks, 15L);
+        List<ReportDataAggregator.UpSetSetTotal> orderedSparse =
+                ChartGenerator.orderDisplaySetsPopulatedFirst(sparseUpSet.sets());
+        assertEquals("Gamma", orderedSparse.get(0).name());
+        assertEquals(12L, orderedSparse.get(0).count());
+        assertEquals("SNM", orderedSparse.get(1).name());
+        assertEquals(3L, orderedSparse.get(1).count());
+        assertEquals("Neutron", orderedSparse.get(2).name());
+        assertEquals(3L, orderedSparse.get(2).count());
+        for (int i = 3; i < orderedSparse.size(); i++) {
+            assertEquals("Zero-count categories must appear last", 0L, orderedSparse.get(i).count());
+        }
+
+        // 2. Reproduce the exact 38-SNM (10 in top-18 + 28 across rare tail combinations) scenario
+        long[] countsByMask = new long[128];
+        countsByMask[g | unk] = 48868;
+        countsByMask[g] = 17367;
+        countsByMask[neut | unk] = 6480;
+        countsByMask[unk] = 5365;
+        countsByMask[g | norm] = 3706;
+        countsByMask[g | ind] = 956;
+        countsByMask[ind | unk] = 819;
+        countsByMask[norm | neut] = 800;
+        countsByMask[g | neut | unk] = 327;
+        countsByMask[g | neut] = 198;
+        countsByMask[med | neut] = 145;
+        countsByMask[g | med] = 79;
+        countsByMask[g | norm | unk] = 72;
+        countsByMask[g | ind | norm] = 59;
+        countsByMask[ind | med | neut] = 24;
+        countsByMask[g | ind | med | neut] = 24;
+        countsByMask[g | med | neut] = 12;
+        countsByMask[snm | neut] = 10; // Rank #18!
+        // Rare SNM tail combinations in ranks #19..#23 totaling 28 occupancies (10 + 28 = 38 total SNM)
+        countsByMask[g | snm] = 9;
+        countsByMask[g | snm | neut] = 8;
+        countsByMask[g | unk | snm] = 6;
+        countsByMask[g | norm | snm] = 3;
+        countsByMask[snm] = 2;
+
+        long total = 0L;
+        for (long c : countsByMask) {
+            total += c;
+        }
+        ReportDataAggregator.UpSetCoOccurrenceData data =
+                ReportDataAggregator.finalizeUpSetData(countsByMask, total);
+
+        long expectedSnmSetTotal = data.sets().stream()
+                .filter(ReportDataAggregator.UpSetSetTotal::snm)
+                .mapToLong(ReportDataAggregator.UpSetSetTotal::count)
+                .sum();
+        assertEquals(38L, expectedSnmSetTotal);
+
+        List<ChartGenerator.DisplayedUpSetColumn> cols =
+                ChartGenerator.buildDisplayedUpSetColumns(data.intersections(), 18);
+        assertEquals(18, cols.size());
+        ChartGenerator.DisplayedUpSetColumn lastCol = cols.get(cols.size() - 1);
+        assertTrue(lastCol.otherSnmRollup());
+        assertEquals("Other SNM", lastCol.label());
+        assertEquals(28L, lastCol.count());
+
+        long displayedSnmSum = cols.stream()
+                .filter(ChartGenerator.DisplayedUpSetColumn::snmPresent)
+                .mapToLong(ChartGenerator.DisplayedUpSetColumn::count)
+                .sum();
+        assertEquals("Displayed SNM vertical bars (10 + 28) must equal left SNM bar (38)",
+                expectedSnmSetTotal, displayedSnmSum);
+
+        ByteArrayOutputStream pdfBaos = new ByteArrayOutputStream();
+        Instant now = Instant.parse("2026-11-18T02:00:00Z");
+        try (PdfDocumentBuilder pdf = new PdfDocumentBuilder("Adjudication Report", "default")) {
+            pdf.drawReportBanner(new PdfDocumentBuilder.HeaderMetadata(
+                    "Adjudication Report",
+                    "default",
+                    "All Selected Lanes (50 Lanes)",
+                    "Scope: 50 lanes",
+                    now.minusSeconds(86400 * 30L),
+                    now
+            ));
+            new ChartGenerator().drawUpSetChart(
+                    pdf,
+                    "Alarm & Source Category Co-Occurrence (Occupancies)",
+                    data,
+                    18
+            );
+            pdf.finishAndSave(pdfBaos);
+        }
+        byte[] pdfBytes = pdfBaos.toByteArray();
+        String rollupPreviewOut = System.getProperty("oscar.upsetRollupPreviewPdf",
+                System.getenv().getOrDefault("OSCAR_UPSET_ROLLUP_PREVIEW_PDF", ""));
+        if (!rollupPreviewOut.isBlank()) {
+            Path p = Path.of(rollupPreviewOut);
+            Files.createDirectories(p.getParent());
+            Files.write(p, pdfBytes);
+        }
+        try (PDDocument doc = Loader.loadPDF(pdfBytes)) {
+            String text = new PDFTextStripper().getText(doc);
+            assertTrue(text.contains("Other SNM"));
+            assertTrue(text.contains("28"));
+            assertTrue(text.contains("10"));
+            assertTrue(text.contains("38"));
+        }
+    }
 }

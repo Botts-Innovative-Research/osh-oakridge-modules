@@ -23,8 +23,10 @@ import java.awt.Color;
 import java.io.IOException;
 import java.text.NumberFormat;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Pure vector PDF chart renderer built on Apache PDFBox 3.
@@ -762,12 +764,161 @@ public class ChartGenerator {
         return step;
     }
 
+    public record DisplayedUpSetColumn(
+            String label,
+            List<String> activeSets,
+            Set<String> coOccurringSets,
+            long count,
+            boolean snmPresent,
+            boolean otherSnmRollup,
+            int rolledUpCombinationCount
+    ) {}
+
+    /**
+     * Orders UpSet main categories so populated categories ({@code count > 0}) always appear first
+     * (sorted descending by occupancy count, with SNM prioritized on ties), followed by any
+     * zero-count categories at the bottom.
+     */
+    public static List<ReportDataAggregator.UpSetSetTotal> orderDisplaySetsPopulatedFirst(
+            List<ReportDataAggregator.UpSetSetTotal> sets
+    ) {
+        if (sets == null || sets.isEmpty()) {
+            return List.of();
+        }
+        List<ReportDataAggregator.UpSetSetTotal> ordered = new ArrayList<>(sets);
+        ordered.sort((a, b) -> {
+            boolean aPop = a.count() > 0L;
+            boolean bPop = b.count() > 0L;
+            if (aPop != bPop) {
+                return aPop ? -1 : 1;
+            }
+            int cmp = Long.compare(b.count(), a.count());
+            if (cmp != 0) {
+                return cmp;
+            }
+            if (a.snm() != b.snm()) {
+                return a.snm() ? -1 : 1;
+            }
+            return a.name().compareTo(b.name());
+        });
+        return ordered;
+    }
+
+    /**
+     * Builds the displayed UpSet intersection columns capped at {@code maxIntersections}.
+     * Whenever rare SNM-present combinations fall outside the column cap, they are rolled into a
+     * trailing crimson {@code "Other SNM"} column (replacing the lowest-ranked non-SNM column so
+     * total columns never exceed {@code maxIntersections}) ensuring the displayed SNM vertical bars
+     * always sum to the exact SNM set total on the left.
+     */
+    public static List<DisplayedUpSetColumn> buildDisplayedUpSetColumns(
+            List<ReportDataAggregator.UpSetIntersection> intersections,
+            int maxIntersections
+    ) {
+        if (intersections == null || intersections.isEmpty()) {
+            return List.of();
+        }
+        int cap = Math.max(1, maxIntersections);
+        if (intersections.size() <= cap) {
+            List<DisplayedUpSetColumn> direct = new ArrayList<>(intersections.size());
+            for (ReportDataAggregator.UpSetIntersection inter : intersections) {
+                direct.add(new DisplayedUpSetColumn(
+                        String.join(" + ", inter.activeSets()),
+                        inter.activeSets(),
+                        Set.of(),
+                        inter.count(),
+                        inter.snmPresent(),
+                        false,
+                        1
+                ));
+            }
+            return direct;
+        }
+
+        List<ReportDataAggregator.UpSetIntersection> overflowSnm = new ArrayList<>();
+        for (int i = cap; i < intersections.size(); i++) {
+            ReportDataAggregator.UpSetIntersection inter = intersections.get(i);
+            if (inter.snmPresent() && inter.count() > 0L) {
+                overflowSnm.add(inter);
+            }
+        }
+
+        if (overflowSnm.isEmpty()) {
+            List<DisplayedUpSetColumn> capped = new ArrayList<>(cap);
+            for (int i = 0; i < cap; i++) {
+                ReportDataAggregator.UpSetIntersection inter = intersections.get(i);
+                capped.add(new DisplayedUpSetColumn(
+                        String.join(" + ", inter.activeSets()),
+                        inter.activeSets(),
+                        Set.of(),
+                        inter.count(),
+                        inter.snmPresent(),
+                        false,
+                        1
+                ));
+            }
+            return capped;
+        }
+
+        List<ReportDataAggregator.UpSetIntersection> kept = new ArrayList<>(intersections.subList(0, cap));
+        List<ReportDataAggregator.UpSetIntersection> rolled = new ArrayList<>();
+        int dropNonSnmIdx = -1;
+        for (int i = kept.size() - 1; i >= 0; i--) {
+            if (!kept.get(i).snmPresent()) {
+                dropNonSnmIdx = i;
+                break;
+            }
+        }
+        if (dropNonSnmIdx >= 0) {
+            kept.remove(dropNonSnmIdx);
+        } else {
+            rolled.add(kept.remove(kept.size() - 1));
+        }
+        rolled.addAll(overflowSnm);
+
+        long otherSnmCount = 0L;
+        Set<String> coSets = new LinkedHashSet<>();
+        for (ReportDataAggregator.UpSetIntersection r : rolled) {
+            otherSnmCount += r.count();
+            for (String s : r.activeSets()) {
+                if (!"SNM".equals(s)) {
+                    coSets.add(s);
+                }
+            }
+        }
+
+        List<DisplayedUpSetColumn> result = new ArrayList<>(kept.size() + 1);
+        for (ReportDataAggregator.UpSetIntersection inter : kept) {
+            result.add(new DisplayedUpSetColumn(
+                    String.join(" + ", inter.activeSets()),
+                    inter.activeSets(),
+                    Set.of(),
+                    inter.count(),
+                    inter.snmPresent(),
+                    false,
+                    1
+            ));
+        }
+        result.add(new DisplayedUpSetColumn(
+                "Other SNM",
+                List.of("SNM"),
+                Set.copyOf(coSets),
+                otherSnmCount,
+                true,
+                true,
+                rolled.size()
+        ));
+        return result;
+    }
+
     /**
      * Renders a pure vector UpSet co-occurrence intersection plot modeled after Lex et al. / Python upsetplot:
      * - Top-right vertical intersection cardinality bars sorted descending with exact count callouts
      * - Bottom-left horizontal per-set occupancy bars growing right-to-left with exact count callouts
+     *   (populated categories always listed first)
      * - Bottom-right connected dot matrix with alternating horizontal row bands
-     * - SNM-present subsets highlighted in crimson (#DC2626) with a non-color outer halo ring
+     * - SNM-present subsets highlighted in crimson (#DC2626) with a non-color outer halo ring, rolling any
+     *   truncated rare SNM intersections into a crimson "Other SNM" column so SNM bars always sum to the left total
      */
     public void drawUpSetChart(
             PdfDocumentBuilder pdf,
@@ -780,23 +931,19 @@ public class ChartGenerator {
             return;
         }
 
-        List<ReportDataAggregator.UpSetSetTotal> sets = data.sets();
-        int rowCount = sets.size();
-        // Order rows bottom-up so the largest set (e.g. Gamma) sits directly above the horizontal Occupancies axis,
-        // matching standard Lex et al. / Python upsetplot visual layout.
-        List<ReportDataAggregator.UpSetSetTotal> displaySets = new ArrayList<>(rowCount);
-        for (int i = rowCount - 1; i >= 0; i--) {
-            displaySets.add(sets.get(i));
-        }
-        int cap = Math.max(1, maxIntersections);
-        int shownCols = Math.min(cap, data.intersections().size());
-        List<ReportDataAggregator.UpSetIntersection> cols = data.intersections().subList(0, shownCols);
+        List<ReportDataAggregator.UpSetSetTotal> displaySets = orderDisplaySetsPopulatedFirst(data.sets());
+        int rowCount = displaySets.size();
+        List<DisplayedUpSetColumn> cols = buildDisplayedUpSetColumns(data.intersections(), maxIntersections);
+        int shownCols = cols.size();
+        DisplayedUpSetColumn otherSnmCol = (!cols.isEmpty() && cols.get(cols.size() - 1).otherSnmRollup())
+                ? cols.get(cols.size() - 1)
+                : null;
 
         float rowH = 14.5f;
         float matrixH = rowCount * rowH;
         float interPlotH = 108f;
         float headerH = 24f;
-        float bottomAxisH = 26f;
+        float bottomAxisH = 30f;
         float cardH = headerH + interPlotH + 10f + matrixH + bottomAxisH;
 
         pdf.ensureSpace(cardH + 12f);
@@ -861,7 +1008,7 @@ public class ChartGenerator {
 
         // Compute Y scale for vertical intersection bars (grid disabled per reference style)
         long maxInterCount = 1L;
-        for (ReportDataAggregator.UpSetIntersection col : cols) {
+        for (DisplayedUpSetColumn col : cols) {
             maxInterCount = Math.max(maxInterCount, col.count());
         }
         int yIntervals = 4;
@@ -989,7 +1136,7 @@ public class ChartGenerator {
         float countFontSize = shownCols > 14 ? 6.3f : 7.0f;
 
         for (int c = 0; c < shownCols; c++) {
-            ReportDataAggregator.UpSetIntersection inter = cols.get(c);
+            DisplayedUpSetColumn inter = cols.get(c);
             float colCenterX = matrixLeftX + (c + 0.5f) * slotW;
             Color activeColor = inter.snmPresent() ? snmCrimson : inkDark;
 
@@ -1008,63 +1155,103 @@ public class ChartGenerator {
             float cw = pdf.measureTextWidth(cFont, countFontSize, cText);
             pdf.drawText(cFont, countFontSize, activeColor, colCenterX - cw / 2f, interBaseY + vBarH + 2.8f, cText);
 
-            // 2. Inactive matrix dots + locate active rows
-            int firstActiveRow = -1;
-            int lastActiveRow = -1;
-            boolean[] rowActive = new boolean[rowCount];
+            // 2. Inactive matrix dots + locate primary and co-occurring active rows
+            int firstSpanRow = -1;
+            int lastSpanRow = -1;
+            boolean[] rowPrimaryActive = new boolean[rowCount];
+            boolean[] rowCoActive = new boolean[rowCount];
             for (int r = 0; r < rowCount; r++) {
                 String setName = displaySets.get(r).name();
-                boolean isActive = inter.activeSets().contains(setName);
-                rowActive[r] = isActive;
-                if (isActive) {
-                    if (firstActiveRow < 0) {
-                        firstActiveRow = r;
+                boolean isPrimary = inter.activeSets().contains(setName);
+                boolean isCo = inter.otherSnmRollup() && inter.coOccurringSets().contains(setName);
+                rowPrimaryActive[r] = isPrimary;
+                rowCoActive[r] = isCo;
+                if (isPrimary || isCo) {
+                    if (firstSpanRow < 0) {
+                        firstSpanRow = r;
                     }
-                    lastActiveRow = r;
+                    lastSpanRow = r;
                 } else {
                     float ry = (matrixTopY - r * rowH) - rowH / 2f;
                     pdf.drawFilledCircle(colCenterX, ry, inactiveRadius, inactiveDot, null, 0f);
                 }
             }
 
-            // 3. Connecting vertical line between top and bottom active set dots
-            if (firstActiveRow >= 0 && lastActiveRow > firstActiveRow) {
-                float yStart = (matrixTopY - firstActiveRow * rowH) - rowH / 2f;
-                float yEnd = (matrixTopY - lastActiveRow * rowH) - rowH / 2f;
+            // 3. Connecting vertical line between top and bottom participating set dots
+            if (firstSpanRow >= 0 && lastSpanRow > firstSpanRow) {
+                float yStart = (matrixTopY - firstSpanRow * rowH) - rowH / 2f;
+                float yEnd = (matrixTopY - lastSpanRow * rowH) - rowH / 2f;
                 cs.setStrokingColor(activeColor);
-                cs.setLineWidth(1.75f);
+                cs.setLineWidth(inter.otherSnmRollup() ? 1.25f : 1.75f);
+                if (inter.otherSnmRollup()) {
+                    cs.setLineDashPattern(new float[]{2.2f, 2.0f}, 0f);
+                }
                 cs.moveTo(colCenterX, yStart);
                 cs.lineTo(colCenterX, yEnd);
                 cs.stroke();
+                if (inter.otherSnmRollup()) {
+                    cs.setLineDashPattern(new float[]{}, 0f);
+                }
             }
 
-            // 4. Active filled dots (+ non-color double-ring halo when SNM is present)
+            // 4. Active filled dots (+ hollow co-occurring rings on "Other SNM" rollup + concentric SNM halo)
             for (int r = 0; r < rowCount; r++) {
-                if (!rowActive[r]) {
-                    continue;
-                }
                 float ry = (matrixTopY - r * rowH) - rowH / 2f;
-                pdf.drawFilledCircle(colCenterX, ry, dotRadius, activeColor, Color.WHITE, 0.55f);
-                if (inter.snmPresent()) {
-                    pdf.drawFilledCircle(colCenterX, ry, dotRadius + 1.6f, null, snmCrimson, 0.85f);
+                if (rowPrimaryActive[r]) {
+                    pdf.drawFilledCircle(colCenterX, ry, dotRadius, activeColor, Color.WHITE, 0.55f);
+                    if (inter.snmPresent()) {
+                        pdf.drawFilledCircle(colCenterX, ry, dotRadius + 1.6f, null, snmCrimson, 0.85f);
+                    }
+                } else if (rowCoActive[r]) {
+                    pdf.drawFilledCircle(colCenterX, ry, dotRadius * 0.88f, Color.WHITE, snmCrimson, 1.05f);
                 }
+            }
+
+            // 5. Explicit crimson "Other SNM" column callout directly underneath the rollup column
+            if (inter.otherSnmRollup()) {
+                String rollupTag = "Other SNM";
+                float tagW = pdf.measureTextWidth(bold, 6.0f, rollupTag);
+                float tagX = Math.min(matrixRightX - tagW, Math.max(matrixLeftX, colCenterX - tagW / 2f));
+                pdf.drawText(bold, 6.0f, snmCrimson, tagX, matrixBottomY - 9.0f, rollupTag);
             }
         }
 
         // Subtle footer caption inside bottom-right of matrix when intersections were capped
-        String matrixNote = data.intersections().size() > shownCols
-                ? String.format(Locale.US, "Showing top %d of %d alarm combinations (%s total alarming occupancies)",
-                        shownCols, data.intersections().size(), intFmt.format(data.totalAlarmingOccupancies()))
-                : String.format(Locale.US, "%d distinct alarm %s across %s alarming occupancies",
-                        shownCols, shownCols == 1 ? "combination" : "combinations",
-                        intFmt.format(data.totalAlarmingOccupancies()));
+        String matrixNote;
+        if (otherSnmCol != null) {
+            int topStandardShown = Math.max(0, shownCols - 1);
+            matrixNote = String.format(
+                    Locale.US,
+                    "Showing top %d of %d alarm combinations + Other SNM (%s) (%s total alarming occupancies)",
+                    topStandardShown,
+                    data.intersections().size(),
+                    intFmt.format(otherSnmCol.count()),
+                    intFmt.format(data.totalAlarmingOccupancies())
+            );
+        } else if (data.intersections().size() > shownCols) {
+            matrixNote = String.format(
+                    Locale.US,
+                    "Showing top %d of %d alarm combinations (%s total alarming occupancies)",
+                    shownCols,
+                    data.intersections().size(),
+                    intFmt.format(data.totalAlarmingOccupancies())
+            );
+        } else {
+            matrixNote = String.format(
+                    Locale.US,
+                    "%d distinct alarm %s across %s alarming occupancies",
+                    shownCols,
+                    shownCols == 1 ? "combination" : "combinations",
+                    intFmt.format(data.totalAlarmingOccupancies())
+            );
+        }
         float noteW = pdf.measureTextWidth(regular, 6.8f, matrixNote);
         pdf.drawText(
                 regular,
                 6.8f,
                 PdfDocumentBuilder.SLATE_600,
                 Math.max(matrixLeftX, matrixRightX - noteW),
-                matrixBottomY - 18f,
+                matrixBottomY - 20.5f,
                 matrixNote
         );
 

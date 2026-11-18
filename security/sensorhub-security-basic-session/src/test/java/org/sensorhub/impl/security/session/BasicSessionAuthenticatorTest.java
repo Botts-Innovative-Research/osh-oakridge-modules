@@ -536,6 +536,117 @@ public class BasicSessionAuthenticatorTest
     }
 
 
+    @Test
+    public void trustedTunnelGroupsHeaderMapsRolesAndValidatesExternalConsoleUrl() throws Exception
+    {
+        Path tempDir = java.nio.file.Files.createTempDirectory("oscar-tunnel-groups-test");
+        Path storePath = tempDir.resolve("identity.json");
+        InMemoryUserRegistry registry = new InMemoryUserRegistry();
+        registry.addAdmin("admin", "AdminBootPass!2026");
+
+        BasicSessionConfig cfg = new BasicSessionConfig();
+        cfg.trustedTunnelSsoEnabled = true;
+        cfg.trustedTunnelSharedSecret = "TunnelSharedSecretKey_123456";
+        cfg.trustedTunnelAutoProvisionViewer = false;
+        cfg.oidcAdminGroup = "oscar-admins";
+        cfg.oidcOperatorGroup = "oscar-operators";
+        BasicSessionAuthenticator auth = createAuthenticator(cfg, storePath, registry);
+
+        // 1. Tunnel user with X-Octelium-Groups JSON array -> provisioned as operator even when autoProvisionViewer=false
+        ResponseCapture opTunnel = new ResponseCapture();
+        auth.validateRequest(createRequest(
+            "GET", "/sensorhub/session", Map.of(), null,
+            Map.of(
+                "Host", "oscar.local",
+                "X-Oscar-Tunnel-Secret", "TunnelSharedSecretKey_123456",
+                "X-Octelium-User", "hub.operator",
+                "X-Octelium-Groups", "[\"oscar-operators\",\"remote-staff\"]")),
+            opTunnel.proxy(), true);
+        assertEquals(200, opTunnel.status);
+        JsonObject opJson = JsonParser.parseString(opTunnel.bodyUtf8()).getAsJsonObject();
+        assertEquals("hub.operator", opJson.get("username").getAsString());
+        assertEquals("operator", opJson.get("primaryRole").getAsString());
+        assertTrue(opJson.get("canAdjudicate").getAsBoolean());
+
+        // 2. Promoting that tunnel user's group in Authentik/Octelium updates role to admin on next tunnel request
+        ResponseCapture promotedTunnel = new ResponseCapture();
+        auth.validateRequest(createRequest(
+            "GET", "/sensorhub/session", Map.of(), null,
+            Map.of(
+                "Host", "oscar.local",
+                "X-Oscar-Tunnel-Secret", "TunnelSharedSecretKey_123456",
+                "X-Octelium-User", "hub.operator",
+                "X-Octelium-Groups", "oscar-admins, remote-staff")),
+            promotedTunnel.proxy(), true);
+        assertEquals(200, promotedTunnel.status);
+        JsonObject promotedJson = JsonParser.parseString(promotedTunnel.bodyUtf8()).getAsJsonObject();
+        assertEquals("admin", promotedJson.get("primaryRole").getAsString());
+        assertTrue(promotedJson.get("isAdmin").getAsBoolean());
+
+        // 3. Local admin account role is never downgraded by X-Octelium-Groups
+        ResponseCapture localAdminTunnel = new ResponseCapture();
+        auth.validateRequest(createRequest(
+            "GET", "/sensorhub/session", Map.of(), null,
+            Map.of(
+                "Host", "oscar.local",
+                "X-Oscar-Tunnel-Secret", "TunnelSharedSecretKey_123456",
+                "X-Octelium-User", "admin",
+                "X-Octelium-Groups", "unmapped-group")),
+            localAdminTunnel.proxy(), true);
+        assertEquals(200, localAdminTunnel.status);
+        JsonObject localAdminJson = JsonParser.parseString(localAdminTunnel.bodyUtf8()).getAsJsonObject();
+        assertEquals("admin", localAdminJson.get("primaryRole").getAsString());
+
+        // 4. External SSO console URL validation accepts https:// and rejects non-https schemes
+        assertEquals("https://auth.hub.example.org/if/admin/",
+            BasicSessionAuthenticator.sanitizeExternalConsoleUrl("  https://auth.hub.example.org/if/admin/  "));
+        assertEquals("", BasicSessionAuthenticator.sanitizeExternalConsoleUrl("   "));
+        try {
+            BasicSessionAuthenticator.sanitizeExternalConsoleUrl("http://auth.hub.example.org");
+            throw new AssertionError("Expected http:// console URL to be rejected");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("https://"));
+        }
+        try {
+            BasicSessionAuthenticator.sanitizeExternalConsoleUrl("javascript:alert(1)");
+            throw new AssertionError("Expected javascript: console URL to be rejected");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("https://"));
+        }
+    }
+
+
+    @Test
+    public void oidcCustomCaCertificateLoaderMergesPemWithSystemTrust() throws Exception
+    {
+        Path tempDir = java.nio.file.Files.createTempDirectory("oscar-oidc-ca-test");
+        javax.net.ssl.TrustManagerFactory tmf = javax.net.ssl.TrustManagerFactory.getInstance(
+            javax.net.ssl.TrustManagerFactory.getDefaultAlgorithm());
+        tmf.init((java.security.KeyStore) null);
+        javax.net.ssl.X509TrustManager sysTm = null;
+        for (javax.net.ssl.TrustManager tm : tmf.getTrustManagers()) {
+            if (tm instanceof javax.net.ssl.X509TrustManager x) {
+                sysTm = x;
+                break;
+            }
+        }
+        assertNotNull(sysTm);
+        java.security.cert.X509Certificate sampleCert = sysTm.getAcceptedIssuers()[0];
+        String pem = "-----BEGIN CERTIFICATE-----\n"
+            + java.util.Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
+                .encodeToString(sampleCert.getEncoded())
+            + "\n-----END CERTIFICATE-----\n";
+
+        Path caDir = java.nio.file.Files.createDirectory(tempDir.resolve("oidc-ca"));
+        Path caFile = caDir.resolve("hub-root-ca.crt");
+        java.nio.file.Files.writeString(caFile, pem, StandardCharsets.US_ASCII);
+
+        javax.net.ssl.SSLContext ctx = OidcClientHelper.buildCompositeSslContext(List.of(caFile));
+        assertNotNull(ctx);
+        assertEquals("TLS", ctx.getProtocol());
+    }
+
+
     private static String extractCookieValue(String setCookieHeader, String name)
     {
         String prefix = name + "=";

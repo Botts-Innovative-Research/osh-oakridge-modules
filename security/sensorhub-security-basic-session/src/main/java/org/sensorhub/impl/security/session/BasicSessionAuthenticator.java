@@ -308,17 +308,19 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
             }
 
             // 2. Trusted Zero Trust Tunnel Identity Header SSO (Octelium)
-            Authentication tunnelAuth = authenticateTrustedTunnel(request, response);
+            TunnelAuthResult tunnelAuth = authenticateTrustedTunnel(request, response);
             if (tunnelAuth != null) {
                 String sessionSubpath = extractSessionApiSubpath(path);
                 if (sessionSubpath != null) {
-                    PersistedSession created = resolveActiveSession(request, response);
+                    PersistedSession created = tunnelAuth.session() != null
+                            ? tunnelAuth.session()
+                            : resolveActiveSession(request, response);
                     if (created != null) {
                         handleSessionApi(request, response, created, sessionSubpath);
                         return Authentication.SEND_CONTINUE;
                     }
                 }
-                return tunnelAuth;
+                return tunnelAuth.authentication();
             }
 
             // 3. Stateless Federation Service Token (Authorization: Bearer oscar_fed_...)
@@ -384,7 +386,9 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
         return new UserAuthentication(AUTH_METHOD, withoutCredentials(fed.serviceUserId));
     }
 
-    private Authentication authenticateTrustedTunnel(HttpServletRequest request, HttpServletResponse response) {
+    private record TunnelAuthResult(Authentication authentication, PersistedSession session) {}
+
+    private TunnelAuthResult authenticateTrustedTunnel(HttpServletRequest request, HttpServletResponse response) {
         if (!config.trustedTunnelSsoEnabled)
             return null;
         String sharedSecret = config.trustedTunnelSharedSecret;
@@ -406,7 +410,20 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
             return null;
 
         String username = OidcClientHelper.sanitizeOidcUsername(rawTunnelUser);
-        if (securityManager.getUserInfo(username) == null) {
+        String groupsHeaderName = (config.trustedTunnelGroupsHeader == null || config.trustedTunnelGroupsHeader.isBlank())
+                ? "X-Octelium-Groups"
+                : config.trustedTunnelGroupsHeader.trim();
+        List<String> tunnelGroups = OidcClientHelper.parseTunnelGroupsHeader(request.getHeader(groupsHeaderName));
+
+        if (!tunnelGroups.isEmpty()) {
+            String mappedRole = OidcClientHelper.resolveRole(config, tunnelGroups);
+            if (securityManager.getUserInfo(username) == null
+                    && !config.trustedTunnelAutoProvisionViewer
+                    && OscarIdentityStore.ROLE_VIEWER.equals(mappedRole)) {
+                return null;
+            }
+            identityStore.provisionOrSyncExternalUser(username, rawTunnelUser.trim(), mappedRole, "tunnel");
+        } else if (securityManager.getUserInfo(username) == null) {
             if (!config.trustedTunnelAutoProvisionViewer)
                 return null;
             identityStore.provisionOrSyncExternalUser(
@@ -415,9 +432,9 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
         if (!identityStore.isUserActive(username))
             return null;
 
-        createSession(request, response, username, true);
+        PersistedSession created = createSession(request, response, username, true);
         identityStore.recordAuthSuccess(clientIp(request), username);
-        return new UserAuthentication(AUTH_METHOD, withoutCredentials(username));
+        return new TunnelAuthResult(new UserAuthentication(AUTH_METHOD, withoutCredentials(username)), created);
     }
 
     private Authentication authenticateBasic(HttpServletRequest request, HttpServletResponse response)
@@ -1596,12 +1613,24 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
                 config.oidcDefaultRole = defRole.toLowerCase(Locale.ROOT);
             }
         }
+        if (body.has("oidcTrustedCaCertificatePath")) {
+            String caPath = getJsonString(body, "oidcTrustedCaCertificatePath");
+            config.oidcTrustedCaCertificatePath = caPath == null ? "" : caPath.trim();
+        }
+        if (body.has("externalIdentityConsoleUrl")) {
+            String consoleUrl = getJsonString(body, "externalIdentityConsoleUrl");
+            config.externalIdentityConsoleUrl = sanitizeExternalConsoleUrl(consoleUrl);
+        }
         if (body.has("trustedTunnelSsoEnabled") && body.get("trustedTunnelSsoEnabled").isJsonPrimitive()) {
             config.trustedTunnelSsoEnabled = body.get("trustedTunnelSsoEnabled").getAsBoolean();
         }
         if (body.has("trustedTunnelUserHeader")) {
             String hdr = getJsonString(body, "trustedTunnelUserHeader");
             config.trustedTunnelUserHeader = (hdr == null || hdr.isBlank()) ? "X-Octelium-User" : hdr.trim();
+        }
+        if (body.has("trustedTunnelGroupsHeader")) {
+            String grpHdr = getJsonString(body, "trustedTunnelGroupsHeader");
+            config.trustedTunnelGroupsHeader = (grpHdr == null || grpHdr.isBlank()) ? "X-Octelium-Groups" : grpHdr.trim();
         }
         if (body.has("trustedTunnelSharedSecret")) {
             String sec = getJsonString(body, "trustedTunnelSharedSecret");
@@ -1774,12 +1803,41 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
         policy.put("oidcAdminGroup", config.oidcAdminGroup);
         policy.put("oidcOperatorGroup", config.oidcOperatorGroup);
         policy.put("oidcDefaultRole", config.oidcDefaultRole);
+        policy.put("oidcTrustedCaCertificatePath",
+                config.oidcTrustedCaCertificatePath == null ? "" : config.oidcTrustedCaCertificatePath);
+        policy.put("externalIdentityConsoleUrl",
+                config.externalIdentityConsoleUrl == null ? "" : config.externalIdentityConsoleUrl);
         policy.put("trustedTunnelSsoEnabled", config.trustedTunnelSsoEnabled);
         policy.put("trustedTunnelUserHeader", config.trustedTunnelUserHeader);
+        policy.put("trustedTunnelGroupsHeader",
+                (config.trustedTunnelGroupsHeader == null || config.trustedTunnelGroupsHeader.isBlank())
+                        ? "X-Octelium-Groups"
+                        : config.trustedTunnelGroupsHeader);
         policy.put("trustedTunnelHasSharedSecret",
                 config.trustedTunnelSharedSecret != null && config.trustedTunnelSharedSecret.length() >= 16);
         policy.put("trustedTunnelAutoProvisionViewer", config.trustedTunnelAutoProvisionViewer);
         return policy;
+    }
+
+    static String sanitizeExternalConsoleUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank())
+            return "";
+        String trimmed = rawUrl.trim();
+        if (trimmed.length() > 512)
+            throw new IllegalArgumentException("External SSO console URL is too long");
+        final java.net.URI parsed;
+        try {
+            parsed = java.net.URI.create(trimmed);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("External SSO console URL must be a valid https:// URL");
+        }
+        if (!"https".equalsIgnoreCase(parsed.getScheme())
+                || parsed.getHost() == null
+                || parsed.getHost().isBlank()
+                || parsed.getRawUserInfo() != null) {
+            throw new IllegalArgumentException("External SSO console URL must use https:// without embedded credentials");
+        }
+        return parsed.toASCIIString();
     }
 
     // -------------------------------------------------------------------------
@@ -2285,14 +2343,15 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
         return null;
     }
 
-    private void createSession(HttpServletRequest request,
-                               HttpServletResponse response,
-                               String username,
-                               boolean keepSignedIn) {
+    private PersistedSession createSession(HttpServletRequest request,
+                                           HttpServletResponse response,
+                                           String username,
+                                           boolean keepSignedIn) {
         String previousToken = readSessionCookie(request);
         boolean persistentCookie = allowKeepSignedIn && keepSignedIn;
         String token = identityStore.createSession(previousToken, username, persistentCookie);
         setSessionCookie(response, token, persistentCookie);
+        return identityStore.validateAndTouchSession(token, idleTimeoutMillis, absoluteTimeoutMillis);
     }
 
     private UserIdentity withoutCredentials(String username) {

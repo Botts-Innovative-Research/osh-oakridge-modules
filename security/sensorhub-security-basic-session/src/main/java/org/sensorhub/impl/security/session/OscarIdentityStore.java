@@ -844,7 +844,8 @@ public final class OscarIdentityStore {
             upsertRealmUser(username, cleanDisplay, unguessable, normalizedRole);
         } else {
             UserProfileRecord currentProfile = profiles.get(username);
-            if (currentProfile != null && "oidc".equals(currentProfile.authSource)) {
+            if (currentProfile != null
+                    && ("oidc".equals(currentProfile.authSource) || "tunnel".equals(currentProfile.authSource))) {
                 upsertRealmUser(username, cleanDisplay, existing.getPassword(), normalizedRole);
             }
         }

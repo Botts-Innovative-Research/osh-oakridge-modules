@@ -19,6 +19,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.net.URI;
@@ -27,11 +28,19 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.security.AlgorithmParameters;
 import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
+import java.security.KeyStore;
 import java.security.PublicKey;
 import java.security.Signature;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
 import java.security.spec.ECParameterSpec;
 import java.security.spec.ECPoint;
@@ -41,32 +50,46 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 
 /**
  * Minimal, dependency-free OpenID Connect Authorization Code + PKCE client
- * with JWKS ID-token verification (`RS256` and `ES256`) and group-to-role
- * mapping for optional enterprise SSO alongside local offline OSCAR accounts.
+ * with JWKS ID-token verification (`RS256` and `ES256`), optional custom PEM
+ * CA trust bundle support, and group-to-role mapping for optional enterprise
+ * or Hub SSO alongside local offline OSCAR accounts.
  */
 public final class OidcClientHelper {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
     private static final long DISCOVERY_TTL_MILLIS = 15 * 60_000L;
+    private static final long MAX_CA_FILE_BYTES = 1024 * 1024L;
 
-    private final HttpClient httpClient;
+    private final HttpClient fixedHttpClient;
+    private final HttpClient defaultHttpClient;
     private volatile CachedDiscovery cachedDiscovery;
+    private volatile CachedTlsClient cachedTlsClient;
 
     public OidcClientHelper() {
-        this(HttpClient.newBuilder()
+        this.fixedHttpClient = null;
+        this.defaultHttpClient = HttpClient.newBuilder()
                 .connectTimeout(CONNECT_TIMEOUT)
                 .followRedirects(HttpClient.Redirect.NEVER)
-                .build());
+                .build();
     }
 
     OidcClientHelper(HttpClient httpClient) {
-        this.httpClient = httpClient;
+        this.fixedHttpClient = httpClient;
+        this.defaultHttpClient = httpClient;
     }
+
+    private record CachedTlsClient(String pathKey, String fingerprint, HttpClient client) {}
 
     public static final class OidcUserClaims {
         public final String subject;
@@ -98,7 +121,8 @@ public final class OidcClientHelper {
                                         String state,
                                         String nonce,
                                         String codeVerifier) throws IOException, InterruptedException {
-        CachedDiscovery disc = discover(config.oidcIssuerUrl);
+        HttpClient client = clientFor(config);
+        CachedDiscovery disc = discover(client, config.oidcIssuerUrl);
         byte[] verifierChallenge = PasswordHasher.sha256(codeVerifier.getBytes(StandardCharsets.US_ASCII));
         String codeChallenge = PasswordHasher.encodeBase64Url(verifierChallenge);
         String scopes = (config.oidcScopes == null || config.oidcScopes.isBlank())
@@ -122,7 +146,8 @@ public final class OidcClientHelper {
                                                 String redirectUri,
                                                 String expectedNonce,
                                                 String codeVerifier) throws IOException, InterruptedException {
-        CachedDiscovery disc = discover(config.oidcIssuerUrl);
+        HttpClient client = clientFor(config);
+        CachedDiscovery disc = discover(client, config.oidcIssuerUrl);
 
         StringBuilder form = new StringBuilder();
         form.append("grant_type=authorization_code")
@@ -141,7 +166,7 @@ public final class OidcClientHelper {
                 .POST(HttpRequest.BodyPublishers.ofString(form.toString(), StandardCharsets.UTF_8))
                 .build();
 
-        HttpResponse<String> tokenResp = httpClient.send(tokenReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        HttpResponse<String> tokenResp = client.send(tokenReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (tokenResp.statusCode() != 200)
             throw new IOException("OIDC token endpoint returned HTTP " + tokenResp.statusCode());
 
@@ -151,7 +176,7 @@ public final class OidcClientHelper {
             throw new IOException("OIDC token response did not include an id_token");
 
         JsonObject payload = verifyJwtSignatureAndClaims(
-                idToken, disc.issuer(), config.oidcClientId, expectedNonce, disc.jwksUri());
+                client, idToken, disc.issuer(), config.oidcClientId, expectedNonce, disc.jwksUri());
 
         String sub = getString(payload, "sub");
         if (sub == null || sub.isBlank())
@@ -203,7 +228,163 @@ public final class OidcClientHelper {
         return cleaned;
     }
 
-    private CachedDiscovery discover(String rawIssuer) throws IOException, InterruptedException {
+    static List<String> parseTunnelGroupsHeader(String rawHeader) {
+        List<String> groups = new ArrayList<>();
+        if (rawHeader == null || rawHeader.isBlank())
+            return groups;
+        String trimmed = rawHeader.trim();
+        if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+            try {
+                JsonElement parsed = JsonParser.parseString(trimmed);
+                extractStringClaims(parsed, groups);
+                return groups;
+            } catch (RuntimeException ignored) {
+                // Fall back to delimited parsing below.
+            }
+        }
+        for (String token : trimmed.split("[,;]")) {
+            String cleaned = token.trim();
+            if (cleaned.length() >= 2 && cleaned.startsWith("\"") && cleaned.endsWith("\"")) {
+                cleaned = cleaned.substring(1, cleaned.length() - 1).trim();
+            }
+            if (!cleaned.isEmpty())
+                groups.add(cleaned);
+        }
+        return groups;
+    }
+
+    private HttpClient clientFor(BasicSessionConfig config) throws IOException {
+        if (fixedHttpClient != null)
+            return fixedHttpClient;
+        String rawCaPath = config == null ? null : config.oidcTrustedCaCertificatePath;
+        if (rawCaPath == null || rawCaPath.isBlank())
+            return defaultHttpClient;
+
+        Path path = Path.of(rawCaPath.trim()).toAbsolutePath().normalize();
+        List<Path> certFiles = collectPemCertificateFiles(path);
+        StringBuilder fp = new StringBuilder();
+        for (Path certFile : certFiles) {
+            fp.append(certFile.toString())
+                    .append('|').append(Files.size(certFile))
+                    .append('|').append(Files.getLastModifiedTime(certFile, LinkOption.NOFOLLOW_LINKS).toMillis())
+                    .append(';');
+        }
+        String fingerprint = fp.toString();
+        CachedTlsClient existing = cachedTlsClient;
+        if (existing != null && existing.pathKey().equals(path.toString()) && existing.fingerprint().equals(fingerprint)) {
+            return existing.client();
+        }
+
+        SSLContext sslContext = buildCompositeSslContext(certFiles);
+        HttpClient built = HttpClient.newBuilder()
+                .connectTimeout(CONNECT_TIMEOUT)
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .sslContext(sslContext)
+                .build();
+        this.cachedTlsClient = new CachedTlsClient(path.toString(), fingerprint, built);
+        return built;
+    }
+
+    private static List<Path> collectPemCertificateFiles(Path configuredPath) throws IOException {
+        if (!Files.exists(configuredPath, LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("Configured OIDC CA certificate path does not exist: " + configuredPath);
+        if (Files.isSymbolicLink(configuredPath))
+            throw new IOException("Configured OIDC CA certificate path must not be a symbolic link: " + configuredPath);
+
+        List<Path> files = new ArrayList<>();
+        if (Files.isRegularFile(configuredPath, LinkOption.NOFOLLOW_LINKS)) {
+            files.add(configuredPath);
+        } else if (Files.isDirectory(configuredPath, LinkOption.NOFOLLOW_LINKS)) {
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(configuredPath)) {
+                for (Path entry : stream) {
+                    if (Files.isSymbolicLink(entry) || !Files.isRegularFile(entry, LinkOption.NOFOLLOW_LINKS))
+                        continue;
+                    String lower = entry.getFileName().toString().toLowerCase(Locale.ROOT);
+                    if (lower.endsWith(".crt") || lower.endsWith(".pem") || lower.endsWith(".cer")) {
+                        files.add(entry);
+                    }
+                }
+            }
+            files.sort(Comparator.comparing(Path::toString));
+            if (files.isEmpty())
+                throw new IOException("Configured OIDC CA directory contains no .crt/.pem/.cer files: " + configuredPath);
+        } else {
+            throw new IOException("Configured OIDC CA certificate path is not a regular file or directory: " + configuredPath);
+        }
+        return files;
+    }
+
+    static SSLContext buildCompositeSslContext(List<Path> certFiles) throws IOException {
+        try {
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            KeyStore customStore = KeyStore.getInstance(KeyStore.getDefaultType());
+            customStore.load(null, null);
+            int certCount = 0;
+            for (Path file : certFiles) {
+                long size = Files.size(file);
+                if (size <= 0 || size > MAX_CA_FILE_BYTES)
+                    throw new IOException("OIDC CA certificate file exceeds bounds (1B..1MiB): " + file);
+                byte[] bytes = Files.readAllBytes(file);
+                Collection<? extends Certificate> parsed = cf.generateCertificates(new ByteArrayInputStream(bytes));
+                for (Certificate cert : parsed) {
+                    if (cert instanceof X509Certificate x509) {
+                        customStore.setCertificateEntry("oidc-ca-" + (++certCount), x509);
+                    }
+                }
+            }
+            if (certCount == 0)
+                throw new IOException("No valid X.509 certificates found in configured OIDC CA path");
+
+            TrustManagerFactory defaultTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            defaultTmf.init((KeyStore) null);
+            X509TrustManager defaultTm = findX509TrustManager(defaultTmf);
+
+            TrustManagerFactory customTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            customTmf.init(customStore);
+            X509TrustManager customTm = findX509TrustManager(customTmf);
+
+            X509TrustManager composite = new X509TrustManager() {
+                @Override
+                public void checkClientTrusted(X509Certificate[] chain, String authType) throws java.security.cert.CertificateException {
+                    defaultTm.checkClientTrusted(chain, authType);
+                }
+
+                @Override
+                public void checkServerTrusted(X509Certificate[] chain, String authType) throws java.security.cert.CertificateException {
+                    try {
+                        customTm.checkServerTrusted(chain, authType);
+                    } catch (java.security.cert.CertificateException customErr) {
+                        defaultTm.checkServerTrusted(chain, authType);
+                    }
+                }
+
+                @Override
+                public X509Certificate[] getAcceptedIssuers() {
+                    X509Certificate[] defIssuers = defaultTm.getAcceptedIssuers();
+                    X509Certificate[] custIssuers = customTm.getAcceptedIssuers();
+                    X509Certificate[] merged = Arrays.copyOf(defIssuers, defIssuers.length + custIssuers.length);
+                    System.arraycopy(custIssuers, 0, merged, defIssuers.length, custIssuers.length);
+                    return merged;
+                }
+            };
+
+            SSLContext ctx = SSLContext.getInstance("TLS");
+            ctx.init(null, new TrustManager[]{composite}, null);
+            return ctx;
+        } catch (GeneralSecurityException e) {
+            throw new IOException("Failed to initialize custom OIDC CA SSLContext", e);
+        }
+    }
+
+    private static X509TrustManager findX509TrustManager(TrustManagerFactory tmf) throws GeneralSecurityException {
+        for (TrustManager tm : tmf.getTrustManagers()) {
+            if (tm instanceof X509TrustManager x509)
+                return x509;
+        }
+        throw new GeneralSecurityException("No X509TrustManager available");
+    }
+
+    private CachedDiscovery discover(HttpClient client, String rawIssuer) throws IOException, InterruptedException {
         if (rawIssuer == null || rawIssuer.isBlank())
             throw new IOException("OIDC issuer URL is not configured");
         String normalizedIssuer = rawIssuer.trim().replaceAll("/+$", "");
@@ -221,7 +402,7 @@ public final class OidcClientHelper {
                 .header("Accept", "application/json")
                 .GET()
                 .build();
-        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (resp.statusCode() != 200)
             throw new IOException("OIDC discovery failed with HTTP " + resp.statusCode());
 
@@ -239,7 +420,8 @@ public final class OidcClientHelper {
         return resolved;
     }
 
-    private JsonObject verifyJwtSignatureAndClaims(String jwt,
+    private JsonObject verifyJwtSignatureAndClaims(HttpClient client,
+                                                   String jwt,
                                                    String expectedIssuer,
                                                    String expectedAudience,
                                                    String expectedNonce,
@@ -264,7 +446,7 @@ public final class OidcClientHelper {
                 .header("Accept", "application/json")
                 .GET()
                 .build();
-        HttpResponse<String> jwksResp = httpClient.send(jwksReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        HttpResponse<String> jwksResp = client.send(jwksReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (jwksResp.statusCode() != 200)
             throw new IOException("Failed to fetch OIDC JWKS: HTTP " + jwksResp.statusCode());
 

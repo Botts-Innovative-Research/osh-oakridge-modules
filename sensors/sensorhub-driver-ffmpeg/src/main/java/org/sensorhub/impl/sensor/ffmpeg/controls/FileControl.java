@@ -170,6 +170,36 @@ public class FileControl<FFmpegConfigType extends FFMPEGConfig> extends Abstract
         resultData = fac.createRecord().name("result")
                 .addField("streamPath", fac.createText())
                 .build();
+
+        cleanupOrphanedStartupPartials();
+    }
+
+    private void cleanupOrphanedStartupPartials() {
+        try {
+            String uid = parentSensor.getUniqueIdentifier();
+            if (uid == null || uid.isBlank())
+                return;
+            String probeKey = "clips/" + uid.replace(':', '-') + "/.startup-probe";
+            Path cameraDir = Path.of(bucketStore.getWritableResourceURI(VIDEO_BUCKET, probeKey))
+                    .toAbsolutePath().normalize().getParent();
+            if (cameraDir == null || !Files.isDirectory(cameraDir) || Files.isSymbolicLink(cameraDir))
+                return;
+            int removed = 0;
+            try (var entries = Files.newDirectoryStream(cameraDir, "*.partial-*")) {
+                for (Path entry : entries) {
+                    if (Files.isRegularFile(entry, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                        Files.deleteIfExists(entry);
+                        removed++;
+                    }
+                }
+            }
+            if (removed > 0) {
+                forceDirectory(cameraDir);
+                getLogger().info("Removed {} orphaned partial video recording(s) from {}", removed, cameraDir);
+            }
+        } catch (Exception e) {
+            getLogger().debug("Could not sweep startup partial recordings: {}", e.getMessage());
+        }
     }
 
 

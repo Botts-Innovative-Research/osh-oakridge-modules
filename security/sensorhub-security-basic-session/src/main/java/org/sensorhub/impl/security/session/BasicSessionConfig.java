@@ -83,11 +83,20 @@ public class BasicSessionConfig extends SecurityModuleConfig {
     @DisplayInfo(label = "OIDC Default Role", desc = "Fallback OSCAR role (viewer or operator) when an authenticated SSO user matches no group mapping.")
     public String oidcDefaultRole = "viewer";
 
+    @DisplayInfo(label = "OIDC Custom CA Certificate Path", desc = "Optional PEM file or directory of .crt/.pem CA certificates trusted for private-CA OIDC servers alongside standard public CAs.")
+    public String oidcTrustedCaCertificatePath = "";
+
+    @DisplayInfo(label = "External SSO Admin Console URL", desc = "Optional HTTPS URL to an external federated user management console (such as Authentik, Keycloak, Entra ID, or Okta), surfaced as a shortcut in Users & Access.")
+    public String externalIdentityConsoleUrl = "";
+
     @DisplayInfo(label = "Enable Trusted Tunnel SSO", desc = "Accept verified user identity headers injected by an authenticated Zero Trust tunnel sidecar (such as Octelium).")
     public boolean trustedTunnelSsoEnabled = false;
 
     @DisplayInfo(label = "Trusted Tunnel Identity Header", desc = "HTTP header carrying the verified tunnel username.")
     public String trustedTunnelUserHeader = "X-Octelium-User";
+
+    @DisplayInfo(label = "Trusted Tunnel Groups Header", desc = "Optional HTTP header carrying comma-delimited or JSON-array verified tunnel group names mapped against OIDC Administrator/Operator groups.")
+    public String trustedTunnelGroupsHeader = "X-Octelium-Groups";
 
     @FieldType(FieldType.Type.PASSWORD)
     @DisplayInfo(label = "Trusted Tunnel Shared Secret", desc = "Required secret header (X-Oscar-Tunnel-Secret, >= 16 characters) proving the request originated from the local tunnel sidecar.")

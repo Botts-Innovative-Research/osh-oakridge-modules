@@ -42,6 +42,7 @@ import org.sensorhub.api.datastore.DataStoreException;
 import org.sensorhub.impl.command.AbstractControlInterface;
 import org.vast.swe.SWEHelper;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -178,6 +179,7 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
             module.getLogger().error("Failed to build report {}", type, e);
         }
 
+        String lastFailureMessage = null;
         for (int retryAttempt = 0; retryAttempt < RETRY_COUNT; retryAttempt++) {
             if (Thread.currentThread().isInterrupted()) {
                 break;
@@ -189,8 +191,20 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
                     module.getLogger().info("Successfully generated report {}", resourceURI);
                     break;
                 }
-            } catch (DataStoreException | IOException e) {
-                module.getLogger().error("Failed to build report {} (attempt {})", type, retryAttempt + 1, e);
+            } catch (DataStoreException | IOException | RuntimeException e) {
+                lastFailureMessage = e.getMessage() != null && !e.getMessage().isBlank()
+                        ? e.getMessage()
+                        : e.getClass().getSimpleName();
+                module.getLogger().error("Failed to build report {} (attempt {}/{})",
+                        type, retryAttempt + 1, RETRY_COUNT, e);
+                if (retryAttempt + 1 < RETRY_COUNT) {
+                    try {
+                        Thread.sleep(1000L * (retryAttempt + 1));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
             }
         }
 
@@ -198,11 +212,14 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
         resultData.setStringValue(resourceURI);
         ICommandResult result = CommandResult.withData(resultData);
 
-        return new CommandStatus.Builder()
+        CommandStatus.Builder statusBuilder = new CommandStatus.Builder()
                 .withCommand(command.getID())
                 .withStatusCode(resourceURI == null ? ICommandStatus.CommandStatusCode.FAILED : ICommandStatus.CommandStatusCode.ACCEPTED)
-                .withResult(result)
-                .build();
+                .withResult(result);
+        if (resourceURI == null && lastFailureMessage != null) {
+            statusBuilder.withMessage("Report generation failed: " + lastFailureMessage);
+        }
+        return statusBuilder.build();
     }
 
     private static EventReportType parseEventType(String raw) {
@@ -258,18 +275,21 @@ public class RequestReportControl extends AbstractControlInterface<OSCARSystem> 
         return null;
     }
 
-    private String handleReportGeneration(IReportHandler reportHandler, String filePath) throws DataStoreException, IOException {
+    String handleReportGeneration(IReportHandler reportHandler, String filePath) throws DataStoreException, IOException {
         if (reportHandler == null || filePath == null || filePath.isBlank()) {
             return null;
         }
+        ByteArrayOutputStream rendered = new ByteArrayOutputStream(65536);
+        Report report = reportHandler.createReport(rendered);
+        report.generate();
+
         Object fileLock = fileWriteLocks.computeIfAbsent(filePath, k -> new Object());
         synchronized (fileLock) {
             try (OutputStream out = bucketService.getBucketStore().putObject(REPORT_BUCKET, filePath, Collections.emptyMap())) {
                 if (out == null) {
                     return null;
                 }
-                Report report = reportHandler.createReport(out);
-                report.generate();
+                rendered.writeTo(out);
             }
         }
         return bucketService.getBucketStore().getRelativeResourceURI(REPORT_BUCKET, filePath);

@@ -250,6 +250,35 @@ public final class MediaMtxSidecarManager implements AutoCloseable {
         }
     }
 
+    /**
+     * Recycles an unshared MediaMTX upstream path when {@code MpegTsProcessor.openStream()}
+     * detects incomplete video codec parameters (for example, an IP camera whose RTSP session
+     * continues dripping audio/RTCP packets while stalling its H.264 video track).
+     */
+    public void recycleStreamIfUnshared(String leaseId) {
+        if (leaseId == null) {
+            return;
+        }
+        synchronized (lock) {
+            String key = leaseToKey.get(leaseId);
+            if (key == null) {
+                return;
+            }
+            PathEntry entry = pathsByKey.get(key);
+            if (entry == null || entry.holders.size() > 1) {
+                return;
+            }
+            deletePathConfigBestEffortLocked(entry.pathName);
+            try {
+                pushPathConfigLocked(entry);
+                entry.registeredGeneration = processGeneration;
+            } catch (SensorHubException e) {
+                entry.registeredGeneration = -1L;
+                logger.debug("Deferred MediaMTX path re-registration for {}: {}", entry.pathName, e.getMessage());
+            }
+        }
+    }
+
     int getActivePathCount() {
         synchronized (lock) {
             return pathsByKey.size();

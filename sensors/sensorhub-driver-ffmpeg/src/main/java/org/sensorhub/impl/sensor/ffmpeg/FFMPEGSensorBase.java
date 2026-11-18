@@ -489,6 +489,9 @@ public abstract class FFMPEGSensorBase<FFMPEGconfigType extends FFMPEGConfig> ex
 
 	            }
 	        } else {
+	            if (liveNetworkSource) {
+	                MediaMtxSidecarManager.getInstance().recycleStreamIfUnshared(mediaMtxLeaseId);
+	            }
 	        	throw new SensorHubException("Unable to open stream from data source");
                 //return false;
 	        }
