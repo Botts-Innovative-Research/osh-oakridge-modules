@@ -293,32 +293,211 @@ public class OnnxOcrEngine implements OcrEngine {
                 CtcGreedyDecoder.Decoded decoded = recognizeCrop(crop);
                 if (decoded.text() != null && !decoded.text().isBlank()) {
                     reads.add(new OcrRead(decoded.text(), decoded.confidence(), box));
-                    // When a horizontal container box splits at a vertical door locking bar right after
-                    // the 10-character owner+category+serial prefix, run a lightweight rightward strip
-                    // re-read (+38% width) to optically capture the boxed 11th Modulo-11 check digit.
-                    if (box.width > box.height * 2 && box.x + box.width < w - 4) {
-                        var match = com.botts.impl.process.ocr.domain.Iso6346.extractBest(decoded.text());
-                        if (match.isPresent() && match.get().checkDigitRepaired()) {
-                            int extW = Math.min(w - box.x, Math.max(box.width + 8, (int) Math.round(box.width * 1.38)));
-                            if (extW > box.width + 4) {
-                                Rectangle extBox = new Rectangle(box.x, box.y, extW, box.height);
-                                BufferedImage extCrop = image.getSubimage(extBox.x, extBox.y, extBox.width, extBox.height);
-                                CtcGreedyDecoder.Decoded extDecoded = recognizeCrop(extCrop);
-                                if (extDecoded.text() != null && !extDecoded.text().isBlank()) {
-                                    var extMatch = com.botts.impl.process.ocr.domain.Iso6346.extractBest(extDecoded.text());
-                                    if (extMatch.isPresent()
-                                            && extMatch.get().checksumValid()
-                                            && !extMatch.get().checkDigitRepaired()) {
-                                        reads.add(new OcrRead(extDecoded.text(), extDecoded.confidence(), extBox));
-                                    }
-                                }
-                            }
+                }
+            }
+            recoverSplitAndBoxedCheckDigits(image, reads);
+            return reads;
+        }
+    }
+
+    /**
+     * Recovers optically verified 11-character ISO 6346 reads when DBNet splits a stencil across a
+     * vertical rear-door locking bar or drops a single-character boxed Modulo-11 check digit:
+     * <ul>
+     *   <li>Single-box 10-character prefixes ({@code [A-Z]{3}[UJZR]\d{6}}) are re-read with {@code ±15%}
+     *       vertical margin and {@code 1.38x}/{@code 1.54x} rightward span to capture taller painted
+     *       check-digit borders ({@code [0]}) across locking bars.</li>
+     *   <li>Split {@code 4 + 6} door/corrugation stencils (owner prefix box left of or stacked above a
+     *       6-digit serial box, or an isolated 6/7-digit serial box whose narrow 4-letter prefix across
+     *       the locking bar fell below DBNet's blob threshold) run a targeted span/rightward re-read,
+     *       committing strictly when {@link com.botts.impl.process.ocr.domain.Iso6346} confirms an
+     *       unrepaired optical Modulo-11 check digit.</li>
+     * </ul>
+     */
+    private void recoverSplitAndBoxedCheckDigits(BufferedImage image, List<OcrRead> reads) {
+        int baseCount = reads.size();
+        if (baseCount == 0)
+            return;
+        int imgW = image.getWidth();
+        int imgH = image.getHeight();
+
+        for (int i = 0; i < baseCount; i++) {
+            OcrRead cur = reads.get(i);
+            Rectangle box = cur.boundingBox();
+            if (box == null || box.width <= 1 || box.height <= 1)
+                continue;
+
+            // 1. Single-box 10-char ISO prefix whose boxed 11th check digit was missed or clipped:
+            //    try tight (0% y-pad, 1.38x) first so adjacent 22G1/45G1 stencils below are never grazed,
+            //    falling back to ±12% y-pad / 1.52x across wider rear-door locking bars.
+            if (box.width > box.height * 2 && box.x + box.width < imgW - 4) {
+                var match = com.botts.impl.process.ocr.domain.Iso6346.extractBest(cur.text());
+                if (match.isPresent() && match.get().checkDigitRepaired()) {
+                    Rectangle[] candidates = new Rectangle[]{
+                            new Rectangle(box.x, box.y,
+                                    Math.min(imgW - box.x, Math.max(box.width + 8, (int) Math.round(box.width * 1.38))),
+                                    box.height),
+                            paddedSpanBox(box.x, box.y,
+                                    Math.max(box.width + 8, (int) Math.round(box.width * 1.50)), box.height, imgW, imgH)
+                    };
+                    for (Rectangle extBox : candidates) {
+                        if (extBox.width <= box.width + 4)
+                            continue;
+                        OcrRead upgraded = tryOpticalIsoCrop(image, extBox, cur.confidence());
+                        if (upgraded != null) {
+                            reads.add(upgraded);
+                            break;
                         }
+                    }
+                    continue;
+                }
+            }
+
+            // 2. Split 4 + 6 door/corrugation stencil where an explicit 4-char owner prefix box sits
+            //    to the left of or directly above a 6-digit serial box.
+            String norm = com.botts.impl.process.ocr.domain.Iso6346.normalize(cur.text());
+            if (norm.length() == 6 && isAllDigits(norm) && box.width >= box.height * 1.4 && box.x + box.width < imgW - 4) {
+                OcrRead leftOwner = findSameLineLeftOwner(reads, baseCount, box);
+                if (leftOwner != null) {
+                    Rectangle ob = leftOwner.boundingBox();
+                    int spanRight = Math.min(imgW, box.x + (int) Math.round(box.width * 1.50));
+                    int topY = Math.min(ob.y, box.y);
+                    int botY = Math.max(ob.y + ob.height, box.y + box.height);
+                    double minBaseConf = Math.min(leftOwner.confidence(), cur.confidence());
+                    OcrRead fullHit = tryOpticalIsoCrop(image,
+                            new Rectangle(ob.x, topY, spanRight - ob.x, botY - topY), minBaseConf);
+                    if (fullHit == null) {
+                        fullHit = tryOpticalIsoCrop(image,
+                                paddedSpanBox(ob.x, topY, spanRight - ob.x, botY - topY, imgW, imgH), minBaseConf);
+                    }
+                    if (fullHit != null) {
+                        reads.add(fullHit);
+                        continue;
+                    }
+                    OcrRead extSerial = trySerialRightwardExtension(image, leftOwner.text(), box, cur.confidence(), imgW, imgH);
+                    if (extSerial != null) {
+                        reads.set(i, extSerial);
+                    }
+                    continue;
+                }
+
+                OcrRead topOwner = findStackedTopOwner(reads, baseCount, box);
+                if (topOwner != null) {
+                    OcrRead extSerial = trySerialRightwardExtension(image, topOwner.text(), box, cur.confidence(), imgW, imgH);
+                    if (extSerial != null) {
+                        reads.set(i, extSerial);
                     }
                 }
             }
-            return reads;
         }
+    }
+
+    private OcrRead tryOpticalIsoCrop(BufferedImage image, Rectangle extBox, double baseConf) {
+        if (extBox.width <= 4 || extBox.height <= 4)
+            return null;
+        CtcGreedyDecoder.Decoded dec = recognizeCrop(image.getSubimage(extBox.x, extBox.y, extBox.width, extBox.height));
+        if (dec.text() == null || dec.text().isBlank())
+            return null;
+        var m = com.botts.impl.process.ocr.domain.Iso6346.extractBest(dec.text());
+        if (m.isPresent() && m.get().checksumValid() && !m.get().checkDigitRepaired()) {
+            return new OcrRead(dec.text(), Math.max(dec.confidence(), baseConf * 0.96), extBox);
+        }
+        return null;
+    }
+
+    private OcrRead trySerialRightwardExtension(BufferedImage image,
+                                                String ownerText,
+                                                Rectangle serialBox,
+                                                double baseConf,
+                                                int imgW,
+                                                int imgH) {
+        Rectangle[] candidates = new Rectangle[]{
+                new Rectangle(serialBox.x, serialBox.y,
+                        Math.min(imgW - serialBox.x, Math.max(serialBox.width + 8, (int) Math.round(serialBox.width * 1.46))),
+                        serialBox.height),
+                paddedSpanBox(serialBox.x, serialBox.y,
+                        Math.max(serialBox.width + 8, (int) Math.round(serialBox.width * 1.58)), serialBox.height, imgW, imgH)
+        };
+        for (Rectangle extBox : candidates) {
+            if (extBox.width <= serialBox.width + 4)
+                continue;
+            CtcGreedyDecoder.Decoded dec = recognizeCrop(image.getSubimage(extBox.x, extBox.y, extBox.width, extBox.height));
+            if (dec.text() == null || dec.text().isBlank())
+                continue;
+            var m = com.botts.impl.process.ocr.domain.Iso6346.extractBest(ownerText + " " + dec.text());
+            if (m.isPresent() && m.get().checksumValid() && !m.get().checkDigitRepaired()) {
+                return new OcrRead(dec.text(), Math.max(dec.confidence(), baseConf * 0.96), extBox);
+            }
+        }
+        return null;
+    }
+
+    private static Rectangle paddedSpanBox(int x, int y, int width, int height, int imgW, int imgH) {
+        int padY = Math.max(2, (int) Math.round(height * 0.12));
+        int nx = Math.max(0, x);
+        int ny = Math.max(0, y - padY);
+        int nw = Math.min(imgW - nx, width);
+        int nh = Math.min(imgH - ny, height + 2 * padY);
+        return new Rectangle(nx, ny, Math.max(1, nw), Math.max(1, nh));
+    }
+
+    private static OcrRead findSameLineLeftOwner(List<OcrRead> reads, int count, Rectangle serialBox) {
+        OcrRead best = null;
+        int bestGap = Integer.MAX_VALUE;
+        for (int j = 0; j < count; j++) {
+            OcrRead cand = reads.get(j);
+            Rectangle cb = cand.boundingBox();
+            if (cb == null || !isOwnerPrefixToken(cand.text()))
+                continue;
+            double maxH = Math.max(cb.height, serialBox.height);
+            int gapX = serialBox.x - (cb.x + cb.width);
+            if (Math.abs(cb.getCenterY() - serialBox.getCenterY()) <= maxH * 0.65
+                    && gapX >= -((int) (maxH * 0.5)) && gapX <= maxH * 4.5 && gapX < bestGap) {
+                best = cand;
+                bestGap = gapX;
+            }
+        }
+        return best;
+    }
+
+    private static OcrRead findStackedTopOwner(List<OcrRead> reads, int count, Rectangle serialBox) {
+        for (int j = 0; j < count; j++) {
+            OcrRead cand = reads.get(j);
+            Rectangle cb = cand.boundingBox();
+            if (cb == null || !isOwnerPrefixToken(cand.text()))
+                continue;
+            double maxH = Math.max(cb.height, serialBox.height);
+            int gapY = serialBox.y - (cb.y + cb.height);
+            if (gapY >= -((int) (maxH * 0.35)) && gapY <= maxH * 1.85
+                    && (Math.abs(serialBox.x - cb.x) <= maxH * 2.5
+                    || Math.abs(serialBox.getCenterX() - cb.getCenterX()) <= maxH * 3.0)) {
+                return cand;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isOwnerPrefixToken(String raw) {
+        String s = com.botts.impl.process.ocr.domain.Iso6346.normalize(raw);
+        if (s.length() != 4)
+            return false;
+        char cat = s.charAt(3);
+        if (cat != 'U' && cat != 'J' && cat != 'Z' && cat != 'R')
+            return false;
+        int letters = 0;
+        for (int i = 0; i < 3; i++) {
+            if (Character.isLetter(s.charAt(i)))
+                letters++;
+        }
+        return letters >= 2;
+    }
+
+    private static boolean isAllDigits(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            if (!Character.isDigit(s.charAt(i)))
+                return false;
+        }
+        return !s.isEmpty();
     }
 
     private List<Rectangle> detect(BufferedImage image, int detMaxSide) {

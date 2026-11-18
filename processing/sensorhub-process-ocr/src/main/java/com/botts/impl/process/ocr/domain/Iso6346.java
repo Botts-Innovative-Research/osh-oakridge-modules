@@ -102,6 +102,12 @@ public final class Iso6346 {
         return compact != null && CONTAINER_PATTERN.matcher(compact).matches();
     }
 
+    public static boolean isKnownBicPrefix(String prefix4) {
+        return prefix4 != null
+                && prefix4.length() >= 4
+                && KNOWN_BIC_PREFIXES.contains(prefix4.substring(0, 4).toUpperCase(Locale.ROOT));
+    }
+
     public static int computeCheckDigit(CharSequence first10) {
         if (first10 == null || first10.length() < 10)
             throw new IllegalArgumentException("Expected at least 10 characters");

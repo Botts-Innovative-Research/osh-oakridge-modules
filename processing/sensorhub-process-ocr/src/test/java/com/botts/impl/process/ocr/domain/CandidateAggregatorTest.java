@@ -125,5 +125,40 @@ class CandidateAggregatorTest {
         assertEquals(1, multiFrame.size());
         assertEquals("FANU1357540", multiFrame.get(0).normalizedValue());
         assertEquals(2, multiFrame.get(0).readCount());
+
+        // Single-frame unknown-BIC 10-char read at 0.89 (< 0.93 unknown-BIC floor) is rejected
+        var unknownBicSingle = aggregator.aggregate(List.of(
+                new CandidateAggregator.FrameInput(0, 1280, 720, List.of(
+                        new OcrRead("SAMU 994640", 0.89, new Rectangle(200, 180, 180, 32))
+                ))
+        ));
+        assertTrue(unknownBicSingle.isEmpty(), "Expected unknown-BIC single-frame repaired read below 0.93 to be filtered");
+    }
+
+    @Test
+    void concatenatesVerticallyStackedTwoLineRearDoorAndCornerStencils() {
+        CandidateAggregator aggregator = new CandidateAggregator(0.50);
+
+        // 2-line stack: TCNU directly above 475606 + separate boxed check digit 0 on row 2
+        var threeBoxStack = aggregator.aggregate(List.of(
+                new CandidateAggregator.FrameInput(0, 1280, 720, List.of(
+                        new OcrRead("TCNU", 0.94, new Rectangle(300, 160, 88, 34)),
+                        new OcrRead("475606", 0.93, new Rectangle(302, 206, 126, 34)),
+                        new OcrRead("0", 0.90, new Rectangle(444, 205, 26, 36))
+                ))
+        ));
+        assertEquals(1, threeBoxStack.size());
+        assertEquals("TCNU4756060", threeBoxStack.get(0).normalizedValue());
+        assertTrue(threeBoxStack.get(0).checksumValid());
+        assertFalse(threeBoxStack.get(0).checkDigitRepaired());
+
+        // Rejects unrelated non-container vertical text (e.g. fake non-BIC prefix without optical check digit)
+        var bogusStack = aggregator.aggregate(List.of(
+                new CandidateAggregator.FrameInput(0, 1280, 720, List.of(
+                        new OcrRead("ZZZU", 0.91, new Rectangle(300, 160, 88, 34)),
+                        new OcrRead("304800", 0.90, new Rectangle(302, 206, 126, 34))
+                ))
+        ));
+        assertTrue(bogusStack.isEmpty());
     }
 }

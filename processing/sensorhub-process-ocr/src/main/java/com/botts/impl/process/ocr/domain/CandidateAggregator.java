@@ -29,6 +29,7 @@ public final class CandidateAggregator {
 
     public static final int MAX_CANDIDATES_PER_TYPE = 3;
     public static final double SINGLE_FRAME_REPAIRED_MIN_CONFIDENCE = 0.82;
+    public static final double SINGLE_FRAME_UNKNOWN_BIC_REPAIRED_MIN_CONFIDENCE = 0.93;
     private static final double STATIC_EDGE_BAND_FRACTION = 0.18;
 
     public record FrameInput(int frameIndex, int frameWidth, int frameHeight, List<OcrRead> reads) {
@@ -104,7 +105,7 @@ public final class CandidateAggregator {
                 evaluateAndRecord(byKey, frame.frameIndex(), read.text(), read.confidence(), read.boundingBox());
             }
 
-            // 2. Same-line horizontal box concatenation for split container stencils / boxed check digit
+            // 2. Same-line horizontal & 2-line vertical stacked box concatenation for split container stencils
             if (readContainerIds) {
                 for (LineRead merged : buildSameLineConcatenations(usable)) {
                     Optional<Iso6346.Match> iso = Iso6346.extractBest(merged.text);
@@ -120,6 +121,24 @@ public final class CandidateAggregator {
                                 m.checkDigitRepaired(),
                                 frame.frameIndex(),
                                 merged.unionBox);
+                    }
+                }
+                for (LineRead stacked : buildStackedContainerConcatenations(usable)) {
+                    Optional<Iso6346.Match> iso = Iso6346.extractBest(stacked.text);
+                    if (iso.isPresent()) {
+                        Iso6346.Match m = iso.get();
+                        if (m.checksumValid() && (!m.checkDigitRepaired() || Iso6346.isKnownBicPrefix(m.compact()))) {
+                            recordCandidate(
+                                    byKey,
+                                    VehicleOcrResult.ID_TYPE_CONTAINER,
+                                    m.compact(),
+                                    stacked.text,
+                                    stacked.confidence,
+                                    m.checksumValid(),
+                                    m.checkDigitRepaired(),
+                                    frame.frameIndex(),
+                                    stacked.unionBox);
+                        }
                     }
                 }
             }
@@ -138,12 +157,16 @@ public final class CandidateAggregator {
                 continue;
             // Gate single-frame check-digit-repaired candidates (where the 11th Modulo-11 check digit
             // was synthesized from a 10-character prefix rather than optically verified) behind a
-            // stricter confidence floor so 1-digit serial misreads do not masquerade as valid containers.
+            // stricter confidence floor, requiring >= 0.93 when the 4-letter prefix is not a registered BIC code.
             if (VehicleOcrResult.ID_TYPE_CONTAINER.equals(c.idType())
                     && c.checkDigitRepaired()
-                    && c.readCount() == 1
-                    && c.confidence() < Math.max(floor, SINGLE_FRAME_REPAIRED_MIN_CONFIDENCE))
-                continue;
+                    && c.readCount() == 1) {
+                double repairedFloor = Iso6346.isKnownBicPrefix(c.normalizedValue())
+                        ? SINGLE_FRAME_REPAIRED_MIN_CONFIDENCE
+                        : SINGLE_FRAME_UNKNOWN_BIC_REPAIRED_MIN_CONFIDENCE;
+                if (c.confidence() < Math.max(floor, repairedFloor))
+                    continue;
+            }
             all.add(c);
         }
 
@@ -306,6 +329,89 @@ public final class CandidateAggregator {
             }
         }
         return merged;
+    }
+
+    /**
+     * Merges vertically stacked 2-line rear-door and corner container stencils where the 4-character
+     * owner+category prefix ({@code [A-Z]{3}[UJZR]}) is painted directly above the 6/7-digit serial
+     * (optionally followed on the bottom row by a separate 1-digit boxed check-digit box).
+     */
+    private List<LineRead> buildStackedContainerConcatenations(List<OcrRead> reads) {
+        if (reads.size() < 2)
+            return List.of();
+        List<LineRead> stacked = new ArrayList<>();
+        for (int i = 0; i < reads.size(); i++) {
+            OcrRead top = reads.get(i);
+            Rectangle tb = top.boundingBox();
+            if (tb == null || !isStackedOwnerPrefix(top.text()))
+                continue;
+
+            for (int j = 0; j < reads.size(); j++) {
+                if (i == j)
+                    continue;
+                OcrRead bottom = reads.get(j);
+                Rectangle bb = bottom.boundingBox();
+                if (bb == null)
+                    continue;
+
+                double maxH = Math.max(1.0, Math.max(tb.height, bb.height));
+                double hRatio = bb.height / (double) Math.max(1, tb.height);
+                int gapY = bb.y - (tb.y + tb.height);
+                boolean verticallyBelow = gapY >= -((int) (maxH * 0.35)) && gapY <= maxH * 1.85
+                        && hRatio >= 0.45 && hRatio <= 2.2;
+                boolean horizontallyAligned = Math.abs(bb.x - tb.x) <= maxH * 2.5
+                        || Math.abs(bb.getCenterX() - tb.getCenterX()) <= maxH * 3.0;
+                if (!verticallyBelow || !horizontallyAligned)
+                    continue;
+
+                String bNorm = Iso6346.normalize(bottom.text());
+                if (bNorm.length() < 6 || bNorm.length() > 8)
+                    continue;
+
+                Rectangle union = tb.union(bb);
+                String mergedText = top.text().trim() + " " + bottom.text().trim();
+                double conf = 0.5 * (top.confidence() + bottom.confidence());
+
+                if (bNorm.length() == 6) {
+                    // Check for a separate 1-digit boxed check digit immediately to the right of bottom
+                    for (int k = 0; k < reads.size(); k++) {
+                        if (k == i || k == j)
+                            continue;
+                        OcrRead chk = reads.get(k);
+                        Rectangle cb = chk.boundingBox();
+                        if (cb == null)
+                            continue;
+                        String cNorm = Iso6346.normalize(chk.text());
+                        int gapX = cb.x - (bb.x + bb.width);
+                        if (cNorm.length() == 1
+                                && Math.abs(cb.getCenterY() - bb.getCenterY()) <= maxH * 0.65
+                                && gapX >= -((int) (maxH * 0.5)) && gapX <= maxH * 4.0) {
+                            stacked.add(new LineRead(
+                                    mergedText + " " + chk.text().trim(),
+                                    (top.confidence() + bottom.confidence() + chk.confidence()) / 3.0,
+                                    union.union(cb)));
+                        }
+                    }
+                }
+                stacked.add(new LineRead(mergedText, conf, union));
+            }
+        }
+        return stacked;
+    }
+
+    private static boolean isStackedOwnerPrefix(String raw) {
+        String s = Iso6346.normalize(raw);
+        if (s.length() != 4)
+            return false;
+        char cat = s.charAt(3);
+        if (cat != 'U' && cat != 'J' && cat != 'Z' && cat != 'R')
+            return false;
+        int letters = 0;
+        for (int i = 0; i < 3; i++) {
+            if (Character.isLetter(s.charAt(i)))
+                letters++;
+        }
+        return letters >= 2;
     }
 
     private boolean isInIgnoredBand(OcrRead read, int frameHeight) {

@@ -91,4 +91,44 @@ public class OnnxOcrEngineTest {
             assertFalse(reads2.isEmpty());
         }
     }
+
+    @Test
+    void recoversSplitDoorStencilAndBoxedCheckDigitAcrossLockingBar() {
+        Path modelDir = locateBundledModelDir();
+        BufferedImage img = new BufferedImage(1280, 720, BufferedImage.TYPE_3BYTE_BGR);
+        Graphics2D g = img.createGraphics();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            g.setColor(new Color(44, 62, 88));
+            g.fillRect(0, 0, 1280, 720);
+
+            // Vertical dark door locking bar separating owner prefix and 6-digit serial + boxed check digit
+            g.setColor(new Color(22, 28, 36));
+            g.fillRect(545, 80, 26, 560);
+
+            g.setColor(new Color(244, 246, 248));
+            g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 44));
+            g.drawString("SEGU", 395, 260);
+            g.drawString("464776", 595, 260);
+
+            // Taller painted check-digit border around '1'
+            g.drawRect(782, 214, 38, 56);
+            g.drawString("1", 790, 260);
+        } finally {
+            g.dispose();
+        }
+
+        try (OcrEngine engine = OnnxOcrEngine.acquireShared(modelDir)) {
+            List<OcrRead> reads = engine.recognize(img);
+            CandidateAggregator aggregator = new CandidateAggregator(0.50);
+            var candidates = aggregator.aggregate(List.of(
+                    new CandidateAggregator.FrameInput(0, img.getWidth(), img.getHeight(), reads)
+            ));
+            assertFalse(candidates.isEmpty(), "Expected split door stencil with boxed check digit to resolve: " + reads);
+            assertEquals("SEGU4647761", candidates.get(0).normalizedValue());
+            assertTrue(candidates.get(0).checksumValid());
+            assertFalse(candidates.get(0).checkDigitRepaired());
+        }
+    }
 }
