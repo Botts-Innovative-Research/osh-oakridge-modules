@@ -47,6 +47,9 @@ public class OnnxOcrEngine implements OcrEngine {
     public static final String DET_MODEL = "det.onnx";
     public static final String REC_MODEL = "rec.onnx";
     public static final String DICT_FILE = "dict.txt";
+    public static final String STENCIL_DET_MODEL = "stencil_det_fp32.onnx";
+    public static final String PARSEQ_REC_MODEL = "parseq_rec_int8.onnx";
+    public static final String PARSEQ_VOCAB_FILE = "parseq_vocab.txt";
 
     private static final Path CONTAINER_MODEL_FALLBACK = Paths.get("/opt/oscar/models/ocr");
     private static final Path DEV_MODEL_FALLBACK = Paths.get("dist/models/ocr");
@@ -83,9 +86,14 @@ public class OnnxOcrEngine implements OcrEngine {
     private OrtEnvironment env;
     private OrtSession detSession;
     private OrtSession recSession;
+    private OrtSession stencilDetSession;
+    private OrtSession parseqSession;
     private String detInputName;
     private String recInputName;
+    private String stencilDetInputName;
+    private String parseqInputName;
     private CtcGreedyDecoder decoder;
+    private ParseqDecoder parseqDecoder;
     private final DbNetPostProcessor postProcessor = new DbNetPostProcessor();
     private int recHeight = REC_DEFAULT_HEIGHT;
     private boolean closed = false;
@@ -130,6 +138,30 @@ public class OnnxOcrEngine implements OcrEngine {
         return Files.isReadable(dir.resolve(DET_MODEL))
                 && Files.isReadable(dir.resolve(REC_MODEL))
                 && Files.isReadable(dir.resolve(DICT_FILE));
+    }
+
+    public static boolean hasTierZeroModelFiles(Path dir) {
+        if (dir == null)
+            return false;
+        return Files.isReadable(dir.resolve(STENCIL_DET_MODEL))
+                && Files.isReadable(dir.resolve(PARSEQ_REC_MODEL))
+                && Files.isReadable(dir.resolve(PARSEQ_VOCAB_FILE));
+    }
+
+    private static Path resolveTierZeroDirectory(Path requestedDir, Path resolvedBaseDir) {
+        if (hasTierZeroModelFiles(resolvedBaseDir))
+            return resolvedBaseDir;
+        // When configured with the default relative "models/ocr" path on an upgraded persistent volume
+        // that only pre-seeded det/rec/dict, automatically discover packaged Tier-0 models in /opt/oscar/models/ocr.
+        boolean isDefaultRelative = requestedDir == null
+                || (!requestedDir.isAbsolute() && "models/ocr".equals(requestedDir.toString().replace('\\', '/')));
+        if (isDefaultRelative) {
+            if (hasTierZeroModelFiles(CONTAINER_MODEL_FALLBACK))
+                return CONTAINER_MODEL_FALLBACK.toAbsolutePath().normalize();
+            if (hasTierZeroModelFiles(DEV_MODEL_FALLBACK))
+                return DEV_MODEL_FALLBACK.toAbsolutePath().normalize();
+        }
+        return null;
     }
 
     /**
@@ -190,6 +222,16 @@ public class OnnxOcrEngine implements OcrEngine {
         }
 
         @Override
+        public boolean supportsFastRoiPass() {
+            return delegate.supportsFastRoiPass();
+        }
+
+        @Override
+        public List<OcrRead> recognizeFastRoi(BufferedImage frame) {
+            return delegate.recognizeFastRoi(frame);
+        }
+
+        @Override
         public synchronized void close() {
             if (released)
                 return;
@@ -224,10 +266,28 @@ public class OnnxOcrEngine implements OcrEngine {
 
                 List<String> charset = Files.readAllLines(dictPath, StandardCharsets.UTF_8);
                 decoder = new CtcGreedyDecoder(charset);
+
+                Path tierZeroDir = resolveTierZeroDirectory(requestedDir, modelDir);
+                if (tierZeroDir != null) {
+                    Path stencilPath = tierZeroDir.resolve(STENCIL_DET_MODEL);
+                    Path parseqPath = tierZeroDir.resolve(PARSEQ_REC_MODEL);
+                    Path parseqVocabPath = tierZeroDir.resolve(PARSEQ_VOCAB_FILE);
+                    try (OrtSession.SessionOptions options = createBoundedSessionOptions()) {
+                        stencilDetSession = env.createSession(stencilPath.toString(), options);
+                    }
+                    try (OrtSession.SessionOptions options = createBoundedSessionOptions()) {
+                        parseqSession = env.createSession(parseqPath.toString(), options);
+                    }
+                    stencilDetInputName = stencilDetSession.getInputNames().iterator().next();
+                    parseqInputName = parseqSession.getInputNames().iterator().next();
+                    parseqDecoder = new ParseqDecoder(Files.readString(parseqVocabPath, StandardCharsets.UTF_8).strip());
+                    logger.info("Loaded general camera-agnostic OrientedStencil + PARSeq ONNX models from {}", tierZeroDir);
+                }
+
                 closed = false;
 
-                logger.info("OCR ONNX engine initialized from {} (recHeight={}, intraOpThreads={})",
-                        modelDir, recHeight, intraOpThreads);
+                logger.info("OCR ONNX engine initialized from {} (recHeight={}, intraOpThreads={}, fastRoi={})",
+                        modelDir, recHeight, intraOpThreads, stencilDetSession != null);
             } catch (OrtException | IOException e) {
                 close();
                 throw new OcrEngineException("Failed to initialize ONNX OCR engine from " + modelDir, e);
@@ -257,6 +317,130 @@ public class OnnxOcrEngine implements OcrEngine {
             logger.debug("Could not query rec model input shape, using default height", e);
         }
         return REC_DEFAULT_HEIGHT;
+    }
+
+    @Override
+    public boolean supportsFastRoiPass() {
+        synchronized (inferenceLock) {
+            return !closed && stencilDetSession != null && parseqSession != null && parseqDecoder != null;
+        }
+    }
+
+    @Override
+    public List<OcrRead> recognizeFastRoi(BufferedImage image) {
+        if (image == null)
+            return List.of();
+        int w = image.getWidth();
+        int h = image.getHeight();
+        if (w <= 1 || h <= 1 || (long) w * h > MAX_FRAME_PIXELS)
+            throw new OcrEngineException("Invalid frame dimensions for OCR: " + w + "x" + h);
+
+        synchronized (inferenceLock) {
+            if (closed || stencilDetSession == null || parseqSession == null)
+                return recognize(image, DET_MAX_SIDE);
+
+            List<OrientedStencilPostProcessor.OrientedBox> peaks = detectOrientedStencils(image);
+            if (peaks.isEmpty())
+                return List.of();
+
+            List<OcrRead> reads = new ArrayList<>(peaks.size() * 2);
+            for (OrientedStencilPostProcessor.OrientedBox ob : peaks) {
+                Rectangle bounds = ob.axisAlignedBounds(w, h);
+                if (ob.classId() == 0) {
+                    // Container stencil peak: run fast 48px CTC recognizer first (~2 ms, zero language-prior
+                    // hallucination) on tight & wide deskewed crops, invoking 2D-Attention PARSeq only when
+                    // CTC misses (e.g., 2-line stacked rear-door stencils or heavy rib skew) and gating PARSeq
+                    // on >= 0.90 confidence + registered BIC prefix.
+                    BufferedImage tight = OrientedStencilPostProcessor.extractDeskewedCrop(image, ob, 1.12, 1.08);
+                    boolean cleanIso = false;
+                    try {
+                        if (recSession != null) {
+                            CtcGreedyDecoder.Decoded ctcTight = recognizeCrop(tight);
+                            if (ctcTight.text() != null && !ctcTight.text().isBlank()) {
+                                reads.add(new OcrRead(ctcTight.text(), ctcTight.confidence(), bounds));
+                                var cm = com.botts.impl.process.ocr.domain.Iso6346.extractBest(ctcTight.text());
+                                cleanIso = cm.isPresent() && cm.get().checksumValid() && !cm.get().checkDigitRepaired();
+                            }
+                        }
+                        if (!cleanIso) {
+                            BufferedImage wide = OrientedStencilPostProcessor.extractDeskewedCrop(image, ob, 1.42, 1.15);
+                            try {
+                                if (recSession != null) {
+                                    CtcGreedyDecoder.Decoded ctcWide = recognizeCrop(wide);
+                                    if (ctcWide.text() != null && !ctcWide.text().isBlank()) {
+                                        reads.add(new OcrRead(ctcWide.text(), ctcWide.confidence(), bounds));
+                                        var cm = com.botts.impl.process.ocr.domain.Iso6346.extractBest(ctcWide.text());
+                                        cleanIso = cm.isPresent() && cm.get().checksumValid() && !cm.get().checkDigitRepaired();
+                                    }
+                                }
+                                if (!cleanIso && recSession != null
+                                        && tight.getHeight() >= 24
+                                        && tight.getWidth() < tight.getHeight() * 4.0) {
+                                    // 2-line stacked container stencil (OWNER above SERIAL + boxed check digit)
+                                    int th = tight.getHeight();
+                                    int tw = tight.getWidth();
+                                    BufferedImage topLine = tight.getSubimage(0, 0, tw, Math.max(8, (th * 56) / 100));
+                                    BufferedImage botLine = tight.getSubimage(0, (th * 42) / 100, tw, Math.max(8, th - (th * 42) / 100));
+                                    CtcGreedyDecoder.Decoded dTop = recognizeCrop(topLine);
+                                    CtcGreedyDecoder.Decoded dBot = recognizeCrop(botLine);
+                                    if (dTop.text() != null && !dTop.text().isBlank() && dBot.text() != null && !dBot.text().isBlank()) {
+                                        String combined = dTop.text().strip() + " " + dBot.text().strip();
+                                        float combConf = Math.min(dTop.confidence(), dBot.confidence());
+                                        var sm = com.botts.impl.process.ocr.domain.Iso6346.extractBest(combined);
+                                        if (sm.isPresent() && sm.get().checksumValid() && !sm.get().checkDigitRepaired()) {
+                                            reads.add(new OcrRead(combined, combConf, bounds));
+                                            cleanIso = true;
+                                        }
+                                    }
+                                }
+                                if (!cleanIso && ob.score() >= 0.28) {
+                                    CtcGreedyDecoder.Decoded pDec = recognizeParseqCrop(tight);
+                                    if (pDec.text() != null && pDec.confidence() >= 0.90f) {
+                                        var pm = com.botts.impl.process.ocr.domain.Iso6346.extractBest(pDec.text());
+                                        if (pm.isPresent() && pm.get().checksumValid() && !pm.get().checkDigitRepaired()
+                                                && com.botts.impl.process.ocr.domain.Iso6346.isKnownBicPrefix(pm.get().compact())) {
+                                            reads.add(new OcrRead(pDec.text(), pDec.confidence(), bounds));
+                                            cleanIso = true;
+                                        }
+                                    }
+                                    if (!cleanIso && ob.score() >= 0.36) {
+                                        CtcGreedyDecoder.Decoded pWide = recognizeParseqCrop(wide);
+                                        if (pWide.text() != null && pWide.confidence() >= 0.91f) {
+                                            var pmw = com.botts.impl.process.ocr.domain.Iso6346.extractBest(pWide.text());
+                                            if (pmw.isPresent() && pmw.get().checksumValid() && !pmw.get().checkDigitRepaired()
+                                                    && com.botts.impl.process.ocr.domain.Iso6346.isKnownBicPrefix(pmw.get().compact())) {
+                                                reads.add(new OcrRead(pWide.text(), pWide.confidence(), bounds));
+                                            }
+                                        }
+                                    }
+                                }
+                            } finally {
+                                if (wide != image)
+                                    wide.flush();
+                            }
+                        }
+                    } finally {
+                        if (tight != image)
+                            tight.flush();
+                    }
+                } else {
+                    // License plate / secondary ID peak: fast 2ms CTC recognizer
+                    if (recSession != null) {
+                        BufferedImage plateCrop = OrientedStencilPostProcessor.extractDeskewedCrop(image, ob, 1.14, 1.16);
+                        try {
+                            CtcGreedyDecoder.Decoded pCtc = recognizeCrop(plateCrop);
+                            if (pCtc.text() != null && !pCtc.text().isBlank()) {
+                                reads.add(new OcrRead(pCtc.text(), pCtc.confidence(), bounds));
+                            }
+                        } finally {
+                            if (plateCrop != image)
+                                plateCrop.flush();
+                        }
+                    }
+                }
+            }
+            return reads;
+        }
     }
 
     @Override
@@ -546,6 +730,30 @@ public class OnnxOcrEngine implements OcrEngine {
         }
     }
 
+    private List<OrientedStencilPostProcessor.OrientedBox> detectOrientedStencils(BufferedImage image) {
+        OrientedStencilPostProcessor.LetterboxInput lb = OrientedStencilPostProcessor.preprocess(image);
+        long[] shape = {1, 3, OrientedStencilPostProcessor.INPUT_HEIGHT, OrientedStencilPostProcessor.INPUT_WIDTH};
+        try (OnnxTensor input = OnnxTensor.createTensor(env, FloatBuffer.wrap(lb.tensor()), shape);
+             OrtSession.Result result = stencilDetSession.run(Collections.singletonMap(stencilDetInputName, input))) {
+            float[][][][] output = (float[][][][]) result.get(0).getValue();
+            return OrientedStencilPostProcessor.decodePeaks(output[0], lb, image.getWidth(), image.getHeight(), 0.16, 0.20);
+        } catch (OrtException e) {
+            throw new OcrEngineException("Oriented stencil detection failed", e);
+        }
+    }
+
+    private CtcGreedyDecoder.Decoded recognizeParseqCrop(BufferedImage crop) {
+        float[] tensor = ParseqDecoder.toInputTensor(crop);
+        long[] shape = {1, 3, ParseqDecoder.INPUT_HEIGHT, ParseqDecoder.INPUT_WIDTH};
+        try (OnnxTensor input = OnnxTensor.createTensor(env, FloatBuffer.wrap(tensor), shape);
+             OrtSession.Result result = parseqSession.run(Collections.singletonMap(parseqInputName, input))) {
+            float[][][] output = (float[][][]) result.get(0).getValue();
+            return parseqDecoder.decode(output[0]);
+        } catch (OrtException e) {
+            throw new OcrEngineException("PARSeq recognition failed", e);
+        }
+    }
+
     private static int roundToMultipleOf32(double v) {
         return Math.max(32, (int) Math.round(v / 32.0) * 32);
     }
@@ -623,6 +831,22 @@ public class OnnxOcrEngine implements OcrEngine {
                 logger.warn("Error closing ONNX recognition session", e);
             } finally {
                 recSession = null;
+            }
+            try {
+                if (stencilDetSession != null)
+                    stencilDetSession.close();
+            } catch (Exception e) {
+                logger.warn("Error closing ONNX stencil detection session", e);
+            } finally {
+                stencilDetSession = null;
+            }
+            try {
+                if (parseqSession != null)
+                    parseqSession.close();
+            } catch (Exception e) {
+                logger.warn("Error closing ONNX PARSeq session", e);
+            } finally {
+                parseqSession = null;
             }
         }
     }

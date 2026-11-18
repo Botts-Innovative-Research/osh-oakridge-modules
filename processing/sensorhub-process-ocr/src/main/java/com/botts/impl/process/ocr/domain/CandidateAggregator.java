@@ -76,6 +76,10 @@ public final class CandidateAggregator {
         this.ignoreBottomFraction = settings.ignoreBottomFraction();
     }
 
+    public boolean readsPlates() {
+        return readPlates;
+    }
+
     public List<AggregatedCandidate> aggregate(List<FrameInput> frames) {
         if (frames == null || frames.isEmpty())
             return List.of();
@@ -153,7 +157,7 @@ public final class CandidateAggregator {
             double floor = VehicleOcrResult.ID_TYPE_CONTAINER.equals(c.idType())
                     ? containerMinConfidence
                     : plateMinConfidence;
-            if (!c.checksumValid() && c.confidence() < floor)
+            if ((!c.checksumValid() && c.confidence() < floor) || c.confidence() < 0.40)
                 continue;
             // Gate single-frame check-digit-repaired candidates (where the 11th Modulo-11 check digit
             // was synthesized from a 10-character prefix rather than optically verified) behind a

@@ -79,16 +79,56 @@ public class FrameSampler {
         }
 
         try {
-            List<Double> ptsTimeline = scanTimeline(normalized);
-            if (ptsTimeline.isEmpty())
+            List<FrameMeta> timeline = scanTimelineWithSharpness(normalized);
+            if (timeline.isEmpty())
                 return List.of();
 
-            int[] selectedOrdinals = selectOrdinals(ptsTimeline.size(), maxFrames);
+            int[] selectedOrdinals = selectOrdinals(timeline.size(), maxFrames);
             return decodeSelectedOrdinals(normalized, selectedOrdinals);
         } catch (Exception e) {
             logger.debug("Unable to sample frames from {}: {}", normalized, e.getMessage());
             return List.of();
         }
+    }
+
+    private record FrameMeta(double seconds, double sharpness) {}
+
+    static int[] selectSharpestOrdinals(List<FrameMeta> timeline, int maxFrames) {
+        int totalFrames = timeline.size();
+        if (totalFrames <= 0 || maxFrames <= 0)
+            return new int[0];
+        if (totalFrames <= maxFrames) {
+            int[] all = new int[totalFrames];
+            for (int i = 0; i < totalFrames; i++)
+                all[i] = i;
+            return all;
+        }
+        int[] base = selectOrdinals(totalFrames, maxFrames);
+        if (base.length <= 1)
+            return base;
+
+        // Within a local neighborhood around each uniform [10%..90%] anchor, pick the sharpest frame
+        // so motion-blurred / camera-shake frames are avoided while preserving full transit coverage.
+        int radius = Math.max(1, (totalFrames - 1) / (base.length * 4));
+        int[] selected = new int[base.length];
+        int prev = -1;
+        for (int i = 0; i < base.length; i++) {
+            int anchor = base[i];
+            int lo = Math.max(prev + 1, anchor - radius);
+            int hi = Math.min(totalFrames - (base.length - i), anchor + radius);
+            int bestIdx = Math.max(lo, Math.min(hi, anchor));
+            double bestSharp = -1.0;
+            for (int f = lo; f <= hi; f++) {
+                double s = timeline.get(f).sharpness();
+                if (s > bestSharp) {
+                    bestSharp = s;
+                    bestIdx = f;
+                }
+            }
+            selected[i] = bestIdx;
+            prev = bestIdx;
+        }
+        return selected;
     }
 
     static int[] selectOrdinals(int totalFrames, int maxFrames) {
@@ -120,13 +160,40 @@ public class FrameSampler {
         return selected;
     }
 
-    private List<Double> scanTimeline(Path source) throws IOException {
-        List<Double> timeline = new ArrayList<>();
+    private List<FrameMeta> scanTimelineWithSharpness(Path source) throws IOException {
+        List<FrameMeta> timeline = new ArrayList<>();
         decode(source, (ordinal, seconds, frame) -> {
-            timeline.add(seconds);
+            timeline.add(new FrameMeta(seconds, estimateLumaSharpness(frame)));
             return timeline.size() < MAX_DECODED_FRAMES;
         });
         return timeline;
+    }
+
+    private static double estimateLumaSharpness(AVFrame frame) {
+        int w = frame.width();
+        int h = frame.height();
+        int stride = frame.linesize(0);
+        var luma = frame.data(0);
+        if (w < 32 || h < 32 || stride < w || luma == null || luma.isNull())
+            return 0.0;
+        long sumGrad = 0L;
+        int samples = 0;
+        int yStart = h / 8;
+        int yEnd = (h * 7) / 8;
+        int xStart = w / 8;
+        int xEnd = (w * 7) / 8;
+        for (int y = yStart; y < yEnd - 2; y += 16) {
+            long rowOff = (long) y * stride;
+            long nextRowOff = (long) (y + 2) * stride;
+            for (int x = xStart; x < xEnd - 2; x += 16) {
+                int c = luma.get(rowOff + x) & 0xFF;
+                int rx = luma.get(rowOff + x + 2) & 0xFF;
+                int dy = luma.get(nextRowOff + x) & 0xFF;
+                sumGrad += Math.abs(rx - c) + Math.abs(dy - c);
+                samples++;
+            }
+        }
+        return samples > 0 ? (sumGrad / (double) samples) : 0.0;
     }
 
     private List<SampledFrame> decodeSelectedOrdinals(Path source, int[] selectedOrdinals) throws IOException {

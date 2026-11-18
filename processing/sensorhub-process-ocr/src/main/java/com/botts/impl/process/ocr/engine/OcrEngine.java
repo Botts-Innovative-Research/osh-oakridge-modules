@@ -28,6 +28,19 @@ public interface OcrEngine extends AutoCloseable {
         return recognize(frame);
     }
 
+    /** Returns {@code true} when fast oriented container/plate ROI + PARSeq models are loaded. */
+    default boolean supportsFastRoiPass() {
+        return false;
+    }
+
+    /**
+     * Executes the fast ({@code ~25-40 ms} CPU) oriented container/plate ROI + deskew + PARSeq pass
+     * without running full-frame DBNet. Falls back to {@link #recognize(BufferedImage)} when unsupported.
+     */
+    default List<OcrRead> recognizeFastRoi(BufferedImage frame) {
+        return recognize(frame);
+    }
+
     @Override
     default void close() {
     }
