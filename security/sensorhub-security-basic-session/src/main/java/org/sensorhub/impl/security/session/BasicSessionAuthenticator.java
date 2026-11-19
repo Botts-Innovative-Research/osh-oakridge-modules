@@ -115,6 +115,7 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
     private final ISecurityManager securityManager;
     private final BasicSessionConfig config;
     private final OscarIdentityStore identityStore;
+    private final UsbBackupControlBridge usbBackupBridge;
     private final OidcClientHelper oidcClient;
     private final String cookieName;
     private final boolean secureCookie;
@@ -179,6 +180,7 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
                 identityStoreFile,
                 config.persistSessions && identityStoreFile != null,
                 log);
+        this.usbBackupBridge = new UsbBackupControlBridge(identityStoreFile, log);
     }
 
     private static byte[] loadLoginJsResource() {
@@ -1537,6 +1539,35 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
             JsonObject body = parseJsonBody(request);
             updateSessionAndSsoPolicy(body);
             sendJson(response, HttpServletResponse.SC_OK, buildPolicySummary(request));
+            return;
+        }
+
+        if ("/admin/usb-backup/status".equals(subpath) && "GET".equalsIgnoreCase(method)) {
+            sendJson(response, HttpServletResponse.SC_OK, usbBackupBridge.readStatus());
+            return;
+        }
+
+        if ("/admin/usb-backup/action".equals(subpath) && "POST".equalsIgnoreCase(method)) {
+            JsonObject body = parseJsonBody(request);
+            JsonObject updated = usbBackupBridge.submitAction(body, adminUsername);
+            sendJson(response, HttpServletResponse.SC_OK, updated);
+            return;
+        }
+
+        if ("/admin/usb-backup/backup-key".equals(subpath) && "POST".equalsIgnoreCase(method)) {
+            try {
+                String keyMaterial = usbBackupBridge.exportBackupKey(adminUsername);
+                byte[] payload = (keyMaterial.endsWith("\n") ? keyMaterial : keyMaterial + "\n")
+                        .getBytes(StandardCharsets.UTF_8);
+                response.setStatus(HttpServletResponse.SC_OK);
+                response.setContentType("text/plain; charset=utf-8");
+                response.setHeader("Cache-Control", "no-store");
+                response.setHeader("Content-Disposition", "attachment; filename=\"oscar-backup-key.txt\"");
+                response.setContentLength(payload.length);
+                response.getOutputStream().write(payload);
+            } catch (IllegalStateException ise) {
+                sendJsonError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, ise.getMessage());
+            }
             return;
         }
 

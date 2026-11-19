@@ -649,6 +649,112 @@ public class BasicSessionAuthenticatorTest
     }
 
 
+    @Test
+    public void enforcesAdminOnlyUsbBackupEndpointsValidatesInputsAndDeletesEscrowKeyAfterDownload() throws Exception
+    {
+        Path tempDir = Files.createTempDirectory("oscar-usb-backup-admin-test");
+        Path storePath = tempDir.resolve("identity.json");
+        InMemoryUserRegistry registry = new InMemoryUserRegistry();
+        registry.addAdmin("admin", "StrongAdminPass!2026");
+
+        BasicSessionAuthenticator auth = createAuthenticator(new BasicSessionConfig(), storePath, registry);
+        auth.getIdentityStore().createUser("gate.op", "Gate Operator", "operator", List.of(), "GateOpPass!2026", false);
+
+        // Admin login
+        ResponseCapture adminLogin = new ResponseCapture();
+        auth.validateRequest(createRequest(
+            "POST", "/login",
+            Map.of("username", "admin", "password", "StrongAdminPass!2026"),
+            null, Map.of("Host", "oscar.local")), adminLogin.proxy(), true);
+        Cookie adminCookie = new Cookie("OSCAR_SESSION",
+            extractCookieValue(adminLogin.setCookies.get(0), "OSCAR_SESSION"));
+
+        // Non-admin operator login -> 403 Forbidden on /session/admin/usb-backup/status
+        ResponseCapture opLogin = new ResponseCapture();
+        auth.validateRequest(createRequest(
+            "POST", "/login",
+            Map.of("username", "gate.op", "password", "GateOpPass!2026"),
+            null, Map.of("Host", "oscar.local")), opLogin.proxy(), true);
+        Cookie opCookie = new Cookie("OSCAR_SESSION",
+            extractCookieValue(opLogin.setCookies.get(0), "OSCAR_SESSION"));
+
+        ResponseCapture forbiddenResp = new ResponseCapture();
+        auth.validateRequest(createRequest(
+            "GET", "/sensorhub/session/admin/usb-backup/status", Map.of(),
+            new Cookie[] {opCookie}, Map.of("Host", "oscar.local")), forbiddenResp.proxy(), true);
+        assertEquals(403, forbiddenResp.status);
+
+        // Unconfigured initial fallback status
+        ResponseCapture initialStatus = new ResponseCapture();
+        auth.validateRequest(createRequest(
+            "GET", "/sensorhub/session/admin/usb-backup/status", Map.of(),
+            new Cookie[] {adminCookie}, Map.of("Host", "oscar.local")), initialStatus.proxy(), true);
+        assertEquals(200, initialStatus.status);
+        JsonObject initJson = JsonParser.parseString(initialStatus.bodyUtf8()).getAsJsonObject();
+        assertEquals("UNCONFIGURED", initJson.get("driveState").getAsString());
+
+        // Reject shell metacharacters or missing FORMAT confirmation in prepare-drive
+        ResponseCapture badDevResp = new ResponseCapture();
+        auth.validateRequest(createJsonRequest(
+            "POST", "/sensorhub/session/admin/usb-backup/action",
+            "{\"action\":\"prepare-drive\",\"device\":\"/dev/sda; rm -rf /\",\"confirm\":\"FORMAT\"}",
+            new Cookie[] {adminCookie}, "oscar.local"), badDevResp.proxy(), true);
+        assertEquals(400, badDevResp.status);
+
+        ResponseCapture missingConfirmResp = new ResponseCapture();
+        auth.validateRequest(createJsonRequest(
+            "POST", "/sensorhub/session/admin/usb-backup/action",
+            "{\"action\":\"prepare-drive\",\"device\":\"/dev/sda\",\"confirm\":\"yes\"}",
+            new Cookie[] {adminCookie}, "oscar.local"), missingConfirmResp.proxy(), true);
+        assertEquals(400, missingConfirmResp.status);
+
+        // Valid eject action writes schema-validated request.json for host agent
+        ResponseCapture ejectResp = new ResponseCapture();
+        auth.validateRequest(createJsonRequest(
+            "POST", "/sensorhub/session/admin/usb-backup/action",
+            "{\"action\":\"eject\",\"noSync\":false}",
+            new Cookie[] {adminCookie}, "oscar.local"), ejectResp.proxy(), true);
+        assertEquals(200, ejectResp.status);
+        Path controlDir = tempDir.resolve("usb-backup-control");
+        Path reqFile = controlDir.resolve("request.json");
+        assertTrue(Files.isRegularFile(reqFile));
+        JsonObject writtenReq = JsonParser.parseString(Files.readString(reqFile, StandardCharsets.UTF_8)).getAsJsonObject();
+        assertEquals("eject", writtenReq.get("action").getAsString());
+        assertEquals("admin", writtenReq.get("requestedBy").getAsString());
+
+        // Simulate host agent fulfilling export-backup-key and verify immediate escrow file deletion
+        Thread fakeHostAgent = new Thread(() -> {
+            try {
+                for (int i = 0; i < 40; i++) {
+                    if (Files.isRegularFile(reqFile)) {
+                        JsonObject r = JsonParser.parseString(Files.readString(reqFile, StandardCharsets.UTF_8)).getAsJsonObject();
+                        if ("export-backup-key".equals(r.get("action").getAsString())) {
+                            String rid = r.get("requestId").getAsString();
+                            Files.writeString(controlDir.resolve("escrow-" + rid + ".key"), "TEST_AES_HMAC_BACKUP_KEY_12345\n", StandardCharsets.UTF_8);
+                            return;
+                        }
+                    }
+                    Thread.sleep(50L);
+                }
+            } catch (Exception ignored) {
+            }
+        });
+        fakeHostAgent.start();
+
+        ResponseCapture keyResp = new ResponseCapture();
+        auth.validateRequest(createJsonRequest(
+            "POST", "/sensorhub/session/admin/usb-backup/backup-key", "{}",
+            new Cookie[] {adminCookie}, "oscar.local"), keyResp.proxy(), true);
+        fakeHostAgent.join(3000L);
+        assertEquals(200, keyResp.status);
+        assertEquals("TEST_AES_HMAC_BACKUP_KEY_12345\n", keyResp.bodyUtf8());
+        assertTrue(keyResp.headers.getOrDefault("Content-Disposition", "").contains("oscar-backup-key.txt"));
+        try (var stream = Files.list(controlDir)) {
+            assertFalse(stream.anyMatch(p -> p.getFileName().toString().startsWith("escrow-")));
+        }
+    }
+
+
     private static String extractCookieValue(String setCookieHeader, String name)
     {
         String prefix = name + "=";
