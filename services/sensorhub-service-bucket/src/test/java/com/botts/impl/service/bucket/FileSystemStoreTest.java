@@ -25,6 +25,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import static org.junit.Assert.*;
+import static org.junit.Assume.assumeTrue;
 
 public class FileSystemStoreTest extends AbstractBucketStoreTest {
 
@@ -38,6 +39,24 @@ public class FileSystemStoreTest extends AbstractBucketStoreTest {
     IBucketStore initBucketStore() throws IOException {
         bucketStore = new FileSystemBucketStore(TEST_ROOT, TEST_MAX_FILE_SIZE_MB);
         return bucketStore;
+    }
+
+    @Test
+    public void relativeResourceUriUsesForwardSlashesForNestedObjects() throws Exception {
+        bucketStore.createBucket(TEST_BUCKET);
+        String key = "nested/report.json";
+        try (OutputStream out = bucketStore.putObject(TEST_BUCKET, key, Map.of())) {
+            out.write("{}".getBytes(StandardCharsets.UTF_8));
+        }
+
+        String uri = bucketStore.getRelativeResourceURI(TEST_BUCKET, key);
+        assertEquals(TEST_BUCKET + "/" + key, uri);
+        assertEquals(List.of(key), bucketStore.listObjects(TEST_BUCKET));
+        assertEquals(List.of(key), bucketStore.listObjects(TEST_BUCKET, "nested/"));
+        assertEquals(List.of(key), bucketStore.listObjects(TEST_BUCKET, "nested/", ".json", 1));
+        try (InputStream in = bucketStore.getObject(TEST_BUCKET, uri.substring(TEST_BUCKET.length() + 1))) {
+            assertEquals("{}", new String(in.readAllBytes(), StandardCharsets.UTF_8));
+        }
     }
 
     @Test
@@ -197,10 +216,8 @@ public class FileSystemStoreTest extends AbstractBucketStoreTest {
         Path nestedDir = bucketPath.resolve("nested");
         Path file = bucketPath.resolve(objectKey);
 
-        if (!Files.getFileStore(file).supportsFileAttributeView("posix")) {
-            assertFalse("Uploaded file should not be executable", file.toFile().canExecute());
-            return;
-        }
+        assumeTrue("POSIX mode bits are not supported by this filesystem",
+                Files.getFileStore(file).supportsFileAttributeView("posix"));
 
         Set<PosixFilePermission> bucketPermissions = Files.getPosixFilePermissions(bucketPath);
         Set<PosixFilePermission> directoryPermissions = Files.getPosixFilePermissions(nestedDir);

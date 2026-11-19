@@ -78,7 +78,7 @@ public class SiteDiagramTests {
             assertTrue(handler.handleFile(browserFilename, config));
             assertTrue(store.objectExists(SITE_MAP_BUCKET, objectKey));
             assertEquals(objectKey, config.siteDiagramPath);
-            assertEquals(Path.of(SITE_MAP_BUCKET, objectKey).toString(),
+            assertEquals(SITE_MAP_BUCKET + "/" + objectKey,
                     output.getLatestRecord().getStringValue(1));
         } finally {
             if (Files.exists(root)) {

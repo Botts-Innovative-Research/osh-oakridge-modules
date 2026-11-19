@@ -32,6 +32,7 @@ import org.sensorhub.api.datastore.obs.DataStreamFilter;
 import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.api.feature.FeatureId;
 import org.sensorhub.api.module.ModuleEvent;
+import org.sensorhub.api.module.IModule;
 import org.sensorhub.api.service.IHttpServer;
 import org.sensorhub.impl.SensorHub;
 import org.sensorhub.impl.database.system.SystemDriverDatabase;
@@ -546,12 +547,13 @@ public class ReportTests {
     @Test
     public void populatedReportsRenderExactCountsDecimalRatesCustomCodesAndOverwriteFreshly() throws Exception {
         Path dbFile = Files.createTempFile("oscar-report-test-", ".dat");
+        IModule<?> dbModule = null;
         try {
             var dbConfig = (MVObsSystemDatabaseConfig) reg.createModuleConfig(new MVObsSystemDatabaseDescriptor());
             dbConfig.id = UUID.randomUUID().toString();
             dbConfig.databaseNum = 42;
             dbConfig.storagePath = dbFile.toString();
-            var dbModule = reg.loadModule(dbConfig);
+            dbModule = reg.loadModule(dbConfig);
             dbModule.init();
             dbModule.start();
             IObsSystemDatabase db = (IObsSystemDatabase) dbModule;
@@ -900,6 +902,9 @@ public class ReportTests {
             // 5. Verify CSV, JSON, and XLSX generation across RDS_SITE, LANE, ADJUDICATION, and EVENT
             verifyMultiFormatReportExports(commandDesc, windowStart, windowEnd, laneUid);
         } finally {
+            // Windows cannot delete the H2 file while the database still owns it.
+            if (dbModule != null)
+                reg.unloadModule(dbModule.getLocalID());
             Files.deleteIfExists(dbFile);
         }
     }

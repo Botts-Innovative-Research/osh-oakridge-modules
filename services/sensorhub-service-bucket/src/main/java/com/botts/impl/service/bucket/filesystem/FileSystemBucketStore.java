@@ -514,7 +514,7 @@ public class FileSystemBucketStore implements IBucketStore {
                 throw new DataStoreException(BUCKET_NOT_FOUND, new IllegalArgumentException());
             try (Stream<Path> stream = Files.walk(path)) {
                 return stream.filter(Files::isRegularFile)
-                        .map(p -> path.relativize(p).toString())
+                        .map(p -> path.relativize(p).toString().replace('\\', '/'))
                         .filter(key -> !isPartialObjectKey(key))
                         .toList();
             }
@@ -546,7 +546,7 @@ public class FileSystemBucketStore implements IBucketStore {
             try (Stream<Path> stream = Files.walk(prefixPath)) {
                 return stream.filter(Files::isRegularFile)
                         .filter(candidate -> !Files.isSymbolicLink(candidate))
-                        .map(candidate -> realBucketPath.relativize(candidate).toString())
+                        .map(candidate -> realBucketPath.relativize(candidate).toString().replace('\\', '/'))
                         .filter(key -> !isPartialObjectKey(key))
                         .toList();
             }
@@ -646,7 +646,8 @@ public class FileSystemBucketStore implements IBucketStore {
             throw new DataStoreException(BUCKET_NOT_FOUND);
         if (!objectExists(bucketName, key))
             throw new DataStoreException(OBJECT_NOT_FOUND + bucketName);
-        return Paths.get(bucketName, key).toString();
+        // This value is consumed as a web resource path, even on Windows hosts.
+        return Paths.get(bucketName, key).toString().replace('\\', '/');
     }
 
     private static boolean isPartialObjectKey(String key) {
