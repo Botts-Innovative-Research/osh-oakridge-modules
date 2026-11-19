@@ -425,11 +425,13 @@ public class BasicSessionAuthenticatorTest
 
         ResponseCapture bearerResp = new ResponseCapture();
         Authentication bearerAuth = auth.validateRequest(createRequest(
-            "GET", "/sensorhub/api/systems", Map.of(), null,
+            "GET", "/sensorhub/api/systems", Map.of(), new Cookie[] {adminCookie},
             Map.of("Authorization", "Bearer " + rawBearer)), bearerResp.proxy(), true);
         assertTrue(bearerAuth instanceof Authentication.User);
+        assertEquals("svc-fed-" + tokenId, ((Authentication.User) bearerAuth).getUserIdentity().getUserPrincipal().getName());
+        assertTrue("Stateless Bearer auth must not overwrite browser OSCAR_SESSION cookies", bearerResp.setCookies.isEmpty());
 
-        // Revoke token -> immediate 401
+        // Revoke token -> immediate 401 even if an ambient session cookie is present
         ResponseCapture revokeResp = new ResponseCapture();
         auth.validateRequest(createJsonRequest(
             "DELETE", "/sensorhub/session/admin/federation-tokens/" + tokenId, "",
@@ -438,7 +440,7 @@ public class BasicSessionAuthenticatorTest
 
         ResponseCapture revokedBearerResp = new ResponseCapture();
         Authentication afterRevoke = auth.validateRequest(createRequest(
-            "GET", "/sensorhub/api/systems", Map.of(), null,
+            "GET", "/sensorhub/api/systems", Map.of(), new Cookie[] {adminCookie},
             Map.of("Authorization", "Bearer " + rawBearer)), revokedBearerResp.proxy(), true);
         assertEquals(Authentication.SEND_FAILURE, afterRevoke);
         assertEquals(401, revokedBearerResp.status);

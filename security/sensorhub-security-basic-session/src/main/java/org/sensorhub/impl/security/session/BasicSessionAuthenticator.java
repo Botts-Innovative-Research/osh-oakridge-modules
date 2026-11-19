@@ -275,7 +275,16 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
                 return Authentication.SEND_CONTINUE;
             }
 
-            // 1. Existing opaque session cookie
+            // 1. Stateless Federation Service Token (Authorization: Bearer oscar_fed_...)
+            // Evaluated before ambient session cookies or Zero-Trust tunnel user headers so
+            // cross-origin federated queries honor the token's least-privilege role, view scope,
+            // and immediate revocation without overwriting human browser sessions.
+            Authentication bearerAuth = authenticateBearerToken(request, response);
+            if (bearerAuth != null) {
+                return bearerAuth;
+            }
+
+            // 2. Existing opaque session cookie
             PersistedSession activeSession = resolveActiveSession(request, response);
             if (activeSession != null) {
                 String username = activeSession.username;
@@ -307,7 +316,7 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
                 return new UserAuthentication(AUTH_METHOD, withoutCredentials(username));
             }
 
-            // 2. Trusted Zero Trust Tunnel Identity Header SSO (Octelium)
+            // 3. Trusted Zero Trust Tunnel Identity Header SSO (Octelium)
             TunnelAuthResult tunnelAuth = authenticateTrustedTunnel(request, response);
             if (tunnelAuth != null) {
                 String sessionSubpath = extractSessionApiSubpath(path);
@@ -321,12 +330,6 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
                     }
                 }
                 return tunnelAuth.authentication();
-            }
-
-            // 3. Stateless Federation Service Token (Authorization: Bearer oscar_fed_...)
-            Authentication bearerAuth = authenticateBearerToken(request, response);
-            if (bearerAuth != null) {
-                return bearerAuth;
             }
 
             // 4. HTTP Basic Authentication (API clients / legacy scripts)
@@ -379,9 +382,6 @@ public class BasicSessionAuthenticator extends LoginAuthenticator {
             log.warn("Rejected invalid or expired Federation Bearer token from {}", clientIp(request));
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
             return Authentication.SEND_FAILURE;
-        }
-        if (readSessionCookie(request) == null) {
-            createSession(request, response, fed.serviceUserId, allowKeepSignedIn);
         }
         return new UserAuthentication(AUTH_METHOD, withoutCredentials(fed.serviceUserId));
     }

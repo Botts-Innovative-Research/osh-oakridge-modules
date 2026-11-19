@@ -871,6 +871,32 @@ Vérifiez voies/événements distants, ligne Nationale, rapport et événement a
   </video>
 </details>
 
+### 11.3 Recherche multi-nœuds de véhicules, rapports consolidés et révocation SSO
+
+Une fois les portails distants connectés via des jetons `oscar_fed_...`, **Événements -> Comparer les passages** corrèle les conteneurs ISO 6346 et plaques sur tous les nœuds, et le **Générateur de rapports -> Rapport d'incident véhicule (`VEHICLE_INCIDENT`)** produit un rapport unifié (`PDF`, `CSV`, `JSON`, `XLSX`) indiquant le nœud et la voie de chaque passage. Pour révoquer complètement un utilisateur sur `ORNL/oscar-federation-hub`, supprimez le compte dans Authentik (**Directory -> Users -> Delete**), laissez `oscar-hub-sync` le retirer d'Octelium et supprimez toute ligne mise en cache dans **Utilisateurs et accès -> Utilisateurs et rôles**.
+
+![Recherche et comparaison multi-nœuds de véhicules](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/41-multi-node-vehicle-search.png)
+
+![Rapport consolidé multi-nœuds d'incident véhicule](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/42-multi-node-incident-report.png)
+
+![Révocation complète des utilisateurs SSO](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/43-sso-user-revocation.png)
+
+<details class="oscar-video-guide">
+  <summary>Guide vidéo (#20, 28.4s) : Fédérer plusieurs sites, rechercher des véhicules multi-nœuds et générer des rapports</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/20-multi-node-federation-vehicle-search-and-report.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/20-multi-node-federation-vehicle-search-and-report.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Guide vidéo (#21, 24.0s) : Intégrer des utilisateurs SSO Passkey dans Authentik et révoquer tout accès</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/21-federated-sso-passkey-onboarding-and-revocation.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/21-federated-sso-passkey-onboarding-and-revocation.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ## 12. Conservation des données et stockage
 
 Le profil standard 3.11.0 utilise l'architecture à plusieurs niveaux PostgreSQL + Apache Parquet en mode

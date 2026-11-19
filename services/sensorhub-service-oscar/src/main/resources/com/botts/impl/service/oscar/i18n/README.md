@@ -906,6 +906,32 @@ Duplicate names and duplicate address/port pairs are rejected. **Edit** changes 
   </video>
 </details>
 
+### 11.3 Multi-node vehicle search, consolidated incident reports &amp; centralized user revocation
+
+Once one or more remote portals are connected via `oscar_fed_...` Federation Service Tokens, **Events -> Compare Passes** correlates normalized ISO 6346 container IDs and license plates across all reachable nodes simultaneously, and **Report Generator -> Vehicle Incident Report (`VEHICLE_INCIDENT`)** (with **Include correlated passes from federated nodes** checked) produces a single consolidated `PDF`, `CSV`, `JSON`, or `Excel (.xlsx)` report stamping each crossing with its originating node name and lane. When offboarding an operator or viewer on a centralized [`ORNL/oscar-federation-hub`](https://github.com/ORNL/oscar-federation-hub) deployment, delete the user in Authentik (**Directory -> Users -> Delete**), allow `oscar-hub-sync.timer` (or `./oscar-hub.sh sync-users`) to purge the `managed-by: authentik-sync` user from Octelium automatically, and delete any cached user row in OSCAR **Users &amp; Access -> Users &amp; Roles**.
+
+![Multi-Node Vehicle Search & Comparison](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/41-multi-node-vehicle-search.png)
+
+![Consolidated Multi-Node Vehicle Incident Report](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/42-multi-node-incident-report.png)
+
+![Centralized SSO User Offboarding & Revocation](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/43-sso-user-revocation.png)
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#20, 28.4s): Federate Multi-Site Nodes, Search Vehicles Across Portals &amp; Generate Reports</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/20-multi-node-federation-vehicle-search-and-report.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/20-multi-node-federation-vehicle-search-and-report.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Video guide (#21, 24.0s): Onboard Authentik SSO Passkey Users &amp; Revoke Access Across All Layers</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/21-federated-sso-passkey-onboarding-and-revocation.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/21-federated-sso-passkey-onboarding-and-revocation.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ## 12. Data retention and storage behavior
 
 The standard 3.11.0 profile uses the tiered PostgreSQL + Apache Parquet architecture in `PARQUET_PRIMARY`

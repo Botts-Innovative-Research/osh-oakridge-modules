@@ -869,6 +869,32 @@ Lane02,lane02,true,35.8859,-84.2119,north-gate;secondary,Aspect,192.0.2.11,502,1
   </video>
 </details>
 
+### 11.3 Αναζήτηση οχημάτων πολλαπλών κόμβων, ενιαίες αναφορές &amp; ανάκληση χρηστών SSO
+
+Με απομακρυσμένους κόμβους συνδεδεμένους μέσω διακριτικών `oscar_fed_...`, η επιλογή **Συμβάντα -> Σύγκριση διελεύσεων** συσχετίζει εμπορευματοκιβώτια ISO 6346 και πινακίδες σε όλες τις πύλες ταυτόχρονα, ενώ η **Δημιουργία αναφορών -> Αναφορά συμβάντος οχήματος (`VEHICLE_INCIDENT`)** εξάγει ενιαία αναφορά (`PDF`, `CSV`, `JSON`, `XLSX`) με το όνομα κόμβου και λωρίδας κάθε διέλευσης. Για πλήρη ανάκληση πρόσβασης χρήστη στο `ORNL/oscar-federation-hub`, διαγράψτε τον λογαριασμό στο Authentik (**Directory -> Users -> Delete**), αφήστε το `oscar-hub-sync` να τον αφαιρέσει από το Octelium και διαγράψτε τυχόν αποθηκευμένη γραμμή στη σελίδα **Χρήστες &amp; πρόσβαση -> Χρήστες &amp; ρόλοι**.
+
+![Αναζήτηση και σύγκριση οχημάτων πολλαπλών κόμβων](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/41-multi-node-vehicle-search.png)
+
+![Ενιαία αναφορά συμβάντος οχήματος πολλαπλών κόμβων](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/42-multi-node-incident-report.png)
+
+![Πλήρης ανάκληση πρόσβασης χρηστών SSO](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/43-sso-user-revocation.png)
+
+<details class="oscar-video-guide">
+  <summary>Βιντεοοδηγός (#20, 28.4s): Ομοσπονδοποίηση κόμβων, αναζήτηση οχημάτων σε πολλαπλές πύλες &amp; ενιαίες αναφορές</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/20-multi-node-federation-vehicle-search-and-report.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/20-multi-node-federation-vehicle-search-and-report.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Βιντεοοδηγός (#21, 24.0s): Εγγραφή χρηστών SSO Passkey στο Authentik &amp; πλήρης ανάκληση πρόσβασης</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/21-federated-sso-passkey-onboarding-and-revocation.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/21-federated-sso-passkey-onboarding-and-revocation.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ## 12. Διατήρηση δεδομένων και αποθήκευση
 
 Το τυπικό προφίλ 3.11.0 χρησιμοποιεί την κλιμακωτή αρχιτεκτονική PostgreSQL + Apache Parquet σε λειτουργία

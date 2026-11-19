@@ -133,14 +133,17 @@ public class VehicleIncidentReport extends Report {
         NumberFormat intFmt = NumberFormat.getIntegerInstance(Locale.US);
         List<VehiclePassRecord> passes = data.passes();
 
+        String hostNodeLabel = (data.nodeName() != null && !data.nodeName().isBlank())
+                ? data.nodeName().trim()
+                : data.nodeId();
         try (PdfDocumentBuilder pdf = new PdfDocumentBuilder(
                 "Vehicle Incident Report",
-                data.nodeId(),
+                hostNodeLabel,
                 PdfDocumentBuilder.Orientation.LANDSCAPE
         )) {
             String siteHeader = data.distinctNodeCount() > 1
-                    ? (data.nodeId() + " (+" + (data.distinctNodeCount() - 1) + " federated)")
-                    : data.nodeId();
+                    ? (hostNodeLabel + " (+" + (data.distinctNodeCount() - 1) + " federated)")
+                    : hostNodeLabel;
             String vehicleLine = "Vehicle ID: " + data.formattedVehicleId()
                     + " (" + data.matchMode().displayLabel() + ")";
 
@@ -624,8 +627,14 @@ public class VehicleIncidentReport extends Report {
 
     private static String formatNodeAndLane(VehiclePassRecord pass, boolean showNode) {
         String lane = humanizeLaneDisplay(pass.laneName(), pass.laneUid());
-        if (showNode && !pass.nodeId().isEmpty()) {
-            return pass.nodeId() + " / " + lane + (pass.occupancyCount() > 0 ? ("\nOcc #" + pass.occupancyCount()) : "");
+        String nodeLabel = (pass.nodeName() != null && !pass.nodeName().isBlank())
+                ? pass.nodeName().trim()
+                : (pass.nodeId() != null ? pass.nodeId().trim() : "");
+        if (showNode && !nodeLabel.isEmpty()) {
+            String strippedLane = lane.startsWith(nodeLabel + " - ")
+                    ? lane.substring((nodeLabel + " - ").length()).trim()
+                    : lane;
+            return nodeLabel + " / " + strippedLane + (pass.occupancyCount() > 0 ? ("\nOcc #" + pass.occupancyCount()) : "");
         }
         return lane + (pass.occupancyCount() > 0 ? ("\nOcc #" + pass.occupancyCount()) : "");
     }

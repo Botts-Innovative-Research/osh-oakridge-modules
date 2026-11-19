@@ -293,6 +293,7 @@ public final class VehicleIncidentAggregator {
 
     public record VehicleIncidentData(
             String nodeId,
+            String nodeName,
             String rawVehicleId,
             String normalizedVehicleId,
             String formattedVehicleId,
@@ -445,6 +446,13 @@ public final class VehicleIncidentAggregator {
                 && module.getConfiguration().nodeId != null && !module.getConfiguration().nodeId.isBlank())
                 ? module.getConfiguration().nodeId.trim()
                 : "oscar-node";
+        String rawCfgNodeName = (module != null && module.getConfiguration() != null
+                && module.getConfiguration().nodeName != null)
+                ? module.getConfiguration().nodeName.trim()
+                : "";
+        String localNodeName = (!rawCfgNodeName.isEmpty() && !"OSCAR System".equals(rawCfgNodeName))
+                ? rawCfgNodeName
+                : localNodeId;
 
         VehicleIncidentSpec effectiveSpec = spec != null
                 ? spec
@@ -452,7 +460,7 @@ public final class VehicleIncidentAggregator {
         int cappedLimit = maxResults <= 0 ? MAX_SEARCH_LIMIT : Math.min(maxResults, MAX_SEARCH_LIMIT);
 
         LocalPassSelection localSelection = collectLocalNodePasses(
-                module, localNodeId, effectiveSpec, start, end, cappedLimit);
+                module, localNodeId, localNodeName, effectiveSpec, start, end, cappedLimit);
 
         // Merge federated remote passes while deduplicating any composite (nodeId, laneUid, occupancyObsId) collisions
         Map<String, VehiclePassRecord> mergedByKey = new LinkedHashMap<>();
@@ -548,6 +556,7 @@ public final class VehicleIncidentAggregator {
 
         return new VehicleIncidentData(
                 localNodeId,
+                localNodeName,
                 nonNull(effectiveSpec.rawVehicleId()),
                 nonNull(effectiveSpec.normalizedVehicleId()),
                 displayVehicle,
@@ -589,6 +598,7 @@ public final class VehicleIncidentAggregator {
     private static LocalPassSelection collectLocalNodePasses(
             OSCARServiceModule module,
             String localNodeId,
+            String localNodeName,
             VehicleIncidentSpec spec,
             Instant start,
             Instant end,
@@ -634,7 +644,7 @@ public final class VehicleIncidentAggregator {
                     return;
                 }
                 String laneName = laneNamesByUid.getOrDefault(laneUid,
-                        info.getSystemID().getUniqueID() != null ? laneUid : "Lane");
+                        info.getSystemID().getUniqueID() != null ? humanizeUnmappedLaneUid(laneUid) : "Lane");
                 DataComponent struct = info.getRecordStructure();
                 boolean extended = OccupancyExtended.isExtendedSchema(struct);
                 String encodedDsId = dsIdEncoder != null ? dsIdEncoder.encodeID(dsBigId) : dsBigId.toString();
@@ -962,7 +972,7 @@ public final class VehicleIncidentAggregator {
                 if (allowedLaneFilter != null && !laneUid.isBlank() && !allowedLaneFilter.contains(laneUid)) {
                     continue;
                 }
-                String laneName = dsMeta != null ? dsMeta.laneName() : laneNamesByUid.getOrDefault(laneUid, laneUid);
+                String laneName = dsMeta != null ? dsMeta.laneName() : laneNamesByUid.getOrDefault(laneUid, humanizeUnmappedLaneUid(laneUid));
                 String datastreamId = dsMeta != null ? dsMeta.encodedOccStreamId() : "";
 
                 Instant startInst = epochSecondsToInstant(occ.getStartTime(), obs.getPhenomenonTime());
@@ -1039,7 +1049,7 @@ public final class VehicleIncidentAggregator {
 
                 results.add(new VehiclePassRecord(
                         localNodeId,
-                        localNodeId,
+                        localNodeName,
                         false,
                         laneUid,
                         laneName,
@@ -1080,7 +1090,7 @@ public final class VehicleIncidentAggregator {
                 if (allowedLaneFilter != null && !laneUid.isBlank() && !allowedLaneFilter.contains(laneUid)) {
                     continue;
                 }
-                String laneName = laneNamesByUid.getOrDefault(laneUid, laneUid.isEmpty() ? "Unknown Lane" : laneUid);
+                String laneName = laneNamesByUid.getOrDefault(laneUid, laneUid.isEmpty() ? "Unknown Lane" : humanizeUnmappedLaneUid(laneUid));
                 LaneStreamMetadata dsMeta = occStreamByLaneUid.get(laneUid);
                 String datastreamId = dsMeta != null ? dsMeta.encodedOccStreamId() : "";
                 String tsIso = latestAdj != null && !latestAdj.timeUtcIso().isEmpty()
@@ -1105,7 +1115,7 @@ public final class VehicleIncidentAggregator {
 
                 results.add(new VehiclePassRecord(
                         localNodeId,
-                        localNodeId,
+                        localNodeName,
                         false,
                         laneUid,
                         laneName,
@@ -2625,7 +2635,9 @@ public final class VehicleIncidentAggregator {
         }
         String sysUid = info.getSystemID() != null ? nonNull(info.getSystemID().getUniqueID()) : "";
         String laneUid = resolveOwningLaneUid(sysUid, topology);
-        String laneName = topology != null ? topology.laneNamesByUid().getOrDefault(laneUid, laneUid) : laneUid;
+        String laneName = (topology != null && topology.laneNamesByUid().containsKey(laneUid))
+                ? topology.laneNamesByUid().get(laneUid)
+                : humanizeUnmappedLaneUid(laneUid);
         DataComponent struct = info.getRecordStructure();
         return new LaneStreamMetadata(
                 laneUid,
@@ -2635,6 +2647,21 @@ public final class VehicleIncidentAggregator {
                 struct,
                 OccupancyExtended.isExtendedSchema(struct)
         );
+    }
+
+    private static String humanizeUnmappedLaneUid(String laneUid) {
+        if (laneUid == null || laneUid.isBlank()) {
+            return "";
+        }
+        java.util.regex.Matcher m = Pattern.compile("(?i)(?:^|:)lane-(\\d{1,3})(?:$|:)").matcher(laneUid.trim());
+        if (m.find()) {
+            String digits = m.group(1);
+            if (digits.length() == 1) {
+                digits = "0" + digits;
+            }
+            return "Lane" + digits;
+        }
+        return laneUid.trim();
     }
 
     private static Map<Integer, DispositionCodeSpec> buildDispositionSpecs(OSCARServiceModule module) {

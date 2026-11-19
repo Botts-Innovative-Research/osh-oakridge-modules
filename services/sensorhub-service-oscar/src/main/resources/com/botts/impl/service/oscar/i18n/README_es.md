@@ -872,6 +872,32 @@ Verifique carriles/eventos del remoto, su fila Nacional, un informe y un evento 
   </video>
 </details>
 
+### 11.3 Búsqueda multinodo de vehículos, informes consolidados y revocación de usuarios SSO
+
+Con nodos remotos conectados mediante tokens `oscar_fed_...`, **Eventos -> Comparar pasadas** correlaciona contenedores ISO 6346 y matrículas en todos los portales simultáneamente, y el **Generador de informes -> Informe de incidente de vehículo (`VEHICLE_INCIDENT`)** genera un informe único (`PDF`, `CSV`, `JSON`, `XLSX`) identificando el nodo y carril de cada cruce. Para revocar completamente el acceso de un usuario en `ORNL/oscar-federation-hub`, elimínelo en Authentik (**Directory -> Users -> Delete**), deje que `oscar-hub-sync` lo retire de Octelium y elimine cualquier fila en caché en **Usuarios y acceso -> Usuarios y roles**.
+
+![Búsqueda y comparación multinodo de vehículos](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/41-multi-node-vehicle-search.png)
+
+![Informe consolidado multinodo de incidente de vehículo](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/42-multi-node-incident-report.png)
+
+![Revocación completa de usuarios SSO](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/43-sso-user-revocation.png)
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#20, 28.4s): Federar nodos multisede, buscar vehículos entre portales y generar informes</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/20-multi-node-federation-vehicle-search-and-report.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/20-multi-node-federation-vehicle-search-and-report.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
+<details class="oscar-video-guide">
+  <summary>Videoguía (#21, 24.0s): Incorporar usuarios SSO Passkey en Authentik y revocar acceso completo</summary>
+  <video controls loading="lazy" width="720" height="405" preload="none" playsinline>
+    <source src="/video-guides/videos/21-federated-sso-passkey-onboarding-and-revocation.mp4" type="video/mp4">
+    <track kind="captions" src="/video-guides/captions/21-federated-sso-passkey-onboarding-and-revocation.vtt" srclang="en" label="English" default>
+  </video>
+</details>
+
 ## 12. Retención de datos y almacenamiento
 
 El perfil estándar 3.11.0 utiliza la arquitectura por niveles PostgreSQL + Apache Parquet en modo
